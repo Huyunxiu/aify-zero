@@ -1,0 +1,40 @@
+{
+  "name": "electron",
+  "version": "1.0.0",
+  "private": true,
+  "description": "My Electron application description",
+  "keywords": [],
+  "license": "MIT",
+  "author": {
+    "name": "HuYunXiu",
+    "email": "huyunxiu01@gmail.com"
+  },
+  "main": ".vite/build/main.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish",
+    "lint": "eslint --ext .ts,.tsx ."
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "catalog:"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "catalog:",
+    "@electron-forge/maker-deb": "catalog:",
+    "@electron-forge/maker-rpm": "catalog:",
+    "@electron-forge/maker-squirrel": "catalog:",
+    "@electron-forge/maker-zip": "catalog:",
+    "@electron-forge/plugin-auto-unpack-natives": "catalog:",
+    "@electron-forge/plugin-fuses": "catalog:",
+    "@electron-forge/plugin-vite": "catalog:",
+    "@electron-forge/shared-types": "^7.11.1",
+    "@electron/fuses": "catalog:",
+    "@types/electron-squirrel-startup": "catalog:",
+    "electron": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  },
+  "productName": "electron"
+}

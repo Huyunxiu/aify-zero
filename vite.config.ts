@@ -7,6 +7,6 @@ export default defineConfig({
   fmt: {},
   lint: { options: { typeAware: true, typeCheck: true } },
   run: {
-    cache: true,
+    cache: false,
   },
 });

@@ -2,15 +2,9 @@ packages:
   - apps/*
   - packages/*
   - tools/*
-
 catalogMode: prefer
-
-catalog:
-  "@types/node": ^24
-  typescript: ^5
-  vite: npm:@voidzero-dev/vite-plus-core@latest
-  vitest: npm:@voidzero-dev/vite-plus-test@latest
-  vite-plus: latest
+blockExoticSubdeps: false
+nodeLinker: hoisted
 overrides:
   vite: "catalog:"
   vitest: "catalog:"
@@ -21,3 +15,25 @@ peerDependencyRules:
   allowedVersions:
     vite: "*"
     vitest: "*"
+allowBuilds:
+  electron-winstaller: true
+catalog:
+  "@electron-forge/cli": ^7.11.1
+  "@electron-forge/maker-deb": ^7.11.1
+  "@electron-forge/maker-rpm": ^7.11.1
+  "@electron-forge/maker-squirrel": ^7.11.1
+  "@electron-forge/maker-zip": ^7.11.1
+  "@electron-forge/plugin-auto-unpack-natives": ^7.11.1
+  "@electron-forge/plugin-fuses": ^7.11.1
+  "@electron-forge/plugin-vite": ^7.11.1
+  "@electron/fuses": ^1.8.0
+  "@types/electron-squirrel-startup": ^1.0.2
+  "@types/node": ^25.5.0
+  "@typescript/native-preview": 7.0.0-dev.20260328.1
+  bumpp: ^11.0.1
+  electron: 42.0.1
+  electron-squirrel-startup: ^1.0.1
+  typescript: ^5
+  vite: npm:@voidzero-dev/vite-plus-core@latest
+  vite-plus: latest
+  vitest: npm:@voidzero-dev/vite-plus-test@latest
