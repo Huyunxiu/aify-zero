@@ -1,5 +1,5 @@
 {
-  "name": "utils",
+  "name": "shared",
   "version": "0.0.0",
   "description": "A starter for creating a TypeScript package.",
   "homepage": "https://github.com/author/library#readme",
@@ -7,7 +7,10 @@
     "url": "https://github.com/author/library/issues"
   },
   "license": "MIT",
-  "author": "Author Name <author.name@mail.com>",
+  "author": {
+    "name": "HuYunXiu",
+    "email": "huyunxiu01@gmail.com"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/author/library.git"
