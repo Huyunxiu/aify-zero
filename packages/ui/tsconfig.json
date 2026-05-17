@@ -1,17 +1,13 @@
 {
+  "extends": "@workspace/config/tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2023",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "paths": {
       "@workspace/ui/*": ["./src/*"]
-    }
+    },
+    "strictNullChecks": true
   },
-  "include": ["."],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
 }

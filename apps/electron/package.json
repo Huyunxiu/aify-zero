@@ -11,7 +11,7 @@
   },
   "main": ".vite/build/index.js",
   "scripts": {
-    "start": "electron-forge start",
+    "dev": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish"
@@ -19,11 +19,14 @@
   "dependencies": {
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
+    "@workspace/shared": "workspace:*",
     "@workspace/ui": "workspace:*",
     "electron-squirrel-startup": "catalog:",
+    "i18next": "catalog:",
     "lucide-react": "^1.14.0",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "react-i18next": "catalog:"
   },
   "devDependencies": {
     "@electron-forge/cli": "catalog:",

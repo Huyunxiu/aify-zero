@@ -1,7 +1,6 @@
 packages:
   - apps/*
   - packages/*
-  - tools/*
 catalogMode: prefer
 blockExoticSubdeps: false
 nodeLinker: hoisted
@@ -38,7 +37,9 @@ catalog:
   bumpp: ^11.0.1
   electron: 42.0.1
   electron-squirrel-startup: ^1.0.1
+  i18next: ^26.1.0
+  react-i18next: ^17.0.7
   typescript: ^6.0.2
   vite: npm:@voidzero-dev/vite-plus-core@latest
-  vite-plus: latest
+  vite-plus: ^0.1.21
   vitest: npm:@voidzero-dev/vite-plus-test@latest

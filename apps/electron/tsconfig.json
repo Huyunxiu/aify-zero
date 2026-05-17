@@ -10,10 +10,10 @@
     "useDefineForClassFields": true,
     "skipLibCheck": true,
 
-    "target": "es2023",
+    "target": "ESNext",
     "module": "ESNext",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "./forge.env.d.ts"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client", "./forge.env.d.ts"],
     "experimentalDecorators": true,
     "composite": true,
     "declaration": true,
@@ -36,7 +36,8 @@
     "noUncheckedSideEffectImports": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@workspace/ui/*": ["../../packages/ui/*"]
+      "@workspace/ui/*": ["../../packages/ui/*"],
+      "@workspace/shared/*": ["../../packages/shared/*"]
     }
   },
   "include": ["src/**/*", "./package.json", "./forge.config.ts", "*.mts"]
