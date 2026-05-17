@@ -10,6 +10,7 @@
     "prepare": "vp config"
   },
   "devDependencies": {
+    "@workspace/config": "workspace:*",
     "vite-plus": "catalog:"
   },
   "engines": {

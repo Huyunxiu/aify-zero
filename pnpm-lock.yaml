@@ -81,6 +81,9 @@ importers:
 
   .:
     devDependencies:
+      '@workspace/config':
+        specifier: workspace:*
+        version: link:packages/config
       vite-plus:
         specifier: 'catalog:'
         version: 0.1.21(@types/node@25.8.0)(jiti@2.7.0)(terser@5.47.1)(typescript@6.0.3)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0)(terser@5.47.1)(yaml@2.9.0))(yaml@2.9.0)
@@ -216,9 +219,6 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.8
-      '@workspace/config':
-        specifier: workspace:*
-        version: link:../config
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -256,6 +256,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      '@workspace/config':
+        specifier: workspace:*
+        version: link:../config
       globals:
         specifier: ^17.2.0
         version: 17.6.0
