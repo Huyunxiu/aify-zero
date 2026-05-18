@@ -17,8 +17,10 @@
     "publish": "electron-forge publish"
   },
   "dependencies": {
+    "@orpc/tanstack-query": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
+    "@workspace/server": "workspace:*",
     "@workspace/shared": "workspace:*",
     "@workspace/ui": "workspace:*",
     "electron-squirrel-startup": "catalog:",

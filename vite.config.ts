@@ -12,6 +12,11 @@ export default defineConfig({
   lint: {
     extends: [core, react, remix, vitest],
     options: { typeAware: true, typeCheck: true },
+    rules: {
+      "promise/avoid-new": "allow",
+      "promise/prefer-await-to-callbacks": "allow",
+      "promise/prefer-await-to-then": "allow",
+    },
   },
   run: {
     cache: false,
