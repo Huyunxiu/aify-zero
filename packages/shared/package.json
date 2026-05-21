@@ -21,8 +21,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./constants": "./src/constants/index.ts",
-    "./i18n": "./src/i18n/index.ts"
+    "./constants": "./src/constants/index.ts"
   },
   "publishConfig": {
     "access": "public"

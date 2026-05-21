@@ -10,10 +10,4 @@ export const IPC_CHANNELS = {
   START_IPC_SERVER: "start-ipc-server",
 };
 
-export type IpcChannels = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
-
-export const ENVIRONMENT_VARIABLES = {
-  NODE_ENV: process.env.NODE_ENV,
-};
-
-export const inDevelopment = ENVIRONMENT_VARIABLES.NODE_ENV === "development";
+export const inDevelopment = process.env.NODE_ENV === "development";

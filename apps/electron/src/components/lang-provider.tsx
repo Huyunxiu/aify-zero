@@ -1,5 +1,5 @@
 import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
-import { i18n, resources } from "@workspace/shared/i18n";
+import { i18n, resources } from "@workspace/ui/i18n";
 import type { ReactNode } from "react";
 import {
   createContext,

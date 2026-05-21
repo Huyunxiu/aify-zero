@@ -1,4 +1,7 @@
-import type { Language } from "./language";
+export interface Language {
+  key: string;
+  nativeName: string;
+}
 
 export default [
   {
