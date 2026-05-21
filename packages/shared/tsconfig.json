@@ -13,6 +13,7 @@
     "target": "ESNext",
     "module": "ESNext",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
     "experimentalDecorators": true,
     "composite": true,
     "declaration": true,

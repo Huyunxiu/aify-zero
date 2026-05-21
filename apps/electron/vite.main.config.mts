@@ -1,4 +1,6 @@
+// oxlint-disable unicorn/prefer-module
 import path from "node:path";
+
 import { defineConfig } from "vite";
 
 // https://vitejs.dev/config

@@ -7,8 +7,8 @@ import {
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { LangProvider } from "@/renderer/components/lang-provider.tsx";
-import { ThemeProvider } from "@/renderer/components/theme-provider.tsx";
+import { LangProvider } from "@/components/lang-provider.tsx";
+import { ThemeProvider } from "@/components/theme-provider.tsx";
 import { queryClient } from "@/utils/orpc";
 
 import "@workspace/ui/globals.css";

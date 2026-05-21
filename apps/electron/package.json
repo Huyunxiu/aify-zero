@@ -9,7 +9,7 @@
     "name": "HuYunXiu",
     "email": "huyunxiu01@gmail.com"
   },
-  "main": ".vite/build/index.js",
+  "main": ".vite/build/main.js",
   "scripts": {
     "dev": "electron-forge start",
     "package": "electron-forge package",
@@ -48,6 +48,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
     "electron": "catalog:",
+    "electron-devtools-installer": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"
   },

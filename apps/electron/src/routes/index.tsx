@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { orpc } from "@/utils/orpc";
 
-const AboutPage = () => {
+const Home = () => {
   const { t } = useTranslation();
   const healthCheck = useQuery(orpc.healthCheck.queryOptions());
 
@@ -14,10 +14,9 @@ const AboutPage = () => {
       <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
         <div>
           <h1 className="font-medium">{t("welcome")}</h1>
-          <p>You may now add components and start building.</p>
           <p>API Status: {healthCheck.data}</p>
           <Button className="mt-2" render={<Link to="/about" />}>
-            Hello AboutPage!
+            Hello HomePage!
           </Button>
         </div>
         <div className="text-muted-foreground font-mono text-xs">
@@ -31,6 +30,6 @@ const AboutPage = () => {
   );
 };
 
-export const Route = createFileRoute("/about")({
-  component: AboutPage,
+export const Route = createFileRoute("/")({
+  component: Home,
 });

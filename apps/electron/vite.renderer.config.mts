@@ -1,25 +1,28 @@
-import path from "path";
+// oxlint-disable unicorn/prefer-module
+import path from "node:path";
+
 import tailwindcss from "@tailwindcss/vite";
-import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     tanstackRouter({
-      routesDirectory: "./src/renderer/routes",
-      generatedRouteTree: "./src/renderer/routeTree.gen.ts",
+      autoCodeSplitting: false,
+      generatedRouteTree: "./src/routeTree.gen.ts",
       quoteStyle: "double",
+      routesDirectory: "./src/routes",
       target: "react",
-      autoCodeSplitting: true,
     }),
-    react() as any,
+    react(),
     tailwindcss(),
   ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@workspace/shared": path.resolve(__dirname, "../../packages/shared/src"),
     },
   },
 });

@@ -26,6 +26,11 @@
  * ```
  */
 
-import "@/renderer/app";
+import "@/app";
+import { ipc } from "./ipc/manager";
 
-console.log('👋 This message is being logged by "renderer.ts", included via Vite');
+ipc.initialize();
+
+console.log(
+  '👋 This message is being logged by "renderer.ts", included via Vite'
+);

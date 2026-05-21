@@ -1,11 +1,21 @@
-import * as React from "react";
-import { i18n, resources } from "@workspace/shared/i18n";
 import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
+import { i18n, resources } from "@workspace/shared/i18n";
+import type { ReactNode } from "react";
+import {
+  createContext,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useContext,
+} from "react";
+
+import { isEditableTarget } from "@/utils/html-utils";
 
 type Lang = keyof typeof resources;
 
 type LangProviderProps = {
-  children: React.ReactNode;
+  children: ReactNode;
   defaultLang?: Lang;
   storageKey?: string;
 };
@@ -18,7 +28,9 @@ type LangProviderState = {
 
 const LANG_VALUES = Object.keys(resources) as Lang[];
 
-const LangProviderContext = React.createContext<LangProviderState | undefined>(undefined);
+const LangProviderContext = createContext<LangProviderState | undefined>(
+  undefined
+);
 
 function isLang(value: string | null): value is Lang {
   if (value === null) {
@@ -33,30 +45,13 @@ function applyLang(nextLang: Lang) {
   document.documentElement.lang = nextLang;
 }
 
-function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (target.isContentEditable) {
-    return true;
-  }
-
-  const editableParent = target.closest("input, textarea, select, [contenteditable='true']");
-  if (editableParent) {
-    return true;
-  }
-
-  return false;
-}
-
 export function LangProvider({
   children,
   defaultLang = "en-US",
   storageKey = LOCAL_STORAGE_KEYS.LANGUAGE,
   ...props
 }: LangProviderProps) {
-  const [lang, setLangState] = React.useState<Lang>(() => {
+  const [lang, setLangState] = useState<Lang>(() => {
     const storedLang = localStorage.getItem(storageKey);
     if (isLang(storedLang)) {
       return storedLang;
@@ -65,20 +60,20 @@ export function LangProvider({
     return defaultLang;
   });
 
-  const setLang = React.useCallback(
+  const setLang = useCallback(
     (nextLang: Lang) => {
       localStorage.setItem(storageKey, nextLang);
       applyLang(nextLang);
       setLangState(nextLang);
     },
-    [storageKey],
+    [storageKey]
   );
 
-  React.useEffect(() => {
+  useEffect(() => {
     applyLang(lang);
   }, [lang]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.repeat) {
         return;
@@ -98,7 +93,8 @@ export function LangProvider({
 
       setLangState((currentLang) => {
         const currentIndex = LANG_VALUES.indexOf(currentLang);
-        const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % LANG_VALUES.length;
+        const nextIndex =
+          currentIndex === -1 ? 0 : (currentIndex + 1) % LANG_VALUES.length;
         const nextLang = LANG_VALUES[nextIndex];
 
         localStorage.setItem(storageKey, nextLang);
@@ -113,7 +109,7 @@ export function LangProvider({
     };
   }, [storageKey]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
       if (event.storageArea !== localStorage) {
         return;
@@ -138,13 +134,13 @@ export function LangProvider({
     };
   }, [defaultLang, storageKey]);
 
-  const value = React.useMemo(
+  const value = useMemo(
     () => ({
       lang,
       langs: LANG_VALUES,
       setLang,
     }),
-    [lang, setLang],
+    [lang, setLang]
   );
 
   return (
@@ -155,7 +151,7 @@ export function LangProvider({
 }
 
 export const useLang = () => {
-  const context = React.useContext(LangProviderContext);
+  const context = useContext(LangProviderContext);
 
   if (context === undefined) {
     throw new Error("useLang must be used within a LangProvider");

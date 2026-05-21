@@ -3,8 +3,16 @@ import path from "node:path";
 
 import { serve } from "@hono/node-server";
 import { app as server } from "@workspace/server/app";
+import { IPC_CHANNELS, inDevelopment } from "@workspace/shared/constants";
 import { app, BrowserWindow } from "electron";
+import {
+  installExtension,
+  REACT_DEVELOPER_TOOLS,
+} from "electron-devtools-installer";
 import started from "electron-squirrel-startup";
+import { ipcMain } from "electron/main";
+
+import { ipcContext } from "@/ipc/context";
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -25,6 +33,15 @@ const createServer = async () =>
     );
   });
 
+const installExtensions = async () => {
+  try {
+    const result = await installExtension(REACT_DEVELOPER_TOOLS);
+    console.log(`Extensions installed successfully: ${result.name}`);
+  } catch {
+    console.error("Failed to install extensions");
+  }
+};
+
 const createWindow = () => {
   // const dirname = path.dirname(fileURLToPath(import.meta.dirname));
   // oxlint-disable-next-line unicorn/prefer-module
@@ -33,10 +50,13 @@ const createWindow = () => {
   const mainWindow = new BrowserWindow({
     height: 600,
     webPreferences: {
+      devTools: inDevelopment,
       preload: path.join(dirname, "preload.js"),
     },
     width: 800,
   });
+
+  ipcContext.setMainWindow(mainWindow);
 
   // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -51,8 +71,21 @@ const createWindow = () => {
   mainWindow.webContents.openDevTools();
 };
 
+const setupIpcServer = async () => {
+  const { rpcHandler } = await import("./ipc/handler");
+
+  ipcMain.on(IPC_CHANNELS.START_IPC_SERVER, (event) => {
+    const [serverPort] = event.ports;
+
+    rpcHandler.upgrade(serverPort);
+    serverPort.start();
+  });
+};
+
 const onElectronReady = async () => {
   createWindow();
+  await installExtensions();
+  await setupIpcServer();
   await createServer();
 };
 

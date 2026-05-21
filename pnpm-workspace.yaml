@@ -41,6 +41,7 @@ catalog:
   "@typescript/native-preview": 7.0.0-dev.20260328.1
   bumpp: ^11.0.1
   electron: 42.0.1
+  electron-devtools-installer: ^4.0.0
   electron-squirrel-startup: ^1.0.1
   evlog: ^2.17.0
   hono: ^4.12.18

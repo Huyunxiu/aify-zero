@@ -13,9 +13,19 @@ export default defineConfig({
     extends: [core, react, remix, vitest],
     options: { typeAware: true, typeCheck: true },
     rules: {
+      "func-style": "allow",
       "promise/avoid-new": "allow",
       "promise/prefer-await-to-callbacks": "allow",
       "promise/prefer-await-to-then": "allow",
+      "typescript/consistent-type-definitions": "allow",
+      "typescript/no-unsafe-type-assertion": "allow",
+      "typescript/strict-boolean-expressions": [
+        "error",
+        {
+          allowNullableString: true,
+        },
+      ],
+      "unicorn/prefer-ternary": "allow",
     },
   },
   run: {
