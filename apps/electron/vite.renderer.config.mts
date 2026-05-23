@@ -8,6 +8,9 @@ import { defineConfig } from "vite";
 
 // https://vite.dev/config/
 export default defineConfig({
+  optimizeDeps: {
+    exclude: ["@workspace/ui", "@workspace/shared", "@workspace/server"],
+  },
   plugins: [
     tanstackRouter({
       autoCodeSplitting: false,
@@ -22,7 +25,12 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "@workspace/shared": path.resolve(__dirname, "../../packages/shared/src"),
+      "@workspace/ui": path.resolve(__dirname, "../../packages/ui/src/"),
+      "@workspace/ui/*": path.resolve(__dirname, "../../packages/ui/src/*"),
+      "@workspace/ui/globals.css": path.resolve(
+        __dirname,
+        "../../packages/ui/src/styles/globals.css"
+      ),
     },
   },
 });

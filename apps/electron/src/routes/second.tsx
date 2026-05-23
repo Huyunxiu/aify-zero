@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { orpc } from "@/utils/orpc";
 
-const Home = () => {
+const Second = () => {
   const { t } = useTranslation();
   const healthCheck = useQuery(orpc.healthCheck.queryOptions({ staleTime: 0 }));
 
@@ -25,7 +25,7 @@ const Home = () => {
           <p>
             {t("edit")}{" "}
             <code className="text-base px-2 py-1 bg-muted rounded">
-              src/routes/index.tsx
+              src/routes/second.tsx
             </code>{" "}
             {t("andSaveToTest")}{" "}
             <code className="text-base px-2 py-1 bg-muted rounded">
@@ -33,12 +33,8 @@ const Home = () => {
             </code>
           </p>
         </div>
-        <Button
-          className="mt-2"
-          nativeButton={false}
-          render={<Link to="/second" />}
-        >
-          {t("goToSecondPage")}
+        <Button className="mt-2" nativeButton={false} render={<Link to="/" />}>
+          {t("goToHomePage")}
         </Button>
         <div className="text-muted-foreground text-sm">
           ({t("press")} <kbd>d</kbd> {t("toToggleDarkMode")})
@@ -51,6 +47,6 @@ const Home = () => {
   );
 };
 
-export const Route = createFileRoute("/")({
-  component: Home,
+export const Route = createFileRoute("/second")({
+  component: Second,
 });

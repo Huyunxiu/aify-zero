@@ -1,3 +1,12 @@
 {
-  "welcome": "Welcome"
+  "welcome": "Welcome",
+  "apiStatus": "API Status",
+  "edit": "Edit",
+  "andSaveToTest": "and save to test",
+  "hmr": "HMR",
+  "goToSecondPage": "Go to second page",
+  "goToHomePage": "Go to home page",
+  "press": "Press",
+  "toToggleDarkMode": "to toggle dark mode",
+  "toToggleLangMode": "to toggle lang mode"
 }
