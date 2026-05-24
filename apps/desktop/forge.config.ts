@@ -16,6 +16,7 @@ const config: ForgeConfig = {
   ],
   packagerConfig: {
     asar: true,
+    extraResource: ["./resources"],
   },
   plugins: [
     new VitePlugin({

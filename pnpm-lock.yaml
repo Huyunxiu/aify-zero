@@ -75,6 +75,9 @@ catalogs:
     electron-devtools-installer:
       specifier: ^4.0.0
       version: 4.0.0
+    electron-log:
+      specifier: ^5.4.4
+      version: 5.4.4
     electron-squirrel-startup:
       specifier: ^1.0.1
       version: 1.0.1
@@ -141,9 +144,15 @@ importers:
       '@workspace/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      electron-log:
+        specifier: 'catalog:'
+        version: 5.4.4
       electron-squirrel-startup:
         specifier: 'catalog:'
         version: 1.0.1
+      evlog:
+        specifier: 'catalog:'
+        version: 2.17.0(@voidzero-dev/vite-plus-core@0.1.22(@types/node@25.8.0)(jiti@2.7.0)(terser@5.47.1)(typescript@6.0.3)(yaml@2.9.0))(express@5.2.1)(hono@4.12.18)(react@19.2.6)
       i18next:
         specifier: 'catalog:'
         version: 26.2.0(typescript@6.0.3)
@@ -270,6 +279,10 @@ importers:
         version: 6.0.3
 
   packages/shared:
+    dependencies:
+      evlog:
+        specifier: 'catalog:'
+        version: 2.17.0(express@5.2.1)(hono@4.12.18)(react@19.2.6)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0)(terser@5.47.1)(yaml@2.9.0))
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -2493,6 +2506,10 @@ packages:
     engines: {node: '>= 10.0.0'}
     os: [darwin, linux]
     hasBin: true
+
+  electron-log@5.4.4:
+    resolution: {integrity: sha512-istWgaXjBfURBSS8LWVW9C3jsc6+ac+tY1lXrQEOTp0lVj+a4OlO1Tmqb36GgnEUDv92DGC9VI1HNXwJinWpgA==}
+    engines: {node: '>= 14'}
 
   electron-squirrel-startup@1.0.1:
     resolution: {integrity: sha512-sTfFIHGku+7PsHLJ7v0dRcZNkALrV+YEozINTW8X1nM//e5O3L+rfYuvSW00lmGHnYmUjARZulD8F2V8ISI9RA==}
@@ -7263,6 +7280,8 @@ snapshots:
       - supports-color
     optional: true
 
+  electron-log@5.4.4: {}
+
   electron-squirrel-startup@1.0.1:
     dependencies:
       debug: 2.6.9
@@ -7378,6 +7397,13 @@ snapshots:
   eventsource@3.0.7:
     dependencies:
       eventsource-parser: 3.0.8
+
+  evlog@2.17.0(@voidzero-dev/vite-plus-core@0.1.22(@types/node@25.8.0)(jiti@2.7.0)(terser@5.47.1)(typescript@6.0.3)(yaml@2.9.0))(express@5.2.1)(hono@4.12.18)(react@19.2.6):
+    optionalDependencies:
+      express: 5.2.1
+      hono: 4.12.18
+      react: 19.2.6
+      vite: '@voidzero-dev/vite-plus-core@0.1.22(@types/node@25.8.0)(jiti@2.7.0)(terser@5.47.1)(typescript@6.0.3)(yaml@2.9.0)'
 
   evlog@2.17.0(express@5.2.1)(hono@4.12.18)(react@19.2.6)(vite@8.0.13(@types/node@25.8.0)(jiti@2.7.0)(terser@5.47.1)(yaml@2.9.0)):
     optionalDependencies:

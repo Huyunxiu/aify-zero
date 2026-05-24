@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@workspace/ui/components/button";
 import { useTranslation } from "react-i18next";
 
+import HeroImg from "@/assets/images/hero.png";
 import { orpc } from "@/utils/orpc";
 
 const Home = () => {
@@ -15,6 +16,9 @@ const Home = () => {
         id="center"
         className="flex grow flex-col place-content-center place-items-center gap-4"
       >
+        <div>
+          <img src={HeroImg} alt="logo" width="170" height="179" />
+        </div>
         <div className="flex flex-col gap-4">
           <p>
             {t("apiStatus")}:{" "}

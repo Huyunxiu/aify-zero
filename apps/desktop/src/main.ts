@@ -4,11 +4,13 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import { app as server } from "@workspace/server/app";
 import { IPC_CHANNELS, inDevelopment } from "@workspace/shared/constants";
+import { setupLogger } from "@workspace/shared/logger";
 import { app, BrowserWindow } from "electron";
 import {
   installExtension,
   REACT_DEVELOPER_TOOLS,
 } from "electron-devtools-installer";
+import log from "electron-log/main";
 import started from "electron-squirrel-startup";
 import { ipcMain } from "electron/main";
 
@@ -82,7 +84,26 @@ const setupIpcServer = async () => {
   });
 };
 
+// macOS-only startup step: set dock icon and optional multi-instance badge.
+const setupMacDockIcon = () => {
+  // oxlint-disable-next-line unicorn/prefer-module
+  const dirname = __dirname;
+
+  if (process.platform !== "darwin" || !app.dock) {
+    return;
+  }
+
+  const dockIconPath = app.isPackaged
+    ? path.join(dirname, "../../../resources/icons/icon.png")
+    : path.join(dirname, "../../resources/icons/icon.png");
+
+  app.dock.setIcon(dockIconPath);
+};
+
 const onElectronReady = async () => {
+  setupLogger(app.getPath("logs"));
+  log.initialize();
+  setupMacDockIcon();
   createWindow();
   await installExtensions();
   await setupIpcServer();

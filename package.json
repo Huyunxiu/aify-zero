@@ -6,6 +6,7 @@
   "scripts": {
     "ready": "vp check && vp run -r test && vp run -r build",
     "dev": "vp run website#dev",
+    "dev:website": "vp run website#dev",
     "dev:desktop": "vp run desktop#dev",
     "package:desktop": "vp run desktop#package",
     "prepare": "vp config"
