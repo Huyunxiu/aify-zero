@@ -25,12 +25,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "@workspace/ui": path.resolve(__dirname, "../../packages/ui/src/"),
-      "@workspace/ui/*": path.resolve(__dirname, "../../packages/ui/src/*"),
-      "@workspace/ui/globals.css": path.resolve(
-        __dirname,
-        "../../packages/ui/src/styles/globals.css"
-      ),
+      "@workspace/ui": path.resolve(__dirname, "../../packages/ui/src"),
     },
   },
 });

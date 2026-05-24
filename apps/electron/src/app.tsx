@@ -11,7 +11,7 @@ import { LangProvider } from "@/components/lang-provider.tsx";
 import { ThemeProvider } from "@/components/theme-provider.tsx";
 import { queryClient } from "@/utils/orpc";
 
-import "@workspace/ui/globals.css";
+import "@workspace/ui/styles/globals.css";
 import { routeTree } from "./routeTree.gen";
 
 export const router = createRouter({
