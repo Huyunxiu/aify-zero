@@ -6,8 +6,8 @@
   "scripts": {
     "ready": "vp check && vp run -r test && vp run -r build",
     "dev": "vp run website#dev",
-    "dev:electron": "vp run electron#dev",
-    "package:electron": "vp run electron#package",
+    "dev:desktop": "vp run desktop#dev",
+    "package:desktop": "vp run desktop#package",
     "prepare": "vp config"
   },
   "devDependencies": {

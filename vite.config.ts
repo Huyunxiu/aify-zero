@@ -14,6 +14,7 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: true },
     rules: {
       "func-style": "allow",
+      "import/no-named-as-default": "allow",
       "promise/avoid-new": "allow",
       "promise/prefer-await-to-callbacks": "allow",
       "promise/prefer-await-to-then": "allow",
