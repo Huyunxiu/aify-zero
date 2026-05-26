@@ -8,9 +8,11 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   fmt: {
     ...ultracite,
+    ignorePatterns: ["packages/ui/src/components/**.tsx"],
   },
   lint: {
     extends: [core, react, remix, vitest],
+    ignorePatterns: ["packages/ui/src/components/**.tsx"],
     options: { typeAware: true, typeCheck: true },
     rules: {
       "func-style": "allow",
@@ -23,6 +25,7 @@ export default defineConfig({
       "typescript/strict-boolean-expressions": [
         "error",
         {
+          allowNullableBoolean: true,
           allowNullableString: true,
         },
       ],

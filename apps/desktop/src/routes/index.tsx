@@ -1,59 +1,55 @@
-import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Button } from "@workspace/ui/components/button";
-import { useTranslation } from "react-i18next";
+import { createFileRoute } from "@tanstack/react-router";
+import { AppSidebar } from "@workspace/ui/components/app-sidebar";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@workspace/ui/components/breadcrumb";
+import { Separator } from "@workspace/ui/components/separator";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@workspace/ui/components/sidebar";
 
-import HeroImg from "@/assets/images/hero.png";
-import { orpc } from "@/utils/orpc";
-
-const Home = () => {
-  const { t } = useTranslation();
-  const healthCheck = useQuery(orpc.healthCheck.queryOptions({ staleTime: 0 }));
-
-  return (
-    <div className="w-dvh max-w-full mx-auto text-center min-h-svh flex flex-col box-border">
-      <section
-        id="center"
-        className="flex grow flex-col place-content-center place-items-center gap-4"
-      >
-        <div>
-          <img src={HeroImg} alt="logo" width="170" height="179" />
+const Home = () => (
+  <SidebarProvider>
+    <AppSidebar />
+    <SidebarInset>
+      <header className="flex h-16 shrink-0 items-center gap-2">
+        <div className="flex items-center gap-2 px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator
+            orientation="vertical"
+            className="mr-2 data-[orientation=vertical]:h-4"
+          />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem className="hidden md:block">
+                <BreadcrumbLink href="#">Build Your Application</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator className="hidden md:block" />
+              <BreadcrumbItem>
+                <BreadcrumbPage>Data Fetching</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
         </div>
-        <div className="flex flex-col gap-4">
-          <p>
-            {t("apiStatus")}:{" "}
-            <code className="text-base px-2 py-1 bg-muted rounded">
-              {healthCheck.data}
-            </code>
-          </p>
-          <p>
-            {t("edit")}{" "}
-            <code className="text-base px-2 py-1 bg-muted rounded">
-              src/routes/index.tsx
-            </code>{" "}
-            {t("andSaveToTest")}{" "}
-            <code className="text-base px-2 py-1 bg-muted rounded">
-              {t("hmr")}
-            </code>
-          </p>
+      </header>
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <div className="grid auto-rows-min gap-4 md:grid-cols-3">
+          <div className="aspect-video rounded-xl bg-muted/50" />
+          <div className="aspect-video rounded-xl bg-muted/50" />
+          <div className="aspect-video rounded-xl bg-muted/50" />
         </div>
-        <Button
-          className="mt-2"
-          nativeButton={false}
-          render={<Link to="/second" />}
-        >
-          {t("goToSecondPage")}
-        </Button>
-        <div className="text-muted-foreground text-sm">
-          ({t("press")} <kbd>d</kbd> {t("toToggleDarkMode")})
-        </div>
-        <div className="text-muted-foreground text-sm">
-          ({t("press")} <kbd>l</kbd> {t("toToggleLangMode")})
-        </div>
-      </section>
-    </div>
-  );
-};
+        <div className="min-h-screen flex-1 rounded-xl bg-muted/50 md:min-h-min" />
+      </div>
+    </SidebarInset>
+  </SidebarProvider>
+);
 
 export const Route = createFileRoute("/")({
   component: Home,

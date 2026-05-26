@@ -4,6 +4,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -41,7 +42,9 @@ createRoot(rootElement).render(
   <StrictMode>
     <ThemeProvider>
       <LangProvider>
-        <App />
+        <TooltipProvider>
+          <App />
+        </TooltipProvider>
       </LangProvider>
     </ThemeProvider>
   </StrictMode>
