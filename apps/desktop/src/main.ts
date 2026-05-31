@@ -50,12 +50,16 @@ const createWindow = () => {
   const dirname = __dirname;
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    height: 600,
+    height: 900,
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: { x: 18, y: 16 },
+    vibrancy: "under-window",
+    visualEffectState: "active",
     webPreferences: {
       devTools: inDevelopment,
       preload: path.join(dirname, "preload.js"),
     },
-    width: 800,
+    width: 1400,
   });
 
   ipcContext.setMainWindow(mainWindow);

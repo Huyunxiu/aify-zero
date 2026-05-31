@@ -8,6 +8,7 @@
     "./styles/*": "./src/styles/*.css",
     "./lib/*": "./src/lib/*.ts",
     "./components/*": "./src/components/*.tsx",
+    "./modules/*": "./src/modules/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
     "./i18n": "./src/i18n/index.ts"
   },
