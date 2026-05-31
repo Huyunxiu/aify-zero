@@ -48,6 +48,7 @@ catalog:
   hono: ^4.12.18
   i18next: ^26.2.0
   react-i18next: ^17.0.8
+  react-resizable-panels: ^4.11.2
   typescript: ^6.0.2
   ultracite: 7.7.0
   vite: npm:@voidzero-dev/vite-plus-core@latest

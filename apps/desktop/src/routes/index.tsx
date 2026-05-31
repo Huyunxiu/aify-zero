@@ -4,8 +4,8 @@ import {
   SidebarInset,
   SidebarProvider,
 } from "@workspace/ui/components/sidebar";
-import { Island, IslandGroup } from "@workspace/ui/modules/island";
-import { TitleBar } from "@workspace/ui/modules/title-bar";
+import { Island, IslandGroup } from "@workspace/ui/elements/island";
+import { TitleBar } from "@workspace/ui/elements/title-bar";
 
 const Home = () => (
   <SidebarProvider>
