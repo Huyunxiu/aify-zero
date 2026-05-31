@@ -4,8 +4,8 @@ import {
   SidebarInset,
   SidebarProvider,
 } from "@workspace/ui/components/sidebar";
+import { Chat } from "@workspace/ui/elements/chat";
 import { Island, IslandGroup } from "@workspace/ui/elements/island";
-import { TitleBar } from "@workspace/ui/elements/title-bar";
 
 const Home = () => (
   <SidebarProvider>
@@ -13,10 +13,7 @@ const Home = () => (
     <SidebarInset className="bg-transparent">
       <IslandGroup orientation="horizontal">
         <Island defaultSize="50%">
-          <TitleBar></TitleBar>
-          <div className="flex items-center justify-center p-6">
-            <span className="font-semibold">Two</span>
-          </div>
+          <Chat />
         </Island>
         {/* <IslandHandle /> */}
         {/* <Island defaultSize="50%">

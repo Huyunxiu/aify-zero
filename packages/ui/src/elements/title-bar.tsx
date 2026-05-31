@@ -6,7 +6,7 @@ type TitleBarProps = React.ComponentProps<"div">;
 
 function TitleBar({ className, children }: TitleBarProps) {
   return (
-    <div className={cn("h-12 [-webkit-app-region:drag]", className)}>
+    <div className={cn("h-12 [-webkit-app-region:drag] shrink-0", className)}>
       {children}
     </div>
   );

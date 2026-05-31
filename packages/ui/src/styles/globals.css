@@ -8,6 +8,8 @@
 @source "../../../components/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
 
+@source "../node_modules/streamdown/dist/*.js";
+
 @theme inline {
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -130,5 +132,44 @@
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: oklch(0 0 0 / 0.12) transparent;
+  }
+
+  .dark * {
+    scrollbar-color: oklch(1 0 0 / 0.1) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: oklch(0 0 0 / 0.12);
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: oklch(0 0 0 / 0.25);
+  }
+
+  .dark *::-webkit-scrollbar-thumb {
+    background: oklch(1 0 0 / 0.1);
+  }
+
+  .dark *::-webkit-scrollbar-thumb:hover {
+    background: oklch(1 0 0 / 0.2);
+  }
+
+  *::-webkit-scrollbar-corner {
+    background: transparent;
   }
 }

@@ -8,11 +8,21 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   fmt: {
     ...ultracite,
-    ignorePatterns: ["packages/ui/src/components/**.tsx"],
+    ignorePatterns: [
+      "packages/ui/src/components/**.tsx",
+      "packages/ui/src/elements/prompt-input.tsx",
+      "packages/ui/src/elements/message.tsx",
+      "packages/ui/src/elements/conversation.tsx",
+    ],
   },
   lint: {
     extends: [core, react, remix, vitest],
-    ignorePatterns: ["packages/ui/src/components/**.tsx"],
+    ignorePatterns: [
+      "packages/ui/src/components/**.tsx",
+      "packages/ui/src/elements/prompt-input.tsx",
+      "packages/ui/src/elements/message.tsx",
+      "packages/ui/src/elements/conversation.tsx",
+    ],
     options: { typeAware: true, typeCheck: true },
     rules: {
       "func-style": "allow",
@@ -29,6 +39,7 @@ export default defineConfig({
           allowNullableString: true,
         },
       ],
+      "unicorn/no-abusive-eslint-disable": "allow",
       "unicorn/prefer-ternary": "allow",
     },
   },
