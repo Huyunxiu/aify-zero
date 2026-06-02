@@ -17,11 +17,11 @@ const Home = () => (
         </Island>
         {/* <IslandHandle /> */}
         {/* <Island defaultSize="50%">
-          <TitleBar></TitleBar>
-          <div className="flex items-center justify-center p-6">
-            <span className="font-semibold">Three</span>
-          </div>
-        </Island> */}
+            <TitleBar></TitleBar>
+            <div className="flex items-center justify-center p-6">
+              <span className="font-semibold">Three</span>
+            </div>
+          </Island> */}
       </IslandGroup>
     </SidebarInset>
   </SidebarProvider>

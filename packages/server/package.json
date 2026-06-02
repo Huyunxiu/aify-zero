@@ -11,10 +11,12 @@
   },
   "scripts": {},
   "dependencies": {
+    "@ai-sdk/openai-compatible": "catalog:",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
+    "@workspace/agent": "workspace:*",
     "evlog": "catalog:",
     "zod": "catalog:"
   },

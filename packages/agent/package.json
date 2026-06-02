@@ -1,0 +1,20 @@
+{
+  "name": "@workspace/agent",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "ai": "catalog:"
+  },
+  "devDependencies": {
+    "@workspace/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

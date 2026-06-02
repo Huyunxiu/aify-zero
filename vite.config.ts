@@ -27,6 +27,8 @@ export default defineConfig({
     rules: {
       "func-style": "allow",
       "import/no-named-as-default": "allow",
+      "max-classes-per-file": "allow",
+      "oxc/no-barrel-file": "allow",
       "promise/avoid-new": "allow",
       "promise/prefer-await-to-callbacks": "allow",
       "promise/prefer-await-to-then": "allow",
