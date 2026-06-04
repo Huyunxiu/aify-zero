@@ -17,6 +17,7 @@
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "@workspace/agent": "workspace:*",
+    "@workspace/db": "workspace:*",
     "evlog": "catalog:",
     "zod": "catalog:"
   },

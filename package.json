@@ -8,8 +8,16 @@
     "dev": "vp run website#dev",
     "dev:website": "vp run website#dev",
     "dev:desktop": "vp run desktop#dev",
+    "db:push": "vp run db#db:push",
+    "db:studio": "vp run db#db:studio",
+    "db:generate": "vp run db#db:generate",
+    "db:migrate": "vp run db#db:migrate",
+    "db:local": "vp run db#db:local",
     "package:desktop": "vp run desktop#package",
     "prepare": "vp config"
+  },
+  "dependencies": {
+    "dotenv": "catalog:"
   },
   "devDependencies": {
     "@workspace/config": "workspace:*",
@@ -19,8 +27,5 @@
   "engines": {
     "node": ">=22.12.0"
   },
-  "packageManager": "pnpm@11.5.0",
-  "dependencies": {
-    "dotenv": "catalog:"
-  }
+  "packageManager": "pnpm@11.5.0"
 }
