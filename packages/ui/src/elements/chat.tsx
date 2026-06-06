@@ -1,6 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
-import { MessageSquareIcon, PaperclipIcon } from "lucide-react";
+import { MessageSquareIcon } from "lucide-react";
 import { Fragment } from "react/jsx-runtime";
 
 import { client } from "../lib/orpc";
@@ -14,7 +14,6 @@ import { Message, MessageContent } from "./message";
 import {
   PromptInput,
   PromptInputBody,
-  PromptInputButton,
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
@@ -125,11 +124,7 @@ function Chat() {
                 <PromptInputTextarea />
               </PromptInputBody>
               <PromptInputFooter>
-                <PromptInputTools>
-                  <PromptInputButton tooltip="Attach files">
-                    <PaperclipIcon size={16} />
-                  </PromptInputButton>
-                </PromptInputTools>
+                <PromptInputTools></PromptInputTools>
                 <PromptInputSubmit />
               </PromptInputFooter>
             </PromptInput>

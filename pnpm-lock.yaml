@@ -181,6 +181,9 @@ importers:
       '@tanstack/react-router':
         specifier: 'catalog:'
         version: 1.170.10(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@workspace/server':
         specifier: workspace:*
         version: link:../../packages/server
@@ -354,6 +357,9 @@ importers:
       '@workspace/agent':
         specifier: workspace:*
         version: link:../agent
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../db
       evlog:
         specifier: 'catalog:'
         version: 2.18.1(@orpc/server@1.14.4(ws@8.21.0))(express@5.2.1)(hono@4.12.23)(react@19.2.6)(vite@8.0.14(@types/node@25.9.1)(esbuild@0.28.0)(jiti@2.7.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))

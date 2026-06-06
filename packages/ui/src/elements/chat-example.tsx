@@ -1,4 +1,4 @@
-import { MessageSquareIcon, PaperclipIcon } from "lucide-react";
+import { MessageSquareIcon } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useEffect, useState } from "react";
 
@@ -12,7 +12,6 @@ import { Message, MessageContent } from "./message";
 import {
   PromptInput,
   PromptInputBody,
-  PromptInputButton,
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputTextarea,
@@ -208,11 +207,7 @@ function ChatExample() {
                 <PromptInputTextarea />
               </PromptInputBody>
               <PromptInputFooter>
-                <PromptInputTools>
-                  <PromptInputButton tooltip="Attach files">
-                    <PaperclipIcon size={16} />
-                  </PromptInputButton>
-                </PromptInputTools>
+                <PromptInputTools></PromptInputTools>
                 <PromptInputSubmit />
               </PromptInputFooter>
             </PromptInput>

@@ -1,8 +1,5 @@
-"use client";
-
-import { NavMain } from "@workspace/ui/components/nav-main";
-import { NavProjects } from "@workspace/ui/components/nav-projects";
-import { NavSecondary } from "@workspace/ui/components/nav-secondary";
+import { NavAgents } from "@workspace/ui/components/nav-agents";
+import { NavThreads } from "@workspace/ui/components/nav-threads";
 import { NavUser } from "@workspace/ui/components/nav-user";
 import {
   Sidebar,
@@ -18,12 +15,10 @@ import {
   BotIcon,
   BookOpenIcon,
   Settings2Icon,
-  LifeBuoyIcon,
-  SendIcon,
   FrameIcon,
   PieChartIcon,
   MapIcon,
-  TerminalIcon,
+  Plus,
 } from "lucide-react";
 import * as React from "react";
 
@@ -120,18 +115,6 @@ const data = {
       ],
     },
   ],
-  navSecondary: [
-    {
-      title: "Support",
-      url: "#",
-      icon: <LifeBuoyIcon />,
-    },
-    {
-      title: "Feedback",
-      url: "#",
-      icon: <SendIcon />,
-    },
-  ],
   projects: [
     {
       name: "Design Engineering",
@@ -153,25 +136,19 @@ const data = {
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar variant="sidebar" {...props}>
-      <SidebarHeader>
+      <SidebarHeader className="py-0">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<a href="#" />}>
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <TerminalIcon className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">Acme Inc</span>
-                <span className="truncate text-xs">Enterprise</span>
-              </div>
+            <SidebarMenuButton>
+              <Plus />
+              <span>New Thread</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
+        <NavAgents items={data.navMain} />
+        <NavThreads projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
