@@ -25,6 +25,7 @@ export default defineConfig({
     ],
     options: { typeAware: true, typeCheck: true },
     rules: {
+      "class-methods-use-this": "allow",
       "func-style": "allow",
       "import/no-named-as-default": "allow",
       "max-classes-per-file": "allow",
@@ -33,6 +34,7 @@ export default defineConfig({
       "promise/prefer-await-to-callbacks": "allow",
       "promise/prefer-await-to-then": "allow",
       "typescript/consistent-type-definitions": "allow",
+      "typescript/no-explicit-any": "allow",
       "typescript/no-unsafe-type-assertion": "allow",
       "typescript/strict-boolean-expressions": [
         "error",

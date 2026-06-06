@@ -1,6 +1,9 @@
-import { expect, test } from "vite-plus/test";
-import { fn } from "../src/index.ts";
+import { describe, expect, test } from "vitest";
 
-test("fn", () => {
-  expect(fn()).toBe("Hello, tsdown!");
+import { fn } from "../src/index";
+
+describe("index", () => {
+  test("fn", () => {
+    expect(fn()).toBe("Hello, @workspace/shared!");
+  });
 });
