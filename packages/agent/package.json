@@ -11,7 +11,8 @@
   },
   "scripts": {},
   "dependencies": {
-    "ai": "catalog:"
+    "ai": "catalog:",
+    "file-type": "catalog:"
   },
   "devDependencies": {
     "@workspace/config": "workspace:*",

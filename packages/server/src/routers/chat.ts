@@ -5,6 +5,7 @@ import {
   type,
 } from "@orpc/server";
 import { Agent } from "@workspace/agent";
+import { createReadTool } from "@workspace/agent/tools/index";
 import type { UIMessage } from "ai";
 
 import { publicProcedure } from "../index";
@@ -17,6 +18,9 @@ export const chat = publicProcedure
     const agent = new Agent({
       name: "main",
       systemPrompt: "You are a helpful assistant.",
+      tools: {
+        "read-file": createReadTool(),
+      },
     });
 
     const provider = createOpenAICompatible({
@@ -27,7 +31,7 @@ export const chat = publicProcedure
 
     const result = await agent.stream({
       messages,
-      model: provider.chatModel(`${context.env.OPENAI_COMPATIBLE_MODEL}`),
+      model: provider.chatModel(context.env.OPENAI_COMPATIBLE_MODEL),
     });
 
     return streamToEventIterator(result.toUIMessageStream());

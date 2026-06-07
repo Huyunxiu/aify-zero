@@ -36,6 +36,7 @@ export default defineConfig({
       "typescript/consistent-type-definitions": "allow",
       "typescript/no-explicit-any": "allow",
       "typescript/no-unsafe-type-assertion": "allow",
+      "sort-keys": "allow",
       "typescript/strict-boolean-expressions": [
         "error",
         {
