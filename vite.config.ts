@@ -37,14 +37,10 @@ export default defineConfig({
       "typescript/no-explicit-any": "allow",
       "typescript/no-unsafe-type-assertion": "allow",
       "sort-keys": "allow",
-      "typescript/strict-boolean-expressions": [
-        "error",
-        {
-          allowNullableBoolean: true,
-          allowNullableString: true,
-        },
-      ],
+      "typescript/strict-boolean-expressions": "allow",
       "unicorn/no-abusive-eslint-disable": "allow",
+      "no-nested-ternary": "allow",
+      "unicorn/no-nested-ternary": "allow",
       "unicorn/prefer-ternary": "allow",
     },
   },

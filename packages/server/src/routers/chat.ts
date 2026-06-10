@@ -5,7 +5,10 @@ import {
   type,
 } from "@orpc/server";
 import { Agent } from "@workspace/agent";
-import { createReadTool } from "@workspace/agent/tools/index";
+import {
+  createReadFileTool,
+  createWriteFileTool,
+} from "@workspace/agent/tools/index";
 import type { UIMessage } from "ai";
 
 import { publicProcedure } from "../index";
@@ -19,7 +22,8 @@ export const chat = publicProcedure
       name: "main",
       systemPrompt: "You are a helpful assistant.",
       tools: {
-        "read-file": createReadTool(),
+        "read-file": createReadFileTool(),
+        "write-file": createWriteFileTool(),
       },
     });
 

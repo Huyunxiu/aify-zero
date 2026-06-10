@@ -11,6 +11,7 @@ import {
 import { createInterface } from "node:readline";
 
 import { tool } from "ai";
+import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -174,11 +175,11 @@ async function readAttachments(
   };
 }
 
-async function readBinaryFile(
+function readBinaryFile(
   title: string,
   filepath: string,
   mime: string
-): Promise<ReadToolOutput> {
+): ReadToolOutput {
   const output = `Cannot read binary file: ${filepath}, mime: ${mime}`;
   return {
     title,
@@ -357,7 +358,7 @@ type ReadToolOutput = {
   }[];
 };
 
-const createReadTool = () =>
+const createReadFileTool = () =>
   tool<ReadToolInput, ReadToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: READ_TOOL_INPUT_SCHEMA,
@@ -390,7 +391,7 @@ const createReadTool = () =>
 
       const [mime, ext, sample] = await getFileTypeFromBuffer(
         filepath,
-        Number(stats.size)
+        stats.size
       );
 
       if (stats.isFile() && mime && SUPPORTED_ATTACHMENT_MIMES.has(mime)) {
@@ -398,7 +399,7 @@ const createReadTool = () =>
       }
 
       if (stats.isFile() && ext && isBinaryFile(ext, sample)) {
-        return await readBinaryFile(title, filepath, mime);
+        return readBinaryFile(title, filepath, mime);
       }
 
       return await readTextFile(
@@ -423,4 +424,6 @@ const createReadTool = () =>
     },
   });
 
-export { createReadTool };
+type ReadFileToolType = InferUITool<ReturnType<typeof createReadFileTool>>;
+
+export { createReadFileTool, type ReadFileToolType };
