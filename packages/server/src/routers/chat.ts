@@ -8,6 +8,7 @@ import { Agent } from "@workspace/agent";
 import {
   createReadFileTool,
   createWriteFileTool,
+  createDeleteFileTool,
 } from "@workspace/agent/tools/index";
 import type { UIMessage } from "ai";
 
@@ -24,6 +25,7 @@ export const chat = publicProcedure
       tools: {
         "read-file": createReadFileTool(),
         "write-file": createWriteFileTool(),
+        "delete-file": createDeleteFileTool(),
       },
     });
 
