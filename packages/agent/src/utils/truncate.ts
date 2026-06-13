@@ -69,9 +69,9 @@ export class Truncate {
 
   async write(filename: string, text: string): Promise<string> {
     await mkdir(this.dir, { recursive: true });
-    const filePath = path.join(this.dir, `${filename}.txt`);
-    await writeFile(filePath, text, "utf-8");
-    return filePath;
+    const filepath = path.join(this.dir, `${filename}.txt`);
+    await writeFile(filepath, text, "utf-8");
+    return filepath;
   }
 
   async output(text: string): Promise<TruncateResult> {

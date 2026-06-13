@@ -42,6 +42,10 @@ export default defineConfig({
       "no-nested-ternary": "allow",
       "unicorn/no-nested-ternary": "allow",
       "unicorn/prefer-ternary": "allow",
+      "no-plusplus": "allow",
+      "no-negated-condition": "allow",
+      "unicorn/no-negated-condition": "allow",
+      "typescript/no-redundant-type-constituents": "allow",
     },
   },
   run: {

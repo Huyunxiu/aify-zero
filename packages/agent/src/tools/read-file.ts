@@ -20,6 +20,7 @@ import {
   isBinaryFile,
   normalizePath,
 } from "../utils/fs-util";
+import type { ToolOutput } from "./types";
 
 const DEFAULT_READ_LIMIT = 2000;
 const MAX_BYTES = 50 * 1024;
@@ -38,7 +39,7 @@ const DESCRIPTION = `
 Read a file or directory from the local filesystem. If the path does not exist, an error is returned.
 
 Usage:
-- The filepath parameter should be an absolute path.
+- The path parameter should be an absolute path.
 - By default, this tool returns up to ${MAX_LINE_LENGTH} lines from the start of the file.
 - The offset parameter is the line number to start from (1-indexed).
 - To read later sections, call this tool again with a larger offset.
@@ -51,7 +52,10 @@ Usage:
 - This tool can read image files and PDFs and return them as file attachments.
 `;
 
-async function miss(title: string, filepath: string): Promise<ReadToolOutput> {
+async function miss(
+  title: string,
+  filepath: string
+): Promise<ReadFileToolOutput> {
   const dir = dirname(filepath);
   const base = basename(filepath);
   let items: string[] = [];
@@ -74,6 +78,7 @@ async function miss(title: string, filepath: string): Promise<ReadToolOutput> {
     return {
       title,
       output: `File not found: ${filepath}\n\nDid you mean one of these?\n${items.join("\n")}`,
+      code: "error",
       metadata: {
         type: "miss",
         filepath,
@@ -84,6 +89,7 @@ async function miss(title: string, filepath: string): Promise<ReadToolOutput> {
   return {
     title,
     output: `File not found: ${filepath}`,
+    code: "error",
     metadata: {
       type: "miss",
       filepath,
@@ -96,7 +102,7 @@ async function readDirectory(
   filepath: string,
   offset: number,
   limit: number
-): Promise<ReadToolOutput> {
+): Promise<ReadFileToolOutput> {
   const dirents = await readdir(filepath, { withFileTypes: true });
   const entries = await Promise.all(
     dirents.map(async (dirent) => {
@@ -137,6 +143,7 @@ async function readDirectory(
   return {
     title,
     output,
+    code: "ok",
     metadata: {
       type: "directory",
       filepath,
@@ -153,12 +160,13 @@ async function readAttachments(
   title: string,
   filepath: string,
   mime: string
-): Promise<ReadToolOutput> {
+): Promise<ReadFileToolOutput> {
   const bytes = await readFile(filepath);
   const output = `File read successfully, mime.types: ${mime}`;
   return {
     title,
     output,
+    code: "ok",
     metadata: {
       type: "attachments",
       filepath,
@@ -179,11 +187,12 @@ function readBinaryFile(
   title: string,
   filepath: string,
   mime: string
-): ReadToolOutput {
+): ReadFileToolOutput {
   const output = `Cannot read binary file: ${filepath}, mime: ${mime}`;
   return {
     title,
     output,
+    code: "error",
     metadata: {
       type: "binary-file",
       filepath,
@@ -198,7 +207,7 @@ async function readTextFile(
   mime: string,
   offset: number,
   limit: number
-): Promise<ReadToolOutput> {
+): Promise<ReadFileToolOutput> {
   const stream = createReadStream(filepath, { encoding: "utf-8" });
   const rl = createInterface({
     crlfDelay: Number.POSITIVE_INFINITY,
@@ -270,6 +279,7 @@ async function readTextFile(
   return {
     title,
     output,
+    code: "ok",
     metadata: {
       type: "file",
       mime,
@@ -284,7 +294,7 @@ async function readTextFile(
 }
 
 const READ_TOOL_INPUT_SCHEMA = z.object({
-  filepath: z
+  path: z
     .string()
     .describe("The absolute path to the file or directory to read"),
   limit: z.coerce
@@ -301,45 +311,44 @@ const READ_TOOL_INPUT_SCHEMA = z.object({
     .describe("The line number to start reading from (1-indexed)"),
 });
 
-type ReadToolInput = z.infer<typeof READ_TOOL_INPUT_SCHEMA>;
+type ReadFileToolInput = z.infer<typeof READ_TOOL_INPUT_SCHEMA>;
 
-type ReadToolOutput = {
-  title: string;
-  output: string;
-  metadata:
-    | {
-        type: "miss";
-        filepath: string;
-      }
-    | {
-        type: "directory";
-        filepath: string;
-        truncated: boolean;
-        entries: string[];
-        limit: number;
-        offset: number;
-        totalEntries: number;
-      }
-    | {
-        type: "file";
-        mime: string;
-        text: string;
-        filepath: string;
-        truncated: boolean;
-        limit: number;
-        offset: number;
-        totalLines?: number;
-      }
-    | {
-        type: "attachments";
-        filepath: string;
-        mime: string;
-      }
-    | {
-        type: "binary-file";
-        filepath: string;
-        mime: string;
-      };
+type ReadFileToolOutputMetadata =
+  | {
+      type: "miss";
+      filepath: string;
+    }
+  | {
+      type: "directory";
+      filepath: string;
+      truncated: boolean;
+      entries: string[];
+      limit: number;
+      offset: number;
+      totalEntries: number;
+    }
+  | {
+      type: "file";
+      mime: string;
+      text: string;
+      filepath: string;
+      truncated: boolean;
+      limit: number;
+      offset: number;
+      totalLines?: number;
+    }
+  | {
+      type: "attachments";
+      filepath: string;
+      mime: string;
+    }
+  | {
+      type: "binary-file";
+      filepath: string;
+      mime: string;
+    };
+
+type ReadFileToolOutput = ToolOutput<string, ReadFileToolOutputMetadata> & {
   attachments?: {
     type: "file-data";
     /**
@@ -359,19 +368,20 @@ type ReadToolOutput = {
 };
 
 const createReadFileTool = () =>
-  tool<ReadToolInput, ReadToolOutput, AgentContext>({
+  tool<ReadFileToolInput, ReadFileToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: READ_TOOL_INPUT_SCHEMA,
     execute: async (input, { context }) => {
-      let { filepath } = input;
+      let { path: filepath } = input;
+      const { offset, limit } = input;
       if (!isAbsolute(filepath)) {
         filepath = resolve(context.workdir, filepath);
       }
       filepath = normalizePath(filepath);
       const title = relative(context.workdir, filepath);
 
-      const normalizedOffset = input.offset ?? 1;
-      const normalizedLimit = input.limit ?? DEFAULT_READ_LIMIT;
+      const normalizedOffset = offset ?? 1;
+      const normalizedLimit = limit ?? DEFAULT_READ_LIMIT;
 
       let stats;
       try {
@@ -411,12 +421,20 @@ const createReadFileTool = () =>
       );
     },
     toModelOutput({ output }) {
+      if (output.code === "error") {
+        return {
+          type: "error-text",
+          value: output.output,
+        };
+      }
+
       if (output.attachments?.length) {
         return {
           type: "content",
           value: output.attachments,
         };
       }
+
       return {
         type: "text",
         value: output.output,
