@@ -8,10 +8,12 @@ dotenv.config();
 
 export function createDb() {
   const client = createClient({
-    url: process.env.DB_FILE_NAME ?? "",
+    url: process.env.DATABASE_URL ?? "",
   });
 
   return drizzle({ client, schema });
 }
 
 export const db = createDb();
+
+export * from "./schema";

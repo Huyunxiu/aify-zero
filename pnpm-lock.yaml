@@ -144,6 +144,9 @@ catalogs:
     use-stick-to-bottom:
       specifier: ^1.1.4
       version: 1.1.4
+    uuid:
+      specifier: ^14.0.0
+      version: 14.0.0
     vite-plus:
       specifier: ^0.1.21
       version: 0.1.23
@@ -302,12 +305,18 @@ importers:
 
   packages/agent:
     dependencies:
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../db
       ai:
         specifier: 'catalog:'
         version: 7.0.0-beta.116(zod@4.4.3)
       file-type:
         specifier: 'catalog:'
         version: 22.0.1
+      uuid:
+        specifier: 'catalog:'
+        version: 14.0.0
     devDependencies:
       '@workspace/config':
         specifier: workspace:*
@@ -431,6 +440,9 @@ importers:
       '@streamdown/mermaid':
         specifier: 'catalog:'
         version: 1.0.2(react@19.2.6)
+      '@workspace/agent':
+        specifier: workspace:*
+        version: link:../agent
       '@workspace/server':
         specifier: workspace:*
         version: link:../server

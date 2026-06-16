@@ -65,6 +65,7 @@ catalog:
   typescript: ^6.0.2
   ultracite: 7.7.0
   use-stick-to-bottom: ^1.1.4
+  uuid: ^14.0.0
   vite: npm:@voidzero-dev/vite-plus-core@latest
   vite-plus: ^0.1.21
   vitest: npm:@voidzero-dev/vite-plus-test@latest

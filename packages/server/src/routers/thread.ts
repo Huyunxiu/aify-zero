@@ -5,29 +5,20 @@ import {
   type,
 } from "@orpc/server";
 import { Agent } from "@workspace/agent";
+import type { AgentUIMessage } from "@workspace/agent";
 import {
   createReadFileTool,
   createWriteFileTool,
   createDeleteFileTool,
+  createEditFileTool,
 } from "@workspace/agent/tools/index";
-import type { UIMessage } from "ai";
 
 import { publicProcedure } from "../index";
 
-export const chat = publicProcedure
-  .input(type<{ chatId: string; messages: UIMessage[] }>())
+export const thread = publicProcedure
+  .input(type<{ threadId: string; messages: AgentUIMessage[] }>())
   .handler(async ({ context, input }) => {
-    const { chatId, messages } = input;
-
-    const agent = new Agent({
-      name: "main",
-      systemPrompt: "You are a helpful assistant.",
-      tools: {
-        "read-file": createReadFileTool(),
-        "write-file": createWriteFileTool(),
-        "delete-file": createDeleteFileTool(),
-      },
-    });
+    const { threadId, messages } = input;
 
     const provider = createOpenAICompatible({
       apiKey: context.env.OPENAI_COMPATIBLE_BASE_KEY,
@@ -35,12 +26,27 @@ export const chat = publicProcedure
       name: context.env.OPENAI_COMPATIBLE_PROVIDER,
     });
 
-    const result = await agent.stream({
-      messages,
-      model: provider.chatModel(context.env.OPENAI_COMPATIBLE_MODEL),
+    const model = provider.chatModel(context.env.OPENAI_COMPATIBLE_MODEL);
+
+    const agent = new Agent({
+      name: "main",
+      threadId,
+      model,
+      systemPrompt: "You are a helpful assistant.",
+      tools: {
+        "read-file": createReadFileTool(),
+        "write-file": createWriteFileTool(),
+        "delete-file": createDeleteFileTool(),
+        "edit-file": createEditFileTool(),
+      },
     });
 
-    return streamToEventIterator(result.toUIMessageStream());
+    const stream = await agent.stream({
+      messages,
+      model,
+    });
+
+    return streamToEventIterator(stream);
   });
 
 export { eventIteratorToUnproxiedDataStream };

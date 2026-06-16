@@ -128,9 +128,9 @@ const messages: {
   },
 ];
 
-type ChatExampleProps = React.ComponentProps<"div">;
+type ThreadExampleProps = React.ComponentProps<"div">;
 
-function ChatExample() {
+function ThreadExample() {
   const [visibleMessages, setVisibleMessages] = useState<
     {
       key: string;
@@ -172,11 +172,11 @@ function ChatExample() {
   return (
     <div className="flex h-dvh w-full flex-row overflow-hidden">
       <div className="flex min-w-0 flex-col w-full">
-        {/* chat header */}
+        {/* thread header */}
         <TitleBar className="sticky top-0 flex h-14 items-center gap-2 bg-sidebar px-3" />
-        {/* chat container */}
+        {/* thread container */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-          {/* chat content */}
+          {/* thread content */}
           <div className="relative flex-1 bg-background">
             <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-background">
               <Conversation className="relative size-full mx-auto flex min-h-full min-w-0 max-w-4xl flex-col gap-5 py-6 md:gap-7">
@@ -200,7 +200,7 @@ function ChatExample() {
             </div>
           </div>
 
-          {/* chat input */}
+          {/* thread input */}
           <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 py-3 md:px-4 md:pb-4">
             <PromptInput onSubmit={handleSubmit}>
               <PromptInputBody>
@@ -218,5 +218,5 @@ function ChatExample() {
   );
 }
 
-export type { ChatExampleProps };
-export { ChatExample };
+export type { ThreadExampleProps };
+export { ThreadExample };

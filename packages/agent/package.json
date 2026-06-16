@@ -11,8 +11,10 @@
   },
   "scripts": {},
   "dependencies": {
+    "@workspace/db": "workspace:*",
     "ai": "catalog:",
-    "file-type": "catalog:"
+    "file-type": "catalog:",
+    "uuid": "catalog:"
   },
   "devDependencies": {
     "@workspace/config": "workspace:*",

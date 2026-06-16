@@ -24,6 +24,7 @@
     "@streamdown/code": "catalog:",
     "@streamdown/math": "catalog:",
     "@streamdown/mermaid": "catalog:",
+    "@workspace/agent": "workspace:*",
     "@workspace/server": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
