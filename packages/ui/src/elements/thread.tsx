@@ -23,17 +23,22 @@ import {
 import type { PromptInputMessage } from "./prompt-input";
 import { TitleBar } from "./title-bar";
 
-type ThreadProps = React.ComponentProps<"div">;
+export type ThreadProps = React.ComponentProps<"div"> & {
+  threadId: string | undefined;
+  initialMessages?: AgentUIMessage[];
+};
 
-function Thread() {
+export function Thread({ threadId, initialMessages }: ThreadProps) {
   const { sendMessage, messages } = useChat<AgentUIMessage>({
+    messages: initialMessages,
+    id: threadId,
     transport: {
       reconnectToStream() {
         throw new Error("Unsupported");
       },
       async sendMessages(options) {
         return eventIteratorToUnproxiedDataStream(
-          await client.thread(
+          await client.thread.create(
             {
               threadId: options.chatId,
               messages: options.messages,
@@ -54,7 +59,7 @@ function Thread() {
     <div className="flex h-dvh w-full flex-row overflow-hidden">
       <div className="flex min-w-0 flex-col w-full">
         {/* thread header */}
-        <TitleBar className="sticky top-0 flex h-14 items-center gap-2 bg-sidebar px-3" />
+        <TitleBar className="sticky top-0 flex h-14 items-center gap-2 bg-background px-3" />
         {/* thread container */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
           {/* thread content */}
@@ -135,6 +140,3 @@ function Thread() {
     </div>
   );
 }
-
-export type { ThreadProps };
-export { Thread };

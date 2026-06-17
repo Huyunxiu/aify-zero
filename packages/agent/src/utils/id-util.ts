@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from "uuid";
 
-export function generateChatId() {
+export function generateThreadId() {
   return uuidv7();
 }
 

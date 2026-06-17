@@ -1,4 +1,3 @@
-import { NavAgents } from "@workspace/ui/components/nav-agents";
 import { NavThreads } from "@workspace/ui/components/nav-threads";
 import { NavUser } from "@workspace/ui/components/nav-user";
 import {
@@ -15,12 +14,11 @@ import {
   BotIcon,
   BookOpenIcon,
   Settings2Icon,
-  FrameIcon,
-  PieChartIcon,
-  MapIcon,
   Plus,
 } from "lucide-react";
 import * as React from "react";
+import { useAppStore } from "../stores";
+import { generateThreadId } from "@workspace/agent/utils/id-util";
 
 const data = {
   user: {
@@ -115,31 +113,15 @@ const data = {
       ],
     },
   ],
-  projects: [
-    {
-      name: "Design Engineering",
-      url: "#",
-      icon: <FrameIcon />,
-    },
-    {
-      name: "Sales & Marketing",
-      url: "#",
-      icon: <PieChartIcon />,
-    },
-    {
-      name: "Travel",
-      url: "#",
-      icon: <MapIcon />,
-    },
-  ],
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const setChatId = useAppStore((state) => state.setThreadId);
   return (
     <Sidebar variant="sidebar" {...props}>
       <SidebarHeader className="py-0">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton>
+            <SidebarMenuButton onClick={() => setChatId(generateThreadId())}>
               <Plus />
               <span>New Thread</span>
             </SidebarMenuButton>
@@ -147,8 +129,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavAgents items={data.navMain} />
-        <NavThreads projects={data.projects} />
+        {/* <NavAgents items={data.navMain} /> */}
+        <NavThreads />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />

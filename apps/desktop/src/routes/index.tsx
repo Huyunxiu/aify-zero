@@ -5,7 +5,7 @@ import {
   SidebarProvider,
 } from "@workspace/ui/components/sidebar";
 import { Island, IslandGroup } from "@workspace/ui/elements/island";
-import { Thread } from "@workspace/ui/elements/thread";
+import { ThreadContainer } from "@workspace/ui/elements/thread-container";
 
 const Home = () => (
   <SidebarProvider>
@@ -13,7 +13,7 @@ const Home = () => (
     <SidebarInset className="bg-transparent">
       <IslandGroup orientation="horizontal">
         <Island defaultSize="50%">
-          <Thread />
+          <ThreadContainer />
         </Island>
         {/* <IslandHandle /> */}
         {/* <Island defaultSize="50%">
