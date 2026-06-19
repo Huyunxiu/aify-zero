@@ -173,14 +173,21 @@ type EditFileInput = z.infer<typeof EDIT_FILE_INPUT_SCHEMA>;
 
 type EditFileOutput = ToolOutput;
 
-const createEditFileTool = () =>
+type CreateEditFileToolProps = {
+  agentContext: AgentContext;
+};
+
+const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
   tool<EditFileInput, EditFileOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: EDIT_FILE_INPUT_SCHEMA,
-    execute: async (
-      { path: filepath, old_string, new_string, replace_all },
-      { context }
-    ) => {
+    execute: async ({
+      path: filepath,
+      old_string,
+      new_string,
+      replace_all,
+    }) => {
+      const context = agentContext;
       try {
         const absolutePath = path.isAbsolute(filepath)
           ? filepath

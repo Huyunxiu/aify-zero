@@ -34,11 +34,16 @@ type DeleteFileToolInput = z.infer<typeof DELETE_FILE_TOOL_INPUT_SCHEMA>;
 
 type DeleteFileToolOutput = ToolOutput;
 
-const createDeleteFileTool = () =>
+type CreateDeleteFileToolProps = {
+  agentContext: AgentContext;
+};
+
+const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>
   tool<DeleteFileToolInput, DeleteFileToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: DELETE_FILE_TOOL_INPUT_SCHEMA,
-    execute: async ({ path: filepath, recursive }, { context }) => {
+    execute: async ({ path: filepath, recursive }) => {
+      const context = agentContext;
       try {
         const absolutePath = path.isAbsolute(filepath)
           ? filepath

@@ -367,11 +367,16 @@ type ReadFileToolOutput = ToolOutput<string, ReadFileToolOutputMetadata> & {
   }[];
 };
 
-const createReadFileTool = () =>
+type CreateReadFileToolProps = {
+  agentContext: AgentContext;
+};
+
+const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
   tool<ReadFileToolInput, ReadFileToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: READ_TOOL_INPUT_SCHEMA,
-    execute: async (input, { context }) => {
+    execute: async (input) => {
+      const context = agentContext;
       let { path: filepath } = input;
       const { offset, limit } = input;
       if (!isAbsolute(filepath)) {

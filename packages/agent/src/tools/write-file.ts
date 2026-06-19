@@ -36,11 +36,16 @@ type WriteFileToolInput = z.infer<typeof WRITE_FILE_TOOL_INPUT_SCHEMA>;
 
 type WriteFileToolOutput = ToolOutput;
 
-const createWriteFileTool = () =>
+type CreateWriteFileToolProps = {
+  agentContext: AgentContext;
+};
+
+const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>
   tool<WriteFileToolInput, WriteFileToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: WRITE_FILE_TOOL_INPUT_SCHEMA,
-    execute: async ({ content, path: filepath }, { context }) => {
+    execute: async ({ content, path: filepath }) => {
+      const context = agentContext;
       try {
         const absolutePath = path.isAbsolute(filepath)
           ? filepath

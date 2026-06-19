@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
   eventIteratorToUnproxiedDataStream,
@@ -11,8 +13,10 @@ import type {
   AgentUIMessage,
   AgentUITools,
 } from "@workspace/agent";
+import type { AgentContext } from "@workspace/agent/context";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
 import {
+  createBashTool,
   createReadFileTool,
   createWriteFileTool,
   createDeleteFileTool,
@@ -58,16 +62,22 @@ const createThread = publicProcedure
 
     const model = provider.chatModel(context.env.OPENAI_COMPATIBLE_MODEL);
 
+    const agentContext: AgentContext = {
+      workdir: homedir(),
+    };
+
     const agent = new Agent({
       name: "main",
       threadId,
       model,
       systemPrompt: "You are a helpful assistant.",
+      context: agentContext,
       tools: {
-        "read-file": createReadFileTool(),
-        "write-file": createWriteFileTool(),
-        "delete-file": createDeleteFileTool(),
-        "edit-file": createEditFileTool(),
+        bash: createBashTool({ agentContext }),
+        "read-file": createReadFileTool({ agentContext }),
+        "write-file": createWriteFileTool({ agentContext }),
+        "delete-file": createDeleteFileTool({ agentContext }),
+        "edit-file": createEditFileTool({ agentContext }),
       },
     });
 

@@ -7,6 +7,7 @@ import {
 } from "ai";
 import type { LanguageModel, ToolSet } from "ai";
 
+import type { AgentContext } from "./context";
 import { AgentSession } from "./session";
 import type { AgentStore } from "./storage";
 import { SQLiteStore } from "./storage/sqlite-store";
@@ -28,6 +29,7 @@ export type AgentOptions = {
   session?: AgentSession;
   tools?: ToolSet;
   systemPrompt?: string;
+  context: AgentContext;
 };
 
 export type AgentStreamOptions = {
@@ -44,6 +46,7 @@ export class Agent {
   session: AgentSession;
   tools: ToolSet;
   store: AgentStore;
+  context: AgentContext;
 
   constructor(options: AgentOptions) {
     this.name = options.name;
@@ -53,6 +56,7 @@ export class Agent {
     this.session = options.session ?? new AgentSession({ messages: [] });
     this.tools = options.tools ?? {};
     this.store = new SQLiteStore();
+    this.context = options.context;
   }
 
   async stream({ messages, model, abortSignal }: AgentStreamOptions) {
