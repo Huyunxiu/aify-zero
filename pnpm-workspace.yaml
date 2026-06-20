@@ -19,6 +19,7 @@ allowBuilds:
   esbuild: true
   msw: true
 catalog:
+  "@ai-sdk/devtools": 1.0.0-canary.30
   "@ai-sdk/openai-compatible": ^3.0.0-beta.36
   "@ai-sdk/react": 4.0.0-beta.116
   "@electron-forge/cli": ^7.11.1

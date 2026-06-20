@@ -17,6 +17,7 @@
     "uuid": "catalog:"
   },
   "devDependencies": {
+    "@ai-sdk/devtools": "catalog:",
     "@workspace/config": "workspace:*",
     "typescript": "catalog:"
   }

@@ -56,8 +56,9 @@ export const createBashTool = ({ agentContext }: CreateBashToolProps) =>
     inputSchema: createBashToolSchema(agentContext),
     execute: async (
       { command, timeout, workdir, description },
-      { context, abortSignal }
+      { abortSignal }
     ) => {
+      const context = agentContext;
       const cwd = workdir ?? context.workdir;
       const resolvedTimeout = timeout ?? DEFAULT_TIMEOUT_MS;
 

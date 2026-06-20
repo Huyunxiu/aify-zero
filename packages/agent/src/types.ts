@@ -1,4 +1,4 @@
-import type { UIMessage } from "ai";
+import type { FinishReason, LanguageModelUsage, UIMessage } from "ai";
 
 import type {
   DeleteFileToolType,
@@ -8,7 +8,10 @@ import type {
 } from "./tools";
 
 export type AgentUIMetadata = {
-  createdAt: string;
+  createdAt?: number;
+  totalUsage?: LanguageModelUsage;
+  finishReason?: FinishReason;
+  rawFinishReason?: string;
 };
 
 export type AgentUIDataParts = Record<string, unknown>;

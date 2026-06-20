@@ -1,17 +1,18 @@
 import { useChat } from "@ai-sdk/react";
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import type { AgentUIMessage } from "@workspace/agent";
+import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import { MessageSquareIcon } from "lucide-react";
-import { Fragment } from "react/jsx-runtime";
 
 import { client } from "../lib/orpc";
+import { AssistantMessage } from "./assistant-message";
 import {
   Conversation,
   ConversationContent,
   ConversationEmptyState,
   ConversationScrollButton,
 } from "./conversation";
-import { Message, MessageContent } from "./message";
+import { Message, MessageContent, MessageResponse } from "./message";
 import {
   PromptInput,
   PromptInputBody,
@@ -22,6 +23,7 @@ import {
 } from "./prompt-input";
 import type { PromptInputMessage } from "./prompt-input";
 import { TitleBar } from "./title-bar";
+import { UserMessage } from "./user-message";
 
 export type ThreadProps = React.ComponentProps<"div"> & {
   threadId: string | undefined;
@@ -29,9 +31,17 @@ export type ThreadProps = React.ComponentProps<"div"> & {
 };
 
 export function Thread({ threadId, initialMessages }: ThreadProps) {
-  const { sendMessage, messages } = useChat<AgentUIMessage>({
+  const {
+    sendMessage,
+    messages,
+    addToolOutput,
+    addToolApprovalResponse,
+    regenerate,
+    error,
+  } = useChat<AgentUIMessage>({
     messages: initialMessages,
     id: threadId,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     transport: {
       reconnectToStream() {
         throw new Error("Unsupported");
@@ -55,6 +65,26 @@ export function Thread({ threadId, initialMessages }: ThreadProps) {
     void sendMessage({ text: message.text });
   };
 
+  const renderMessage = (message: AgentUIMessage) => {
+    if (message.role === "user") {
+      return <UserMessage key={message.id} message={message} />;
+    }
+
+    if (message.role === "assistant") {
+      return (
+        <AssistantMessage
+          addToolApprovalResponse={addToolApprovalResponse}
+          addToolOutput={addToolOutput}
+          key={message.id}
+          message={message}
+          regenerate={regenerate}
+        />
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div className="flex h-dvh w-full flex-row overflow-hidden">
       <div className="flex min-w-0 flex-col w-full">
@@ -74,48 +104,18 @@ export function Thread({ threadId, initialMessages }: ThreadProps) {
                       title="Start a conversation"
                     />
                   ) : (
-                    messages.map((message) =>
-                      message.parts.map((part, i) => {
-                        switch (part.type) {
-                          case "text": {
-                            return (
-                              <Fragment key={`${message.id}-${i}`}>
-                                <Message from={message.role}>
-                                  <MessageContent>{part.text}</MessageContent>
-                                </Message>
-                              </Fragment>
-                            );
-                          }
-                          case "custom": {
-                            return <></>;
-                          }
-                          case "dynamic-tool": {
-                            return <></>;
-                          }
-                          case "file": {
-                            return <></>;
-                          }
-                          case "reasoning": {
-                            return <></>;
-                          }
-                          case "reasoning-file": {
-                            return <></>;
-                          }
-                          case "source-document": {
-                            return <></>;
-                          }
-                          case "source-url": {
-                            return <></>;
-                          }
-                          case "step-start": {
-                            return <></>;
-                          }
-                          default: {
-                            return <></>;
-                          }
-                        }
-                      })
-                    )
+                    <>
+                      {messages.map(renderMessage)}
+                      {error && (
+                        <Message from="assistant">
+                          <MessageContent>
+                            <MessageResponse className="text-destructive">
+                              {error.message}
+                            </MessageResponse>
+                          </MessageContent>
+                        </Message>
+                      )}
+                    </>
                   )}
                 </ConversationContent>
                 <ConversationScrollButton />

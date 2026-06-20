@@ -4,11 +4,11 @@
 @import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
-@source "../../../apps/**/*.{ts,tsx}";
-@source "../../../components/**/*.{ts,tsx}";
+@source "../../../../apps/**/*.{ts,tsx}";
+@source "../../../../components/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
 
-@source "../node_modules/streamdown/dist/*.js";
+@source "../../../../node_modules/streamdown/dist/*.js";
 
 @theme inline {
   --font-heading: var(--font-sans);
@@ -175,4 +175,12 @@
   *::-webkit-scrollbar-corner {
     background: transparent;
   }
+}
+
+/* Streamdown */
+
+/* Streamdown Tables */
+[data-streamdown="table-wrapper"] {
+  padding: 0;
+  border: none;
 }

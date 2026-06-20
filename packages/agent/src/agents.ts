@@ -1,8 +1,11 @@
+import { DevToolsTelemetry } from "@ai-sdk/devtools";
 import type { MessageModel } from "@workspace/db";
 import {
   convertToModelMessages,
   createUIMessageStream,
   generateText,
+  isStepCount,
+  registerTelemetry,
   streamText,
 } from "ai";
 import type { LanguageModel, ToolSet } from "ai";
@@ -13,6 +16,8 @@ import type { AgentStore } from "./storage";
 import { SQLiteStore } from "./storage/sqlite-store";
 import type { AgentUIMessage } from "./types";
 import { generateMessageId } from "./utils/id-util";
+
+registerTelemetry(DevToolsTelemetry());
 
 export const TITLE_PROMPT = `Generate a very short thread title (2-5 words max) based on the user's message.
 Rules:
@@ -125,12 +130,27 @@ export class Agent {
           messages: modelMessages,
           tools: this.tools,
           abortSignal,
+          stopWhen: isStepCount(100),
         });
 
         writer.merge(
           result.toUIMessageStream({
             sendStart: false,
             generateMessageId,
+            messageMetadata: ({ part }) => {
+              if (part.type === "finish") {
+                return {
+                  createdAt: Date.now(),
+                  rawFinishReason: part.rawFinishReason,
+                  finishReason: part.finishReason,
+                  totalUsage: part.totalUsage,
+                };
+              }
+
+              return {
+                createdAt: Date.now(),
+              };
+            },
           })
         );
       },
