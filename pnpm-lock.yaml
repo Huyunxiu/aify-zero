@@ -57,6 +57,12 @@ catalogs:
     '@orpc/zod':
       specifier: ^1.14.3
       version: 1.14.4
+    '@pierre/diffs':
+      specifier: ^1.2.11
+      version: 1.2.11
+    '@radix-ui/react-use-controllable-state':
+      specifier: ^1.2.3
+      version: 1.2.3
     '@streamdown/cjk':
       specifier: ^1.0.3
       version: 1.0.3
@@ -135,6 +141,9 @@ catalogs:
     react-resizable-panels:
       specifier: ^4.11.2
       version: 4.11.2
+    shiki:
+      specifier: ^4.2.0
+      version: 4.2.0
     streamdown:
       specifier: ^2.5.0
       version: 2.5.0
@@ -437,6 +446,12 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.9
+      '@pierre/diffs':
+        specifier: 'catalog:'
+        version: 1.2.11(@shikijs/themes@4.2.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@radix-ui/react-use-controllable-state':
+        specifier: 'catalog:'
+        version: 1.2.3(@types/react@19.2.15)(react@19.2.6)
       '@streamdown/cjk':
         specifier: 'catalog:'
         version: 1.0.3(@types/mdast@4.0.4)(micromark-util-types@2.0.0)(micromark@4.0.0)(react@19.2.6)(unified@11.0.5)
@@ -458,6 +473,9 @@ importers:
       '@workspace/server':
         specifier: workspace:*
         version: link:../server
+      ai:
+        specifier: 'catalog:'
+        version: 7.0.0-beta.116(zod@4.4.3)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -491,6 +509,9 @@ importers:
       shadcn:
         specifier: ^4.7.0
         version: 4.8.3(@types/node@25.9.1)(typescript@6.0.3)
+      shiki:
+        specifier: 'catalog:'
+        version: 4.2.0
       streamdown:
         specifier: 'catalog:'
         version: 2.5.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -2052,6 +2073,36 @@ packages:
     resolution: {integrity: sha512-nkOyZEF1vH527CkdQtOp1HMrVFEM4ResURvI2JFeGoup+h+43J/k/FgdOR9b9Isxg+Yae7qVDa7y3nssE8b3TQ==}
     engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
 
+  '@pierre/diffs@1.2.11':
+    resolution: {integrity: sha512-lSkl5C7eb8Zq7Ote0+J5ZdVOlI72r2EU3vW4+06wULSQqkIMP8mkxG70lVj593b1XYlsM2hCvuyt0cKTA96plQ==}
+    peerDependencies:
+      react: ^18.3.1 || ^19.0.0
+      react-dom: ^18.3.1 || ^19.0.0
+
+  '@pierre/theme@1.0.3':
+    resolution: {integrity: sha512-sWHv11TMoqKxKDgTIk5VbhQjdPhs8DCcBxbjh3mRlS3YOM/OcrWoGX6MM8eBGn9cUu3M46Py0JnxsG2nJaFTuA==}
+    engines: {vscode: ^1.0.0}
+
+  '@pierre/theming@0.0.1':
+    resolution: {integrity: sha512-1thlEtJbqdyLzc1ZS2KQa1q7FzDGHT4dTEdKHoyQjOMeWWOmbVG5/ndEfOKfAb5Fzkz8cNJrOjFLiZoDH/A03A==}
+    peerDependencies:
+      '@pierre/theme': ^1.0.0
+      '@shikijs/themes': ^3.0.0 || ^4.0.0
+      react: ^18.3.1 || ^19.0.0
+      react-dom: ^18.3.1 || ^19.0.0
+      shiki: ^3.0.0 || ^4.0.0
+    peerDependenciesMeta:
+      '@pierre/theme':
+        optional: true
+      '@shikijs/themes':
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      shiki:
+        optional: true
+
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
@@ -2242,6 +2293,24 @@ packages:
       '@types/react':
         optional: true
 
+  '@radix-ui/react-use-controllable-state@1.2.3':
+    resolution: {integrity: sha512-PLzC90MS+ReootmjC597dvopoelpZ8Q61HJkDXZSExitIq7PL55vHNnesAHwguHK0aPfBnpdNzQtv1uliaqQrA==}
+    peerDependencies:
+      '@types/react': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
+  '@radix-ui/react-use-effect-event@0.0.3':
+    resolution: {integrity: sha512-6c8ZqvPTWILEKnyVkP53EGRCcpnJiKTC21sS/6R1GF5xKyHJJWQEPfkqlcgUkdRQivd6tb23abUwe4ngWmY0JA==}
+    peerDependencies:
+      '@types/react': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
   '@radix-ui/react-use-escape-keydown@1.1.0':
     resolution: {integrity: sha512-L7vwWlR1kTTQ3oh7g1O0CBF3YCyyTj8NmhLR+phShpyA50HCfBFKVJTpshm9PzLiKmehsrQzTYTpX9HvmC9rhw==}
     peerDependencies:
@@ -2262,6 +2331,15 @@ packages:
 
   '@radix-ui/react-use-layout-effect@1.1.1':
     resolution: {integrity: sha512-RbJRS4UWQFkzHTTwVymMTUv8EqYhOp8dOOviLj2ugtTiXRaRQS7GLGxZTLL1jWhMeoSCf5zmcZkqTl9IiYfXcQ==}
+    peerDependencies:
+      '@types/react': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
+  '@radix-ui/react-use-layout-effect@1.1.2':
+    resolution: {integrity: sha512-jrBWOxZITuGcnjRCM2t2U5ZPkCLxD+Ym6DjfssS5haTj2iiak/DOb64JeN6OdLfLgptb6/e2kKR+ZuTrGoZTPA==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
@@ -2373,20 +2451,52 @@ packages:
   '@shikijs/core@3.23.0':
     resolution: {integrity: sha512-NSWQz0riNb67xthdm5br6lAkvpDJRTgB36fxlo37ZzM2yq0PQFFzbd8psqC2XMPgCzo1fW6cVi18+ArJ44wqgA==}
 
+  '@shikijs/core@4.2.0':
+    resolution: {integrity: sha512-Hc87Ab1Ld/vEbZRCbwx344I5v+4RU8CVToUTRkqXL1+TjbuOp9U5Xa0M23V4GEWHxVn+yO5otb+HkQVm3ptWQQ==}
+    engines: {node: '>=20'}
+
   '@shikijs/engine-javascript@3.23.0':
     resolution: {integrity: sha512-aHt9eiGFobmWR5uqJUViySI1bHMqrAgamWE1TYSUoftkAeCCAiGawPMwM+VCadylQtF4V3VNOZ5LmfItH5f3yA==}
+
+  '@shikijs/engine-javascript@4.2.0':
+    resolution: {integrity: sha512-fjETeq1k5ffyXqRgS6+3hpvqseLalp1kjNfRbXpUgWR8FpZ1CmQfiNHovc5lncYjt/Vg5JK/WJEmLahjwMa0og==}
+    engines: {node: '>=20'}
 
   '@shikijs/engine-oniguruma@3.23.0':
     resolution: {integrity: sha512-1nWINwKXxKKLqPibT5f4pAFLej9oZzQTsby8942OTlsJzOBZ0MWKiwzMsd+jhzu8YPCHAswGnnN1YtQfirL35g==}
 
+  '@shikijs/engine-oniguruma@4.2.0':
+    resolution: {integrity: sha512-hTorK1dffPkpbMUk6Z+828PgRo7d07HbnizoP0hNPFjhxMHctj0Px/qoHeGMYafc6ju+u9iMldN4JbVzNQM++g==}
+    engines: {node: '>=20'}
+
   '@shikijs/langs@3.23.0':
     resolution: {integrity: sha512-2Ep4W3Re5aB1/62RSYQInK9mM3HsLeB91cHqznAJMuylqjzNVAVCMnNWRHFtcNHXsoNRayP9z1qj4Sq3nMqYXg==}
+
+  '@shikijs/langs@4.2.0':
+    resolution: {integrity: sha512-bwrVRlJ0wUhZxAbVdvBbv2TTC9yLsh4C/IO5Ofz0T8MQntgDvyVnkbjw9vi50r1kx7RCIJdnJnjZAwmAsXFLZQ==}
+    engines: {node: '>=20'}
+
+  '@shikijs/primitive@4.2.0':
+    resolution: {integrity: sha512-NOq+DtUkVBJtZMVXL5A0vI0Xk8nvDYaXetFHSJFlOqjDZIVhIPRYFdGkSoElDqNuegikcc3A76SNUa8dTqtAYA==}
+    engines: {node: '>=20'}
 
   '@shikijs/themes@3.23.0':
     resolution: {integrity: sha512-5qySYa1ZgAT18HR/ypENL9cUSGOeI2x+4IvYJu4JgVJdizn6kG4ia5Q1jDEOi7gTbN4RbuYtmHh0W3eccOrjMA==}
 
+  '@shikijs/themes@4.2.0':
+    resolution: {integrity: sha512-RX8IHYeLv8Cu2W6ruc3RxUqWn0IYCqSrMBzi/uRGAmfyDNOnNO5BF/Px7o97n4XTpmFTo5GbRaazuOWj+2ak2w==}
+    engines: {node: '>=20'}
+
+  '@shikijs/transformers@4.2.0':
+    resolution: {integrity: sha512-pKrYVNUr1oPjJvs76gkPPirDySx3GKG9O88P2Y3AQ+7AjSFws9Y+Ry/Q/6Yg6QpyigzjdQ6H5JAMNAvLXZ63dw==}
+    engines: {node: '>=20'}
+
   '@shikijs/types@3.23.0':
     resolution: {integrity: sha512-3JZ5HXOZfYjsYSk0yPwBrkupyYSLpAE26Qc0HLghhZNGTZg/SKxXIIgoxOpmmeQP0RRSDJTk1/vPfw9tbw+jSQ==}
+
+  '@shikijs/types@4.2.0':
+    resolution: {integrity: sha512-VT/MKtlpOhEPZloSH3Pb9WCZEBDoQVMa9jedp5UAwmJOar1DVc9DRODAxmYPW9M93IK4ryuqRejFfmlvlVDemw==}
+    engines: {node: '>=20'}
 
   '@shikijs/vscode-textmate@10.0.2':
     resolution: {integrity: sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg==}
@@ -3950,6 +4060,10 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
+  diff@8.0.3:
+    resolution: {integrity: sha512-qejHi7bcSD4hQAZE0tNAawRK1ZtafHDmMTMkrrIGgSLl7hTnQHmKCeB45xAcbfTqK2zowkM3j3bHt/4b/ARbYQ==}
+    engines: {node: '>=0.3.1'}
+
   diff@8.0.4:
     resolution: {integrity: sha512-DPi0FmjiSU5EvQV0++GFDOJ9ASQUVFh5kD+OzOnYdi7n3Wpm9hWWGfB/O2blfHcMVTL5WkQXSnRiK9makhrcnw==}
     engines: {node: '>=0.3.1'}
@@ -5170,6 +5284,9 @@ packages:
     engines: {node: '>=12'}
     deprecated: Please update to latest patch version to fix memory leak https://github.com/isaacs/node-lru-cache/issues/227
 
+  lru_map@0.4.1:
+    resolution: {integrity: sha512-I+lBvqMMFfqaV8CJCISjI3wbjmwVu/VyOoU7+qtu9d7ioW5klMgsTTiUOUp+DJvfTTzKXoPbyC6YfgkNcyPSOg==}
+
   lucide-react@1.17.0:
     resolution: {integrity: sha512-9FA9evdox/JQL5PT57fdA1x/yg8T7knJ98+zjTL3UfKza6pflQUUh3XtaQIHKvnsJw1lmsEyHVlt5jchYxOQ5w==}
     peerDependencies:
@@ -5949,6 +6066,9 @@ packages:
   property-information@7.1.0:
     resolution: {integrity: sha512-TwEZ+X+yCJmYfL7TPUOcvBZ4QfoT5YenQiJuX//0th53DE6w0xxLEtfK3iyryQFddXuvkIk51EEgrJQ0WJkOmQ==}
 
+  property-information@7.2.0:
+    resolution: {integrity: sha512-IAtzIB6sUiWaJYrX9smp3V46pBGbBeLFRGdh25kg1334VcBlD8HzhPeNIWQH9zhGmo2itIe25EHt9dQP7G5hmg==}
+
   proxy-addr@2.0.7:
     resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
@@ -6320,6 +6440,10 @@ packages:
 
   shiki@3.23.0:
     resolution: {integrity: sha512-55Dj73uq9ZXL5zyeRPzHQsK7Nbyt6Y10k5s7OjuFZGMhpp4r/rsLBH0o/0fstIzX1Lep9VxefWljK/SKCzygIA==}
+
+  shiki@4.2.0:
+    resolution: {integrity: sha512-hjNax6o/ylDy9lefQEaSDtzaT3iVNtZ3WmpQnbuQNoG4xvnSKf2kSKbihZVO4JRG1TTMejs7CmNRYlWgAL66pQ==}
+    engines: {node: '>=20'}
 
   side-channel-list@1.0.1:
     resolution: {integrity: sha512-mjn/0bi/oUURjc5Xl7IaWi/OJJJumuoJFQJfDDyO46+hBWsfaVM65TBHq2eoZBhzl9EchxOijpkbRC8SVBQU0w==}
@@ -8782,6 +8906,30 @@ snapshots:
 
   '@oxlint/plugins@1.61.0': {}
 
+  '@pierre/diffs@1.2.11(@shikijs/themes@4.2.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@pierre/theme': 1.0.3
+      '@pierre/theming': 0.0.1(@pierre/theme@1.0.3)(@shikijs/themes@4.2.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(shiki@4.2.0)
+      '@shikijs/transformers': 4.2.0
+      diff: 8.0.3
+      hast-util-to-html: 9.0.5
+      lru_map: 0.4.1
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+      shiki: 4.2.0
+    transitivePeerDependencies:
+      - '@shikijs/themes'
+
+  '@pierre/theme@1.0.3': {}
+
+  '@pierre/theming@0.0.1(@pierre/theme@1.0.3)(@shikijs/themes@4.2.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(shiki@4.2.0)':
+    optionalDependencies:
+      '@pierre/theme': 1.0.3
+      '@shikijs/themes': 4.2.0
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+      shiki: 4.2.0
+
   '@polka/url@1.0.0-next.29': {}
 
   '@quansync/fs@1.0.0':
@@ -8939,6 +9087,21 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.15
 
+  '@radix-ui/react-use-controllable-state@1.2.3(@types/react@19.2.15)(react@19.2.6)':
+    dependencies:
+      '@radix-ui/react-use-effect-event': 0.0.3(@types/react@19.2.15)(react@19.2.6)
+      '@radix-ui/react-use-layout-effect': 1.1.2(@types/react@19.2.15)(react@19.2.6)
+      react: 19.2.6
+    optionalDependencies:
+      '@types/react': 19.2.15
+
+  '@radix-ui/react-use-effect-event@0.0.3(@types/react@19.2.15)(react@19.2.6)':
+    dependencies:
+      '@radix-ui/react-use-layout-effect': 1.1.2(@types/react@19.2.15)(react@19.2.6)
+      react: 19.2.6
+    optionalDependencies:
+      '@types/react': 19.2.15
+
   '@radix-ui/react-use-escape-keydown@1.1.0(@types/react@19.2.15)(react@19.2.6)':
     dependencies:
       '@radix-ui/react-use-callback-ref': 1.1.0(@types/react@19.2.15)(react@19.2.6)
@@ -8953,6 +9116,12 @@ snapshots:
       '@types/react': 19.2.15
 
   '@radix-ui/react-use-layout-effect@1.1.1(@types/react@19.2.15)(react@19.2.6)':
+    dependencies:
+      react: 19.2.6
+    optionalDependencies:
+      '@types/react': 19.2.15
+
+  '@radix-ui/react-use-layout-effect@1.1.2(@types/react@19.2.15)(react@19.2.6)':
     dependencies:
       react: 19.2.6
     optionalDependencies:
@@ -9018,9 +9187,23 @@ snapshots:
       '@types/hast': 3.0.4
       hast-util-to-html: 9.0.5
 
+  '@shikijs/core@4.2.0':
+    dependencies:
+      '@shikijs/primitive': 4.2.0
+      '@shikijs/types': 4.2.0
+      '@shikijs/vscode-textmate': 10.0.2
+      '@types/hast': 3.0.4
+      hast-util-to-html: 9.0.5
+
   '@shikijs/engine-javascript@3.23.0':
     dependencies:
       '@shikijs/types': 3.23.0
+      '@shikijs/vscode-textmate': 10.0.2
+      oniguruma-to-es: 4.3.6
+
+  '@shikijs/engine-javascript@4.2.0':
+    dependencies:
+      '@shikijs/types': 4.2.0
       '@shikijs/vscode-textmate': 10.0.2
       oniguruma-to-es: 4.3.6
 
@@ -9029,15 +9212,44 @@ snapshots:
       '@shikijs/types': 3.23.0
       '@shikijs/vscode-textmate': 10.0.2
 
+  '@shikijs/engine-oniguruma@4.2.0':
+    dependencies:
+      '@shikijs/types': 4.2.0
+      '@shikijs/vscode-textmate': 10.0.2
+
   '@shikijs/langs@3.23.0':
     dependencies:
       '@shikijs/types': 3.23.0
+
+  '@shikijs/langs@4.2.0':
+    dependencies:
+      '@shikijs/types': 4.2.0
+
+  '@shikijs/primitive@4.2.0':
+    dependencies:
+      '@shikijs/types': 4.2.0
+      '@shikijs/vscode-textmate': 10.0.2
+      '@types/hast': 3.0.4
 
   '@shikijs/themes@3.23.0':
     dependencies:
       '@shikijs/types': 3.23.0
 
+  '@shikijs/themes@4.2.0':
+    dependencies:
+      '@shikijs/types': 4.2.0
+
+  '@shikijs/transformers@4.2.0':
+    dependencies:
+      '@shikijs/core': 4.2.0
+      '@shikijs/types': 4.2.0
+
   '@shikijs/types@3.23.0':
+    dependencies:
+      '@shikijs/vscode-textmate': 10.0.2
+      '@types/hast': 3.0.4
+
+  '@shikijs/types@4.2.0':
     dependencies:
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.4
@@ -10528,6 +10740,8 @@ snapshots:
     dependencies:
       dequal: 2.0.3
 
+  diff@8.0.3: {}
+
   diff@8.0.4: {}
 
   dir-compare@4.2.0:
@@ -11306,7 +11520,7 @@ snapshots:
       '@types/unist': 3.0.3
       devlop: 1.1.0
       hastscript: 9.0.1
-      property-information: 7.1.0
+      property-information: 7.2.0
       vfile: 6.0.3
       vfile-location: 5.0.3
       web-namespaces: 2.0.1
@@ -11350,7 +11564,7 @@ snapshots:
       hast-util-whitespace: 3.0.0
       html-void-elements: 3.0.0
       mdast-util-to-hast: 13.2.1
-      property-information: 7.1.0
+      property-information: 7.2.0
       space-separated-tokens: 2.0.2
       stringify-entities: 4.0.4
       zwitch: 2.0.4
@@ -11380,7 +11594,7 @@ snapshots:
       '@types/hast': 3.0.4
       comma-separated-tokens: 2.0.3
       devlop: 1.1.0
-      property-information: 7.1.0
+      property-information: 7.2.0
       space-separated-tokens: 2.0.2
       web-namespaces: 2.0.1
       zwitch: 2.0.4
@@ -11401,7 +11615,7 @@ snapshots:
       '@types/hast': 3.0.4
       comma-separated-tokens: 2.0.3
       hast-util-parse-selector: 4.0.0
-      property-information: 7.1.0
+      property-information: 7.2.0
       space-separated-tokens: 2.0.2
 
   headers-polyfill@5.0.1:
@@ -11812,6 +12026,8 @@ snapshots:
       yallist: 3.1.1
 
   lru-cache@7.7.1: {}
+
+  lru_map@0.4.1: {}
 
   lucide-react@1.17.0(react@19.2.6):
     dependencies:
@@ -12880,6 +13096,8 @@ snapshots:
 
   property-information@7.1.0: {}
 
+  property-information@7.2.0: {}
+
   proxy-addr@2.0.7:
     dependencies:
       forwarded: 0.2.0
@@ -13352,6 +13570,17 @@ snapshots:
       '@shikijs/langs': 3.23.0
       '@shikijs/themes': 3.23.0
       '@shikijs/types': 3.23.0
+      '@shikijs/vscode-textmate': 10.0.2
+      '@types/hast': 3.0.4
+
+  shiki@4.2.0:
+    dependencies:
+      '@shikijs/core': 4.2.0
+      '@shikijs/engine-javascript': 4.2.0
+      '@shikijs/engine-oniguruma': 4.2.0
+      '@shikijs/langs': 4.2.0
+      '@shikijs/themes': 4.2.0
+      '@shikijs/types': 4.2.0
       '@shikijs/vscode-textmate': 10.0.2
       '@types/hast': 3.0.4
 

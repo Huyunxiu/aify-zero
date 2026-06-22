@@ -36,6 +36,8 @@ catalog:
   "@orpc/server": ^1.14.3
   "@orpc/tanstack-query": ^1.14.3
   "@orpc/zod": ^1.14.3
+  '@pierre/diffs': ^1.2.11
+  '@radix-ui/react-use-controllable-state': ^1.2.3
   "@streamdown/cjk": ^1.0.3
   "@streamdown/code": ^1.1.1
   "@streamdown/math": ^1.0.2
@@ -62,6 +64,7 @@ catalog:
   nanoid: ^5.1.11
   react-i18next: ^17.0.8
   react-resizable-panels: ^4.11.2
+  shiki: ^4.2.0
   streamdown: ^2.5.0
   typescript: ^6.0.2
   ultracite: 7.7.0
