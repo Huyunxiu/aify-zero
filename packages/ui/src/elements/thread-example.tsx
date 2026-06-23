@@ -178,7 +178,7 @@ function ThreadExample() {
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
           {/* thread content */}
           <div className="relative flex-1 bg-background">
-            <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-background">
+            <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
               <Conversation className="relative size-full mx-auto flex min-h-full min-w-0 max-w-4xl flex-col gap-5 py-6 md:gap-7">
                 <ConversationContent>
                   {visibleMessages.length === 0 ? (
@@ -201,7 +201,7 @@ function ThreadExample() {
           </div>
 
           {/* thread input */}
-          <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 py-3 md:px-4 md:pb-4">
+          <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 py-3 pt-1 md:px-4 md:pb-4">
             <PromptInput onSubmit={handleSubmit}>
               <PromptInputBody>
                 <PromptInputTextarea />

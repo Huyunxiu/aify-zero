@@ -52,7 +52,7 @@ export const AssistantMessage = ({
   }
 
   const { answerPart, stepParts } = splitAssistantMessageParts(message);
-  console.log(111, stepParts);
+  console.log("stepParts", stepParts);
 
   return (
     <div className="flex flex-col gap-4">

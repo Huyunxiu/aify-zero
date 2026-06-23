@@ -184,3 +184,20 @@
   padding: 0;
   border: none;
 }
+
+/* Scroll Mask */
+.scroll-mask {
+  --fade-size: 40px;
+  --scroll-area-overflow-x-start: 0px;
+  --scroll-area-overflow-x-end: 0px;
+  --scroll-area-overflow-y-start: 0px;
+  --scroll-area-overflow-y-end: 717px;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    black min(var(--fade-size), var(--scroll-area-overflow-y-start)),
+    black calc(100% - min(var(--fade-size), var(--scroll-area-overflow-y-end, var(--fade-size)))),
+    transparent 100%
+  );
+  mask-repeat: no-repeat;
+}

@@ -6,33 +6,78 @@ import type { UIMessage } from "ai";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";
 import type { ComponentProps } from "react";
 import { useCallback } from "react";
+import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area"
 import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
+import { ScrollBar } from "../components/scroll-area";
 
-export type ConversationProps = ComponentProps<typeof StickToBottom>;
+export type ConversationProps = ComponentProps<'div'>;
 
-export const Conversation = ({ className, ...props }: ConversationProps) => (
+export const Conversation = ({ className, children, ...props }: ConversationProps) => (
   <StickToBottom
-    className={cn("relative flex-1 overflow-y-hidden", className)}
+    className={cn("relative", className)}
     initial="smooth"
     resize="smooth"
     role="log"
-    {...props}
-  />
+  >
+    <ScrollAreaPrimitive.Root
+      data-slot="scroll-area"
+      className={cn("relative flex-1 overflow-y-hidden", className)}
+      {...props}
+    >
+      {children}
+      <ScrollBar />
+      <ScrollAreaPrimitive.Corner />
+    </ScrollAreaPrimitive.Root>
+  </StickToBottom>
 );
 
-export type ConversationContentProps = ComponentProps<
-  typeof StickToBottom.Content
->;
+export type ConversationContentProps = ComponentProps<'div'>;
 
 export const ConversationContent = ({
   className,
+  children,
   ...props
-}: ConversationContentProps) => (
-  <StickToBottom.Content
-    className={cn("flex flex-col gap-8 p-4", className)}
-    {...props}
-  />
-);
+}: ConversationContentProps) => {
+  const context = useStickToBottomContext();
+  return (
+    <ScrollAreaPrimitive.Viewport
+      data-slot="scroll-area-viewport"
+      className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 scroll-mask"
+      ref={context.scrollRef}
+      {...props}
+    >
+      <div className="flex flex-col gap-8 p-4 py-6" ref={context.contentRef}>
+        {children}
+      </div>
+    </ScrollAreaPrimitive.Viewport>
+  )
+}
+
+// export type ConversationProps = ComponentProps<typeof StickToBottom>;
+
+// export const Conversation = ({ className, ...props }: ConversationProps) => (
+//   <StickToBottom
+//     className={cn("relative flex-1 overflow-y-hidden", className)}
+//     initial="smooth"
+//     resize="smooth"
+//     role="log"
+//     {...props}
+//   />
+// );
+
+// export type ConversationContentProps = ComponentProps<
+//   typeof StickToBottom.Content
+// >;
+
+// export const ConversationContent = ({
+//   className,
+//   ...props
+// }: ConversationContentProps) => (
+//   <StickToBottom.Content
+//     className={cn("flex flex-col gap-8 p-4 pb-0", className)}
+//     {...props}
+//   />
+// );
 
 export type ConversationEmptyStateProps = ComponentProps<"div"> & {
   title?: string;
@@ -75,7 +120,7 @@ export const ConversationScrollButton = ({
   className,
   ...props
 }: ConversationScrollButtonProps) => {
-  const { isAtBottom, scrollToBottom } = useStickToBottomContext();
+  const { isAtBottom, scrollToBottom, state } = useStickToBottomContext();
 
   const handleScrollToBottom = useCallback(() => {
     scrollToBottom();
