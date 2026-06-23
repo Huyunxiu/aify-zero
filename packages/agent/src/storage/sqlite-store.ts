@@ -96,10 +96,14 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async updateMessage(id: string, content: unknown): Promise<number> {
+  async updateMessage(
+    id: string,
+    content: unknown,
+    metadata: unknown
+  ): Promise<number> {
     const result = await db
       .update(message_table)
-      .set({ content })
+      .set({ content, metadata })
       .where(eq(message_table.id, id));
     return result.rowsAffected;
   }

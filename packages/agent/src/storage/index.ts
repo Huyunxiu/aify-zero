@@ -32,5 +32,5 @@ export interface AgentStore {
 
   saveMessages(messages: MessageInsertModel[]): Promise<number>;
 
-  updateMessage(id: string, parts: unknown): Promise<number>;
+  updateMessage(id: string, parts: unknown, metadata: unknown): Promise<number>;
 }

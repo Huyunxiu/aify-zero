@@ -111,6 +111,9 @@ export class Agent {
         writer.write({
           type: "start",
           messageId: generateMessageId(),
+          messageMetadata: {
+            createdAt: Date.now(),
+          },
         });
 
         // Handle title generation in parallel
@@ -136,6 +139,8 @@ export class Agent {
         writer.merge(
           result.toUIMessageStream({
             sendStart: false,
+            sendReasoning: true,
+            sendFinish: true,
             generateMessageId,
             messageMetadata: ({ part }) => {
               if (part.type === "finish") {
@@ -146,10 +151,6 @@ export class Agent {
                   totalUsage: part.totalUsage,
                 };
               }
-
-              return {
-                createdAt: Date.now(),
-              };
             },
           })
         );
@@ -159,7 +160,11 @@ export class Agent {
         const finishedMsg = data.responseMessage;
         const existingMsg = await this.store.existsMessages(finishedMsg.id);
         if (existingMsg) {
-          await this.store.updateMessage(finishedMsg.id, finishedMsg.parts);
+          await this.store.updateMessage(
+            finishedMsg.id,
+            finishedMsg.parts,
+            finishedMsg.metadata
+          );
           return;
         }
 
@@ -167,6 +172,7 @@ export class Agent {
           id: finishedMsg.id,
           threadId: this.threadId,
           role: finishedMsg.role,
+          metadata: finishedMsg.metadata,
           content: finishedMsg.parts,
           createdAt: new Date(),
         });
