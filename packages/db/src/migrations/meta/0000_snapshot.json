@@ -14,8 +14,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "thread_id": {
-          "name": "thread_id",
+        "session_id": {
+          "name": "session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -60,11 +60,9 @@
         }
       },
       "indexes": {
-        "idx_threadid": {
-          "name": "idx_threadid",
-          "columns": [
-            "thread_id"
-          ],
+        "idx_sessionid": {
+          "name": "idx_sessionid",
+          "columns": ["session_id"],
           "isUnique": false
         }
       },
@@ -73,8 +71,8 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "thread": {
-      "name": "thread",
+    "session": {
+      "name": "session",
       "columns": {
         "id": {
           "name": "id",

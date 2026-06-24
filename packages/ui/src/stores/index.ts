@@ -1,13 +1,13 @@
 import { create } from "zustand";
 
 interface AppState {
-  threadId: string | undefined;
-  setThreadId: (chatId: string) => void;
+  sessionId: string | undefined;
+  setSessionId: (chatId: string) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  threadId: undefined,
-  setThreadId: (chatId: string) => {
-    set(() => ({ threadId: chatId }));
+  sessionId: undefined,
+  setSessionId: (chatId: string) => {
+    set(() => ({ sessionId: chatId }));
   },
 }));

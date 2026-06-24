@@ -1,4 +1,4 @@
-import { NavThreads } from "@workspace/ui/components/nav-threads";
+import { NavSessions } from "@workspace/ui/components/nav-sessions";
 import { NavUser } from "@workspace/ui/components/nav-user";
 import {
   Sidebar,
@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { useAppStore } from "../stores";
-import { generateThreadId } from "@workspace/agent/utils/id-util";
+import { generateSessionId } from "@workspace/agent/utils/id-util";
 
 const data = {
   user: {
@@ -115,22 +115,22 @@ const data = {
   ],
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const setChatId = useAppStore((state) => state.setThreadId);
+  const setChatId = useAppStore((state) => state.setSessionId);
   return (
     <Sidebar variant="sidebar" {...props}>
       <SidebarHeader className="py-0">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={() => setChatId(generateThreadId())}>
+            <SidebarMenuButton onClick={() => setChatId(generateSessionId())}>
               <Plus />
-              <span>New Thread</span>
+              <span>New Session</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
         {/* <NavAgents items={data.navMain} /> */}
-        <NavThreads />
+        <NavSessions />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />

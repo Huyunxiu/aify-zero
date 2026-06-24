@@ -19,7 +19,7 @@ import { generateMessageId } from "./utils/id-util";
 
 registerTelemetry(DevToolsTelemetry());
 
-export const TITLE_PROMPT = `Generate a very short thread title (2-5 words max) based on the user's message.
+export const TITLE_PROMPT = `Generate a very short session title (2-5 words max) based on the user's message.
 Rules:
 - Maximum 30 characters
 - No quotes, colons, hashtags, or markdown
@@ -29,7 +29,7 @@ Rules:
 
 export type AgentOptions = {
   name: string;
-  threadId: string;
+  sessionId: string;
   model: LanguageModel;
   session?: AgentSession;
   tools?: ToolSet;
@@ -45,7 +45,7 @@ export type AgentStreamOptions = {
 
 export class Agent {
   name: string;
-  threadId: string;
+  sessionId: string;
   model: LanguageModel;
   systemPrompt?: string;
   session: AgentSession;
@@ -55,7 +55,7 @@ export class Agent {
 
   constructor(options: AgentOptions) {
     this.name = options.name;
-    this.threadId = options.threadId;
+    this.sessionId = options.sessionId;
     this.model = options.model;
     this.systemPrompt = options.systemPrompt;
     this.session = options.session ?? new AgentSession({ messages: [] });
@@ -73,11 +73,11 @@ export class Agent {
       throw new Error("no message.");
     }
 
-    const thread = await this.store.getThreadById(this.threadId);
-    if (!thread) {
-      await this.store.saveThread({
-        id: this.threadId,
-        title: "New thread",
+    const session = await this.store.getSessionById(this.sessionId);
+    if (!session) {
+      await this.store.saveSession({
+        id: this.sessionId,
+        title: "New session",
         metadata: "",
       });
 
@@ -85,8 +85,8 @@ export class Agent {
       titlePromise = this.generateChatTitle(mostRecentMessage);
     }
 
-    const previousMessages = await this.store.getMessagesByThreadId(
-      this.threadId
+    const previousMessages = await this.store.getMessagesBySessionId(
+      this.sessionId
     );
     const previousUIMessages = this.toAgentUIMessage(previousMessages);
 
@@ -98,7 +98,7 @@ export class Agent {
     if (mostRecentMessage?.role === "user") {
       await this.store.saveMessage({
         id: mostRecentMessage.id,
-        threadId: this.threadId,
+        sessionId: this.sessionId,
         role: "user",
         metadata: "",
         content: mostRecentMessage.parts,
@@ -119,7 +119,7 @@ export class Agent {
         // Handle title generation in parallel
         // oxlint-disable-next-line typescript/no-floating-promises
         titlePromise?.then(async (title) => {
-          await this.store.updateThreadById(this.threadId, title);
+          await this.store.updateSessionById(this.sessionId, title);
           writer.write({
             type: "data-chat-title",
             data: title,
@@ -170,7 +170,7 @@ export class Agent {
 
         await this.store.saveMessage({
           id: finishedMsg.id,
-          threadId: this.threadId,
+          sessionId: this.sessionId,
           role: finishedMsg.role,
           metadata: finishedMsg.metadata,
           content: finishedMsg.parts,

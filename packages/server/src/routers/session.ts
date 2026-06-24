@@ -22,7 +22,7 @@ import {
   createDeleteFileTool,
   createEditFileTool,
 } from "@workspace/agent/tools/index";
-import type { MessageModel, ThreadModel } from "@workspace/db";
+import type { MessageModel, SessionModel } from "@workspace/db";
 import type { UIMessagePart } from "ai";
 import z from "zod";
 
@@ -48,11 +48,11 @@ function convertAgentUIMessages(
   return agentUIMessages;
 }
 
-const createThread = publicProcedure
-  .route({ method: "POST", path: "/threads" })
-  .input(type<{ threadId: string; messages: AgentUIMessage[] }>())
+const createSession = publicProcedure
+  .route({ method: "POST", path: "/sessions" })
+  .input(type<{ sessionId: string; messages: AgentUIMessage[] }>())
   .handler(async ({ context, input }) => {
-    const { threadId, messages } = input;
+    const { sessionId, messages } = input;
 
     const provider = createOpenAICompatible({
       apiKey: context.env.OPENAI_COMPATIBLE_BASE_KEY,
@@ -68,7 +68,7 @@ const createThread = publicProcedure
 
     const agent = new Agent({
       name: "main",
-      threadId,
+      sessionId,
       model,
       systemPrompt: "You are a helpful assistant.",
       context: agentContext,
@@ -89,51 +89,51 @@ const createThread = publicProcedure
     return streamToEventIterator(stream);
   });
 
-const listThreads = publicProcedure
-  .route({ method: "GET", path: "/threads" })
+const listSessions = publicProcedure
+  .route({ method: "GET", path: "/sessions" })
   .input(
     type<{ cursor?: string; limit?: number; direction?: "asc" | "desc" }>()
   )
   .handler(async ({ input }) => {
     const { cursor, limit, direction } = input;
     const store = new SQLiteStore();
-    const threads = await store.listThreads({
+    const sessions = await store.listSessions({
       cursor,
       limit,
       direction,
     });
-    return { threads };
+    return { sessions };
   });
 
-export const listThreadMessages = publicProcedure
-  .route({ method: "GET", path: "/threads/{threadId}" })
-  .input(z.object({ threadId: z.string() }))
+export const listSessionMessages = publicProcedure
+  .route({ method: "GET", path: "/sessions/{sessionId}" })
+  .input(z.object({ sessionId: z.string() }))
   .handler(async ({ input }) => {
-    const { threadId } = input;
+    const { sessionId } = input;
 
-    let thread: ThreadModel | null;
+    let session: SessionModel | null;
 
     const store = new SQLiteStore();
     try {
-      thread = await store.getThreadById(threadId);
+      session = await store.getSessionById(sessionId);
     } catch {
       throw new ORPCError("BAD_REQUEST", {
         message: "chat not found.",
       });
     }
 
-    if (!thread) {
+    if (!session) {
       return [];
     }
 
-    const messages = await store.getMessagesByThreadId(thread.id);
+    const messages = await store.getMessagesBySessionId(session.id);
     return convertAgentUIMessages(messages);
   });
 
 export { eventIteratorToUnproxiedDataStream };
 
-export const thread = {
-  create: createThread,
-  list: listThreads,
-  listThreadMessages,
+export const session = {
+  create: createSession,
+  list: listSessions,
+  listSessionMessages,
 };

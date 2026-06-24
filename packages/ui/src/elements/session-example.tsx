@@ -128,9 +128,9 @@ const messages: {
   },
 ];
 
-type ThreadExampleProps = React.ComponentProps<"div">;
+type SessionExampleProps = React.ComponentProps<"div">;
 
-function ThreadExample() {
+function SessionExample() {
   const [visibleMessages, setVisibleMessages] = useState<
     {
       key: string;
@@ -172,11 +172,11 @@ function ThreadExample() {
   return (
     <div className="flex h-dvh w-full flex-row overflow-hidden">
       <div className="flex min-w-0 flex-col w-full">
-        {/* thread header */}
+        {/* session header */}
         <TitleBar className="sticky top-0 flex h-14 items-center gap-2 bg-sidebar px-3" />
-        {/* thread container */}
+        {/* session container */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
-          {/* thread content */}
+          {/* session content */}
           <div className="relative flex-1 bg-background">
             <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
               <Conversation className="relative size-full mx-auto flex min-h-full min-w-0 max-w-4xl flex-col gap-5 py-6 md:gap-7">
@@ -200,7 +200,7 @@ function ThreadExample() {
             </div>
           </div>
 
-          {/* thread input */}
+          {/* session input */}
           <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 py-3 pt-1 md:px-4 md:pb-4">
             <PromptInput onSubmit={handleSubmit}>
               <PromptInputBody>
@@ -218,5 +218,5 @@ function ThreadExample() {
   );
 }
 
-export type { ThreadExampleProps };
-export { ThreadExample };
+export type { SessionExampleProps };
+export { SessionExample };

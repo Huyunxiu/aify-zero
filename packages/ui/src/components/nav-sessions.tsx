@@ -10,21 +10,21 @@ import { useQuery } from "@tanstack/react-query"
 import { client } from "../lib/orpc"
 import { useAppStore } from "../stores"
 
-export function NavThreads() {
+export function NavSessions() {
 
-  const setChatId = useAppStore((state) => state.setThreadId);
+  const setChatId = useAppStore((state) => state.setSessionId);
 
   const listChatsQuery = useQuery({
     queryKey: ["list_chats"],
-    queryFn: () => client.thread.list({ limit: 20, direction: "desc" }),
+    queryFn: () => client.session.list({ limit: 20, direction: "desc" }),
   });
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>Threads</SidebarGroupLabel>
+      <SidebarGroupLabel>Sessions</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
-            {listChatsQuery.data?.threads.map((item) => (
+            {listChatsQuery.data?.sessions.map((item) => (
               <SidebarMenuItem key={item.id}>
                 <SidebarMenuButton
                   onClick={() => setChatId(item.id)}

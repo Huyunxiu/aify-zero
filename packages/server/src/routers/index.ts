@@ -1,10 +1,10 @@
 import type { RouterClient } from "@orpc/server";
 
 import { publicProcedure } from "../index";
-import { thread } from "./thread";
+import { session } from "./session";
 
 export const appRouter = {
-  thread,
+  session,
   healthCheck: publicProcedure.handler(() => "OK"),
 };
 export type AppRouter = typeof appRouter;

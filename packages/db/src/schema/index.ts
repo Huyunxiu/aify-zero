@@ -4,7 +4,7 @@ import { sql } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { integer, index, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-export const thread_table = sqliteTable("thread", {
+export const session_table = sqliteTable("session", {
   id: text("id", { length: 36 })
     .primaryKey()
     .$defaultFn(() => randomUUID()),
@@ -18,8 +18,8 @@ export const thread_table = sqliteTable("thread", {
     .default(sql`(unixepoch() * 1000)`),
 });
 
-export type ThreadModel = InferSelectModel<typeof thread_table>;
-export type ThreadInsertModel = InferInsertModel<typeof thread_table>;
+export type SessionModel = InferSelectModel<typeof session_table>;
+export type SessionInsertModel = InferInsertModel<typeof session_table>;
 
 export const message_table = sqliteTable(
   "message",
@@ -27,7 +27,7 @@ export const message_table = sqliteTable(
     id: text("id", { length: 36 })
       .primaryKey()
       .$defaultFn(() => randomUUID()),
-    threadId: text("thread_id"),
+    sessionId: text("session_id"),
     role: text("role").notNull(),
     metadata: text("metadata", { mode: "json" }),
     content: text("content", { mode: "json" }).notNull(),
@@ -38,7 +38,7 @@ export const message_table = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (table) => [index("idx_threadid").on(table.threadId)]
+  (table) => [index("idx_sessionid").on(table.sessionId)]
 );
 
 export type MessageModel = InferSelectModel<typeof message_table>;

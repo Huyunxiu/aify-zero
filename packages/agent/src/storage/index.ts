@@ -1,12 +1,12 @@
 import type {
-  ThreadInsertModel,
-  ThreadModel,
+  SessionInsertModel,
+  SessionModel,
   MessageInsertModel,
   MessageModel,
 } from "@workspace/db";
 
 export interface AgentStore {
-  listThreads({
+  listSessions({
     cursor,
     limit,
     direction,
@@ -14,17 +14,17 @@ export interface AgentStore {
     cursor?: string;
     limit?: number;
     direction?: "asc" | "desc";
-  }): Promise<ThreadModel[]>;
+  }): Promise<SessionModel[]>;
 
-  saveThread(thread: ThreadInsertModel): Promise<boolean>;
+  saveSession(session: SessionInsertModel): Promise<boolean>;
 
-  updateThread(threadId: string, title: string): Promise<number>;
+  updateSession(sessionId: string, title: string): Promise<number>;
 
-  getThreadById(threadId: string): Promise<ThreadModel | null>;
+  getSessionById(sessionId: string): Promise<SessionModel | null>;
 
-  updateThreadById(threadId: string, title: string): Promise<number>;
+  updateSessionById(sessionId: string, title: string): Promise<number>;
 
-  getMessagesByThreadId(threadId: string): Promise<MessageModel[]>;
+  getMessagesBySessionId(sessionId: string): Promise<MessageModel[]>;
 
   existsMessages(id: string): Promise<boolean>;
 

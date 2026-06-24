@@ -1,6 +1,6 @@
 import { v7 as uuidv7 } from "uuid";
 
-export function generateThreadId() {
+export function generateSessionId() {
   return uuidv7();
 }
 

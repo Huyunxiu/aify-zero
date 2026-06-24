@@ -1,16 +1,16 @@
-import { thread_table, db, message_table } from "@workspace/db";
+import { session_table, db, message_table } from "@workspace/db";
 import type {
-  ThreadInsertModel,
-  ThreadModel,
+  SessionInsertModel,
+  SessionModel,
   MessageInsertModel,
   MessageModel,
 } from "@workspace/db";
-import { and, asc, count, desc, eq, exists, gt, lt } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, lt } from "drizzle-orm";
 
 import type { AgentStore } from ".";
 
 export class SQLiteStore implements AgentStore {
-  async listThreads({
+  async listSessions({
     cursor,
     limit,
     direction,
@@ -18,63 +18,63 @@ export class SQLiteStore implements AgentStore {
     cursor?: string;
     limit?: number;
     direction?: "asc" | "desc";
-  }): Promise<ThreadModel[]> {
+  }): Promise<SessionModel[]> {
     const isDesc = direction === "desc";
     const whereConditions = cursor
-      ? [isDesc ? lt(thread_table.id, cursor) : gt(thread_table.id, cursor)]
+      ? [isDesc ? lt(session_table.id, cursor) : gt(session_table.id, cursor)]
       : [];
 
-    const threads = await db
+    const sessions = await db
       .select()
-      .from(thread_table)
+      .from(session_table)
       .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
       .orderBy(
-        isDesc ? desc(thread_table.createdAt) : asc(thread_table.createdAt)
+        isDesc ? desc(session_table.createdAt) : asc(session_table.createdAt)
       )
       .limit(limit ?? 20);
 
-    return threads;
+    return sessions;
   }
 
-  async saveThread(thread: ThreadInsertModel): Promise<boolean> {
-    const result = await db.insert(thread_table).values(thread);
+  async saveSession(session: SessionInsertModel): Promise<boolean> {
+    const result = await db.insert(session_table).values(session);
     return result.rowsAffected > 0;
   }
 
-  async updateThread(threadId: string, title: string): Promise<number> {
+  async updateSession(sessionId: string, title: string): Promise<number> {
     const result = await db
-      .update(thread_table)
+      .update(session_table)
       .set({ title })
-      .where(eq(thread_table.id, threadId));
+      .where(eq(session_table.id, sessionId));
     return result.rowsAffected;
   }
 
-  async getThreadById(threadId: string): Promise<ThreadModel | null> {
-    const [thread] = await db
+  async getSessionById(sessionId: string): Promise<SessionModel | null> {
+    const [session] = await db
       .select()
-      .from(thread_table)
-      .where(eq(thread_table.id, threadId))
+      .from(session_table)
+      .where(eq(session_table.id, sessionId))
       .limit(1);
-    if (!thread) {
+    if (!session) {
       return null;
     }
 
-    return thread;
+    return session;
   }
 
-  async updateThreadById(threadId: string, title: string): Promise<number> {
+  async updateSessionById(sessionId: string, title: string): Promise<number> {
     const result = await db
-      .update(thread_table)
+      .update(session_table)
       .set({ title })
-      .where(eq(thread_table.id, threadId));
+      .where(eq(session_table.id, sessionId));
     return result.rowsAffected;
   }
 
-  async getMessagesByThreadId(threadId: string): Promise<MessageModel[]> {
+  async getMessagesBySessionId(sessionId: string): Promise<MessageModel[]> {
     return await db
       .select()
       .from(message_table)
-      .where(eq(message_table.threadId, threadId))
+      .where(eq(message_table.sessionId, sessionId))
       .orderBy(asc(message_table.createdAt));
   }
 
