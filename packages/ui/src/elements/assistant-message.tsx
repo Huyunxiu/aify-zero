@@ -8,12 +8,11 @@ import type { TextUIPart, UIMessagePart } from "ai";
 import { BrainIcon, EyeIcon, PenLineIcon, TextIcon } from "lucide-react";
 
 import {
-  ChainOfThought,
-  ChainOfThoughtContent,
-  ChainOfThoughtHeader,
-  ChainOfThoughtStep,
-  ChainOfThoughtStepMarkdown,
-} from "../components/ai-elements/chain-of-thought";
+  ChainOfTurn,
+  ChainOfTurnContent,
+  ChainOfTurnHeader,
+  ChainOfTurnStep,
+} from "../components/ai-elements/chain-of-turn";
 import { Message, MessageContent, MessageResponse } from "./message";
 
 type AssistantMessageProps = {
@@ -56,34 +55,59 @@ export const AssistantMessage = ({
 
   return (
     <div className="flex flex-col gap-4">
-      <ChainOfThought defaultOpen>
-        <ChainOfThoughtHeader>Working</ChainOfThoughtHeader>
-        <ChainOfThoughtContent>
+      <ChainOfTurn defaultExpanded={new Set(["root"])}>
+        <ChainOfTurnHeader path="root">Working</ChainOfTurnHeader>
+        <ChainOfTurnContent path="root">
           {stepParts.map((part, i) => {
             if (part.type === "text") {
               return (
-                <ChainOfThoughtStepMarkdown
+                <ChainOfTurnStep
                   key={i}
+                  path={`${i}`}
                   icon={TextIcon}
-                  label="Text"
-                  description={part.text}
+                  label={part.text}
                   status={part.state === "streaming" ? "active" : "complete"}
-                ></ChainOfThoughtStepMarkdown>
+                >
+                  <MessageResponse
+                    controls={{
+                      table: {
+                        copy: false,
+                        download: false,
+                        fullscreen: false,
+                      },
+                    }}
+                  >
+                    {part.text}
+                  </MessageResponse>
+                </ChainOfTurnStep>
               );
             } else if (part.type === "reasoning") {
               return (
-                <ChainOfThoughtStepMarkdown
+                <ChainOfTurnStep
                   key={i}
+                  path={`${i}`}
                   icon={BrainIcon}
                   label="Reasoning"
-                  description={part.text}
                   status={part.state === "streaming" ? "active" : "complete"}
-                ></ChainOfThoughtStepMarkdown>
+                >
+                  <MessageResponse
+                    controls={{
+                      table: {
+                        copy: false,
+                        download: false,
+                        fullscreen: false,
+                      },
+                    }}
+                  >
+                    {part.text}
+                  </MessageResponse>
+                </ChainOfTurnStep>
               );
             } else if (part.type === "tool-read-file") {
               return (
-                <ChainOfThoughtStep
+                <ChainOfTurnStep
                   key={i}
+                  path={`${i}`}
                   icon={EyeIcon}
                   label={`Read ${part.output?.title}`}
                   status="complete"
@@ -91,12 +115,13 @@ export const AssistantMessage = ({
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
                     {part.output?.output ?? ""}
                   </div>
-                </ChainOfThoughtStep>
+                </ChainOfTurnStep>
               );
             } else if (part.type === "tool-write-file") {
               return (
-                <ChainOfThoughtStep
+                <ChainOfTurnStep
                   key={i}
+                  path={`${i}`}
                   icon={PenLineIcon}
                   label={`Create ${part.output?.title}`}
                   status="complete"
@@ -104,14 +129,14 @@ export const AssistantMessage = ({
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
                     {part.output?.output ?? ""}
                   </div>
-                </ChainOfThoughtStep>
+                </ChainOfTurnStep>
               );
             }
 
             return null;
           })}
-        </ChainOfThoughtContent>
-      </ChainOfThought>
+        </ChainOfTurnContent>
+      </ChainOfTurn>
       {answerPart && (
         <Message from="assistant" key={`${-1}`}>
           <MessageContent>
