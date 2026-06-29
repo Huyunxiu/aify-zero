@@ -9,8 +9,10 @@ import {
   useMemo,
   useContext,
 } from "react";
+import type { Language } from "../i18n/langs";
+import { LanguageOptions } from "../i18n/langs";
 
-import { isEditableTarget } from "@/utils/html-utils";
+// import { isEditableTarget } from "@/utils/html-utils";
 
 type Lang = keyof typeof resources;
 
@@ -23,6 +25,7 @@ type LangProviderProps = {
 type LangProviderState = {
   lang: Lang;
   langs: readonly Lang[];
+  langOptions: readonly Language[];
   setLang: (lang: Lang) => void;
 };
 
@@ -73,41 +76,41 @@ export function LangProvider({
     applyLang(lang);
   }, [lang]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) {
-        return;
-      }
+  // useEffect(() => {
+  //   const handleKeyDown = (event: KeyboardEvent) => {
+  //     if (event.repeat) {
+  //       return;
+  //     }
 
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
+  //     if (event.metaKey || event.ctrlKey || event.altKey) {
+  //       return;
+  //     }
 
-      if (isEditableTarget(event.target)) {
-        return;
-      }
+  //     if (isEditableTarget(event.target)) {
+  //       return;
+  //     }
 
-      if (event.key.toLowerCase() !== "l") {
-        return;
-      }
+  //     if (event.key.toLowerCase() !== "l") {
+  //       return;
+  //     }
 
-      setLangState((currentLang) => {
-        const currentIndex = LANG_VALUES.indexOf(currentLang);
-        const nextIndex =
-          currentIndex === -1 ? 0 : (currentIndex + 1) % LANG_VALUES.length;
-        const nextLang = LANG_VALUES[nextIndex];
+  //     setLangState((currentLang) => {
+  //       const currentIndex = LANG_VALUES.indexOf(currentLang);
+  //       const nextIndex =
+  //         currentIndex === -1 ? 0 : (currentIndex + 1) % LANG_VALUES.length;
+  //       const nextLang = LANG_VALUES[nextIndex];
 
-        localStorage.setItem(storageKey, nextLang);
-        return nextLang;
-      });
-    };
+  //       localStorage.setItem(storageKey, nextLang);
+  //       return nextLang;
+  //     });
+  //   };
 
-    window.addEventListener("keydown", handleKeyDown);
+  //   window.addEventListener("keydown", handleKeyDown);
 
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [storageKey]);
+  //   return () => {
+  //     window.removeEventListener("keydown", handleKeyDown);
+  //   };
+  // }, [storageKey]);
 
   useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
@@ -138,6 +141,7 @@ export function LangProvider({
     () => ({
       lang,
       langs: LANG_VALUES,
+      langOptions: LanguageOptions,
       setLang,
     }),
     [lang, setLang]

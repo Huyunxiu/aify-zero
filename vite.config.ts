@@ -47,6 +47,7 @@ export default defineConfig({
       "unicorn/no-negated-condition": "allow",
       "typescript/no-redundant-type-constituents": "allow",
       "typescript/consistent-return": "allow",
+      "typescript/no-unsafe-assignment": "allow",
     },
   },
   run: {

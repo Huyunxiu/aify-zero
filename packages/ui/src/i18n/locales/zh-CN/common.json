@@ -8,5 +8,27 @@
   "goToHomePage": "返回首页",
   "press": "按",
   "toToggleDarkMode": "切换深色模式",
-  "toToggleLangMode": "切换语言模式"
+  "toToggleLangMode": "切换语言模式",
+  "settings": {
+    "title": "设置",
+    "description": "在此自定义您的设置",
+    "backToApp": "返回应用",
+    "general": {
+      "title": "通用",
+      "language": {
+        "title": "语言",
+        "description": "更改显示语言"
+      }
+    },
+    "appearance": {
+      "title": "外观",
+      "theme": {
+        "title": "主题",
+        "description": "更改应用程序主题",
+        "light": "浅色",
+        "dark": "深色",
+        "system": "跟随系统"
+      }
+    }
+  }
 }

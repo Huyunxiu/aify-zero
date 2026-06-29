@@ -1,5 +1,5 @@
 import { NavSessions } from "@workspace/ui/components/nav-sessions";
-import { NavUser } from "@workspace/ui/components/nav-user";
+import { NavBottom } from "@workspace/ui/components/nav-bottom";
 import {
   Sidebar,
   SidebarContent,
@@ -21,11 +21,6 @@ import { useAppStore } from "../stores";
 import { generateSessionId } from "@workspace/agent/utils/id-util";
 
 const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
-  },
   navMain: [
     {
       title: "Playground",
@@ -133,7 +128,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSessions />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavBottom />
       </SidebarFooter>
     </Sidebar>
   );

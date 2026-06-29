@@ -4,12 +4,12 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import { LangProvider } from "@workspace/ui/components/lang-provider";
+import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { LangProvider } from "@/components/lang-provider.tsx";
-import { ThemeProvider } from "@/components/theme-provider.tsx";
 import { queryClient } from "@/utils/orpc";
 
 import "@workspace/ui/styles/globals.css";

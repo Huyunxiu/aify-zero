@@ -8,7 +8,7 @@ import {
   useContext,
 } from "react";
 
-import { isEditableTarget } from "@/utils/html-utils";
+// import { isEditableTarget } from "@/utils/html-utils";
 
 type Theme = "dark" | "light" | "system";
 type ResolvedTheme = "dark" | "light";
@@ -22,11 +22,12 @@ type ThemeProviderProps = {
 
 type ThemeProviderState = {
   theme: Theme;
+  themes: readonly Theme[];
   setTheme: (theme: Theme) => void;
 };
 
 const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)";
-const THEME_VALUES = new Set<Theme>(["dark", "light", "system"]);
+const THEME_VALUES = ["dark", "light", "system"];
 
 const ThemeProviderContext = createContext<ThemeProviderState | undefined>(
   undefined
@@ -37,7 +38,7 @@ function isTheme(value: string | null): value is Theme {
     return false;
   }
 
-  return THEME_VALUES.has(value as Theme);
+  return THEME_VALUES.includes(value as Theme);
 }
 
 function getSystemTheme(): ResolvedTheme {
@@ -130,45 +131,45 @@ export function ThemeProvider({
     };
   }, [theme, applyTheme]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) {
-        return;
-      }
+  // useEffect(() => {
+  //   const handleKeyDown = (event: KeyboardEvent) => {
+  //     if (event.repeat) {
+  //       return;
+  //     }
 
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
+  //     if (event.metaKey || event.ctrlKey || event.altKey) {
+  //       return;
+  //     }
 
-      if (isEditableTarget(event.target)) {
-        return;
-      }
+  //     if (isEditableTarget(event.target)) {
+  //       return;
+  //     }
 
-      if (event.key.toLowerCase() !== "d") {
-        return;
-      }
+  //     if (event.key.toLowerCase() !== "d") {
+  //       return;
+  //     }
 
-      setThemeState((currentTheme) => {
-        let nextTheme: Theme;
-        if (currentTheme === "dark") {
-          nextTheme = "light";
-        } else if (currentTheme === "light") {
-          nextTheme = "dark";
-        } else {
-          nextTheme = getSystemTheme() === "dark" ? "light" : "dark";
-        }
+  //     setThemeState((currentTheme) => {
+  //       let nextTheme: Theme;
+  //       if (currentTheme === "dark") {
+  //         nextTheme = "light";
+  //       } else if (currentTheme === "light") {
+  //         nextTheme = "dark";
+  //       } else {
+  //         nextTheme = getSystemTheme() === "dark" ? "light" : "dark";
+  //       }
 
-        localStorage.setItem(storageKey, nextTheme);
-        return nextTheme;
-      });
-    };
+  //       localStorage.setItem(storageKey, nextTheme);
+  //       return nextTheme;
+  //     });
+  //   };
 
-    window.addEventListener("keydown", handleKeyDown);
+  //   window.addEventListener("keydown", handleKeyDown);
 
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [storageKey]);
+  //   return () => {
+  //     window.removeEventListener("keydown", handleKeyDown);
+  //   };
+  // }, [storageKey]);
 
   useEffect(() => {
     const handleStorageChange = (event: StorageEvent) => {
@@ -198,6 +199,7 @@ export function ThemeProvider({
   const value = useMemo(
     () => ({
       setTheme,
+      themes: THEME_VALUES,
       theme,
     }),
     [theme, setTheme]

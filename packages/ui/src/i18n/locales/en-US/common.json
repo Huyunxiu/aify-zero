@@ -8,5 +8,27 @@
   "goToHomePage": "Go to home page",
   "press": "Press",
   "toToggleDarkMode": "to toggle dark mode",
-  "toToggleLangMode": "to toggle lang mode"
+  "toToggleLangMode": "to toggle lang mode",
+  "settings": {
+    "title": "Settings",
+    "description": "Customize your settings here",
+    "backToApp": "Back to app",
+    "general": {
+      "title": "General",
+      "language": {
+        "title": "Language",
+        "description": "Change the display language"
+      }
+    },
+    "appearance": {
+      "title": "Appearance",
+      "theme": {
+        "title": "Theme",
+        "description": "Change the application theme",
+        "light": "Light",
+        "dark": "Dark",
+        "system": "System"
+      }
+    }
+  }
 }

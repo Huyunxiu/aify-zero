@@ -3,7 +3,7 @@ export interface Language {
   nativeName: string;
 }
 
-export default [
+export const LanguageOptions = [
   {
     key: "en-US",
     nativeName: "English",
