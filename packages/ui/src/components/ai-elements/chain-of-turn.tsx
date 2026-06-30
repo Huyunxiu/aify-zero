@@ -78,7 +78,7 @@ export const ChainOfTurn = memo(
 
     return (
       <ChainOfTurnContext.Provider value={contextValue}>
-        <div className={cn("not-prose w-full space-y-4", className)} {...props}>
+        <div className={cn("not-prose w-full", className)} {...props}>
           {children}
         </div>
       </ChainOfTurnContext.Provider>
@@ -233,7 +233,7 @@ export const ChainOfTurnContent = memo(
       <Collapsible onOpenChange={handleOpenChange} open={isExpanded}>
         <CollapsibleContent
           className={cn(
-            "mt-2 space-y-3",
+            "mt-3 space-y-3",
             "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
             className
           )}

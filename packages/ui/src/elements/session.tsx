@@ -4,14 +4,23 @@ import type { AgentUIMessage } from "@workspace/agent";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import { MessageSquareIcon } from "lucide-react";
 
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "../components/empty";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "../components/message-scroller";
 import { client } from "../lib/orpc";
 import { AssistantMessage } from "./assistant-message";
-import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-  ConversationScrollButton,
-} from "./conversation";
 import { Message, MessageContent, MessageResponse } from "./message";
 import {
   PromptInput,
@@ -95,31 +104,58 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
           {/* session content */}
           <div className="relative flex-1 bg-background">
             <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
-              <Conversation className="relative size-full mx-auto flex min-h-full min-w-0 max-w-4xl flex-col gap-5 py-0 md:gap-7">
-                <ConversationContent>
-                  {messages.length === 0 ? (
-                    <ConversationEmptyState
-                      description="Messages will appear here as the conversation progresses."
-                      icon={<MessageSquareIcon className="size-6" />}
-                      title="Start a conversation"
-                    />
-                  ) : (
-                    <>
-                      {messages.map(renderMessage)}
-                      {error && (
-                        <Message from="assistant">
-                          <MessageContent>
-                            <MessageResponse className="text-destructive">
-                              {error.message}
-                            </MessageResponse>
-                          </MessageContent>
-                        </Message>
-                      )}
-                    </>
-                  )}
-                </ConversationContent>
-                <ConversationScrollButton />
-              </Conversation>
+              <div className="relative size-full mx-auto flex min-h-full min-w-0 max-w-4xl flex-col">
+                <MessageScrollerProvider
+                  scrollPreviousItemPeek={64}
+                  defaultScrollPosition="start"
+                  autoScroll
+                >
+                  <MessageScroller>
+                    <MessageScrollerViewport>
+                      <MessageScrollerContent className="px-3 py-3 md:px-5 md:py-5">
+                        {messages.length === 0 ? (
+                          <Empty className="h-full">
+                            <EmptyHeader>
+                              <EmptyMedia variant="icon">
+                                <MessageSquareIcon />
+                              </EmptyMedia>
+                              <EmptyTitle>Start a session</EmptyTitle>
+                              <EmptyDescription>
+                                Messages will appear here as the session
+                                progresses.
+                              </EmptyDescription>
+                            </EmptyHeader>
+                          </Empty>
+                        ) : (
+                          <>
+                            {messages.map((message) => (
+                              <MessageScrollerItem
+                                key={message.id}
+                                messageId={message.id}
+                                scrollAnchor={message.role === "user"}
+                              >
+                                {renderMessage(message)}
+                              </MessageScrollerItem>
+                            ))}
+                            {error && (
+                              <MessageScrollerItem scrollAnchor={false}>
+                                <Message from="assistant">
+                                  <MessageContent>
+                                    <MessageResponse className="text-destructive">
+                                      {error.message}
+                                    </MessageResponse>
+                                  </MessageContent>
+                                </Message>
+                              </MessageScrollerItem>
+                            )}
+                          </>
+                        )}
+                      </MessageScrollerContent>
+                    </MessageScrollerViewport>
+                    <MessageScrollerButton />
+                  </MessageScroller>
+                </MessageScrollerProvider>
+              </div>
             </div>
           </div>
 
