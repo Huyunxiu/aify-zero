@@ -24,7 +24,7 @@ export function AppearanceSettings() {
       <div className="mb-6 flex">
         <h1 className="font-bold text-xl">{t("settings.appearance.title")}</h1>
       </div>
-      <div className="flex w-full rounded border bg-white">
+      <div className="flex w-full rounded-lg border bg-foreground-4">
         <div className="settings-item flex w-full items-center justify-between p-4">
           <div className="item-left grid gap-1">
             <div className="item-title text-xs">

@@ -105,7 +105,7 @@ export const ChainOfTurnHeader = memo(
       <Collapsible onOpenChange={handleOpenChange} open={isExpanded}>
         <CollapsibleTrigger
           className={cn(
-            "flex h-4 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
+            "flex h-5 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
             className
           )}
           {...props}
@@ -185,7 +185,7 @@ export const ChainOfTurnStep = memo(
         >
           <CollapsibleTrigger
             className={cn(
-              "relative mt-0.5 flex h-4 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
+              "relative mt-0.5 flex h-5 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
               className
             )}
           >
