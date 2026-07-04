@@ -27,6 +27,7 @@
     "@streamdown/code": "catalog:",
     "@streamdown/math": "catalog:",
     "@streamdown/mermaid": "catalog:",
+    "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@workspace/agent": "workspace:*",
     "@workspace/server": "workspace:*",

@@ -8,6 +8,13 @@
       "when": 1781540811600,
       "tag": "0000_amazing_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1783173719072,
+      "tag": "0001_secret_spirit",
+      "breakpoints": true
     }
   ]
 }

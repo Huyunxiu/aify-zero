@@ -1,3 +1,10 @@
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemTitle,
+} from "@workspace/ui/components/item";
 import { useLang } from "@workspace/ui/components/lang-provider";
 import {
   Select,
@@ -8,6 +15,8 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { useTranslation } from "react-i18next";
+
+import { SettingFrame } from "./setting-frame";
 
 export function GeneralSettings() {
   const { t } = useTranslation();
@@ -23,44 +32,48 @@ export function GeneralSettings() {
       <div className="mb-6 flex">
         <h1 className="font-bold text-xl">{t("settings.general.title")}</h1>
       </div>
-      <div className="flex w-full rounded-lg border bg-foreground-4">
-        <div className="settings-item flex w-full items-center justify-between p-4">
-          <div className="item-left grid gap-1">
-            <div className="item-title text-xs">
-              {t("settings.general.language.title")}
-            </div>
-            <div className="item-desc text-muted-foreground text-xs">
-              {t("settings.general.language.description")}
-            </div>
-          </div>
-          <div className="item-right">
-            <Select
-              items={items}
-              value={langContext.lang}
-              onValueChange={(e) => {
-                if (!e) {
-                  return;
-                }
+      <SettingFrame>
+        <ItemGroup>
+          <Item variant="muted">
+            <ItemContent>
+              <ItemTitle className="line-clamp-1">
+                {t("settings.general.language.title")}
+              </ItemTitle>
+              <ItemDescription>
+                {t("settings.general.language.description")}
+              </ItemDescription>
+            </ItemContent>
+            <ItemContent className="flex-none text-center">
+              <ItemDescription>
+                <Select
+                  items={items}
+                  value={langContext.lang}
+                  onValueChange={(e) => {
+                    if (!e) {
+                      return;
+                    }
 
-                langContext.setLang(e);
-              }}
-            >
-              <SelectTrigger className="w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent alignItemWithTrigger>
-                <SelectGroup>
-                  {langContext.langOptions.map((lang) => (
-                    <SelectItem key={lang.key} value={lang.key}>
-                      {lang.nativeName}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </div>
+                    langContext.setLang(e);
+                  }}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger>
+                    <SelectGroup>
+                      {langContext.langOptions.map((lang) => (
+                        <SelectItem key={lang.key} value={lang.key}>
+                          {lang.nativeName}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </ItemDescription>
+            </ItemContent>
+          </Item>
+        </ItemGroup>
+      </SettingFrame>
     </div>
   );
 }

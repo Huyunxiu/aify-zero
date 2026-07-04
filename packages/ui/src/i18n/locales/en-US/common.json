@@ -29,6 +29,9 @@
         "dark": "Dark",
         "system": "System"
       }
+    },
+    "model": {
+      "title": "Model"
     }
   }
 }
