@@ -31,7 +31,26 @@
       }
     },
     "model": {
-      "title": "Model"
+      "title": "Model",
+      "addModel": "Add Model",
+      "createTitle": "Create AI Model",
+      "createDescription": "Add a new AI model configuration",
+      "create": "Create",
+      "cancel": "Cancel",
+      "name": "Name",
+      "namePlaceholder": "e.g. GPT-5.5",
+      "nameRequired": "Name is required",
+      "provider": "Provider",
+      "providerPlaceholder": "e.g. OpenAI",
+      "providerRequired": "Provider is required",
+      "modelName": "Model",
+      "modelNamePlaceholder": "e.g. gpt-5.5",
+      "modelNameRequired": "Model name is required",
+      "compatibleType": "Compatible Type",
+      "apiUrl": "API URL",
+      "apiUrlPlaceholder": "e.g. https://api.openai.com/v1/chat/completions",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "e.g. sk-..."
     }
   }
 }

@@ -49,9 +49,11 @@ export const ai_model_table = sqliteTable("ai_model", {
   name: text("name").notNull(),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
+  apiUrl: text("api_url").notNull(),
+  apiKey: text("api_key").notNull(),
   compatibleType: text("compatible_type").notNull(),
-  supports: text("supports", { mode: "json" }).notNull(),
   active: integer("active", { mode: "boolean" }).notNull().default(true),
+  extension: text("supports", { mode: "json" }),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),

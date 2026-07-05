@@ -29,6 +29,7 @@
     "@streamdown/mermaid": "catalog:",
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
+    "@tanstack/react-table": "catalog:",
     "@workspace/agent": "workspace:*",
     "@workspace/server": "workspace:*",
     "@workspace/shared": "workspace:*",

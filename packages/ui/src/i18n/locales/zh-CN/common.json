@@ -31,7 +31,26 @@
       }
     },
     "model": {
-      "title": "模型"
+      "title": "模型",
+      "addModel": "添加模型",
+      "createTitle": "创建 AI 模型",
+      "createDescription": "添加新的 AI 模型配置",
+      "create": "创建",
+      "cancel": "取消",
+      "name": "名称",
+      "namePlaceholder": "例如 GPT-5.5",
+      "nameRequired": "请输入名称",
+      "provider": "提供商",
+      "providerPlaceholder": "例如 OpenAI",
+      "providerRequired": "请输入提供商",
+      "modelName": "模型",
+      "modelNamePlaceholder": "例如 gpt-5.5",
+      "modelNameRequired": "请输入模型名称",
+      "compatibleType": "兼容类型",
+      "apiUrl": "API 地址",
+      "apiUrlPlaceholder": "例如 https://api.openai.com/v1/chat/completions",
+      "apiKey": "API 密钥",
+      "apiKeyPlaceholder": "例如 sk-..."
     }
   }
 }

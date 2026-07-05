@@ -5,8 +5,9 @@ export const createAiModelSchema = z.object({
   name: z.string().min(1),
   provider: z.string().min(1),
   model: z.string().min(1),
-  compatibleType: z.string().min(1),
-  supports: z.record(z.string(), z.unknown()),
+  apiUrl: z.string().min(1),
+  apiKey: z.string().min(1),
+  compatibleType: z.templateLiteral(["openai"]),
   active: z.boolean().default(true),
 });
 
@@ -15,8 +16,9 @@ export const updateAiModelSchema = z.object({
   name: z.string().min(1).optional(),
   provider: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
-  compatibleType: z.string().min(1).optional(),
-  supports: z.record(z.string(), z.unknown()).optional(),
+  apiUrl: z.string().min(1),
+  apiKey: z.string().min(1),
+  compatibleType: z.templateLiteral(["openai"]).optional(),
   active: z.boolean().optional(),
 });
 

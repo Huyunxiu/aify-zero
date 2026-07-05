@@ -48,6 +48,7 @@ export default defineConfig({
       "typescript/no-redundant-type-constituents": "allow",
       "typescript/consistent-return": "allow",
       "typescript/no-unsafe-assignment": "allow",
+      "no-use-before-define": "allow",
     },
   },
   run: {
