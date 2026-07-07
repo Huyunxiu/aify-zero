@@ -15,7 +15,6 @@ import {
 } from "./ai-model.schema";
 
 export const createAiModelRoute = publicProcedure
-  .route({ method: "POST", path: "/ai-models" })
   .input(createAiModelSchema)
   .handler(async ({ input }) => {
     const existing = await findAiModelById(input.id);
@@ -32,7 +31,6 @@ export const listAiModelsRoute = publicProcedure
   .handler(async () => await listAiModels());
 
 export const getAiModelRoute = publicProcedure
-  .route({ method: "GET", path: "/ai-models/{id}" })
   .input(getAiModelSchema)
   .handler(async ({ input }) => {
     const { id } = input;
@@ -46,7 +44,6 @@ export const getAiModelRoute = publicProcedure
   });
 
 export const updateAiModelRoute = publicProcedure
-  .route({ method: "PUT", path: "/ai-models/{id}" })
   .input(updateAiModelSchema)
   .handler(async ({ input }) => {
     const { id, ...data } = input;
@@ -60,7 +57,6 @@ export const updateAiModelRoute = publicProcedure
   });
 
 export const removeAiModelRoute = publicProcedure
-  .route({ method: "DELETE", path: "/ai-models/{id}" })
   .input(getAiModelSchema)
   .handler(async ({ input }) => {
     const { id } = input;

@@ -16,8 +16,8 @@ export const updateAiModelSchema = z.object({
   name: z.string().min(1).optional(),
   provider: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
-  apiUrl: z.string().min(1),
-  apiKey: z.string().min(1),
+  apiUrl: z.string().min(1).optional(),
+  apiKey: z.string().min(1).optional(),
   compatibleType: z.templateLiteral(["openai"]).optional(),
   active: z.boolean().optional(),
 });

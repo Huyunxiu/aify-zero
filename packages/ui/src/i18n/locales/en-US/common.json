@@ -50,7 +50,13 @@
       "apiUrl": "API URL",
       "apiUrlPlaceholder": "e.g. https://api.openai.com/v1/chat/completions",
       "apiKey": "API Key",
-      "apiKeyPlaceholder": "e.g. sk-..."
+      "apiKeyPlaceholder": "e.g. sk-...",
+      "editTitle": "Edit AI Model",
+      "editDescription": "Update AI model configuration",
+      "update": "Save",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this model?",
+      "deleteDescription": "This action cannot be undone."
     }
   }
 }

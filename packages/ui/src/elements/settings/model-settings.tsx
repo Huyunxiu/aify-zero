@@ -1,5 +1,22 @@
 import { useForm } from "@tanstack/react-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
+import {
+  flexRender,
+  getCoreRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@workspace/ui/components/alert-dialog";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -25,8 +42,15 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { Spinner } from "@workspace/ui/components/spinner";
+import { Switch } from "@workspace/ui/components/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableRow,
+} from "@workspace/ui/components/table";
 import { client } from "@workspace/ui/lib/orpc";
-import { PlusIcon } from "lucide-react";
+import { Pencil, PlusIcon, Trash } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -36,14 +60,46 @@ export function ModelSettings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const openCreateDialog = () => {
+    setEditingId(null);
+    form.reset();
+    setDialogOpen(true);
+  };
+
+  type AiModelRow = NonNullable<
+    Awaited<ReturnType<typeof client.aiModel.list>>
+  >[number];
+  type AiModelInput = Parameters<typeof client.aiModel.create>[0];
+
+  const openEditDialog = (model: AiModelRow) => {
+    setEditingId(model.id);
+    form.reset(
+      {
+        name: model.name ?? "",
+        provider: model.provider ?? "",
+        model: model.model ?? "",
+        apiKey: model.apiKey ?? "",
+        apiUrl: model.apiUrl ?? "",
+        compatibleType: model.compatibleType ?? "openai",
+        active: model.active ?? true,
+      },
+      {
+        keepDefaultValues: true,
+      }
+    );
+    setDialogOpen(true);
+  };
 
   const listAiModelsQuery = useQuery({
     queryKey: ["listAiModels"],
     queryFn: async () => await client.aiModel.list(),
   });
 
-  const createMutation = useMutation({
-    mutationFn: async (input: Parameters<typeof client.aiModel.create>[0]) =>
+  const createAiModelMutation = useMutation({
+    mutationFn: async (input: AiModelInput) =>
       await client.aiModel.create(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["listAiModels"] });
@@ -51,6 +107,95 @@ export function ModelSettings() {
       form.reset();
     },
   });
+
+  const updateAiModelMutation = useMutation({
+    mutationFn: async (input: Parameters<typeof client.aiModel.update>[0]) =>
+      await client.aiModel.update(input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["listAiModels"] });
+      setDialogOpen(false);
+      setEditingId(null);
+      form.reset();
+    },
+  });
+
+  const deleteAiModelMutation = useMutation({
+    mutationFn: async (id: string) => await client.aiModel.delete({ id }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["listAiModels"] });
+    },
+  });
+
+  const columns: ColumnDef<AiModelRow>[] = [
+    {
+      accessorKey: "name",
+    },
+    {
+      id: "actions",
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-2">
+          <Switch
+            checked={row.original.active}
+            onCheckedChange={(checked) => {
+              updateAiModelMutation.mutate({
+                id: row.original.id,
+                active: checked,
+              });
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={deleteAiModelMutation.isPending}
+            onClick={() => {
+              openEditDialog(row.original);
+            }}
+          >
+            <Pencil />
+          </Button>
+          <AlertDialog
+            open={deleteDialogOpen}
+            onOpenChange={(open) => {
+              setDeleteDialogOpen(open);
+            }}
+          >
+            <AlertDialogTrigger
+              render={
+                <Button variant="destructive" size="icon-sm">
+                  <Trash />
+                </Button>
+              }
+            ></AlertDialogTrigger>
+            <AlertDialogContent size="sm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {t("settings.model.deleteConfirm")}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t("settings.model.deleteDescription")}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>
+                  {t("settings.model.cancel")}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  loading={deleteAiModelMutation.isPending}
+                  disabled={deleteAiModelMutation.isPending}
+                  onClick={() => {
+                    deleteAiModelMutation.mutate(row.original.id);
+                  }}
+                >
+                  {t("settings.model.delete")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      ),
+    },
+  ];
 
   const form = useForm({
     defaultValues: {
@@ -63,17 +208,30 @@ export function ModelSettings() {
       active: true,
     },
     onSubmit: async ({ value }) => {
-      const id = `${value.provider}/${value.model}`;
-      await createMutation.mutateAsync({
-        id,
-        name: value.name,
-        provider: value.provider,
-        model: value.model,
-        apiKey: value.apiKey,
-        apiUrl: value.apiUrl,
-        compatibleType: value.compatibleType as "openai",
-        active: value.active,
-      });
+      if (editingId) {
+        await updateAiModelMutation.mutateAsync({
+          id: editingId,
+          name: value.name,
+          provider: value.provider,
+          model: value.model,
+          apiKey: value.apiKey,
+          apiUrl: value.apiUrl,
+          compatibleType: value.compatibleType as "openai",
+          active: value.active,
+        });
+      } else {
+        const id = `${value.provider}/${value.model}`;
+        await createAiModelMutation.mutateAsync({
+          id,
+          name: value.name,
+          provider: value.provider,
+          model: value.model,
+          apiKey: value.apiKey,
+          apiUrl: value.apiUrl,
+          compatibleType: value.compatibleType as "openai",
+          active: value.active,
+        });
+      }
     },
   });
 
@@ -81,24 +239,28 @@ export function ModelSettings() {
     <div className="mx-auto flex w-2xl flex-col">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="font-bold text-xl">{t("settings.model.title")}</h1>
-        <Button
-          onClick={() => {
-            setDialogOpen(true);
-          }}
-        >
+        <Button size="sm" onClick={openCreateDialog}>
           <PlusIcon />
           {t("settings.model.addModel")}
         </Button>
       </div>
 
-      <SettingFrame></SettingFrame>
+      <SettingFrame>
+        <DataTable columns={columns} data={listAiModelsQuery.data ?? []} />
+      </SettingFrame>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t("settings.model.createTitle")}</DialogTitle>
+            <DialogTitle>
+              {editingId
+                ? t("settings.model.editTitle")
+                : t("settings.model.createTitle")}
+            </DialogTitle>
             <DialogDescription>
-              {t("settings.model.createDescription")}
+              {editingId
+                ? t("settings.model.editDescription")
+                : t("settings.model.createDescription")}
             </DialogDescription>
           </DialogHeader>
 
@@ -329,11 +491,58 @@ export function ModelSettings() {
               disabled={!form.state.canSubmit || form.state.isSubmitting}
             >
               {form.state.isSubmitting && <Spinner data-icon="inline-start" />}
-              {t("settings.model.create")}
+              {editingId
+                ? t("settings.model.update")
+                : t("settings.model.create")}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+interface DataTableProps<TData, TValue> {
+  columns: ColumnDef<TData, TValue>[];
+  data: TData[];
+}
+
+export function DataTable<TData, TValue>({
+  columns,
+  data,
+}: DataTableProps<TData, TValue>) {
+  const table = useReactTable({
+    data,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+  });
+
+  return (
+    <div className="overflow-hidden w-full">
+      <Table>
+        <TableBody>
+          {table.getRowModel().rows?.length ? (
+            table.getRowModel().rows.map((row) => (
+              <TableRow
+                key={row.id}
+                data-state={row.getIsSelected() && "selected"}
+              >
+                {row.getVisibleCells().map((cell) => (
+                  <TableCell key={cell.id}>
+                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell colSpan={columns.length} className="h-24 text-center">
+                No results.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -50,7 +50,13 @@
       "apiUrl": "API 地址",
       "apiUrlPlaceholder": "例如 https://api.openai.com/v1/chat/completions",
       "apiKey": "API 密钥",
-      "apiKeyPlaceholder": "例如 sk-..."
+      "apiKeyPlaceholder": "例如 sk-...",
+      "editTitle": "编辑 AI 模型",
+      "editDescription": "更新 AI 模型配置",
+      "update": "保存",
+      "delete": "删除",
+      "deleteConfirm": "确认删除该模型？",
+      "deleteDescription": "此操作无法撤销。"
     }
   }
 }
