@@ -31,6 +31,7 @@ import {
   PromptInputTools,
 } from "./prompt-input";
 import type { PromptInputMessage } from "./prompt-input";
+import { PromptInputTiptap } from "./prompt-input-tiptap";
 import { TitleBar } from "./title-bar";
 import { UserMessage } from "./user-message";
 
@@ -163,7 +164,8 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
           <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 bg-background px-2 py-3 pt-1 md:px-4 md:pb-4">
             <PromptInput onSubmit={handleSubmit}>
               <PromptInputBody>
-                <PromptInputTextarea />
+                {/* <PromptInputTextarea /> */}
+                <PromptInputTiptap onSubmit={handleSubmit} />
               </PromptInputBody>
               <PromptInputFooter>
                 <PromptInputTools></PromptInputTools>
