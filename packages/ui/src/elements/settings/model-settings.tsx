@@ -54,6 +54,7 @@ import { Pencil, PlusIcon, Trash } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import DeepSeekLogo from "../../assets/logo/deepseek.svg";
 import { SettingFrame } from "./setting-frame";
 
 export function ModelSettings() {
@@ -129,11 +130,17 @@ export function ModelSettings() {
   const columns: ColumnDef<AiModelRow>[] = [
     {
       accessorKey: "name",
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1">
+          <img className="size-4" src={DeepSeekLogo} alt="deepseek" />
+          <span>{row.original.name}</span>
+        </div>
+      ),
     },
     {
       id: "actions",
       cell: ({ row }) => (
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex items-center justify-end gap-1">
           <Switch
             checked={row.original.active}
             onCheckedChange={(checked) => {
@@ -161,7 +168,7 @@ export function ModelSettings() {
           >
             <AlertDialogTrigger
               render={
-                <Button variant="destructive" size="icon-sm">
+                <Button variant="ghost" size="icon-sm">
                   <Trash />
                 </Button>
               }
