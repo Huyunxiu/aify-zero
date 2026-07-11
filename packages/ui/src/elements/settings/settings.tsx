@@ -85,7 +85,7 @@ export const Settings = ({ onClose }: SettingsProps) => {
       <SidebarInset className="h-full">
         <IslandGroup orientation="horizontal">
           <Island defaultSize="50%">
-            <TitleBar className="sticky top-0 flex h-14 items-center gap-2 bg-background px-3" />
+            <TitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3" />
             {activeTab === "appearance" && <AppearanceSettings />}
             {activeTab === "general" && <GeneralSettings />}
             {activeTab === "model" && <ModelSettings />}

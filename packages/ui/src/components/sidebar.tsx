@@ -23,6 +23,7 @@ import { PanelLeftIcon } from "lucide-react";
 import * as React from "react";
 
 import { TitleBar } from "../elements/title-bar";
+import { useLayout } from "../elements/layout-provider";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -162,6 +163,7 @@ function Sidebar({
   collapsible?: "offcanvas" | "icon" | "none";
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+  const { layout } = useLayout();
 
   if (collapsible === "none") {
     return (
@@ -233,7 +235,8 @@ function Sidebar({
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
             ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]"
-            : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
+            : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
+          layout === "default" ? "group-data-[side=left]:border-r group-data-[side=right]:border-l" : "group-data-[side=left]:border-r-none group-data-[side=right]:border-l-none",
           className
         )}
         {...props}

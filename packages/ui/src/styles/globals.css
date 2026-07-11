@@ -219,7 +219,7 @@
     font-size: 14.8571px;
   } */
   body {
-    @apply bg-background text-foreground;
+    @apply bg-sidebar text-foreground;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {

@@ -7,12 +7,13 @@ import {
 import { LangProvider } from "@workspace/ui/components/lang-provider";
 import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
+import { LayoutProvider } from "@workspace/ui/elements/layout-provider";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import "@workspace/ui/styles/globals.css";
 import { queryClient } from "@/utils/orpc";
 
-import "@workspace/ui/styles/globals.css";
 import { routeTree } from "./routeTree.gen";
 
 export const router = createRouter({
@@ -42,9 +43,11 @@ createRoot(rootElement).render(
   <StrictMode>
     <ThemeProvider>
       <LangProvider>
-        <TooltipProvider>
-          <App />
-        </TooltipProvider>
+        <LayoutProvider>
+          <TooltipProvider>
+            <App />
+          </TooltipProvider>
+        </LayoutProvider>
       </LangProvider>
     </ThemeProvider>
   </StrictMode>
