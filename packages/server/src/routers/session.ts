@@ -27,6 +27,7 @@ import type { UIMessagePart } from "ai";
 import z from "zod";
 
 import { publicProcedure } from "../index";
+import { findAiModelById } from "./ai-model/ai-model.repository";
 
 function convertAgentUIMessages(
   messages: MessageModel[]
@@ -50,17 +51,24 @@ function convertAgentUIMessages(
 
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
-  .input(type<{ sessionId: string; messages: AgentUIMessage[] }>())
-  .handler(async ({ context, input }) => {
-    const { sessionId, messages } = input;
+  .input(
+    type<{ sessionId: string; messages: AgentUIMessage[]; model: string }>()
+  )
+  .handler(async ({ input }) => {
+    const { sessionId, messages, model } = input;
+
+    const aiModel = await findAiModelById(model);
+    if (!aiModel) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "ai model not found.",
+      });
+    }
 
     const provider = createOpenAICompatible({
-      apiKey: context.env.OPENAI_COMPATIBLE_BASE_KEY,
-      baseURL: context.env.OPENAI_COMPATIBLE_API_URL,
-      name: context.env.OPENAI_COMPATIBLE_PROVIDER,
+      apiKey: aiModel.apiKey,
+      baseURL: aiModel.apiUrl,
+      name: aiModel.provider,
     });
-
-    const model = provider.chatModel(context.env.OPENAI_COMPATIBLE_MODEL);
 
     const agentContext: AgentContext = {
       workdir: homedir(),
@@ -69,7 +77,7 @@ const createSession = publicProcedure
     const agent = new Agent({
       name: "main",
       sessionId,
-      model,
+      model: provider.chatModel(aiModel.model),
       systemPrompt: "You are a helpful assistant.",
       context: agentContext,
       tools: {

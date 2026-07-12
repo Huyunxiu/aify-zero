@@ -1,8 +1,10 @@
 import { useChat } from "@ai-sdk/react";
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
+import { useQuery } from "@tanstack/react-query";
 import type { AgentUIMessage } from "@workspace/agent";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import { MessageSquareIcon } from "lucide-react";
+import * as React from "react";
 
 import {
   Empty,
@@ -22,12 +24,12 @@ import {
 import { client } from "../lib/orpc";
 import { AssistantMessage } from "./assistant-message";
 import { Message, MessageContent, MessageResponse } from "./message";
+import { ModelSelect } from "./model-select";
 import {
   PromptInput,
   PromptInputBody,
   PromptInputFooter,
   PromptInputSubmit,
-  PromptInputTextarea,
   PromptInputTools,
 } from "./prompt-input";
 import type { PromptInputMessage } from "./prompt-input";
@@ -41,6 +43,13 @@ export type SessionProps = React.ComponentProps<"div"> & {
 };
 
 export function Session({ sessionId, initialMessages }: SessionProps) {
+  const listAiModelsQuery = useQuery({
+    queryKey: ["listAiModels"],
+    queryFn: async () => await client.aiModel.list(),
+  });
+
+  const [selectedModelId, setSelectedModelId] = React.useState<string>();
+
   const {
     sendMessage,
     messages,
@@ -57,11 +66,16 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
         throw new Error("Unsupported");
       },
       async sendMessages(options) {
+        if (!selectedModelId) {
+          return;
+        }
+
         return eventIteratorToUnproxiedDataStream(
           await client.session.create(
             {
               sessionId: options.chatId,
               messages: options.messages,
+              model: selectedModelId,
             },
             { signal: options.abortSignal }
           )
@@ -168,8 +182,14 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                 <PromptInputTiptap onSubmit={handleSubmit} />
               </PromptInputBody>
               <PromptInputFooter>
-                <PromptInputTools></PromptInputTools>
-                <PromptInputSubmit />
+                <PromptInputTools>
+                  <ModelSelect
+                    models={listAiModelsQuery.data ?? []}
+                    value={selectedModelId}
+                    onValueChange={setSelectedModelId}
+                  />
+                </PromptInputTools>
+                <PromptInputSubmit disabled={!selectedModelId} />
               </PromptInputFooter>
             </PromptInput>
           </div>

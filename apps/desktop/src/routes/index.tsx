@@ -4,27 +4,22 @@ import {
   SidebarInset,
   SidebarProvider,
 } from "@workspace/ui/components/sidebar";
-import {
-  Island,
-  IslandGroup,
-  IslandHandle,
-} from "@workspace/ui/elements/island";
+import { Island, IslandGroup } from "@workspace/ui/elements/island";
 import { SessionContainer } from "@workspace/ui/elements/session-container";
-import { TitleBar } from "@workspace/ui/elements/title-bar";
 
 const Home = () => (
   <SidebarProvider>
     <AppSidebar />
     <SidebarInset className="bg-transparent">
       <IslandGroup orientation="horizontal">
-        <Island defaultSize="65%">
+        <Island defaultSize="100%">
           <SessionContainer />
         </Island>
-        <IslandHandle />
+        {/* <IslandHandle />
         <Island defaultSize="35%">
           <TitleBar></TitleBar>
           <div className="flex items-center justify-center p-6"></div>
-        </Island>
+        </Island> */}
       </IslandGroup>
     </SidebarInset>
   </SidebarProvider>

@@ -54,7 +54,7 @@ import { Pencil, PlusIcon, Trash } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import DeepSeekLogo from "../../assets/logo/deepseek.svg";
+import { ModelLogo } from "../model-logo";
 import { SettingFrame } from "./setting-frame";
 
 export function ModelSettings() {
@@ -132,7 +132,7 @@ export function ModelSettings() {
       accessorKey: "name",
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
-          <img className="size-4" src={DeepSeekLogo} alt="deepseek" />
+          <ModelLogo model={row.original.name} />
           <span>{row.original.name}</span>
         </div>
       ),

@@ -54,6 +54,28 @@ function SelectTrigger({
   )
 }
 
+function SelectTransparentTrigger({
+  className,
+  size = "default",
+  children,
+  ...props
+}: SelectPrimitive.Trigger.Props & {
+  size?: "sm" | "default"
+}) {
+  return (
+    <SelectPrimitive.Trigger
+      data-slot="select-trigger"
+      data-size={size}
+      className={cn(
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </SelectPrimitive.Trigger>
+  )
+}
+
 function SelectContent({
   className,
   children,
@@ -195,5 +217,6 @@ export {
   SelectScrollUpButton,
   SelectSeparator,
   SelectTrigger,
+  SelectTransparentTrigger,
   SelectValue,
 }
