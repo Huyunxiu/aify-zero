@@ -64,3 +64,18 @@ export const ai_model_table = sqliteTable("ai_model", {
 
 export type AiModelModel = InferSelectModel<typeof ai_model_table>;
 export type AiModelInsertModel = InferInsertModel<typeof ai_model_table>;
+
+export const dict_table = sqliteTable("dict", {
+  code: text("code").primaryKey(),
+  name: text("name").notNull(),
+  content: text("content", { mode: "json" }).notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+export type DictModel = InferSelectModel<typeof dict_table>;
+export type DictInsertModel = InferInsertModel<typeof dict_table>;
