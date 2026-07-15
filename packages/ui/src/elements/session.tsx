@@ -43,11 +43,12 @@ export type SessionProps = React.ComponentProps<"div"> & {
 };
 
 export function Session({ sessionId, initialMessages }: SessionProps) {
-  const listAiModelsQuery = useQuery({
-    queryKey: ["listAiModels"],
-    queryFn: async () => await client.aiModel.list(),
+  const getSettingsQuery = useQuery({
+    queryKey: ["settings"],
+    queryFn: async () => await client.setting.get(),
   });
 
+  const models = getSettingsQuery.data?.models ?? [];
   const [selectedModelId, setSelectedModelId] = React.useState<string>();
 
   const {
@@ -184,7 +185,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
               <PromptInputFooter>
                 <PromptInputTools>
                   <ModelSelect
-                    models={listAiModelsQuery.data ?? []}
+                    models={models}
                     value={selectedModelId}
                     onValueChange={setSelectedModelId}
                   />

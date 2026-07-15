@@ -8,7 +8,7 @@ import {
   updateUserSettingsSchema,
   userSettingsSchema,
 } from "./settings.schema";
-import type { UserSettings } from "./settings.schema";
+import type { AiModel, UserSettings } from "./settings.schema";
 
 const USER_SETTINGS_CODE = "user.settings";
 const USER_SETTINGS_NAME = "User Settings";
@@ -29,6 +29,15 @@ async function ensureUserSettings(): Promise<UserSettings> {
   return defaults;
 }
 
+/** Persist updated settings back to the dict store. */
+async function saveUserSettings(settings: UserSettings): Promise<UserSettings> {
+  const parsed = userSettingsSchema.parse(settings);
+  await updateDict(USER_SETTINGS_CODE, { content: parsed });
+  return parsed;
+}
+
+// ── User Settings routes ─────────────────────────────────────────────────────
+
 export const getUserSettingsRoute = publicProcedure.handler(
   async () => await ensureUserSettings()
 );
@@ -38,11 +47,13 @@ export const updateUserSettingsRoute = publicProcedure
   .handler(async ({ input }) => {
     const current = await ensureUserSettings();
     const merged = { ...current, ...input };
-    const parsed = userSettingsSchema.parse(merged);
-
-    await updateDict(USER_SETTINGS_CODE, {
-      content: parsed,
-    });
-
-    return parsed;
+    return await saveUserSettings(merged);
   });
+
+/** Look up an AI model by id from the UserSettings store. */
+export async function findAiModelById(
+  id: string
+): Promise<AiModel | undefined> {
+  const settings = await ensureUserSettings();
+  return settings.models.find((m) => m.id === id);
+}

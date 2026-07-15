@@ -27,7 +27,7 @@ import type { UIMessagePart } from "ai";
 import z from "zod";
 
 import { publicProcedure } from "../index";
-import { findAiModelById } from "./ai-model/ai-model.repository";
+import { findAiModelById } from "./settings/settings.service";
 
 function convertAgentUIMessages(
   messages: MessageModel[]

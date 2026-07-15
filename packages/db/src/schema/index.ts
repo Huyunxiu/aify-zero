@@ -44,27 +44,6 @@ export const message_table = sqliteTable(
 export type MessageModel = InferSelectModel<typeof message_table>;
 export type MessageInsertModel = InferInsertModel<typeof message_table>;
 
-export const ai_model_table = sqliteTable("ai_model", {
-  id: text("id", { length: 255 }).primaryKey(),
-  name: text("name").notNull(),
-  provider: text("provider").notNull(),
-  model: text("model").notNull(),
-  apiUrl: text("api_url").notNull(),
-  apiKey: text("api_key").notNull(),
-  compatibleType: text("compatible_type").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
-  extension: text("supports", { mode: "json" }),
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`),
-});
-
-export type AiModelModel = InferSelectModel<typeof ai_model_table>;
-export type AiModelInsertModel = InferInsertModel<typeof ai_model_table>;
-
 export const dict_table = sqliteTable("dict", {
   code: text("code").primaryKey(),
   name: text("name").notNull(),

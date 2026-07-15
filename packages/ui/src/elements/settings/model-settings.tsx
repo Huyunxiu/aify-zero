@@ -71,9 +71,8 @@ export function ModelSettings() {
   };
 
   type AiModelRow = NonNullable<
-    Awaited<ReturnType<typeof client.aiModel.list>>
+    Awaited<ReturnType<typeof client.setting.get>>["models"]
   >[number];
-  type AiModelInput = Parameters<typeof client.aiModel.create>[0];
 
   const openEditDialog = (model: AiModelRow) => {
     setEditingId(model.id);
@@ -95,37 +94,43 @@ export function ModelSettings() {
   };
 
   const listAiModelsQuery = useQuery({
-    queryKey: ["listAiModels"],
-    queryFn: async () => await client.aiModel.list(),
+    queryKey: ["settings"],
+    queryFn: async () => await client.setting.get(),
+    select: (data) => data.models,
   });
 
-  const createAiModelMutation = useMutation({
-    mutationFn: async (input: AiModelInput) =>
-      await client.aiModel.create(input),
+  const saveSettingsMutation = useMutation({
+    mutationFn: async (models: AiModelRow[]) =>
+      await client.setting.update({ models }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["listAiModels"] });
-      setDialogOpen(false);
-      form.reset();
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
     },
   });
 
-  const updateAiModelMutation = useMutation({
-    mutationFn: async (input: Parameters<typeof client.aiModel.update>[0]) =>
-      await client.aiModel.update(input),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["listAiModels"] });
-      setDialogOpen(false);
-      setEditingId(null);
-      form.reset();
-    },
-  });
+  const createAiModel = async (input: AiModelRow) => {
+    const currentModels = listAiModelsQuery.data ?? [];
+    await saveSettingsMutation.mutateAsync([...currentModels, input]);
+    setDialogOpen(false);
+    form.reset();
+  };
 
-  const deleteAiModelMutation = useMutation({
-    mutationFn: async (id: string) => await client.aiModel.delete({ id }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["listAiModels"] });
-    },
-  });
+  const updateAiModel = async (id: string, input: Partial<AiModelRow>) => {
+    const currentModels = listAiModelsQuery.data ?? [];
+    await saveSettingsMutation.mutateAsync(
+      currentModels.map((m) => (m.id === id ? { ...m, ...input } : m))
+    );
+    setDialogOpen(false);
+    setEditingId(null);
+    form.reset();
+  };
+
+  const deleteAiModel = async (id: string) => {
+    const currentModels = listAiModelsQuery.data ?? [];
+    await saveSettingsMutation.mutateAsync(
+      currentModels.filter((m) => m.id !== id)
+    );
+    setDeleteDialogOpen(false);
+  };
 
   const columns: ColumnDef<AiModelRow>[] = [
     {
@@ -144,16 +149,13 @@ export function ModelSettings() {
           <Switch
             checked={row.original.active}
             onCheckedChange={(checked) => {
-              updateAiModelMutation.mutate({
-                id: row.original.id,
-                active: checked,
-              });
+              void updateAiModel(row.original.id, { active: checked });
             }}
           />
           <Button
             variant="ghost"
             size="icon-sm"
-            disabled={deleteAiModelMutation.isPending}
+            disabled={saveSettingsMutation.isPending}
             onClick={() => {
               openEditDialog(row.original);
             }}
@@ -188,10 +190,10 @@ export function ModelSettings() {
                 </AlertDialogCancel>
                 <AlertDialogAction
                   variant="destructive"
-                  loading={deleteAiModelMutation.isPending}
-                  disabled={deleteAiModelMutation.isPending}
+                  loading={saveSettingsMutation.isPending}
+                  disabled={saveSettingsMutation.isPending}
                   onClick={() => {
-                    deleteAiModelMutation.mutate(row.original.id);
+                    void deleteAiModel(row.original.id);
                   }}
                 >
                   {t("settings.model.delete")}
@@ -216,8 +218,7 @@ export function ModelSettings() {
     },
     onSubmit: async ({ value }) => {
       if (editingId) {
-        await updateAiModelMutation.mutateAsync({
-          id: editingId,
+        await updateAiModel(editingId, {
           name: value.name,
           provider: value.provider,
           model: value.model,
@@ -228,7 +229,7 @@ export function ModelSettings() {
         });
       } else {
         const id = `${value.provider}/${value.model}`;
-        await createAiModelMutation.mutateAsync({
+        await createAiModel({
           id,
           name: value.name,
           provider: value.provider,
