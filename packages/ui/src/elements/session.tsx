@@ -1,6 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useQuery } from "@tanstack/react-query";
+import type { Editor } from "@tiptap/core";
 import type { AgentUIMessage } from "@workspace/agent";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import { MessageSquareIcon } from "lucide-react";
@@ -50,6 +51,8 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
 
   const models = getSettingsQuery.data?.models ?? [];
   const [selectedModelId, setSelectedModelId] = React.useState<string>();
+  const editorRef = React.useRef<Editor | null>(null);
+  const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
   const {
     sendMessage,
@@ -86,8 +89,9 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   });
 
   const handleSubmit = (message: PromptInputMessage) => {
-    console.log("handleSubmit", messages, message);
-    void sendMessage({ text: message.text });
+    const text = editorRef.current?.getText() ?? message.text;
+    console.log("handleSubmit", messages, { ...message, text });
+    void sendMessage({ text });
   };
 
   const renderMessage = (message: AgentUIMessage) => {
@@ -180,7 +184,15 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
             <PromptInput onSubmit={handleSubmit}>
               <PromptInputBody>
                 {/* <PromptInputTextarea /> */}
-                <PromptInputTiptap onSubmit={handleSubmit} />
+                <PromptInputTiptap
+                  editorRef={editorRef}
+                  onEmptyChange={(isEmpty) => {
+                    if (isEmpty !== isEditorEmpty) {
+                      setIsEditorEmpty(isEmpty);
+                    }
+                  }}
+                  onSubmit={handleSubmit}
+                />
               </PromptInputBody>
               <PromptInputFooter>
                 <PromptInputTools>
@@ -190,7 +202,9 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                     onValueChange={setSelectedModelId}
                   />
                 </PromptInputTools>
-                <PromptInputSubmit disabled={!selectedModelId} />
+                <PromptInputSubmit
+                  disabled={!selectedModelId || isEditorEmpty}
+                />
               </PromptInputFooter>
             </PromptInput>
           </div>

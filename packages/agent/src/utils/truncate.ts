@@ -158,3 +158,93 @@ export class Truncate {
     await Promise.allSettled(tasks);
   }
 }
+
+export type TruncateContentProps = {
+  content: string;
+  maxBytes: number;
+  maxLines: number;
+  maxLineLength?: number;
+  lineTruncationSuffix?: string;
+  direction?: "head" | "tail";
+};
+
+export type TruncateContentResult = {
+  lines: string[];
+  outputLines: number;
+  outputBytes: number;
+  truncatedByBytes: boolean;
+  truncatedByLines: boolean;
+};
+
+export function truncateContent({
+  content,
+  maxBytes,
+  maxLines,
+  maxLineLength,
+  lineTruncationSuffix,
+  direction = "head",
+}: TruncateContentProps): TruncateContentResult {
+  const allLines: string[] = content.split("\n");
+
+  const out: string[] = [];
+  let bytes = 0;
+  let truncatedByBytes = false;
+  let truncatedByLines = false;
+
+  function maybeTruncateLine(line: string): string {
+    if (maxLineLength !== undefined && line.length > maxLineLength) {
+      const suffix = lineTruncationSuffix ?? "";
+      return line.slice(0, maxLineLength) + suffix;
+    }
+    return line;
+  }
+
+  if (direction === "head") {
+    for (const raw of allLines) {
+      if (out.length >= maxLines) {
+        truncatedByLines = true;
+        break;
+      }
+      const line = maybeTruncateLine(raw);
+      const newlineCost = out.length > 0 ? 1 : 0;
+      const size = Buffer.byteLength(line, "utf-8") + newlineCost;
+      if (bytes + size > maxBytes) {
+        truncatedByBytes = true;
+        break;
+      }
+      out.push(line);
+      bytes += size;
+    }
+  } else {
+    for (let i = allLines.length - 1; i >= 0 && out.length < maxLines; i -= 1) {
+      const raw: string = allLines.at(i) ?? "";
+      const line = maybeTruncateLine(raw);
+      const newlineCost = out.length > 0 ? 1 : 0;
+      const size = Buffer.byteLength(line, "utf-8") + newlineCost;
+      if (bytes + size > maxBytes) {
+        truncatedByBytes = true;
+        break;
+      }
+      out.unshift(line);
+      bytes += size;
+    }
+
+    // In tail mode the loop naturally terminates when out reaches maxLines;
+    // detect whether that (rather than exhausting all lines) was the cause.
+    if (
+      !truncatedByBytes &&
+      out.length >= maxLines &&
+      out.length < allLines.length
+    ) {
+      truncatedByLines = true;
+    }
+  }
+
+  return {
+    lines: out,
+    outputLines: out.length,
+    outputBytes: bytes,
+    truncatedByBytes,
+    truncatedByLines,
+  };
+}

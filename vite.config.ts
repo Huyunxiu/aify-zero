@@ -49,6 +49,9 @@ export default defineConfig({
       "typescript/consistent-return": "allow",
       "typescript/no-unsafe-assignment": "allow",
       "no-use-before-define": "allow",
+      "typescript/promise-function-async": "allow",
+      "typescript/prefer-nullish-coalescing": "allow",
+      "prefer-template": "allow",
     },
   },
   run: {

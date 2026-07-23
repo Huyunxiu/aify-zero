@@ -1,13 +1,10 @@
 import { realpathSync } from "node:fs";
 import { open } from "node:fs/promises";
-import { resolve as pathResolve } from "node:path";
+import { resolve as pathResolve, posix } from "node:path";
 
 import { fileTypeFromBuffer } from "file-type";
 
 export function windowsPath(p: string): string {
-  if (process.platform !== "win32") {
-    return p;
-  }
   return p
     .replace(
       // oxlint-disable-next-line require-unicode-regexp
@@ -37,7 +34,7 @@ export function windowsPath(p: string): string {
 
 export function normalizePath(p: string): string {
   if (process.platform !== "win32") {
-    return p;
+    return posix.normalize(p);
   }
   const resolved = pathResolve(windowsPath(p));
   try {
@@ -120,4 +117,16 @@ export function isBinaryFile(ext: string, bytes: Uint8Array) {
   }
 
   return nonPrintableCount / bytes.length > 0.3;
+}
+
+/**
+ * Wraps a value in POSIX single-quotes, escaping any embedded single-quotes.
+ *
+ * The quoting strategy is the standard POSIX approach: wrap the value in
+ * single-quotes and replace each embedded `'` with `'\''` (end the
+ * single-quoted string, insert an escaped single-quote, re-open
+ * single-quoting).
+ */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll(/'/g, "'\\''")}'`;
 }

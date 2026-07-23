@@ -21,6 +21,7 @@ import {
   createWriteFileTool,
   createDeleteFileTool,
   createEditFileTool,
+  createGrepTool,
 } from "@workspace/agent/tools/index";
 import type { MessageModel, SessionModel } from "@workspace/db";
 import type { UIMessagePart } from "ai";
@@ -74,10 +75,12 @@ const createSession = publicProcedure
       workdir: homedir(),
     };
 
+    const selectedModel = provider.chatModel(aiModel.model);
+
     const agent = new Agent({
       name: "main",
       sessionId,
-      model: provider.chatModel(aiModel.model),
+      model: selectedModel,
       systemPrompt: "You are a helpful assistant.",
       context: agentContext,
       tools: {
@@ -86,12 +89,13 @@ const createSession = publicProcedure
         "write-file": createWriteFileTool({ agentContext }),
         "delete-file": createDeleteFileTool({ agentContext }),
         "edit-file": createEditFileTool({ agentContext }),
+        grep: createGrepTool({ agentContext }),
       },
     });
 
     const stream = await agent.stream({
       messages,
-      model,
+      model: selectedModel,
     });
 
     return streamToEventIterator(stream);

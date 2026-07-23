@@ -1,20 +1,26 @@
+import type { Editor } from "@tiptap/core";
 import { Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 
 import "./prompt-input.tiptap.css";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 
 import type { PromptInputMessage } from "./prompt-input";
 
 export type PromptInputTiptapProps = {
   placeholder?: string;
   onSubmit?: (message: PromptInputMessage) => void;
+  editorRef?: RefObject<Editor | null>;
+  onEmptyChange?: (isEmpty: boolean) => void;
 };
 
 export const PromptInputTiptap = ({
   placeholder = "What would you like to know?",
   onSubmit,
+  editorRef,
+  onEmptyChange,
 }: PromptInputTiptapProps) => {
   const [isComposing, setIsComposing] = useState(false);
 
@@ -61,7 +67,17 @@ export const PromptInputTiptap = ({
       },
     },
     content: "",
+    onUpdate: ({ editor: currentEditor }) => {
+      onEmptyChange?.(currentEditor.isEmpty);
+    },
   });
+
+  // Sync editor instance out to parent via editorRef, and report initial empty state
+  useEffect(() => {
+    if (editorRef) {
+      editorRef.current = editor;
+    }
+  }, [editor, editorRef]);
 
   const handleCompositionEnd = useCallback(() => {
     setIsComposing(false);

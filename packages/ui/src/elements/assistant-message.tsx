@@ -131,6 +131,20 @@ export const AssistantMessage = ({
                   </div>
                 </ChainOfTurnStep>
               );
+            } else if (part.type === "tool-grep") {
+              return (
+                <ChainOfTurnStep
+                  key={i}
+                  path={`${i}`}
+                  icon={PenLineIcon}
+                  label={`Grep ${part.output?.title}`}
+                  status="complete"
+                >
+                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
+                    {part.output?.output ?? ""}
+                  </div>
+                </ChainOfTurnStep>
+              );
             }
 
             return null;
