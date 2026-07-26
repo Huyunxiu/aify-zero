@@ -51,6 +51,8 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
 
   const models = getSettingsQuery.data?.models ?? [];
   const [selectedModelId, setSelectedModelId] = React.useState<string>();
+  const selectedModelIdRef = React.useRef(selectedModelId);
+  selectedModelIdRef.current = selectedModelId;
   const editorRef = React.useRef<Editor | null>(null);
   const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
@@ -70,7 +72,8 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
         throw new Error("Unsupported");
       },
       async sendMessages(options) {
-        if (!selectedModelId) {
+        const modelId = selectedModelIdRef.current;
+        if (!modelId) {
           return;
         }
 
@@ -79,7 +82,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
             {
               sessionId: options.chatId,
               messages: options.messages,
-              model: selectedModelId,
+              model: modelId,
             },
             { signal: options.abortSignal }
           )
@@ -92,6 +95,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
     const text = editorRef.current?.getText() ?? message.text;
     console.log("handleSubmit", messages, { ...message, text });
     void sendMessage({ text });
+    editorRef.current?.commands.clearContent();
   };
 
   const renderMessage = (message: AgentUIMessage) => {

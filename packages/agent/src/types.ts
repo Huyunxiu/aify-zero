@@ -3,6 +3,7 @@ import type { FinishReason, LanguageModelUsage, UIMessage } from "ai";
 import type {
   DeleteFileToolType,
   EditFileToolType,
+  GlobToolType,
   GrepToolType,
   ReadFileToolType,
   WriteFileToolType,
@@ -21,6 +22,7 @@ export type AgentUITools = {
   "delete-file": DeleteFileToolType;
   "edit-file": EditFileToolType;
   grep: GrepToolType;
+  glob: GlobToolType;
   "read-file": ReadFileToolType;
   "write-file": WriteFileToolType;
 };

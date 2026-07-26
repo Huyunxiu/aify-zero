@@ -22,6 +22,7 @@ import {
   createDeleteFileTool,
   createEditFileTool,
   createGrepTool,
+  createGlobTool,
 } from "@workspace/agent/tools/index";
 import type { MessageModel, SessionModel } from "@workspace/db";
 import type { UIMessagePart } from "ai";
@@ -90,6 +91,7 @@ const createSession = publicProcedure
         "delete-file": createDeleteFileTool({ agentContext }),
         "edit-file": createEditFileTool({ agentContext }),
         grep: createGrepTool({ agentContext }),
+        glob: createGlobTool({ agentContext }),
       },
     });
 

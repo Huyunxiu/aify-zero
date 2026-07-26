@@ -145,6 +145,20 @@ export const AssistantMessage = ({
                   </div>
                 </ChainOfTurnStep>
               );
+            } else if (part.type === "tool-glob") {
+              return (
+                <ChainOfTurnStep
+                  key={i}
+                  path={`${i}`}
+                  icon={PenLineIcon}
+                  label={`Glob ${part.output?.title}`}
+                  status="complete"
+                >
+                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
+                    {part.output?.output ?? ""}
+                  </div>
+                </ChainOfTurnStep>
+              );
             }
 
             return null;
