@@ -6,6 +6,7 @@ import type {
   GlobToolType,
   GrepToolType,
   ReadFileToolType,
+  WebFetchToolType,
   WriteFileToolType,
 } from "./tools";
 
@@ -24,6 +25,7 @@ export type AgentUITools = {
   grep: GrepToolType;
   glob: GlobToolType;
   "read-file": ReadFileToolType;
+  "web-fetch": WebFetchToolType;
   "write-file": WriteFileToolType;
 };
 

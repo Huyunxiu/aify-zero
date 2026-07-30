@@ -1,9 +1,10 @@
 import "./style.css";
+import heroImg from "./assets/hero.png";
 import typescriptLogo from "./assets/typescript.svg";
 import viteLogo from "./assets/vite.svg";
-import heroImg from "./assets/hero.png";
 import { setupCounter } from "./counter.ts";
 
+// oxlint-disable-next-line typescript/no-non-null-assertion
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 <section id="center">
   <div class="hero">
@@ -57,4 +58,5 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 <section id="spacer"></section>
 `;
 
+// oxlint-disable-next-line typescript/no-non-null-assertion
 setupCounter(document.querySelector<HTMLButtonElement>("#counter")!);

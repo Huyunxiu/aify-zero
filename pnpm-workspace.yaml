@@ -19,9 +19,9 @@ allowBuilds:
   esbuild: true
   msw: true
 catalog:
-  "@ai-sdk/devtools": 1.0.0-canary.30
-  "@ai-sdk/openai-compatible": ^3.0.0-beta.36
-  "@ai-sdk/react": 4.0.0-beta.116
+  "@ai-sdk/devtools": 1.0.9
+  "@ai-sdk/openai-compatible": ^3.0.17
+  "@ai-sdk/react": 4.0.45
   "@electron-forge/cli": ^7.11.1
   "@electron-forge/maker-deb": ^7.11.1
   "@electron-forge/maker-rpm": ^7.11.1
@@ -49,13 +49,14 @@ catalog:
   "@tanstack/react-table": ^8.21.3
   "@tanstack/router-plugin": ^1.167.35
   "@tiptap/extension-placeholder": ^3.27.3
-  '@tiptap/markdown': ^3.27.3
+  "@tiptap/markdown": ^3.27.3
   "@tiptap/react": ^3.27.3
   "@tiptap/starter-kit": ^3.27.3
   "@types/electron-squirrel-startup": ^1.0.2
   "@types/node": ^25.5.0
+  "@types/turndown": ^5.0.6
   "@typescript/native-preview": 7.0.0-dev.20260328.1
-  ai: ^7.0.17
+  ai: ^7.0.42
   bumpp: ^11.0.1
   cmdk: ^1.1.1
   dotenv: ^17.4.2
@@ -74,6 +75,7 @@ catalog:
   shadcn: ^4.12.0
   shiki: ^4.2.0
   streamdown: ^2.5.0
+  turndown: ^7.2.4
   typescript: ^6.0.2
   ultracite: 7.7.0
   use-stick-to-bottom: ^1.1.4
@@ -84,5 +86,10 @@ catalog:
   zod: ^4.4.3
   zustand: ^5.0.14
 minimumReleaseAgeExclude:
-  - '@ai-sdk/gateway@4.0.13'
-  - ai@7.0.17
+  - "@ai-sdk/devtools@1.0.9"
+  - "@ai-sdk/gateway@4.0.32"
+  - "@ai-sdk/mcp@2.0.19"
+  - "@ai-sdk/openai-compatible@3.0.17"
+  - "@ai-sdk/provider-utils@5.0.15"
+  - "@ai-sdk/react@4.0.45"
+  - ai@7.0.42

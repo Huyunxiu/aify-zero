@@ -5,7 +5,13 @@ import type {
   AgentUITools,
 } from "@workspace/agent";
 import type { TextUIPart, UIMessagePart } from "ai";
-import { BrainIcon, EyeIcon, PenLineIcon, TextIcon } from "lucide-react";
+import {
+  BrainIcon,
+  EyeIcon,
+  GlobeIcon,
+  PenLineIcon,
+  TextIcon,
+} from "lucide-react";
 
 import {
   ChainOfTurn,
@@ -41,10 +47,10 @@ const splitAssistantMessageParts = (message: AgentUIMessage) => {
 };
 
 export const AssistantMessage = ({
-  addToolOutput,
-  addToolApprovalResponse,
+  addToolOutput: _addToolOutput,
+  addToolApprovalResponse: _addToolApprovalResponse,
   message,
-  regenerate,
+  regenerate: _regenerate,
 }: AssistantMessageProps) => {
   if (message.role !== "assistant") {
     return null;
@@ -152,6 +158,20 @@ export const AssistantMessage = ({
                   path={`${i}`}
                   icon={PenLineIcon}
                   label={`Glob ${part.output?.title}`}
+                  status="complete"
+                >
+                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
+                    {part.output?.output ?? ""}
+                  </div>
+                </ChainOfTurnStep>
+              );
+            } else if (part.type === "tool-web-fetch") {
+              return (
+                <ChainOfTurnStep
+                  key={i}
+                  path={`${i}`}
+                  icon={GlobeIcon}
+                  label={`Fetch ${part.output?.title}`}
                   status="complete"
                 >
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">

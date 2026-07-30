@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { tool } from "ai";
-import type { InferUITool } from "ai";
+import type { InferUITool, Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -50,7 +50,9 @@ type CreateBashToolProps = {
   agentContext: AgentContext;
 };
 
-export const createBashTool = ({ agentContext }: CreateBashToolProps) =>
+export const createBashTool = ({
+  agentContext,
+}: CreateBashToolProps): Tool<BashToolInput, BashToolOutput, AgentContext> =>
   tool<BashToolInput, BashToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: createBashToolSchema(agentContext),

@@ -113,16 +113,56 @@
   --foreground-7: color-mix(in oklch, var(--foreground) 7%, var(--background));
   --foreground-8: color-mix(in oklch, var(--foreground) 8%, var(--background));
   --foreground-9: color-mix(in oklch, var(--foreground) 9%, var(--background));
-  --foreground-10: color-mix(in oklch, var(--foreground) 10%, var(--background));
-  --foreground-20: color-mix(in oklch, var(--foreground) 20%, var(--background));
-  --foreground-30: color-mix(in oklch, var(--foreground) 30%, var(--background));
-  --foreground-40: color-mix(in oklch, var(--foreground) 40%, var(--background));
-  --foreground-50: color-mix(in oklch, var(--foreground) 50%, var(--background));
-  --foreground-60: color-mix(in oklch, var(--foreground) 60%, var(--background));
-  --foreground-70: color-mix(in oklch, var(--foreground) 70%, var(--background));
-  --foreground-80: color-mix(in oklch, var(--foreground) 80%, var(--background));
-  --foreground-90: color-mix(in oklch, var(--foreground) 90%, var(--background));
-  --foreground-95: color-mix(in oklch, var(--foreground) 95%, var(--background));
+  --foreground-10: color-mix(
+    in oklch,
+    var(--foreground) 10%,
+    var(--background)
+  );
+  --foreground-20: color-mix(
+    in oklch,
+    var(--foreground) 20%,
+    var(--background)
+  );
+  --foreground-30: color-mix(
+    in oklch,
+    var(--foreground) 30%,
+    var(--background)
+  );
+  --foreground-40: color-mix(
+    in oklch,
+    var(--foreground) 40%,
+    var(--background)
+  );
+  --foreground-50: color-mix(
+    in oklch,
+    var(--foreground) 50%,
+    var(--background)
+  );
+  --foreground-60: color-mix(
+    in oklch,
+    var(--foreground) 60%,
+    var(--background)
+  );
+  --foreground-70: color-mix(
+    in oklch,
+    var(--foreground) 70%,
+    var(--background)
+  );
+  --foreground-80: color-mix(
+    in oklch,
+    var(--foreground) 80%,
+    var(--background)
+  );
+  --foreground-90: color-mix(
+    in oklch,
+    var(--foreground) 90%,
+    var(--background)
+  );
+  --foreground-95: color-mix(
+    in oklch,
+    var(--foreground) 95%,
+    var(--background)
+  );
 
   --card: oklch(0.991 0.0013 282.73);
   --card-foreground: oklch(0.2206 0 0);
@@ -169,16 +209,56 @@
   --foreground-7: color-mix(in oklch, var(--foreground) 7%, var(--background));
   --foreground-8: color-mix(in oklch, var(--foreground) 8%, var(--background));
   --foreground-9: color-mix(in oklch, var(--foreground) 9%, var(--background));
-  --foreground-10: color-mix(in oklch, var(--foreground) 10%, var(--background));
-  --foreground-20: color-mix(in oklch, var(--foreground) 20%, var(--background));
-  --foreground-30: color-mix(in oklch, var(--foreground) 30%, var(--background));
-  --foreground-40: color-mix(in oklch, var(--foreground) 40%, var(--background));
-  --foreground-50: color-mix(in oklch, var(--foreground) 50%, var(--background));
-  --foreground-60: color-mix(in oklch, var(--foreground) 60%, var(--background));
-  --foreground-70: color-mix(in oklch, var(--foreground) 70%, var(--background));
-  --foreground-80: color-mix(in oklch, var(--foreground) 80%, var(--background));
-  --foreground-90: color-mix(in oklch, var(--foreground) 90%, var(--background));
-  --foreground-95: color-mix(in oklch, var(--foreground) 95%, var(--background));
+  --foreground-10: color-mix(
+    in oklch,
+    var(--foreground) 10%,
+    var(--background)
+  );
+  --foreground-20: color-mix(
+    in oklch,
+    var(--foreground) 20%,
+    var(--background)
+  );
+  --foreground-30: color-mix(
+    in oklch,
+    var(--foreground) 30%,
+    var(--background)
+  );
+  --foreground-40: color-mix(
+    in oklch,
+    var(--foreground) 40%,
+    var(--background)
+  );
+  --foreground-50: color-mix(
+    in oklch,
+    var(--foreground) 50%,
+    var(--background)
+  );
+  --foreground-60: color-mix(
+    in oklch,
+    var(--foreground) 60%,
+    var(--background)
+  );
+  --foreground-70: color-mix(
+    in oklch,
+    var(--foreground) 70%,
+    var(--background)
+  );
+  --foreground-80: color-mix(
+    in oklch,
+    var(--foreground) 80%,
+    var(--background)
+  );
+  --foreground-90: color-mix(
+    in oklch,
+    var(--foreground) 90%,
+    var(--background)
+  );
+  --foreground-95: color-mix(
+    in oklch,
+    var(--foreground) 95%,
+    var(--background)
+  );
 
   --card: oklch(0.2955 0.0072 271.15);
   --card-foreground: oklch(0.9276 0.0062 272.04);

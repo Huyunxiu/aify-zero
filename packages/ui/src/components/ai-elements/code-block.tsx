@@ -30,12 +30,9 @@ import type {
 import { createHighlighter } from "shiki";
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
-// oxlint-disable-next-line eslint(no-bitwise)
 const isItalic = (fontStyle: number | undefined) => fontStyle && fontStyle & 1;
-// oxlint-disable-next-line eslint(no-bitwise)
 const isBold = (fontStyle: number | undefined) => fontStyle && fontStyle & 2;
 const isUnderline = (fontStyle: number | undefined) =>
-  // oxlint-disable-next-line eslint(no-bitwise)
   fontStyle && fontStyle & 4;
 
 // Transform tokens to include pre-computed keys to avoid noArrayIndexKey lint
@@ -236,8 +233,7 @@ export const highlightCode = (
         subscribers.delete(tokensCacheKey);
       }
     })
-    // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-then), eslint-plugin-promise(prefer-await-to-callbacks)
-    .catch((error) => {
+    .catch((error: unknown) => {
       console.error("Failed to highlight code:", error);
       subscribers.delete(tokensCacheKey);
     });
@@ -478,10 +474,9 @@ export const CodeBlockCopyButton = ({
         await navigator.clipboard.writeText(code);
         setIsCopied(true);
         onCopy?.();
-        timeoutRef.current = window.setTimeout(
-          () => setIsCopied(false),
-          timeout
-        );
+        timeoutRef.current = window.setTimeout(() => {
+          setIsCopied(false);
+        }, timeout);
       }
     } catch (error) {
       onError?.(error as Error);

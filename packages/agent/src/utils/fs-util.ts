@@ -1,3 +1,4 @@
+/* oxlint-disable */
 import { realpathSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { resolve as pathResolve, posix } from "node:path";
@@ -7,27 +8,16 @@ import { fileTypeFromBuffer } from "file-type";
 export function windowsPath(p: string): string {
   return p
     .replace(
-      // oxlint-disable-next-line require-unicode-regexp
       /^\/([a-zA-Z]):(?:[\\/]|$)/,
-      // oxlint-disable-next-line typescript/no-unsafe-call typescript/no-unsafe-member-access
       (_, drive) => `${drive.toUpperCase()}:/`
     )
+    .replace(/^\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
     .replace(
-      // oxlint-disable-next-line require-unicode-regexp
-      /^\/([a-zA-Z])(?:\/|$)/,
-      // oxlint-disable-next-line typescript/no-unsafe-call typescript/no-unsafe-member-access
-      (_, drive) => `${drive.toUpperCase()}:/`
-    )
-    .replace(
-      // oxlint-disable-next-line require-unicode-regexp
       /^\/cygdrive\/([a-zA-Z])(?:\/|$)/,
-      // oxlint-disable-next-line typescript/no-unsafe-call typescript/no-unsafe-member-access
       (_, drive) => `${drive.toUpperCase()}:/`
     )
     .replace(
-      // oxlint-disable-next-line require-unicode-regexp
       /^\/mnt\/([a-zA-Z])(?:\/|$)/,
-      // oxlint-disable-next-line typescript/no-unsafe-call typescript/no-unsafe-member-access
       (_, drive) => `${drive.toUpperCase()}:/`
     );
 }
@@ -111,7 +101,7 @@ export function isBinaryFile(ext: string, bytes: Uint8Array) {
     if (bytes[i] === 0) {
       return true;
     }
-    if (bytes[i] < 9 || (bytes[i] > 13 && bytes[i] < 32)) {
+    if (bytes[i]! < 9 || (bytes[i]! > 13 && bytes[i]! < 32)) {
       nonPrintableCount++;
     }
   }

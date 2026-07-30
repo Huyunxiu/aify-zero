@@ -4,7 +4,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 
 import "./prompt-input.tiptap.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { RefObject } from "react";
 
 import type { PromptInputMessage } from "./prompt-input";
@@ -59,7 +59,7 @@ export const PromptInputTiptap = ({
       }),
     ],
     editorProps: {
-      handleKeyDown: (view, event) => handleKeyDown(event),
+      handleKeyDown: (_, event) => handleKeyDown(event),
       attributes: {
         "data-slot": "input-group-control",
         class:

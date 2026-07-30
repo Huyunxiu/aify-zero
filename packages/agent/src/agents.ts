@@ -7,6 +7,7 @@ import {
   isStepCount,
   registerTelemetry,
   streamText,
+  toUIMessageStream,
 } from "ai";
 import type { LanguageModel, ToolSet } from "ai";
 
@@ -137,7 +138,8 @@ export class Agent {
         });
 
         writer.merge(
-          result.toUIMessageStream({
+          toUIMessageStream({
+            stream: result.stream,
             sendStart: false,
             sendReasoning: true,
             sendFinish: true,

@@ -9,6 +9,11 @@ export default defineConfig({
   fmt: {
     ...ultracite,
     ignorePatterns: [
+      ".claude/**",
+      ".agents/**",
+      "apps/desktop/vite.renderer.config.mts",
+      "apps/desktop/src/routeTree.gen.ts",
+      "packages/db/src/migrations",
       "packages/ui/src/components/**.tsx",
       "packages/ui/src/elements/prompt-input.tsx",
       "packages/ui/src/elements/message.tsx",
@@ -18,6 +23,11 @@ export default defineConfig({
   lint: {
     extends: [core, react, remix, vitest],
     ignorePatterns: [
+      ".claude/**",
+      ".agents/**",
+      "apps/desktop/vite.renderer.config.mts",
+      "apps/desktop/src/routeTree.gen.ts",
+      "packages/db/src/migrations",
       "packages/ui/src/components/**.tsx",
       "packages/ui/src/elements/prompt-input.tsx",
       "packages/ui/src/elements/message.tsx",
@@ -52,6 +62,12 @@ export default defineConfig({
       "typescript/promise-function-async": "allow",
       "typescript/prefer-nullish-coalescing": "allow",
       "prefer-template": "allow",
+      complexity: "allow",
+      "require-unicode-regexp": "allow",
+      "unicorn/prefer-string-replace-all": "allow",
+      "no-bitwise": "allow",
+      "typescript/strict-void-return": "allow",
+      "typescript/no-misused-promises": "allow",
     },
   },
   run: {

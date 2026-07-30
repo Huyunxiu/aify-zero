@@ -23,6 +23,7 @@ import {
   createEditFileTool,
   createGrepTool,
   createGlobTool,
+  createWebFetchTool,
 } from "@workspace/agent/tools/index";
 import type { MessageModel, SessionModel } from "@workspace/db";
 import type { UIMessagePart } from "ai";
@@ -92,6 +93,7 @@ const createSession = publicProcedure
         "edit-file": createEditFileTool({ agentContext }),
         grep: createGrepTool({ agentContext }),
         glob: createGlobTool({ agentContext }),
+        "web-fetch": createWebFetchTool({ agentContext }),
       },
     });
 

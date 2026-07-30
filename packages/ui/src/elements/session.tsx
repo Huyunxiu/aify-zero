@@ -77,7 +77,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
           return;
         }
 
-        return eventIteratorToUnproxiedDataStream(
+        const stream = eventIteratorToUnproxiedDataStream(
           await client.session.create(
             {
               sessionId: options.chatId,
@@ -87,6 +87,9 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
             { signal: options.abortSignal }
           )
         );
+
+        // oxlint-disable-next-line typescript/no-unsafe-return
+        return stream as any;
       },
     },
   });

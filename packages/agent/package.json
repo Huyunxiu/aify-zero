@@ -14,10 +14,12 @@
     "@workspace/db": "workspace:*",
     "ai": "catalog:",
     "file-type": "catalog:",
+    "turndown": "catalog:",
     "uuid": "catalog:"
   },
   "devDependencies": {
     "@ai-sdk/devtools": "catalog:",
+    "@types/turndown": "catalog:",
     "@workspace/config": "workspace:*",
     "typescript": "catalog:"
   }
