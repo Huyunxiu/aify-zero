@@ -129,7 +129,7 @@ export class Agent {
         });
 
         const result = streamText({
-          system: this.systemPrompt,
+          instructions: this.systemPrompt,
           model,
           messages: modelMessages,
           tools: this.tools,

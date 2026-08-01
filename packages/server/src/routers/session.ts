@@ -14,6 +14,7 @@ import type {
   AgentUITools,
 } from "@workspace/agent";
 import type { AgentContext } from "@workspace/agent/context";
+import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
 import {
   createBashTool,
@@ -25,6 +26,7 @@ import {
   createGlobTool,
   createWebFetchTool,
 } from "@workspace/agent/tools/index";
+import { createLoadSkillTool } from "@workspace/agent/tools/load-skill";
 import type { MessageModel, SessionModel } from "@workspace/db";
 import type { UIMessagePart } from "ai";
 import z from "zod";
@@ -73,17 +75,25 @@ const createSession = publicProcedure
       name: aiModel.provider,
     });
 
+    const selectedModel = provider.chatModel(aiModel.model);
+    const workdir = homedir();
+    const skillManager = new SkillManager({ dirs: SKILL_DIRS });
+    await skillManager.loadSkills(workdir);
+
     const agentContext: AgentContext = {
-      workdir: homedir(),
+      workdir,
+      skills: skillManager,
     };
 
-    const selectedModel = provider.chatModel(aiModel.model);
+    const systemPrompt = skillManager.appendPrompt("");
+
+    console.log(111, systemPrompt);
 
     const agent = new Agent({
       name: "main",
       sessionId,
       model: selectedModel,
-      systemPrompt: "You are a helpful assistant.",
+      systemPrompt,
       context: agentContext,
       tools: {
         bash: createBashTool({ agentContext }),
@@ -94,6 +104,7 @@ const createSession = publicProcedure
         grep: createGrepTool({ agentContext }),
         glob: createGlobTool({ agentContext }),
         "web-fetch": createWebFetchTool({ agentContext }),
+        "load-skill": createLoadSkillTool({ agentContext }),
       },
     });
 

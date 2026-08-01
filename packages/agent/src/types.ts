@@ -9,6 +9,7 @@ import type {
   WebFetchToolType,
   WriteFileToolType,
 } from "./tools";
+import type { LoadSkillToolType } from "./tools/load-skill";
 
 export type AgentUIMetadata = {
   createdAt?: number;
@@ -25,8 +26,9 @@ export type AgentUITools = {
   grep: GrepToolType;
   glob: GlobToolType;
   "read-file": ReadFileToolType;
-  "web-fetch": WebFetchToolType;
   "write-file": WriteFileToolType;
+  "web-fetch": WebFetchToolType;
+  "load-skill": LoadSkillToolType;
 };
 
 export type AgentUIMessage = UIMessage<
