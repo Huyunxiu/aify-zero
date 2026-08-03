@@ -124,12 +124,12 @@ export class SkillManager {
     return this.skills.find((skill) => skill.name === name);
   }
 
-  getAll(): SkillInfo[] {
+  listAll(): SkillInfo[] {
     return this.skills;
   }
 
   appendPrompt(prompt: string): string {
-    const skills = this.getAll();
+    const skills = this.listAll();
     const skillPrompt = [
       "",
       "## Available Skills",

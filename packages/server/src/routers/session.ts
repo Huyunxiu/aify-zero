@@ -87,8 +87,6 @@ const createSession = publicProcedure
 
     const systemPrompt = skillManager.appendPrompt("");
 
-    console.log(111, systemPrompt);
-
     const agent = new Agent({
       name: "main",
       sessionId,
@@ -157,10 +155,22 @@ export const listSessionMessages = publicProcedure
     return convertAgentUIMessages(messages);
   });
 
+export const listSessionResources = publicProcedure
+  .route({ method: "GET", path: "/sessions/{sessionId}/resources" })
+  .input(z.object({ sessionId: z.string() }))
+  .handler(async () => {
+    const workdir = homedir();
+    const skillManager = new SkillManager({ dirs: SKILL_DIRS });
+    await skillManager.loadSkills(workdir);
+
+    return { skills: skillManager.listAll() };
+  });
+
 export { eventIteratorToUnproxiedDataStream };
 
 export const session = {
   create: createSession,
   list: listSessions,
   listSessionMessages,
+  listSessionResources,
 };

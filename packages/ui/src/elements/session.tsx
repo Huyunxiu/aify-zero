@@ -49,6 +49,12 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
     queryFn: async () => await client.setting.get(),
   });
 
+  const listSessionResourcesQuery = useQuery({
+    queryKey: ["listSessionResources", sessionId],
+    queryFn: async () =>
+      await client.session.listSessionResources({ sessionId: sessionId ?? "" }),
+  });
+
   const models = getSettingsQuery.data?.models ?? [];
   const [selectedModelId, setSelectedModelId] = React.useState<string>();
   const selectedModelIdRef = React.useRef(selectedModelId);
@@ -193,6 +199,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                 {/* <PromptInputTextarea /> */}
                 <PromptInputTiptap
                   editorRef={editorRef}
+                  resources={listSessionResourcesQuery.data}
                   onEmptyChange={(isEmpty) => {
                     if (isEmpty !== isEditorEmpty) {
                       setIsEditorEmpty(isEmpty);
