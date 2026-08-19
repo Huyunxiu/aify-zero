@@ -1,3 +1,6 @@
+import { cp, mkdir } from "node:fs/promises";
+import path from "node:path";
+
 import { MakerDeb } from "@electron-forge/maker-deb";
 import { MakerRpm } from "@electron-forge/maker-rpm";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
@@ -55,6 +58,29 @@ const config: ForgeConfig = {
     }),
   ],
   rebuildConfig: {},
+  hooks: {
+    async packageAfterCopy(_forgeConfig, buildPath) {
+      const requiredNativePackages = ["@libsql"];
+      const sourceNodeModulesPath = path.resolve(
+        import.meta.dirname,
+        "..",
+        "..",
+        "node_modules"
+      );
+      const destNodeModulesPath = path.resolve(buildPath, "node_modules");
+      await Promise.all(
+        requiredNativePackages.map(async (packageName) => {
+          const sourcePath = path.join(sourceNodeModulesPath, packageName);
+          const destPath = path.join(destNodeModulesPath, packageName);
+          await mkdir(path.dirname(destPath), { recursive: true });
+          await cp(sourcePath, destPath, {
+            recursive: true,
+            preserveTimestamps: true,
+          });
+        })
+      );
+    },
+  },
 };
 
 export default config;
