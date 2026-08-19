@@ -11,6 +11,7 @@ export const skillInfoSchema = z.object({
   name: z.string(),
   description: z.string(),
   location: z.string(),
+  dir: z.string(),
   content: z.string(),
   category: z.enum(["personal", "project"]),
   metadata: SkillMetadataSchema,

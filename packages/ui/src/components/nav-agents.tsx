@@ -1,79 +1,54 @@
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@workspace/ui/components/collapsible"
-import {
   SidebarGroup,
+  SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
 } from "@workspace/ui/components/sidebar"
-import { ChevronRightIcon } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { client } from "../lib/orpc"
+import { Button } from "./button";
+import { PlusIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { nanoid } from "nanoid";
 
-export function NavAgents({
-  items,
-}: {
-  items: {
-    title: string
-    url: string
-    icon: React.ReactNode
-    isActive?: boolean
-    items?: {
-      title: string
-      url: string
-    }[]
-  }[]
-}) {
+export function NavAgents() {
+
+  const navigate = useNavigate();
+
+  const listAgentsQuery = useQuery({
+    queryKey: ["list_agents"],
+    queryFn: () => client.agent.list(),
+  });
+
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel>Agents</SidebarGroupLabel>
-      <SidebarMenu>
-        {items.map((item) => (
-          <Collapsible
-            key={item.title}
-            defaultOpen={item.isActive}
-            render={<SidebarMenuItem />}
-          >
-            <SidebarMenuButton
-              tooltip={item.title}
-              render={<a href={item.url} />}
-            >
-              {item.icon}
-              <span>{item.title}</span>
-            </SidebarMenuButton>
-            {item.items?.length ? (
-              <>
-                <CollapsibleTrigger
-                  render={
-                    <SidebarMenuAction className="aria-expanded:rotate-90" />
-                  }
+    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      <SidebarGroupLabel className="justify-between">
+        <span>Agents</span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => navigate({ to: `/agents/${nanoid()}` })}
+        >
+          <PlusIcon />
+        </Button>
+      </SidebarGroupLabel>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {listAgentsQuery.data?.agents?.map((item) => (
+              <SidebarMenuItem key={item.id}>
+                <SidebarMenuButton
+                  // onClick={() => setChatId(item.id)}
+                  className="cursor-pointer"
+                  render={<div />}
                 >
-                  <ChevronRightIcon
-                  />
-                  <span className="sr-only">Toggle</span>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    {item.items?.map((subItem) => (
-                      <SidebarMenuSubItem key={subItem.title}>
-                        <SidebarMenuSubButton render={<a href={subItem.url} />}>
-                          <span>{subItem.title}</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </>
-            ) : null}
-          </Collapsible>
-        ))}
-      </SidebarMenu>
+                  <span>{item.name}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroupContent>
     </SidebarGroup>
   )
 }

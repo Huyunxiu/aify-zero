@@ -4,6 +4,29 @@ import { sql } from "drizzle-orm";
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { integer, index, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+export const agent_table = sqliteTable("agent", {
+  id: text("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  name: text("name").notNull(),
+  avatar: text("name"),
+  description: text("name"),
+  instructions: text("instructions"),
+  tools: text("tools", { mode: "json" }),
+  models: text("models", { mode: "json" }),
+  skills: text("skills", { mode: "json" }),
+  config: text("config", { mode: "json" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+export type AgentModel = InferSelectModel<typeof agent_table>;
+export type AgentInsertModel = InferInsertModel<typeof agent_table>;
+
 export const session_table = sqliteTable("session", {
   id: text("id", { length: 36 })
     .primaryKey()

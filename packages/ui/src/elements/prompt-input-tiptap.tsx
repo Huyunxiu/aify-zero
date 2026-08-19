@@ -131,7 +131,7 @@ export const PromptInputTiptap = ({
 }: PromptInputTiptapProps) => {
   const [isComposing, setIsComposing] = useState(false);
   const mentionStateRef = useRef(false);
-  const resourcesRef = useRef<SessionResourcesType>(undefined);
+  const resourcesRef = useRef<SessionResourcesType>();
 
   useEffect(() => {
     resourcesRef.current = resources;

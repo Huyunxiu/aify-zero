@@ -19,6 +19,7 @@
     "@workspace/agent": "workspace:*",
     "@workspace/db": "workspace:*",
     "evlog": "catalog:",
+    "nanoid": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

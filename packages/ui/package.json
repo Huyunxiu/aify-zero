@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./app.tsx": "./src/app.tsx",
     "./globals.css": "./src/styles/globals.css",
     "./components/*": "./src/components/*.tsx",
     "./elements/*": "./src/elements/*.tsx",
@@ -20,6 +21,7 @@
     "@ai-sdk/react": "catalog:",
     "@base-ui/react": "^1.4.1",
     "@fontsource-variable/geist": "^5.2.8",
+    "@oreo-design/avatar": "catalog:",
     "@pierre/diffs": "catalog:",
     "@radix-ui/react-use-controllable-state": "catalog:",
     "@shadcn/react": "catalog:",
@@ -29,6 +31,7 @@
     "@streamdown/mermaid": "catalog:",
     "@tanstack/react-form": "catalog:",
     "@tanstack/react-query": "catalog:",
+    "@tanstack/react-router": "catalog:",
     "@tanstack/react-table": "catalog:",
     "@tiptap/extension-mention": "catalog:",
     "@tiptap/extension-placeholder": "catalog:",

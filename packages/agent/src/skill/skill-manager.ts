@@ -89,6 +89,7 @@ export class SkillManager {
             name: metadataResult.data.name,
             description: metadataResult.data.description,
             location,
+            dir,
             content: parsed.content,
             category: level.category,
             metadata: metadataResult.data,

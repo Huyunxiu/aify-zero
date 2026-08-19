@@ -26,7 +26,7 @@
  * ```
  */
 
-import "@/app";
+import "@workspace/ui/app.tsx";
 import { ipc } from "./ipc/manager";
 
 ipc.initialize();

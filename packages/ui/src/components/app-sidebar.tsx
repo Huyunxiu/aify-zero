@@ -19,6 +19,7 @@ import {
 import * as React from "react";
 import { useAppStore } from "../stores";
 import { generateSessionId } from "@workspace/agent/utils/id-util";
+import { NavAgents } from "./nav-agents";
 
 const data = {
   navMain: [
@@ -124,7 +125,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {/* <NavAgents items={data.navMain} /> */}
+         <NavAgents />
         <NavSessions />
       </SidebarContent>
       <SidebarFooter>

@@ -12,14 +12,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import "@workspace/ui/styles/globals.css";
-import { queryClient } from "@/utils/orpc";
-
+import { queryClient } from "./lib/orpc";
 import { routeTree } from "./routeTree.gen";
 
 export const router = createRouter({
   defaultPendingMinMs: 0,
   history: createMemoryHistory({
-    initialEntries: ["/"],
+    initialEntries: ["/sessions"],
   }),
   routeTree,
   scrollRestoration: true,
