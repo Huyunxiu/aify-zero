@@ -3,6 +3,7 @@ import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useQuery } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import type { AgentUIMessage } from "@workspace/agent";
+import { generateMessageId } from "@workspace/agent/utils/id-util";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import { MessageSquareIcon } from "lucide-react";
 import * as React from "react";
@@ -72,6 +73,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   } = useChat<AgentUIMessage>({
     messages: initialMessages,
     id: sessionId,
+    generateId: generateMessageId,
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
     transport: {
       reconnectToStream() {

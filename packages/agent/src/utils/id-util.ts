@@ -7,3 +7,7 @@ export function generateSessionId() {
 export function generateMessageId() {
   return uuidv7();
 }
+
+export function generatePartId() {
+  return uuidv7();
+}

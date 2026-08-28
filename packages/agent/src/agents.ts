@@ -6,17 +6,23 @@ import {
   generateText,
   isStepCount,
   registerTelemetry,
-  streamText,
+  ToolLoopAgent,
   toUIMessageStream,
 } from "ai";
-import type { LanguageModel, ToolSet } from "ai";
+import type { LanguageModel, ModelMessage, ToolSet, UIMessagePart } from "ai";
 
+import { compactMessages, shouldCompact } from "./compaction/compaction";
 import type { AgentContext } from "./context";
 import { AgentSession } from "./session";
 import type { AgentStore } from "./storage";
 import { SQLiteStore } from "./storage/sqlite-store";
-import type { AgentUIMessage } from "./types";
-import { generateMessageId } from "./utils/id-util";
+import type {
+  AgentUIDataParts,
+  AgentUIMessage,
+  AgentUITools,
+  CompactionConfig,
+} from "./types";
+import { generateMessageId, generatePartId } from "./utils/id-util";
 
 registerTelemetry(DevToolsTelemetry());
 
@@ -90,25 +96,22 @@ export class Agent {
       this.sessionId
     );
     const previousUIMessages = this.toAgentUIMessage(previousMessages);
-
-    const modelMessages = await convertToModelMessages<AgentUIMessage>([
-      ...previousUIMessages,
-      mostRecentMessage,
-    ]);
+    const originalMessages = [...previousUIMessages, mostRecentMessage];
+    const modelMessages = await this.convertToModalMessage(originalMessages);
 
     if (mostRecentMessage?.role === "user") {
       await this.store.saveMessage({
         id: mostRecentMessage.id,
         sessionId: this.sessionId,
         role: "user",
-        metadata: "",
+        metadata: "{}",
         content: mostRecentMessage.parts,
         createdAt: new Date(),
       });
     }
 
     return createUIMessageStream<AgentUIMessage>({
-      execute: ({ writer }) => {
+      execute: async ({ writer }) => {
         writer.write({
           type: "start",
           messageId: generateMessageId(),
@@ -122,19 +125,72 @@ export class Agent {
         titlePromise?.then(async (title) => {
           await this.store.updateSessionById(this.sessionId, title);
           writer.write({
-            type: "data-chat-title",
+            type: "data-session:title",
             data: title,
             transient: true,
           });
         });
 
-        const result = streamText({
+        const compactionConfig: CompactionConfig = {
+          recentWindowSize: 10,
+          threshold: 100_000,
+          thresholdPercent: 0.9,
+          lastKnownInputTokens:
+            originalMessages.findLast((m) => m.role === "assistant")?.metadata
+              ?.usage?.inputTokens ?? 0,
+          lastKnownPromptMessageCount: originalMessages.length,
+        };
+
+        const agent = new ToolLoopAgent({
           instructions: this.systemPrompt,
           model,
-          messages: modelMessages,
           tools: this.tools,
-          abortSignal,
           stopWhen: isStepCount(100),
+          prepareCall: async (options) => {
+            if (!options.messages) {
+              return options;
+            }
+
+            const compaction = await this.maybeCompact({
+              config: compactionConfig,
+              messages: options.messages,
+              abortSignal,
+              model,
+              onBeforeCompact() {
+                writer.write({
+                  id: generatePartId(),
+                  type: "data-compaction:start",
+                  data: {
+                    createdAt: Date.now(),
+                  },
+                });
+              },
+              onAfterCompact(params) {
+                writer.write({
+                  id: generatePartId(),
+                  type: "data-compaction:end",
+                  data: {
+                    compacted: params.compacted,
+                    messages: params.messages,
+                    createdAt: Date.now(),
+                  },
+                });
+              },
+            });
+
+            compactionConfig.lastKnownPromptMessageCount =
+              compaction.messages.length;
+
+            return {
+              ...options,
+              messages: compaction.messages,
+            };
+          },
+        });
+
+        const result = await agent.stream({
+          messages: modelMessages,
+          abortSignal,
         });
 
         writer.merge(
@@ -145,7 +201,17 @@ export class Agent {
             sendFinish: true,
             generateMessageId,
             messageMetadata: ({ part }) => {
-              if (part.type === "finish") {
+              if (part.type === "finish-step") {
+                compactionConfig.lastKnownInputTokens = part.usage.inputTokens;
+                return {
+                  createdAt: Date.now(),
+                  rawFinishReason: part.rawFinishReason,
+                  finishReason: part.finishReason,
+                  usage: part.usage,
+                  providerMetadata: part.providerMetadata,
+                  performance: part.performance,
+                };
+              } else if (part.type === "finish") {
                 return {
                   createdAt: Date.now(),
                   rawFinishReason: part.rawFinishReason,
@@ -157,8 +223,8 @@ export class Agent {
           })
         );
       },
-      originalMessages: previousUIMessages,
-      onFinish: async (data) => {
+      originalMessages,
+      onEnd: async (data) => {
         const finishedMsg = data.responseMessage;
         const existingMsg = await this.store.existsMessages(finishedMsg.id);
         if (existingMsg) {
@@ -180,6 +246,37 @@ export class Agent {
         });
       },
     });
+  }
+
+  async convertToModalMessage(
+    originalMessages: AgentUIMessage[]
+  ): Promise<ModelMessage[]> {
+    let messages: AgentUIMessage[] = [];
+
+    const compactedMessage: ModelMessage[] = [];
+    for (const m of originalMessages) {
+      let newParts: UIMessagePart<AgentUIDataParts, AgentUITools>[] = [];
+      const newMessage: AgentUIMessage = { ...m, parts: newParts };
+      for (const p of m.parts) {
+        if (
+          p.type === "data-compaction:end" &&
+          p.data.compacted &&
+          p.data.messages.length
+        ) {
+          compactedMessage.push(...p.data.messages);
+          messages = [];
+          newParts = [];
+          newMessage.parts = newParts;
+        }
+
+        newParts.push(p);
+      }
+      messages.push(newMessage);
+    }
+
+    const m2 = await convertToModelMessages<AgentUIMessage>(messages);
+
+    return [...compactedMessage, ...m2];
   }
 
   async generateChatTitle(message: AgentUIMessage) {
@@ -209,5 +306,54 @@ export class Agent {
           parts: e.content,
         }) as AgentUIMessage
     );
+  }
+
+  /**
+   * Runs the compaction pipeline once if the session's input-token estimate
+   * is over the configured threshold. Mutates neither input; returns the new
+   * messages array and (possibly updated) session.
+   *
+   * Kept in the tool-loop (rather than the AI SDK's `prepareStep` hook) so
+   * the compacted messages flow through the same `messages` variable the
+   * harness uses to rebuild `session.history` after the step.
+   */
+  private async maybeCompact(input: {
+    readonly force?: boolean;
+    readonly config: CompactionConfig;
+    readonly abortSignal?: AbortSignal;
+    readonly messages: ModelMessage[];
+    readonly model: LanguageModel;
+    readonly onBeforeCompact?: () => void;
+    readonly onAfterCompact?: (params: {
+      compacted: boolean;
+      messages: ModelMessage[];
+    }) => void;
+  }): Promise<{
+    readonly compacted: boolean;
+    readonly messages: ModelMessage[];
+  }> {
+    let { messages } = input;
+    const { config, abortSignal, model, onBeforeCompact, onAfterCompact } =
+      input;
+
+    if (input.force !== true && !shouldCompact(messages, config)) {
+      return { compacted: false, messages };
+    }
+
+    onBeforeCompact?.();
+
+    messages = await compactMessages(
+      messages,
+      model,
+      config,
+      abortSignal,
+      true
+    );
+
+    const result = { compacted: true, messages };
+
+    onAfterCompact?.(result);
+
+    return result;
   }
 }

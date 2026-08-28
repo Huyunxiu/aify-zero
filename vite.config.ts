@@ -68,6 +68,7 @@ export default defineConfig({
       "no-bitwise": "allow",
       "typescript/strict-void-return": "allow",
       "typescript/no-misused-promises": "allow",
+      "typescript/no-non-null-assertion": "allow",
     },
   },
   run: {

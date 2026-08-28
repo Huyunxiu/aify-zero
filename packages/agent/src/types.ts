@@ -1,4 +1,9 @@
-import type { FinishReason, LanguageModelUsage, UIMessage } from "ai";
+import type {
+  FinishReason,
+  LanguageModelUsage,
+  ModelMessage,
+  UIMessage,
+} from "ai";
 
 import type {
   DeleteFileToolType,
@@ -13,12 +18,23 @@ import type { LoadSkillToolType } from "./tools/load-skill";
 
 export type AgentUIMetadata = {
   createdAt?: number;
+  usage?: LanguageModelUsage;
   totalUsage?: LanguageModelUsage;
   finishReason?: FinishReason;
   rawFinishReason?: string;
 };
 
-export type AgentUIDataParts = Record<string, unknown>;
+export type AgentUIDataParts = {
+  "session:title": string;
+  "compaction:start": {
+    createdAt: number;
+  };
+  "compaction:end": {
+    compacted: boolean;
+    messages: ModelMessage[];
+    createdAt: number;
+  };
+};
 
 export type AgentUITools = {
   "delete-file": DeleteFileToolType;
@@ -36,3 +52,14 @@ export type AgentUIMessage = UIMessage<
   AgentUIDataParts,
   AgentUITools
 >;
+
+/**
+ * Compaction configuration stored on the session.
+ */
+export interface CompactionConfig {
+  lastKnownInputTokens?: number;
+  lastKnownPromptMessageCount?: number;
+  recentWindowSize: number;
+  threshold: number;
+  thresholdPercent?: number;
+}
