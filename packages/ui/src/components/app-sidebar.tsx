@@ -17,9 +17,9 @@ import {
   Plus,
 } from "lucide-react";
 import * as React from "react";
-import { useAppStore } from "../stores";
 import { generateSessionId } from "@workspace/agent/utils/id-util";
 import { NavAgents } from "./nav-agents";
+import { useNavigate } from "@tanstack/react-router";
 
 const data = {
   navMain: [
@@ -111,13 +111,13 @@ const data = {
   ],
 };
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const setChatId = useAppStore((state) => state.setSessionId);
+  const navigate = useNavigate();
   return (
     <Sidebar variant="sidebar" {...props}>
       <SidebarHeader className="py-0">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={() => setChatId(generateSessionId())}>
+            <SidebarMenuButton onClick={() => navigate({ to: `/sessions/${generateSessionId()}` })}>
               <Plus />
               <span>New Session</span>
             </SidebarMenuButton>
@@ -125,7 +125,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-         <NavAgents />
+         {/*<NavAgents />*/}
         <NavSessions />
       </SidebarContent>
       <SidebarFooter>

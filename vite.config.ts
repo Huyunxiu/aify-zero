@@ -69,6 +69,7 @@ export default defineConfig({
       "typescript/strict-void-return": "allow",
       "typescript/no-misused-promises": "allow",
       "typescript/no-non-null-assertion": "allow",
+      "typescript/no-floating-promises": "allow",
     },
   },
   run: {

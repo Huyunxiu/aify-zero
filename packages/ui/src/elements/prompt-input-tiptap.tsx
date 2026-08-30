@@ -10,7 +10,10 @@ import {
 import StarterKit from "@tiptap/starter-kit";
 
 import "./prompt-input.tiptap.css";
-import type { SuggestionProps } from "@tiptap/suggestion";
+import type {
+  SuggestionKeyDownProps,
+  SuggestionProps,
+} from "@tiptap/suggestion";
 import {
   forwardRef,
   useCallback,
@@ -116,6 +119,8 @@ type SessionResourcesType = NonNullable<
 
 export type PromptInputTiptapProps = {
   placeholder?: string;
+  /** Initial editor content (used by message editing). Remount with a key to change it. */
+  defaultContent?: string;
   onSubmit?: (message: PromptInputMessage) => void;
   editorRef?: RefObject<Editor | null>;
   onEmptyChange?: (isEmpty: boolean) => void;
@@ -124,6 +129,7 @@ export type PromptInputTiptapProps = {
 
 export const PromptInputTiptap = ({
   placeholder = "What would you like to know?",
+  defaultContent,
   onSubmit,
   editorRef,
   onEmptyChange,
@@ -131,7 +137,7 @@ export const PromptInputTiptap = ({
 }: PromptInputTiptapProps) => {
   const [isComposing, setIsComposing] = useState(false);
   const mentionStateRef = useRef(false);
-  const resourcesRef = useRef<SessionResourcesType>();
+  const resourcesRef = useRef(resources);
 
   useEffect(() => {
     resourcesRef.current = resources;
@@ -226,13 +232,15 @@ export const PromptInputTiptap = ({
                 ) {
                   component.updateProps(props);
                 },
-                onKeyDown(props) {
+                onKeyDown(props: SuggestionKeyDownProps) {
                   if (props.event.key === "Escape") {
                     component.destroy();
                     return true;
                   }
-                  // oxlint-disable-next-line
-                  return component.ref?.onKeyDown(props);
+                  const handlers = component.ref as {
+                    onKeyDown?: (props: SuggestionKeyDownProps) => boolean;
+                  };
+                  return handlers.onKeyDown?.(props) ?? false;
                 },
                 onExit() {
                   unmount?.();
@@ -253,7 +261,7 @@ export const PromptInputTiptap = ({
           "w-full outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 rounded-none border-0 bg-transparent shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent",
       },
     },
-    content: "",
+    content: defaultContent ?? "",
     onUpdate: ({ editor: currentEditor }) => {
       onEmptyChange?.(currentEditor.isEmpty);
     },

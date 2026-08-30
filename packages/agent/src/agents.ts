@@ -92,12 +92,12 @@ export class Agent {
       titlePromise = this.generateChatTitle(mostRecentMessage);
     }
 
-    const previousMessages = await this.store.getMessagesBySessionId(
-      this.sessionId
-    );
+    const previousMessages = await this.store.getBranchMessages(this.sessionId);
     const previousUIMessages = this.toAgentUIMessage(previousMessages);
     const originalMessages = [...previousUIMessages, mostRecentMessage];
     const modelMessages = await this.convertToModalMessage(originalMessages);
+
+    let lastMessageId = previousMessages[previousMessages.length - 1]?.id;
 
     if (mostRecentMessage?.role === "user") {
       await this.store.saveMessage({
@@ -105,9 +105,12 @@ export class Agent {
         sessionId: this.sessionId,
         role: "user",
         metadata: "{}",
+        parentId: lastMessageId,
         content: mostRecentMessage.parts,
         createdAt: new Date(),
       });
+      lastMessageId = mostRecentMessage.id;
+      await this.store.setActiveHead(this.sessionId, lastMessageId);
     }
 
     return createUIMessageStream<AgentUIMessage>({
@@ -121,7 +124,6 @@ export class Agent {
         });
 
         // Handle title generation in parallel
-        // oxlint-disable-next-line typescript/no-floating-promises
         titlePromise?.then(async (title) => {
           await this.store.updateSessionById(this.sessionId, title);
           writer.write({
@@ -244,6 +246,8 @@ export class Agent {
           content: finishedMsg.parts,
           createdAt: new Date(),
         });
+        lastMessageId = finishedMsg.id;
+        await this.store.setActiveHead(this.sessionId, lastMessageId);
       },
     });
   }

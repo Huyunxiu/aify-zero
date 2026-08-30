@@ -8,11 +8,11 @@ import {
 } from "@workspace/ui/components/sidebar"
 import { useQuery } from "@tanstack/react-query"
 import { client } from "../lib/orpc"
-import { useAppStore } from "../stores"
+import { useNavigate } from "@tanstack/react-router";
 
 export function NavSessions() {
 
-  const setChatId = useAppStore((state) => state.setSessionId);
+  const navigate = useNavigate();
 
   const listChatsQuery = useQuery({
     queryKey: ["list_chats"],
@@ -27,7 +27,7 @@ export function NavSessions() {
             {listChatsQuery.data?.sessions.map((item) => (
               <SidebarMenuItem key={item.id}>
                 <SidebarMenuButton
-                  onClick={() => setChatId(item.id)}
+                  onClick={() => navigate({ to: `/sessions/${item.id}` })}
                   className="cursor-pointer"
                   render={<div />}
                 >

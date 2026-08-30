@@ -1,9 +1,12 @@
 import { useChat } from "@ai-sdk/react";
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import type { Editor } from "@tiptap/core";
 import type { AgentUIMessage } from "@workspace/agent";
 import { generateMessageId } from "@workspace/agent/utils/id-util";
+import type { ForkSessionType } from "@workspace/server/routers/session.schema";
+import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import { MessageSquareIcon } from "lucide-react";
 import * as React from "react";
@@ -23,7 +26,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "../components/message-scroller";
-import { client } from "../lib/orpc";
+import { client, queryClient } from "../lib/orpc";
 import { AssistantMessage } from "./assistant-message";
 import { Message, MessageContent, MessageResponse } from "./message";
 import { ModelSelect } from "./model-select";
@@ -45,6 +48,8 @@ export type SessionProps = React.ComponentProps<"div"> & {
 };
 
 export function Session({ sessionId, initialMessages }: SessionProps) {
+  const navigate = useNavigate();
+
   const getSettingsQuery = useQuery({
     queryKey: ["settings"],
     queryFn: async () => await client.setting.get(),
@@ -56,8 +61,32 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
       await client.session.listSessionResources({ sessionId: sessionId ?? "" }),
   });
 
+  const forkSessionMutation = useMutation({
+    mutationFn: async (options: ForkSessionType) =>
+      await client.session.fork(options),
+    onSuccess: async ({ sessionId: forkSessionId }) => {
+      await queryClient.invalidateQueries({ queryKey: ["list_chats"] });
+      await navigate({ to: `/sessions/${forkSessionId}` });
+    },
+  });
+
   const models = getSettingsQuery.data?.models ?? [];
-  const [selectedModelId, setSelectedModelId] = React.useState<string>();
+  const [selectedModelId, setSelectedModelId] = React.useState<
+    string | undefined
+  >(() => localStorage.getItem(LOCAL_STORAGE_KEYS.MODEL_ID) ?? undefined);
+
+  // Restore the last used model, falling back to the first one.
+  React.useEffect(() => {
+    if (models.length > 0 && !models.some((m) => m.id === selectedModelId)) {
+      setSelectedModelId(models[0]!.id);
+    }
+  }, [models, selectedModelId]);
+
+  const handleModelChange = (value: string) => {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_ID, value);
+    setSelectedModelId(value);
+  };
+
   const selectedModelIdRef = React.useRef(selectedModelId);
   selectedModelIdRef.current = selectedModelId;
   const editorRef = React.useRef<Editor | null>(null);
@@ -117,6 +146,11 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
     if (message.role === "assistant") {
       return (
         <AssistantMessage
+          onFork={(messageId) => {
+            if (sessionId) {
+              forkSessionMutation.mutate({ sessionId, messageId });
+            }
+          }}
           addToolApprovalResponse={addToolApprovalResponse}
           addToolOutput={addToolOutput}
           key={message.id}
@@ -215,7 +249,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                   <ModelSelect
                     models={models}
                     value={selectedModelId}
-                    onValueChange={setSelectedModelId}
+                    onValueChange={handleModelChange}
                   />
                 </PromptInputTools>
                 <PromptInputSubmit

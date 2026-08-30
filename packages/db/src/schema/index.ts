@@ -33,6 +33,9 @@ export const session_table = sqliteTable("session", {
     .$defaultFn(() => randomUUID()),
   title: text("title").notNull(),
   metadata: text("metadata", { mode: "json" }),
+  activeHeadId: text("active_head_id"),
+  forkedFromSessionId: text("forked_from_session_id"),
+  forkedFromMessageId: text("forked_from_message_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
@@ -54,6 +57,7 @@ export const message_table = sqliteTable(
     role: text("role").notNull(),
     metadata: text("metadata", { mode: "json" }),
     content: text("content", { mode: "json" }).notNull(),
+    parentId: text("parent_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -61,7 +65,11 @@ export const message_table = sqliteTable(
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (table) => [index("idx_sessionid").on(table.sessionId)]
+  (table) => [
+    index("idx_sessionid").on(table.sessionId),
+    index("idx_message_parent").on(table.parentId),
+    index("idx_message_session_parent").on(table.sessionId, table.parentId),
+  ]
 );
 
 export type MessageModel = InferSelectModel<typeof message_table>;

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Island, IslandGroup } from "@workspace/ui/elements/island";
 import { SessionContainer } from "@workspace/ui/elements/session-container";
 
-const Sessions = () => (
+const SessionIndexPage = () => (
   <IslandGroup orientation="horizontal">
     <Island defaultSize="100%">
       <SessionContainer />
@@ -16,5 +16,5 @@ const Sessions = () => (
 );
 
 export const Route = createFileRoute("/sessions/")({
-  component: Sessions,
+  component: SessionIndexPage,
 });

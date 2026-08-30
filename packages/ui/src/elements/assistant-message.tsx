@@ -8,6 +8,7 @@ import type { TextUIPart, UIMessagePart } from "ai";
 import {
   BrainIcon,
   EyeIcon,
+  GitForkIcon,
   GlobeIcon,
   PenLineIcon,
   TextIcon,
@@ -30,6 +31,7 @@ import { useTouchPrimary } from "../hooks/use-touch-primary";
 import { cn } from "../lib/utils";
 import {
   Message,
+  MessageAction,
   MessageActions,
   MessageContent,
   MessageResponse,
@@ -40,6 +42,7 @@ type AssistantMessageProps = {
   regenerate: UseChatHelpers<AgentUIMessage>["regenerate"];
   addToolOutput: UseChatHelpers<AgentUIMessage>["addToolOutput"];
   addToolApprovalResponse: UseChatHelpers<AgentUIMessage>["addToolApprovalResponse"];
+  onFork?: (messageId: string) => void;
 };
 
 const splitAssistantMessageParts = (message: AgentUIMessage) => {
@@ -65,6 +68,7 @@ export const AssistantMessage = ({
   addToolApprovalResponse: _addToolApprovalResponse,
   message,
   regenerate: _regenerate,
+  onFork,
 }: AssistantMessageProps) => {
   if (message.role !== "assistant") {
     return null;
@@ -257,6 +261,12 @@ export const AssistantMessage = ({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          <MessageAction
+            onClick={() => onFork?.(message.id)}
+            className="text-muted-foreground"
+          >
+            <GitForkIcon />
+          </MessageAction>
         </MessageActions>
       )}
     </div>

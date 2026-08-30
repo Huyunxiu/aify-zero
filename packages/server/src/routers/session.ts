@@ -27,11 +27,20 @@ import {
   createWebFetchTool,
 } from "@workspace/agent/tools/index";
 import { createLoadSkillTool } from "@workspace/agent/tools/load-skill";
-import type { MessageModel, SessionModel } from "@workspace/db";
+import {
+  generateMessageId,
+  generateSessionId,
+} from "@workspace/agent/utils/id-util";
+import type {
+  MessageInsertModel,
+  MessageModel,
+  SessionModel,
+} from "@workspace/db";
 import type { UIMessagePart } from "ai";
 import z from "zod";
 
 import { publicProcedure } from "../index";
+import { forkSessionSchema, listSessionMessagesSchema } from "./session.schema";
 import { findAiModelById } from "./settings/settings.service";
 
 function convertAgentUIMessages(
@@ -132,7 +141,7 @@ const listSessions = publicProcedure
 
 export const listSessionMessages = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}" })
-  .input(z.object({ sessionId: z.string() }))
+  .input(listSessionMessagesSchema)
   .handler(async ({ input }) => {
     const { sessionId } = input;
 
@@ -151,8 +160,79 @@ export const listSessionMessages = publicProcedure
       return [];
     }
 
-    const messages = await store.getMessagesBySessionId(session.id);
-    return convertAgentUIMessages(messages);
+    const messages = await store.getAllMessagesBySessionId(session.id);
+    const activeBranchMessages = await store.getBranchMessages(
+      session.id,
+      messages
+    );
+
+    return convertAgentUIMessages(activeBranchMessages);
+  });
+
+export const forkSession = publicProcedure
+  .route({ method: "POST", path: "/sessions/{sessionId}/fork" })
+  .input(forkSessionSchema)
+  .handler(async ({ input }) => {
+    const { sessionId, messageId } = input;
+
+    const store = new SQLiteStore();
+    const source = await store.getSessionById(sessionId);
+    if (!source) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "chat not found.",
+      });
+    }
+
+    const messages = await store.getAllMessagesBySessionId(sessionId);
+    const branchMessages = await store.getBranchMessages(source.id, messages);
+    const upToIndex = messageId
+      ? branchMessages.findIndex((message) => message.id === messageId)
+      : branchMessages.length - 1;
+    if (upToIndex < 0) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "message not found on branch.",
+      });
+    }
+
+    const prefix = branchMessages.slice(0, upToIndex + 1);
+    if (prefix.length === 0) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "nothing to fork.",
+      });
+    }
+
+    const newSessionId = generateSessionId();
+    // Copy rows with fresh ids: message.id is a global primary key, and the
+    // fork must be self-contained — later edits in either session must not
+    // affect the other.
+    const idMap = new Map<string, string>();
+    const copies: MessageInsertModel[] = prefix.map((message) => {
+      const newId = generateMessageId();
+      idMap.set(message.id, newId);
+      return {
+        id: newId,
+        sessionId: newSessionId,
+        role: message.role,
+        metadata: message.metadata,
+        content: message.content,
+        parentId: message.parentId
+          ? (idMap.get(message.parentId) ?? null)
+          : null,
+        createdAt: message.createdAt,
+      };
+    });
+
+    await store.saveSession({
+      id: newSessionId,
+      title: `Fork: ${source.title}`,
+      metadata: "",
+      activeHeadId: copies.at(-1)?.id ?? null,
+      forkedFromSessionId: source.id,
+      forkedFromMessageId: messageId ?? prefix[prefix.length - 1]?.id,
+    });
+    await store.saveMessages(copies);
+
+    return { sessionId: newSessionId };
   });
 
 export const listSessionResources = publicProcedure
@@ -173,4 +253,5 @@ export const session = {
   list: listSessions,
   listSessionMessages,
   listSessionResources,
+  fork: forkSession,
 };

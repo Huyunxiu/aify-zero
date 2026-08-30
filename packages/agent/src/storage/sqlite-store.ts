@@ -70,12 +70,45 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async getMessagesBySessionId(sessionId: string): Promise<MessageModel[]> {
+  async getAllMessagesBySessionId(sessionId: string): Promise<MessageModel[]> {
     return await db
       .select()
       .from(message_table)
       .where(eq(message_table.sessionId, sessionId))
-      .orderBy(asc(message_table.createdAt));
+      .orderBy(asc(message_table.createdAt), asc(message_table.id));
+  }
+
+  async getBranchMessages(
+    sessionId: string,
+    messages?: MessageModel[]
+  ): Promise<MessageModel[]> {
+    const session = await this.getSessionById(sessionId);
+    if (!session?.activeHeadId) {
+      return [];
+    }
+
+    messages ||= await this.getAllMessagesBySessionId(sessionId);
+    const messagesMap = new Map(
+      messages.map((message) => [message.id, message])
+    );
+
+    const path: MessageModel[] = [];
+    let current = messagesMap.get(session.activeHeadId);
+    while (current) {
+      path.unshift(current);
+      current = current.parentId
+        ? messagesMap.get(current.parentId)
+        : undefined;
+    }
+    return path;
+  }
+
+  async setActiveHead(sessionId: string, messageId: string): Promise<number> {
+    const result = await db
+      .update(session_table)
+      .set({ activeHeadId: messageId })
+      .where(eq(session_table.id, sessionId));
+    return result.rowsAffected;
   }
 
   async existsMessages(id: string): Promise<boolean> {
@@ -87,7 +120,20 @@ export class SQLiteStore implements AgentStore {
   }
 
   async saveMessage(message: MessageInsertModel): Promise<number> {
-    const result = await db.insert(message_table).values(message);
+    // Upsert: client resends existing message ids on regenerate; only
+    // content/metadata change in that case — parentId keeps its original
+    // branch position.
+    const result = await db
+      .insert(message_table)
+      .values(message)
+      .onConflictDoUpdate({
+        target: message_table.id,
+        set: {
+          content: message.content,
+          metadata: message.metadata,
+          updatedAt: new Date(),
+        },
+      });
     return result.rowsAffected;
   }
 
