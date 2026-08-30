@@ -19,7 +19,21 @@ import {
   ChainOfTurnHeader,
   ChainOfTurnStep,
 } from "../components/ai-elements/chain-of-turn";
-import { Message, MessageContent, MessageResponse } from "./message";
+import { CopyButton } from "../components/copy-button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/tooltip";
+import { useTouchPrimary } from "../hooks/use-touch-primary";
+import { cn } from "../lib/utils";
+import {
+  Message,
+  MessageActions,
+  MessageContent,
+  MessageResponse,
+} from "./message";
 
 type AssistantMessageProps = {
   message: AgentUIMessage;
@@ -56,11 +70,12 @@ export const AssistantMessage = ({
     return null;
   }
 
+  const isTouch = useTouchPrimary();
+
   const { answerPart, stepParts } = splitAssistantMessageParts(message);
-  console.log("stepParts", stepParts);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 group">
       <ChainOfTurn defaultExpanded={new Set(["root"])}>
         <ChainOfTurnHeader path="root">Working</ChainOfTurnHeader>
         <ChainOfTurnContent path="root">
@@ -200,7 +215,7 @@ export const AssistantMessage = ({
         </ChainOfTurnContent>
       </ChainOfTurn>
       {answerPart && (
-        <Message from="assistant" key={`${-1}`}>
+        <Message from="assistant">
           <MessageContent>
             <MessageResponse
               controls={{
@@ -215,6 +230,34 @@ export const AssistantMessage = ({
             </MessageResponse>
           </MessageContent>
         </Message>
+      )}
+      {answerPart && (
+        <MessageActions
+          className={cn(
+            !isTouch && [
+              "opacity-0 pointer-events-none transition-opacity duration-150",
+              "group-hover:opacity-100 group-hover:pointer-events-auto",
+              "group-focus-within:opacity-100 group-focus-within:pointer-events-auto",
+            ]
+          )}
+        >
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger>
+                <CopyButton
+                  className="text-muted-foreground"
+                  size="icon-sm"
+                  variant="ghost"
+                  label="Copy"
+                  message={answerPart}
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Copy to clipboard</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </MessageActions>
       )}
     </div>
   );
