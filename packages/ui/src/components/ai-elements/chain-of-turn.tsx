@@ -5,7 +5,7 @@ import {
 } from "@workspace/ui/components/collapsible";
 import { cn } from "@workspace/ui/lib/utils";
 import type { LucideIcon } from "lucide-react";
-import { ChevronDownIcon, DotIcon, RouteIcon } from "lucide-react";
+import { ChevronDownIcon, DotIcon, LoaderIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import {
   createContext,
@@ -89,10 +89,17 @@ export type ChainOfTurnHeaderProps = ComponentProps<
   typeof CollapsibleTrigger
 > & {
   path: string;
+  loading?: boolean;
 };
 
 export const ChainOfTurnHeader = memo(
-  ({ path, className, children, ...props }: ChainOfTurnHeaderProps) => {
+  ({
+    path,
+    loading,
+    className,
+    children,
+    ...props
+  }: ChainOfTurnHeaderProps) => {
     const { expandedPaths, togglePath } = useChainOfTurn();
     const isExpanded = expandedPaths.has(path);
 
@@ -104,20 +111,37 @@ export const ChainOfTurnHeader = memo(
       <Collapsible onOpenChange={handleOpenChange} open={isExpanded}>
         <CollapsibleTrigger
           className={cn(
-            "flex h-5 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
+            "group/chain-header flex h-7 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground cursor-pointer",
             className
           )}
           {...props}
           render={<div />}
         >
-          <RouteIcon className="size-4" />
-          <span className="text-left">{children ?? "Chain of Turn"}</span>
-          <ChevronDownIcon
-            className={cn(
-              "size-4 transition-transform",
-              isExpanded ? "rotate-0" : "-rotate-90"
-            )}
-          />
+          {loading ? (
+            <>
+              <LoaderIcon
+                className={cn(
+                  "size-4 animate-spin group-hover/chain-header:hidden"
+                )}
+              />
+              <ChevronDownIcon
+                className={cn(
+                  "size-4 transition-transform hidden group-hover/chain-header:block",
+                  isExpanded ? "rotate-0" : "-rotate-90"
+                )}
+              />
+            </>
+          ) : (
+            <ChevronDownIcon
+              className={cn(
+                "size-4 transition-transform",
+                isExpanded ? "rotate-0" : "-rotate-90"
+              )}
+            />
+          )}
+          <span className={cn("text-left", { shimmer: loading })}>
+            {children ?? "Chain of Turn"}
+          </span>
         </CollapsibleTrigger>
       </Collapsible>
     );
@@ -173,7 +197,7 @@ export const ChainOfTurnStep = memo(
       <ChainOfTurnStepContext.Provider value={stepContextValue}>
         <Collapsible
           className={cn(
-            "flex flex-col gap-2 text-sm",
+            " flex flex-col gap-2 text-sm",
             stepStatusStyles[status],
             "fade-in-0 slide-in-from-top-2 animate-in",
             className
@@ -184,18 +208,17 @@ export const ChainOfTurnStep = memo(
         >
           <CollapsibleTrigger
             className={cn(
-              "relative mt-0.5 flex h-5 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
-              className
+              "group/chain-step relative mt-0.5 flex h-7 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
             )}
           >
-            <Icon className="shrink-0 size-4" />
-            <span className="text-left truncate">{label}</span>
+            <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
             <ChevronDownIcon
               className={cn(
-                "size-4 transition-transform",
-                isExpanded ? "rotate-180" : "rotate-0"
+                "shrink-0 size-4 transition-transform hidden group-hover/chain-step:block",
+                isExpanded ? "rotate-0" : "-rotate-90"
               )}
             />
+            <span className="text-left truncate">{label}</span>
           </CollapsibleTrigger>
           <CollapsibleContent className="flex-1 space-y-2 overflow-hidden">
             <div className="ml-2 border-l pl-4">
@@ -232,7 +255,7 @@ export const ChainOfTurnContent = memo(
       <Collapsible onOpenChange={handleOpenChange} open={isExpanded}>
         <CollapsibleContent
           className={cn(
-            "mt-3 space-y-3",
+            "mt-1 space-y-1",
             "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
             className
           )}

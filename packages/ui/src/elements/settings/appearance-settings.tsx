@@ -38,10 +38,10 @@ export function AppearanceSettings() {
           <Item variant="muted">
             <ItemContent>
               <ItemTitle className="line-clamp-1">
-                {t("settings.general.language.title")}
+                {t("settings.appearance.theme.title")}
               </ItemTitle>
               <ItemDescription>
-                {t("settings.general.language.description")}
+                {t("settings.appearance.theme.description")}
               </ItemDescription>
             </ItemContent>
             <ItemContent className="flex-none text-center">

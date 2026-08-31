@@ -99,6 +99,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
     addToolApprovalResponse,
     regenerate,
     error,
+    status,
   } = useChat<AgentUIMessage>({
     messages: initialMessages,
     id: sessionId,
@@ -146,6 +147,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
     if (message.role === "assistant") {
       return (
         <AssistantMessage
+          loading={status === "streaming" || status === "submitted"}
           onFork={(messageId) => {
             if (sessionId) {
               forkSessionMutation.mutate({ sessionId, messageId });

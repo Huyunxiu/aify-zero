@@ -11,6 +11,7 @@ import {
   GitForkIcon,
   GlobeIcon,
   PenLineIcon,
+  SquareTerminalIcon,
   TextIcon,
 } from "lucide-react";
 
@@ -38,6 +39,7 @@ import {
 } from "./message";
 
 type AssistantMessageProps = {
+  loading?: boolean;
   message: AgentUIMessage;
   regenerate: UseChatHelpers<AgentUIMessage>["regenerate"];
   addToolOutput: UseChatHelpers<AgentUIMessage>["addToolOutput"];
@@ -64,6 +66,7 @@ const splitAssistantMessageParts = (message: AgentUIMessage) => {
 };
 
 export const AssistantMessage = ({
+  loading,
   addToolOutput: _addToolOutput,
   addToolApprovalResponse: _addToolApprovalResponse,
   message,
@@ -81,7 +84,9 @@ export const AssistantMessage = ({
   return (
     <div className="flex flex-col gap-4 group">
       <ChainOfTurn defaultExpanded={new Set(["root"])}>
-        <ChainOfTurnHeader path="root">Working</ChainOfTurnHeader>
+        <ChainOfTurnHeader path="root" loading={loading}>
+          Working
+        </ChainOfTurnHeader>
         <ChainOfTurnContent path="root">
           {stepParts.map((part, i) => {
             if (part.type === "text") {
@@ -208,6 +213,23 @@ export const AssistantMessage = ({
                   status="complete"
                 >
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
+                    {part.output?.output ?? ""}
+                  </div>
+                </ChainOfTurnStep>
+              );
+            } else if (part.type === "tool-bash") {
+              return (
+                <ChainOfTurnStep
+                  key={i}
+                  path={`${i}`}
+                  icon={SquareTerminalIcon}
+                  label={`Grep ${part.output?.title}`}
+                  status="complete"
+                >
+                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
+                    {part.input?.command ?? ""}
+                    <br />
+                    <br />
                     {part.output?.output ?? ""}
                   </div>
                 </ChainOfTurnStep>

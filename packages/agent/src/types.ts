@@ -6,6 +6,7 @@ import type {
 } from "ai";
 
 import type {
+  BashToolType,
   DeleteFileToolType,
   EditFileToolType,
   GlobToolType,
@@ -45,6 +46,7 @@ export type AgentUITools = {
   "write-file": WriteFileToolType;
   "web-fetch": WebFetchToolType;
   "load-skill": LoadSkillToolType;
+  bash: BashToolType;
 };
 
 export type AgentUIMessage = UIMessage<
