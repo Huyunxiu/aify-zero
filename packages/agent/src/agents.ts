@@ -244,6 +244,7 @@ export class Agent {
           role: finishedMsg.role,
           metadata: finishedMsg.metadata,
           content: finishedMsg.parts,
+          parentId: lastMessageId,
           createdAt: new Date(),
         });
         lastMessageId = finishedMsg.id;

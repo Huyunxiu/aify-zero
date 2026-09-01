@@ -68,7 +68,7 @@ export function ModelSelect({
       }}
     >
       <SelectTransparentTrigger
-        className="w-full max-w-48"
+        className="w-fit"
         render={<PromptInputButton />}
       >
         <PromptInputButton>

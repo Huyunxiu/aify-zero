@@ -1,4 +1,3 @@
-import type { Editor } from "@tiptap/core";
 import Mention from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extensions";
 import {
@@ -22,7 +21,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { RefObject } from "react";
 
 import {
   DropdownMenuGroup,
@@ -30,7 +28,10 @@ import {
 } from "../components/dropdown-menu";
 import type { client } from "../lib/orpc";
 import { cn } from "../lib/utils";
-import type { PromptInputMessage } from "./prompt-input";
+import {
+  useOptionalPromptInputController,
+  usePromptInputAttachments,
+} from "./prompt-input";
 
 const MentionDropdown = forwardRef(
   (props: SuggestionProps<string, { id: string; label: string }>, ref) => {
@@ -119,56 +120,26 @@ type SessionResourcesType = NonNullable<
 
 export type PromptInputTiptapProps = {
   placeholder?: string;
-  /** Initial editor content (used by message editing). Remount with a key to change it. */
-  defaultContent?: string;
-  onSubmit?: (message: PromptInputMessage) => void;
-  editorRef?: RefObject<Editor | null>;
   onEmptyChange?: (isEmpty: boolean) => void;
   resources?: SessionResourcesType;
 };
 
 export const PromptInputTiptap = ({
   placeholder = "What would you like to know?",
-  defaultContent,
-  onSubmit,
-  editorRef,
   onEmptyChange,
   resources,
 }: PromptInputTiptapProps) => {
+  const controller = useOptionalPromptInputController();
+  const attachments = usePromptInputAttachments();
   const [isComposing, setIsComposing] = useState(false);
   const mentionStateRef = useRef(false);
   const resourcesRef = useRef(resources);
+  const textValueRef = useRef("");
+  const editorRef = controller?.editorRef;
 
   useEffect(() => {
     resourcesRef.current = resources;
   }, [resources]);
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      // If the external handler prevented default, don't run internal logic
-      if (e.defaultPrevented) {
-        return;
-      }
-
-      if (mentionStateRef.current) {
-        return;
-      }
-
-      if (e.key === "Enter") {
-        if (isComposing || e.isComposing) {
-          return;
-        }
-        if (e.shiftKey) {
-          return;
-        }
-        e.preventDefault();
-
-        onSubmit?.({ text: editor.getText(), files: [] });
-        return true;
-      }
-    },
-    [onSubmit, isComposing]
-  );
 
   const editor = useEditor({
     // disable Markdown when pasting
@@ -261,11 +232,62 @@ export const PromptInputTiptap = ({
           "w-full outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 rounded-none border-0 bg-transparent shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent",
       },
     },
-    content: defaultContent ?? "",
+    content: controller?.textInput.value ?? "",
     onUpdate: ({ editor: currentEditor }) => {
       onEmptyChange?.(currentEditor.isEmpty);
+      textValueRef.current = currentEditor.getText();
+      controller?.textInput.setInput(textValueRef.current);
     },
   });
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      // If the external handler prevented default, don't run internal logic
+      if (e.defaultPrevented) {
+        return;
+      }
+
+      if (mentionStateRef.current) {
+        return;
+      }
+
+      if (e.key === "Enter") {
+        if (isComposing || e.isComposing) {
+          return;
+        }
+        if (e.shiftKey) {
+          return;
+        }
+        e.preventDefault();
+
+        // Check if the submit button is disabled before submitting
+        const form = controller?.formRef.current;
+        const submitButton = form?.querySelector(
+          'button[type="submit"]'
+        ) as HTMLButtonElement | null;
+        if (submitButton?.disabled) {
+          return;
+        }
+
+        form?.requestSubmit();
+      }
+
+      // Remove last attachment when Backspace is pressed and textarea is empty
+      if (
+        e.key === "Backspace" &&
+        textValueRef.current === "" &&
+        attachments.files.length > 0
+      ) {
+        e.preventDefault();
+        const lastAttachment = attachments.files.at(-1);
+        if (lastAttachment) {
+          attachments.remove(lastAttachment.id);
+        }
+        return true;
+      }
+    },
+    [editor, isComposing, attachments, controller?.formRef]
+  );
 
   // Sync editor instance out to parent via editorRef, and report initial empty state
   useEffect(() => {

@@ -31,7 +31,7 @@ catalog:
   "@electron-forge/plugin-fuses": ^7.11.1
   "@electron-forge/plugin-vite": ^7.11.1
   "@electron/fuses": ^1.8.0
-  '@oreo-design/avatar': ^0.1.0
+  "@oreo-design/avatar": ^0.1.0
   "@orpc/client": ^1.14.4
   "@orpc/openapi": ^1.14.3
   "@orpc/server": ^1.14.3
@@ -39,7 +39,7 @@ catalog:
   "@orpc/zod": ^1.14.3
   "@pierre/diffs": ^1.2.11
   "@radix-ui/react-use-controllable-state": ^1.2.3
-  "@shadcn/react": ^0.1.0
+  "@shadcn/react": ^0.3.1
   "@streamdown/cjk": ^1.0.3
   "@streamdown/code": ^1.1.1
   "@streamdown/math": ^1.0.2
@@ -89,7 +89,7 @@ catalog:
   vite: npm:@voidzero-dev/vite-plus-core@latest
   vite-plus: ^0.1.21
   vitest: npm:@voidzero-dev/vite-plus-test@latest
-  zod: ^4.4.3
+  zod: ^4.5.4
   zustand: ^5.0.14
 minimumReleaseAgeExclude:
   - "@ai-sdk/devtools@1.0.9"
@@ -99,3 +99,4 @@ minimumReleaseAgeExclude:
   - "@ai-sdk/provider-utils@5.0.15"
   - "@ai-sdk/react@4.0.45"
   - ai@7.0.42
+  - "@shadcn/react@0.3.1"

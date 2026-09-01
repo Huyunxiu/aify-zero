@@ -1,5 +1,5 @@
 /* oxlint-disable */
-
+import type { Editor } from "@tiptap/react";
 import {
   Command,
   CommandEmpty,
@@ -196,6 +196,9 @@ export interface TextInputContext {
 export interface PromptInputControllerProps {
   textInput: TextInputContext;
   attachments: AttachmentsContext;
+  /** The form ref owned by the provider, so PromptInput (and external submit buttons) can share it */
+  formRef: RefObject<HTMLFormElement | null>;
+  editorRef: RefObject<Editor | null>;
   /** INTERNAL: Allows PromptInput to register its file textInput + "open" callback */
   __registerFileInput: (
     ref: RefObject<HTMLInputElement | null>,
@@ -221,7 +224,7 @@ export const usePromptInputController = () => {
 };
 
 // Optional variants (do NOT throw). Useful for dual-mode components.
-const useOptionalPromptInputController = () =>
+export const useOptionalPromptInputController = () =>
   useContext(PromptInputController);
 
 export const useProviderAttachments = () => {
@@ -251,13 +254,18 @@ export const PromptInputProvider = ({
 }: PromptInputProviderProps) => {
   // ----- textInput state
   const [textInput, setTextInput] = useState(initialTextInput);
-  const clearInput = useCallback(() => setTextInput(""), []);
+  const clearInput = useCallback(() => {
+    setTextInput("");
+    editorRef.current?.commands.clearContent();
+  }, []);
 
   // ----- attachments state (global when wrapped)
   const [attachmentFiles, setAttachmentFiles] = useState<
     (FileUIPart & { id: string })[]
   >([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const editorRef = useRef<Editor | null>(null);
   // oxlint-disable-next-line eslint(no-empty-function)
   const openRef = useRef<() => void>(() => {});
 
@@ -347,13 +355,15 @@ export const PromptInputProvider = ({
     () => ({
       __registerFileInput,
       attachments,
+      formRef,
+      editorRef,
       textInput: {
         clear: clearInput,
         setInput: setTextInput,
         value: textInput,
       },
     }),
-    [textInput, clearInput, attachments, __registerFileInput]
+    [textInput, clearInput, attachments, formRef, editorRef, __registerFileInput]
   );
 
   return (
@@ -429,7 +439,7 @@ export const PromptInputActionAddAttachments = ({
   );
 
   return (
-    <DropdownMenuItem {...props} onSelect={handleSelect}>
+    <DropdownMenuItem {...props} onClick={handleSelect}>
       <ImageIcon className="mr-2 size-4" /> {label}
     </DropdownMenuItem>
   );
@@ -474,7 +484,7 @@ export const PromptInputActionAddScreenshot = ({
   );
 
   return (
-    <DropdownMenuItem {...props} onSelect={handleSelect}>
+    <DropdownMenuItem {...props} onClick={handleSelect}>
       <Monitor className="mr-2 size-4" />
       {label}
     </DropdownMenuItem>
@@ -530,7 +540,8 @@ export const PromptInput = ({
 
   // Refs
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const formRef = useRef<HTMLFormElement | null>(null);
+  const localFormRef = useRef<HTMLFormElement | null>(null);
+  const formRef = usingProvider ? controller.formRef : localFormRef;
 
   // ----- Local attachments (only used when no provider)
   const [items, setItems] = useState<(FileUIPart & { id: string })[]>([]);

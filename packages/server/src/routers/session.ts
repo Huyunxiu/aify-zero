@@ -140,7 +140,7 @@ const listSessions = publicProcedure
   });
 
 export const listSessionMessages = publicProcedure
-  .route({ method: "GET", path: "/sessions/{sessionId}" })
+  .route({ method: "GET", path: "/sessions/{sessionId}/messages" })
   .input(listSessionMessagesSchema)
   .handler(async ({ input }) => {
     const { sessionId } = input;

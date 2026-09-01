@@ -2,7 +2,6 @@ import { useChat } from "@ai-sdk/react";
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { Editor } from "@tiptap/core";
 import type { AgentUIMessage } from "@workspace/agent";
 import { generateMessageId } from "@workspace/agent/utils/id-util";
 import type { ForkSessionType } from "@workspace/server/routers/session.schema";
@@ -10,7 +9,14 @@ import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import { MessageSquareIcon } from "lucide-react";
 import * as React from "react";
+import { memo, useCallback } from "react";
 
+import {
+  Attachment,
+  AttachmentPreview,
+  AttachmentRemove,
+  Attachments,
+} from "../components/ai-elements/attachments";
 import {
   Empty,
   EmptyDescription,
@@ -32,15 +38,72 @@ import { Message, MessageContent, MessageResponse } from "./message";
 import { ModelSelect } from "./model-select";
 import {
   PromptInput,
+  PromptInputActionAddAttachments,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
   PromptInputBody,
   PromptInputFooter,
+  PromptInputProvider,
   PromptInputSubmit,
   PromptInputTools,
+  usePromptInputAttachments,
 } from "./prompt-input";
 import type { PromptInputMessage } from "./prompt-input";
 import { PromptInputTiptap } from "./prompt-input-tiptap";
 import { TitleBar } from "./title-bar";
 import { UserMessage } from "./user-message";
+
+interface AttachmentItemProps {
+  attachment: {
+    id: string;
+    type: "file";
+    filename?: string;
+    mediaType?: string;
+    url: string;
+  };
+  onRemove: (id: string) => void;
+}
+
+const AttachmentItem = memo(({ attachment, onRemove }: AttachmentItemProps) => {
+  const handleRemove = useCallback(
+    () => onRemove(attachment.id),
+    [onRemove, attachment.id]
+  );
+  return (
+    <Attachment data={attachment} key={attachment.id} onRemove={handleRemove}>
+      <AttachmentPreview />
+      <AttachmentRemove />
+    </Attachment>
+  );
+});
+
+AttachmentItem.displayName = "AttachmentItem";
+
+const PromptInputAttachmentsDisplay = () => {
+  const attachments = usePromptInputAttachments();
+
+  const handleRemove = useCallback(
+    (id: string) => attachments.remove(id),
+    [attachments]
+  );
+
+  if (attachments.files.length === 0) {
+    return null;
+  }
+
+  return (
+    <Attachments variant="grid">
+      {attachments.files.map((attachment) => (
+        <AttachmentItem
+          attachment={attachment}
+          key={attachment.id}
+          onRemove={handleRemove}
+        />
+      ))}
+    </Attachments>
+  );
+};
 
 export type SessionProps = React.ComponentProps<"div"> & {
   sessionId: string | undefined;
@@ -89,7 +152,6 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
 
   const selectedModelIdRef = React.useRef(selectedModelId);
   selectedModelIdRef.current = selectedModelId;
-  const editorRef = React.useRef<Editor | null>(null);
   const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
   const {
@@ -133,10 +195,23 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   });
 
   const handleSubmit = (message: PromptInputMessage) => {
-    const text = editorRef.current?.getText() ?? message.text;
-    console.log("handleSubmit", messages, { ...message, text });
-    void sendMessage({ text });
-    editorRef.current?.commands.clearContent();
+    console.log("handleSubmit", messages, message);
+    sendMessage({
+      role: "user",
+      id: generateMessageId(),
+      parts: [
+        ...message.files.map((file) => ({
+          mediaType: file.mediaType,
+          name: file.filename,
+          type: "file" as const,
+          url: file.url,
+        })),
+        {
+          text: message.text,
+          type: "text",
+        },
+      ],
+    });
   };
 
   const renderMessage = (message: AgentUIMessage) => {
@@ -232,33 +307,46 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
 
           {/* session input */}
           <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 px-2 py-3 pt-1 md:px-4 md:pb-4">
-            <PromptInput onSubmit={handleSubmit}>
-              <PromptInputBody>
-                {/* <PromptInputTextarea /> */}
-                <PromptInputTiptap
-                  editorRef={editorRef}
-                  resources={listSessionResourcesQuery.data}
-                  onEmptyChange={(isEmpty) => {
-                    if (isEmpty !== isEditorEmpty) {
-                      setIsEditorEmpty(isEmpty);
-                    }
-                  }}
-                  onSubmit={handleSubmit}
-                />
-              </PromptInputBody>
-              <PromptInputFooter>
-                <PromptInputTools>
-                  <ModelSelect
-                    models={models}
-                    value={selectedModelId}
-                    onValueChange={handleModelChange}
+            <PromptInputProvider>
+              <PromptInput
+                multiple
+                maxFileSize={5 * 1024 * 1024}
+                accept="image/png,image/jpeg,image/webp"
+                onSubmit={handleSubmit}
+                onError={console.error}
+              >
+                <PromptInputAttachmentsDisplay />
+                <PromptInputBody>
+                  {/* <PromptInputTextarea /> */}
+                  <PromptInputTiptap
+                    resources={listSessionResourcesQuery.data}
+                    onEmptyChange={(isEmpty) => {
+                      if (isEmpty !== isEditorEmpty) {
+                        setIsEditorEmpty(isEmpty);
+                      }
+                    }}
                   />
-                </PromptInputTools>
-                <PromptInputSubmit
-                  disabled={!selectedModelId || isEditorEmpty}
-                />
-              </PromptInputFooter>
-            </PromptInput>
+                </PromptInputBody>
+                <PromptInputFooter>
+                  <PromptInputTools>
+                    <PromptInputActionMenu>
+                      <PromptInputActionMenuTrigger />
+                      <PromptInputActionMenuContent className="min-w-max">
+                        <PromptInputActionAddAttachments />
+                      </PromptInputActionMenuContent>
+                    </PromptInputActionMenu>
+                    <ModelSelect
+                      models={models}
+                      value={selectedModelId}
+                      onValueChange={handleModelChange}
+                    />
+                  </PromptInputTools>
+                  <PromptInputSubmit
+                    disabled={!selectedModelId || isEditorEmpty}
+                  />
+                </PromptInputFooter>
+              </PromptInput>
+            </PromptInputProvider>
           </div>
         </div>
       </div>

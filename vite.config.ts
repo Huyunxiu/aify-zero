@@ -70,6 +70,7 @@ export default defineConfig({
       "typescript/no-misused-promises": "allow",
       "typescript/no-non-null-assertion": "allow",
       "typescript/no-floating-promises": "allow",
+      "typescript/no-confusing-void-expression": "allow",
     },
   },
   run: {
