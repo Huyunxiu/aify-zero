@@ -11,6 +11,7 @@ import { Agent } from "@workspace/agent";
 import type {
   AgentUIDataParts,
   AgentUIMessage,
+  AgentUIMetadata,
   AgentUITools,
 } from "@workspace/agent";
 import type { AgentContext } from "@workspace/agent/context";
@@ -57,6 +58,7 @@ function convertAgentUIMessages(
       id: message.id,
       role: message.role as "system" | "user" | "assistant",
       parts: message.content as UIMessagePart<AgentUIDataParts, AgentUITools>[],
+      metadata: message.metadata as AgentUIMetadata,
     });
   }
 

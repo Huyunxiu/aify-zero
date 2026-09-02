@@ -7,6 +7,7 @@ import { generateMessageId } from "@workspace/agent/utils/id-util";
 import type { ForkSessionType } from "@workspace/server/routers/session.schema";
 import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
+import type { LanguageModelUsage } from "ai";
 import { MessageSquareIcon } from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
@@ -17,6 +18,18 @@ import {
   AttachmentRemove,
   Attachments,
 } from "../components/ai-elements/attachments";
+import {
+  Context,
+  ContextCacheUsage,
+  ContextContent,
+  ContextContentBody,
+  ContextContentFooter,
+  ContextContentHeader,
+  ContextInputUsage,
+  ContextOutputUsage,
+  ContextReasoningUsage,
+  ContextTrigger,
+} from "../components/ai-elements/token-context";
 import {
   Empty,
   EmptyDescription,
@@ -53,6 +66,21 @@ import type { PromptInputMessage } from "./prompt-input";
 import { PromptInputTiptap } from "./prompt-input-tiptap";
 import { TitleBar } from "./title-bar";
 import { UserMessage } from "./user-message";
+
+const defaultTokenUsage: LanguageModelUsage = {
+  inputTokens: 0,
+  inputTokenDetails: {
+    noCacheTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  },
+  outputTokens: 0,
+  outputTokenDetails: {
+    textTokens: 0,
+    reasoningTokens: 0,
+  },
+  totalTokens: 0,
+};
 
 interface AttachmentItemProps {
   attachment: {
@@ -193,6 +221,10 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
       },
     },
   });
+
+  const tokenUsage =
+    messages.findLast((e) => e.metadata?.usage)?.metadata?.usage ||
+    defaultTokenUsage;
 
   const handleSubmit = (message: PromptInputMessage) => {
     console.log("handleSubmit", messages, message);
@@ -341,9 +373,29 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                       onValueChange={handleModelChange}
                     />
                   </PromptInputTools>
-                  <PromptInputSubmit
-                    disabled={!selectedModelId || isEditorEmpty}
-                  />
+                  <div className="flex items-center gap-2">
+                    <Context
+                      maxTokens={128_000}
+                      modelId={selectedModelId}
+                      usage={tokenUsage}
+                      usedTokens={tokenUsage.totalTokens || 0}
+                    >
+                      <ContextTrigger />
+                      <ContextContent>
+                        <ContextContentHeader />
+                        <ContextContentBody>
+                          <ContextInputUsage />
+                          <ContextOutputUsage />
+                          <ContextReasoningUsage />
+                          <ContextCacheUsage />
+                        </ContextContentBody>
+                        <ContextContentFooter />
+                      </ContextContent>
+                    </Context>
+                    <PromptInputSubmit
+                      disabled={!selectedModelId || isEditorEmpty}
+                    />
+                  </div>
                 </PromptInputFooter>
               </PromptInput>
             </PromptInputProvider>

@@ -81,6 +81,7 @@ catalog:
   shiki: ^4.2.0
   streamdown: ^2.5.0
   tinyglobby: ^0.2.17
+  tokenlens: ^1.3.1
   turndown: ^7.2.4
   typescript: ^6.0.2
   ultracite: 7.7.0
