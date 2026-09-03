@@ -1,10 +1,11 @@
 import type { AddressInfo } from "node:net";
 import path from "node:path";
+import util from "node:util";
 
 import { serve } from "@hono/node-server";
 import { app as server } from "@workspace/server/app";
 import { IPC_CHANNELS, inDevelopment } from "@workspace/shared/constants";
-import { setupLogger } from "@workspace/shared/logger";
+import { logger as Logger } from "@workspace/shared/logger";
 import { app, BrowserWindow } from "electron";
 import {
   installExtension,
@@ -15,6 +16,35 @@ import started from "electron-squirrel-startup";
 import { ipcMain } from "electron/main";
 
 import { ipcContext } from "@/ipc/context";
+
+log.initialize();
+log.scope.labelPadding = false;
+log.transports.console.format =
+  "[{iso}] [{processType}] [{scope}] [{level}] {text}";
+log.transports.file.format = ({ data, level, message }) => {
+  const text = util.format(...data);
+
+  return [
+    JSON.stringify({
+      timestamp: message.date.toISOString(),
+      processType: message.variables?.processType,
+      scope: message.scope,
+      level,
+      text,
+    }),
+  ];
+};
+// 10MB
+log.transports.file.maxSize = 10 * 1024 * 1024;
+Logger.createLogger = ({ scope }) => {
+  return {
+    ...Logger,
+    ...log.scope(scope),
+  };
+};
+Object.assign(console, log.functions);
+
+const logger = Logger.createLogger({ scope: "main.js" });
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -29,7 +59,7 @@ const createServer = async () =>
         port: 18_086,
       },
       (info) => {
-        console.log(`Server is running on http://localhost:${info.port}`);
+        logger.log(`Server is running on http://localhost:${info.port}`);
         resolve(info);
       }
     );
@@ -105,8 +135,6 @@ const setupMacDockIcon = () => {
 };
 
 const onElectronReady = async () => {
-  setupLogger(app.getPath("logs"));
-  log.initialize();
   setupMacDockIcon();
   createWindow();
   await installExtensions();

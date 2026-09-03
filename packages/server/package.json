@@ -12,13 +12,14 @@
   "scripts": {},
   "dependencies": {
     "@ai-sdk/openai-compatible": "catalog:",
+    "@hono/structured-logger": "catalog:",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "@workspace/agent": "workspace:*",
     "@workspace/db": "workspace:*",
-    "evlog": "catalog:",
+    "@workspace/shared": "workspace:*",
     "nanoid": "catalog:",
     "zod": "catalog:"
   },

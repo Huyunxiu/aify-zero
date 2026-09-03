@@ -25,11 +25,14 @@
  *  });
  * ```
  */
-
+import log from "electron-log/renderer";
 import "@workspace/ui/app.tsx";
+
 import { ipc } from "./ipc/manager";
 
 ipc.initialize();
+
+Object.assign(console, log.functions);
 
 console.log(
   '👋 This message is being logged by "renderer.ts", included via Vite'

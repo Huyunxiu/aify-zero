@@ -34,9 +34,6 @@
     "check": "vp check",
     "prepublishOnly": "vp run build"
   },
-  "dependencies": {
-    "evlog": "catalog:"
-  },
   "devDependencies": {
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",

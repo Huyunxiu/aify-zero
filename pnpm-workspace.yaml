@@ -31,6 +31,7 @@ catalog:
   "@electron-forge/plugin-fuses": ^7.11.1
   "@electron-forge/plugin-vite": ^7.11.1
   "@electron/fuses": ^1.8.0
+  '@hono/structured-logger': ^1.0.0
   "@oreo-design/avatar": ^0.1.0
   "@orpc/client": ^1.14.4
   "@orpc/openapi": ^1.14.3
