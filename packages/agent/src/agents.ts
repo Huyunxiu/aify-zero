@@ -1,5 +1,6 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
 import type { MessageModel } from "@workspace/db";
+import { ModelEffort } from "@workspace/shared/constants";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -34,6 +35,16 @@ Rules:
 - If the message is a greeting like "hi" or "hello", respond with just "New conversation"
 - Be concise: "Weather in NYC" not "User asking about the weather in New York City"`;
 
+// Maps effort levels to the AI SDK's reasoning levels.
+const MODEL_EFFORT_TO_REASONING = {
+  [ModelEffort.Default]: "provider-default",
+  [ModelEffort.Off]: "none",
+  [ModelEffort.Low]: "low",
+  [ModelEffort.Medium]: "medium",
+  [ModelEffort.High]: "high",
+  [ModelEffort.Ultra]: "xhigh",
+} as const;
+
 export type AgentOptions = {
   name: string;
   sessionId: string;
@@ -41,6 +52,7 @@ export type AgentOptions = {
   session?: AgentSession;
   tools?: ToolSet;
   systemPrompt?: string;
+  effort?: ModelEffort;
   context: AgentContext;
 };
 
@@ -59,6 +71,7 @@ export class Agent {
   tools: ToolSet;
   store: AgentStore;
   context: AgentContext;
+  effort?: ModelEffort;
 
   constructor(options: AgentOptions) {
     this.name = options.name;
@@ -69,6 +82,7 @@ export class Agent {
     this.tools = options.tools ?? {};
     this.store = new SQLiteStore();
     this.context = options.context;
+    this.effort = options.effort;
   }
 
   async stream({ messages, model, abortSignal }: AgentStreamOptions) {
@@ -97,7 +111,7 @@ export class Agent {
     const originalMessages = [...previousUIMessages, mostRecentMessage];
     const modelMessages = await this.convertToModalMessage(originalMessages);
 
-    let lastMessageId = previousMessages[previousMessages.length - 1]?.id;
+    let lastMessageId = previousMessages.at(-1)?.id;
 
     if (mostRecentMessage?.role === "user") {
       await this.store.saveMessage({
@@ -147,6 +161,9 @@ export class Agent {
           instructions: this.systemPrompt,
           model,
           tools: this.tools,
+          reasoning: this.effort
+            ? MODEL_EFFORT_TO_REASONING[this.effort]
+            : undefined,
           stopWhen: isStepCount(100),
           prepareCall: async (options) => {
             if (!options.messages) {

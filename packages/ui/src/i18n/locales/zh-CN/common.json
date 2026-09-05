@@ -58,5 +58,17 @@
       "deleteConfirm": "确认删除该模型？",
       "deleteDescription": "此操作无法撤销。"
     }
+  },
+  "modelEffort": {
+    "effort": "思考强度",
+    "apply": "应用",
+    "values": {
+      "default": "默认",
+      "off": "关闭",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "ultra": "超高"
+    }
   }
 }

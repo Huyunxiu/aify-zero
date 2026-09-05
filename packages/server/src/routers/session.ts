@@ -37,6 +37,7 @@ import type {
   MessageModel,
   SessionModel,
 } from "@workspace/db";
+import { ModelEffort } from "@workspace/shared/constants";
 import type { UIMessagePart } from "ai";
 import z from "zod";
 
@@ -68,10 +69,15 @@ function convertAgentUIMessages(
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
   .input(
-    type<{ sessionId: string; messages: AgentUIMessage[]; model: string }>()
+    type<{
+      sessionId: string;
+      messages: AgentUIMessage[];
+      model: string;
+      modelEffort?: string;
+    }>()
   )
   .handler(async ({ input }) => {
-    const { sessionId, messages, model } = input;
+    const { sessionId, messages, model, modelEffort } = input;
 
     const aiModel = await findAiModelById(model);
     if (!aiModel) {
@@ -103,6 +109,9 @@ const createSession = publicProcedure
       sessionId,
       model: selectedModel,
       systemPrompt,
+      effort: Object.values(ModelEffort).includes(modelEffort as ModelEffort)
+        ? (modelEffort as ModelEffort)
+        : undefined,
       context: agentContext,
       tools: {
         bash: createBashTool({ agentContext }),
@@ -230,7 +239,7 @@ export const forkSession = publicProcedure
       metadata: "",
       activeHeadId: copies.at(-1)?.id ?? null,
       forkedFromSessionId: source.id,
-      forkedFromMessageId: messageId ?? prefix[prefix.length - 1]?.id,
+      forkedFromMessageId: messageId ?? prefix.at(-1)?.id,
     });
     await store.saveMessages(copies);
 

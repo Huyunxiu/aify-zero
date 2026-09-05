@@ -8,7 +8,7 @@ import type { TextUIPart, UIMessagePart } from "ai";
 import {
   BrainIcon,
   EyeIcon,
-  GitForkIcon,
+  SplitIcon,
   GlobeIcon,
   PenLineIcon,
   SquareTerminalIcon,
@@ -287,7 +287,7 @@ export const AssistantMessage = ({
             onClick={() => onFork?.(message.id)}
             className="text-muted-foreground"
           >
-            <GitForkIcon />
+            <SplitIcon />
           </MessageAction>
         </MessageActions>
       )}

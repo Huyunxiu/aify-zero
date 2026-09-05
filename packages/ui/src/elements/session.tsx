@@ -5,7 +5,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { AgentUIMessage } from "@workspace/agent";
 import { generateMessageId } from "@workspace/agent/utils/id-util";
 import type { ForkSessionType } from "@workspace/server/routers/session.schema";
-import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
+import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import type { LanguageModelUsage } from "ai";
 import { MessageSquareIcon } from "lucide-react";
@@ -165,6 +165,14 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   const [selectedModelId, setSelectedModelId] = React.useState<
     string | undefined
   >(() => localStorage.getItem(LOCAL_STORAGE_KEYS.MODEL_ID) ?? undefined);
+  const [selectedModelEffort, setSelectedModelEffort] = React.useState<
+    ModelEffort | undefined
+  >(() => {
+    const stored = localStorage.getItem(LOCAL_STORAGE_KEYS.MODEL_EFFORT);
+    return stored && Object.values(ModelEffort).includes(stored as ModelEffort)
+      ? (stored as ModelEffort)
+      : undefined;
+  });
 
   // Restore the last used model, falling back to the first one.
   React.useEffect(() => {
@@ -173,13 +181,20 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
     }
   }, [models, selectedModelId]);
 
-  const handleModelChange = (value: string) => {
-    localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_ID, value);
-    setSelectedModelId(value);
+  const handleModelChange = (modelId: string) => {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_ID, modelId);
+    setSelectedModelId(modelId);
+  };
+
+  const handleModelEffortChange = (effort: ModelEffort) => {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_EFFORT, effort);
+    setSelectedModelEffort(effort);
   };
 
   const selectedModelIdRef = React.useRef(selectedModelId);
   selectedModelIdRef.current = selectedModelId;
+  const selectedEffortRef = React.useRef(selectedModelEffort);
+  selectedEffortRef.current = selectedModelEffort;
   const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
   const {
@@ -211,6 +226,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
               sessionId: options.chatId,
               messages: options.messages,
               model: modelId,
+              modelEffort: selectedEffortRef.current,
             },
             { signal: options.abortSignal }
           )
@@ -360,7 +376,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                   />
                 </PromptInputBody>
                 <PromptInputFooter>
-                  <PromptInputTools>
+                  <PromptInputTools className="gap-0">
                     <PromptInputActionMenu>
                       <PromptInputActionMenuTrigger />
                       <PromptInputActionMenuContent className="min-w-max">
@@ -369,8 +385,10 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                     </PromptInputActionMenu>
                     <ModelSelect
                       models={models}
-                      value={selectedModelId}
-                      onValueChange={handleModelChange}
+                      modelId={selectedModelId}
+                      modelEffort={selectedModelEffort}
+                      onModelChange={handleModelChange}
+                      onModelEffortChange={handleModelEffortChange}
                     />
                   </PromptInputTools>
                   <div className="flex items-center gap-2">

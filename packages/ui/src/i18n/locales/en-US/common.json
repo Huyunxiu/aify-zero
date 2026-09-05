@@ -58,5 +58,17 @@
       "deleteConfirm": "Delete this model?",
       "deleteDescription": "This action cannot be undone."
     }
+  },
+  "modelEffort": {
+    "effort": "Effort",
+    "apply": "Apply",
+    "values": {
+      "default": "Default",
+      "off": "Off",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "ultra": "Ultra"
+    }
   }
 }

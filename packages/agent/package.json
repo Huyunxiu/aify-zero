@@ -12,6 +12,7 @@
   "scripts": {},
   "dependencies": {
     "@workspace/db": "workspace:*",
+    "@workspace/shared": "workspace:*",
     "ai": "catalog:",
     "file-type": "catalog:",
     "glob": "catalog:",

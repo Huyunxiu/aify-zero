@@ -46,6 +46,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "catalog:",
+    "cn": "catalog:",
+    "framer-motion": "catalog:",
     "i18next": "catalog:",
     "lucide-react": "catalog:",
     "nanoid": "catalog:",
