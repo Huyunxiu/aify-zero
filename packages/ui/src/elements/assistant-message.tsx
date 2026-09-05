@@ -269,7 +269,7 @@ export const AssistantMessage = ({
         >
           <TooltipProvider>
             <Tooltip>
-              <TooltipTrigger>
+              <TooltipTrigger render={<div />}>
                 <CopyButton
                   className="text-muted-foreground"
                   size="icon-sm"

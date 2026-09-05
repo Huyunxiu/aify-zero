@@ -116,6 +116,7 @@ export const ChainOfTurnHeader = memo(
           )}
           {...props}
           render={<div />}
+          nativeButton={false}
         >
           {loading ? (
             <>

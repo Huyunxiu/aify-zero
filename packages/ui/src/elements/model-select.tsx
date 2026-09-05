@@ -71,9 +71,12 @@ export function ModelSelect({
       open={open}
       onOpenChange={(val) => {
         setOpen(val);
+        if (val) {
+          setEffortClose(false);
+        }
       }}
     >
-      <PopoverTrigger className="w-fit" render={<PromptInputButton />}>
+      <PopoverTrigger className="w-fit" render={<div />} nativeButton={false}>
         <PromptInputButton>
           {selectedModel ? (
             <ModelLogo model={selectedModel.name} />

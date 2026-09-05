@@ -40,10 +40,10 @@ export const UserMessage = ({ message }: UserMessageProps) => {
             className="flex items-start flex-wrap gap-2 ml-auto w-fit"
             variant="grid"
           >
-            {files.map((file) => (
+            {files.map((file, i) => (
               <Attachment
                 data={file}
-                key={`${file.type}-${file.mediaType}-${file.filename}`}
+                key={`${file.type}-${file.mediaType}-${file.filename}-${i}`}
               >
                 <AttachmentPreview />
                 <AttachmentRemove />
