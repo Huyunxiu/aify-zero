@@ -100,10 +100,20 @@ export const AssistantMessage = ({
                 >
                   <MessageResponse
                     controls={{
+                      code: {
+                        copy: true,
+                        download: false,
+                      },
                       table: {
-                        copy: false,
+                        copy: true,
                         download: false,
                         fullscreen: false,
+                      },
+                      mermaid: {
+                        copy: true,
+                        download: false,
+                        fullscreen: false,
+                        panZoom: true,
                       },
                     }}
                   >
@@ -122,10 +132,20 @@ export const AssistantMessage = ({
                 >
                   <MessageResponse
                     controls={{
+                      code: {
+                        copy: true,
+                        download: false,
+                      },
                       table: {
-                        copy: false,
+                        copy: true,
                         download: false,
                         fullscreen: false,
+                      },
+                      mermaid: {
+                        copy: true,
+                        download: false,
+                        fullscreen: false,
+                        panZoom: true,
                       },
                     }}
                   >

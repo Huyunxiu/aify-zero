@@ -9,6 +9,10 @@
 @source "../**/*.{ts,tsx}";
 
 @source "../../../../node_modules/streamdown/dist/*.js";
+@source "../../../../node_modules/@streamdown/code/dist/*.js";
+@source "../../../../node_modules/@streamdown/mermaid/dist/*.js";
+@source "../../../../node_modules/@streamdown/math/dist/*.js";
+@source "../../../../node_modules/@streamdown/cjk/dist/*.js";
 
 @theme inline {
   --font-heading: var(--font-sans);
@@ -352,4 +356,9 @@
 [data-streamdown="table-wrapper"] {
   padding: 0;
   border: none;
+}
+
+/*tiptap*/
+.mention-skill {
+  color: var(--color-purple-700);
 }

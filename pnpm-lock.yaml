@@ -6,12 +6,63 @@ settings:
 
 catalogs:
   default:
+    '@ai-sdk/devtools':
+      specifier: 1.0.9
+      version: 1.0.9
+    '@ai-sdk/openai-compatible':
+      specifier: ^3.0.17
+      version: 3.0.17
     '@ai-sdk/react':
       specifier: 4.0.45
       version: 4.0.45
+    '@electron-forge/cli':
+      specifier: ^7.11.1
+      version: 7.11.2
+    '@electron-forge/maker-deb':
+      specifier: ^7.11.1
+      version: 7.11.2
+    '@electron-forge/maker-rpm':
+      specifier: ^7.11.1
+      version: 7.11.2
+    '@electron-forge/maker-squirrel':
+      specifier: ^7.11.1
+      version: 7.11.2
+    '@electron-forge/maker-zip':
+      specifier: ^7.11.1
+      version: 7.11.2
+    '@electron-forge/plugin-auto-unpack-natives':
+      specifier: ^7.11.1
+      version: 7.11.2
+    '@electron-forge/plugin-fuses':
+      specifier: ^7.11.1
+      version: 7.11.2
+    '@electron-forge/plugin-vite':
+      specifier: ^7.11.1
+      version: 7.11.2
+    '@electron/fuses':
+      specifier: ^1.8.0
+      version: 1.8.0
+    '@hono/structured-logger':
+      specifier: ^1.0.0
+      version: 1.0.0
     '@oreo-design/avatar':
       specifier: ^0.1.0
       version: 0.1.0
+    '@orpc/client':
+      specifier: ^1.14.4
+      version: 1.14.13
+    '@orpc/openapi':
+      specifier: ^1.14.3
+      version: 1.14.13
+    '@orpc/server':
+      specifier: ^1.14.3
+      version: 1.14.13
+    '@orpc/tanstack-query':
+      specifier: ^1.14.3
+      version: 1.14.13
+    '@orpc/zod':
+      specifier: ^1.14.3
+      version: 1.14.13
     '@pierre/diffs':
       specifier: ^1.2.11
       version: 1.2.12
@@ -45,6 +96,9 @@ catalogs:
     '@tanstack/react-table':
       specifier: ^8.21.3
       version: 8.21.3
+    '@tanstack/router-plugin':
+      specifier: ^1.167.35
+      version: 1.168.23
     '@tiptap/extension-mention':
       specifier: ^3.29.2
       version: 3.29.2
@@ -60,24 +114,66 @@ catalogs:
     '@tiptap/starter-kit':
       specifier: ^3.27.3
       version: 3.29.2
+    '@tiptap/static-renderer':
+      specifier: ^3.31.3
+      version: 3.31.3
     '@tiptap/suggestion':
       specifier: ^3.29.2
       version: 3.29.2
+    '@types/electron-squirrel-startup':
+      specifier: ^1.0.2
+      version: 1.0.2
     '@types/node':
       specifier: ^25.5.0
       version: 25.9.5
+    '@types/turndown':
+      specifier: ^5.0.6
+      version: 5.0.6
+    '@typescript/native-preview':
+      specifier: 7.0.0-dev.20260328.1
+      version: 7.0.0-dev.20260328.1
     ai:
       specifier: ^7.0.42
       version: 7.0.42
+    bumpp:
+      specifier: ^11.0.1
+      version: 11.1.0
     cmdk:
       specifier: ^1.1.1
       version: 1.1.1
     cn:
       specifier: ^0.2.4
       version: 0.2.4
+    dotenv:
+      specifier: ^17.4.2
+      version: 17.4.2
+    electron:
+      specifier: 42.0.1
+      version: 42.0.1
+    electron-devtools-installer:
+      specifier: ^4.0.0
+      version: 4.0.0
+    electron-log:
+      specifier: ^5.4.4
+      version: 5.4.4
+    electron-squirrel-startup:
+      specifier: ^1.0.1
+      version: 1.0.1
+    file-type:
+      specifier: ^22.0.1
+      version: 22.0.1
     framer-motion:
       specifier: ^13.2.0
       version: 13.2.0
+    glob:
+      specifier: ^13.0.6
+      version: 13.0.6
+    gray-matter:
+      specifier: ^4.0.3
+      version: 4.0.3
+    hono:
+      specifier: ^4.12.18
+      version: 4.12.32
     i18next:
       specifier: ^26.2.0
       version: 26.3.6
@@ -100,17 +196,32 @@ catalogs:
       specifier: ^4.2.0
       version: 4.3.1
     streamdown:
-      specifier: ^2.5.0
-      version: 2.5.0
+      specifier: ^2.6.0
+      version: 2.6.0
     tokenlens:
       specifier: ^1.3.1
       version: 1.3.1
+    turndown:
+      specifier: ^7.2.4
+      version: 7.2.4
     typescript:
       specifier: ^6.0.2
       version: 6.0.3
+    ultracite:
+      specifier: 7.7.0
+      version: 7.7.0
     use-stick-to-bottom:
       specifier: ^1.1.4
       version: 1.1.6
+    uuid:
+      specifier: ^14.0.0
+      version: 14.0.1
+    vite-plus:
+      specifier: ^0.1.21
+      version: 0.1.24
+    zod:
+      specifier: ^4.5.4
+      version: 4.5.4
     zustand:
       specifier: ^5.0.14
       version: 5.0.14
@@ -457,6 +568,9 @@ importers:
       '@tiptap/starter-kit':
         specifier: 'catalog:'
         version: 3.29.2
+      '@tiptap/static-renderer':
+        specifier: 'catalog:'
+        version: 3.31.3(@tiptap/core@3.29.2(@tiptap/pm@3.29.2))(@tiptap/pm@3.29.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tiptap/suggestion':
         specifier: 'catalog:'
         version: 3.29.2(@floating-ui/dom@1.8.0)(@tiptap/core@3.29.2(@tiptap/pm@3.29.2))(@tiptap/pm@3.29.2)
@@ -516,7 +630,7 @@ importers:
         version: 4.3.1
       streamdown:
         specifier: 'catalog:'
-        version: 2.5.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 2.6.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       tokenlens:
         specifier: 'catalog:'
         version: 1.3.1
@@ -532,7 +646,7 @@ importers:
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.3.0
-        version: 4.3.3(vite@8.1.5(@types/node@25.9.5)(jiti@2.7.0))
+        version: 4.3.3(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))
       '@types/node':
         specifier: 'catalog:'
         version: 25.9.5
@@ -2790,6 +2904,14 @@ packages:
 
   '@tiptap/starter-kit@3.29.2':
     resolution: {integrity: sha512-oTu0tysiqk4zgjEtxRHjAQgxUKaAevZwueOWwSWubHdokqp7SpcbE5n9USJv89HKuTUDm3GjnQH6q8HNn/2DsA==}
+
+  '@tiptap/static-renderer@3.31.3':
+    resolution: {integrity: sha512-TzbN/aSTQBhGZL94aaEnfbwZw/gIiQd8/q3TucTYuzdbsrsZNfBMg7CCA9W9dOg4vlKxCTLRVas21ivsrUm7og==}
+    peerDependencies:
+      '@tiptap/core': 3.31.3
+      '@tiptap/pm': 3.31.3
+      react: ^17.0.0 || ^18.0.0 || ^19.0.0
+      react-dom: ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@tiptap/suggestion@3.29.2':
     resolution: {integrity: sha512-ZEhRm0gnRCwCScR9IrnIBhm9sr6U8vpR9oeznYk3hiedZ48zsgohqvgoIYpWcwYWrT2Pb0NrfhCT8IuSzdJHzQ==}
@@ -6563,8 +6685,8 @@ packages:
   readable-stream@2.3.8:
     resolution: {integrity: sha512-8p0AUk4XODgIewSi0l8Epjs+EVnWiK7NoDIEGU0HhE7+ZyY8D1IMY7odu5lRrFXGg71L15KG8QrPmum45RTtdA==}
 
-  readdirp@5.0.0:
-    resolution: {integrity: sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ==}
+  readdirp@5.1.1:
+    resolution: {integrity: sha512-Kko+Y5XQ6fM+Ce3dq3m9YGxnacYZYl9cA1wZjaF3Vbry2L3i1qVg8+CAgNPsXRArPMUMCaOR7oa9Nqntc43JKA==}
     engines: {node: '>= 20.19.0'}
 
   recast@0.23.21:
@@ -6631,8 +6753,8 @@ packages:
   remark-stringify@11.0.0:
     resolution: {integrity: sha512-1OSmLd3awB/t8qdoEOMazZkNsfVTeY4fTsgzcQFdXNq8ToTN4ZGwrMnlda4K6smTFKD+GRV6O48i6Z4iKgPPpw==}
 
-  remend@1.3.0:
-    resolution: {integrity: sha512-iIhggPkhW3hFImKtB10w0dz4EZbs28mV/dmbcYVonWEJ6UGHHpP+bFZnTh6GNWJONg5m+U56JrL+8IxZRdgWjw==}
+  remend@1.3.1:
+    resolution: {integrity: sha512-N3DiY5qbRPoa5vkxn1oDLMyXOVTeo6Hp+XOj6SIqJAYUgLS0Q587gILPMom/qm86AQ/ZrcOdwEIzCz8V3J0nxQ==}
 
   require-directory@2.1.1:
     resolution: {integrity: sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==}
@@ -6933,8 +7055,8 @@ packages:
     resolution: {integrity: sha512-UhDfHmA92YAlNnCfhmq0VeNL5bDbiZGg7sZ2IvPsXubGkiNa9EC+tUTsjBRsYUAz87btI6/1wf4XoVvQ3uRnmQ==}
     engines: {node: '>=18'}
 
-  streamdown@2.5.0:
-    resolution: {integrity: sha512-/tTnURfIOxZK/pqJAxsfCvETG/XCJHoWnk3jq9xLcuz6CSpnjjuxSRBTTL4PKGhxiZQf0lqPxGhImdpwcZ2XwA==}
+  streamdown@2.6.0:
+    resolution: {integrity: sha512-nQZVUn4GvB2R5SAlDNph20iKZeW+RM4gv6G1H3ACypEnmQf8PgTHZ/1Ta2OACRwQ2coK7aW5AeIAa7Ls5zk+RA==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
@@ -7618,9 +7740,6 @@ packages:
 
   zod@3.24.1:
     resolution: {integrity: sha512-muH7gBL9sI1nciMZV67X5fTKKBLtwpZ5VBp1vsOQzj1MhrBZ4wlVCm3gedKZWLp0Oyel8sIGfeiz54Su+OVT+A==}
-
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
   zod@4.5.4:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
@@ -9663,12 +9782,12 @@ snapshots:
       tailwindcss: 4.3.3
       vite: '@voidzero-dev/vite-plus-core@0.3.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(typescript@6.0.3)(yaml@2.9.0)'
 
-  '@tailwindcss/vite@4.3.3(vite@8.1.5(@types/node@25.9.5)(jiti@2.7.0))':
+  '@tailwindcss/vite@4.3.3(vite@8.1.5(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))':
     dependencies:
       '@tailwindcss/node': 4.3.3
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
-      vite: 8.1.5(@types/node@25.9.5)(jiti@2.7.0)
+      vite: 8.1.5(@types/node@25.9.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0)
 
   '@tanstack/devtools-event-client@0.4.4': {}
 
@@ -9742,7 +9861,7 @@ snapshots:
       jiti: 2.7.0
       magic-string: 0.30.21
       prettier: 3.9.6
-      zod: 4.4.3
+      zod: 4.5.4
     transitivePeerDependencies:
       - supports-color
 
@@ -9756,7 +9875,7 @@ snapshots:
       '@tanstack/router-utils': 1.162.2
       chokidar: 5.0.0
       unplugin: 3.3.0(@voidzero-dev/vite-plus-core@0.3.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(typescript@6.0.3)(yaml@2.9.0))(esbuild@0.28.1)(rolldown@1.1.5)(webpack@5.109.2(esbuild@0.28.1))
-      zod: 4.4.3
+      zod: 4.5.4
     optionalDependencies:
       '@tanstack/react-router': 1.170.18(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       vite: '@voidzero-dev/vite-plus-core@0.3.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(typescript@6.0.3)(yaml@2.9.0)'
@@ -9980,6 +10099,13 @@ snapshots:
       '@tiptap/extension-underline': 3.29.2(@tiptap/core@3.29.2(@tiptap/pm@3.29.2))
       '@tiptap/extensions': 3.29.2(@tiptap/core@3.29.2(@tiptap/pm@3.29.2))(@tiptap/pm@3.29.2)
       '@tiptap/pm': 3.29.2
+
+  '@tiptap/static-renderer@3.31.3(@tiptap/core@3.29.2(@tiptap/pm@3.29.2))(@tiptap/pm@3.29.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      '@tiptap/core': 3.29.2(@tiptap/pm@3.29.2)
+      '@tiptap/pm': 3.29.2
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
 
   '@tiptap/suggestion@3.29.2(@floating-ui/dom@1.8.0)(@tiptap/core@3.29.2(@tiptap/pm@3.29.2))(@tiptap/pm@3.29.2)':
     dependencies:
@@ -10205,7 +10331,7 @@ snapshots:
 
   '@types/mute-stream@0.0.4':
     dependencies:
-      '@types/node': 22.20.1
+      '@types/node': 26.1.2
 
   '@types/node@22.20.1':
     dependencies:
@@ -10256,7 +10382,7 @@ snapshots:
 
   '@types/yauzl@2.10.3':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 26.1.2
     optional: true
 
   '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260328.1':
@@ -10972,7 +11098,7 @@ snapshots:
 
   chokidar@5.0.0:
     dependencies:
-      readdirp: 5.0.0
+      readdirp: 5.1.1
 
   chownr@2.0.0: {}
 
@@ -13235,7 +13361,7 @@ snapshots:
   micromark-util-classify-character@2.0.0:
     dependencies:
       micromark-util-character: 2.0.0
-      micromark-util-symbol: 2.0.1
+      micromark-util-symbol: 2.0.0
       micromark-util-types: 2.0.0
 
   micromark-util-combine-extensions@2.0.0:
@@ -14112,7 +14238,7 @@ snapshots:
       string_decoder: 1.1.1
       util-deprecate: 1.0.2
 
-  readdirp@5.0.0: {}
+  readdirp@5.1.1: {}
 
   recast@0.23.21:
     dependencies:
@@ -14191,7 +14317,7 @@ snapshots:
       micromark-extension-gfm: 3.0.0
       remark-parse: 11.0.0
       remark-stringify: 11.0.0
-      unified: 11.0.5
+      unified: 11.0.0
     transitivePeerDependencies:
       - supports-color
 
@@ -14209,7 +14335,7 @@ snapshots:
       '@types/mdast': 4.0.4
       mdast-util-from-markdown: 2.0.3
       micromark-util-types: 2.0.0
-      unified: 11.0.5
+      unified: 11.0.0
     transitivePeerDependencies:
       - supports-color
 
@@ -14218,16 +14344,16 @@ snapshots:
       '@types/hast': 3.0.5
       '@types/mdast': 4.0.4
       mdast-util-to-hast: 13.2.1
-      unified: 11.0.5
+      unified: 11.0.0
       vfile: 6.0.3
 
   remark-stringify@11.0.0:
     dependencies:
       '@types/mdast': 4.0.4
       mdast-util-to-markdown: 2.0.0
-      unified: 11.0.5
+      unified: 11.0.0
 
-  remend@1.3.0: {}
+  remend@1.3.1: {}
 
   require-directory@2.1.1: {}
 
@@ -14598,13 +14724,12 @@ snapshots:
 
   stdin-discarder@0.2.2: {}
 
-  streamdown@2.5.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+  streamdown@2.6.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       clsx: 2.1.1
       hast-util-to-jsx-runtime: 2.3.6
       html-url-attributes: 3.0.1
       marked: 17.0.6
-      mermaid: 11.16.0
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
       rehype-harden: 1.1.8
@@ -14613,7 +14738,7 @@ snapshots:
       remark-gfm: 4.0.1
       remark-parse: 11.0.0
       remark-rehype: 11.1.2
-      remend: 1.3.0
+      remend: 1.3.1
       tailwind-merge: 3.6.0
       unified: 11.0.5
       unist-util-visit: 5.1.0
@@ -14900,7 +15025,7 @@ snapshots:
       jsonc-parser: 3.3.1
       nypm: 0.6.9
       yaml: 2.9.0
-      zod: 4.4.3
+      zod: 4.5.4
     optionalDependencies:
       oxfmt: 0.52.0(vite-plus@0.1.24(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(typescript@6.0.3)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))(yaml@2.9.0))
       oxlint: 1.67.0(oxlint-tsgolint@0.23.0)(vite-plus@0.1.24(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(typescript@6.0.3)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))(yaml@2.9.0))
@@ -15248,18 +15373,6 @@ snapshots:
       tsx: 4.23.1
       yaml: 2.9.0
 
-  vite@8.1.5(@types/node@25.9.5)(jiti@2.7.0):
-    dependencies:
-      lightningcss: 1.33.0
-      picomatch: 4.0.5
-      postcss: 8.5.25
-      rolldown: 1.1.5
-      tinyglobby: 0.2.17
-    optionalDependencies:
-      '@types/node': 25.9.5
-      fsevents: 2.3.3
-      jiti: 2.7.0
-
   vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0):
     dependencies:
       lightningcss: 1.33.0
@@ -15473,8 +15586,6 @@ snapshots:
       zod: 3.24.1
 
   zod@3.24.1: {}
-
-  zod@4.4.3: {}
 
   zod@4.5.4: {}
 

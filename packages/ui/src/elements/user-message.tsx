@@ -7,7 +7,8 @@ import {
   AttachmentRemove,
   Attachments,
 } from "../components/ai-elements/attachments";
-import { Message, MessageContent, MessageResponse } from "./message";
+import { Message, MessageContent } from "./message";
+import { renderTextToReactElement } from "./prompt-input-tiptap";
 
 type UserMessageProps = {
   message: AgentUIMessage;
@@ -52,17 +53,9 @@ export const UserMessage = ({ message }: UserMessageProps) => {
           </Attachments>
         )}
         <MessageContent>
-          <MessageResponse
-            controls={{
-              table: {
-                copy: false,
-                download: false,
-                fullscreen: false,
-              },
-            }}
-          >
-            {part.text}
-          </MessageResponse>
+          <div className="size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            {renderTextToReactElement(part.text)}
+          </div>
         </MessageContent>
       </Message>
     );

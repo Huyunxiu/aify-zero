@@ -7,10 +7,6 @@
   pointer-events: none;
 }
 
-.mention {
-  color: var(--color-purple-700);
-}
-
 .react-renderer {
   z-index: 10;
 }

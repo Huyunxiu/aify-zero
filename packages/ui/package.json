@@ -38,6 +38,7 @@
     "@tiptap/markdown": "catalog:",
     "@tiptap/react": "catalog:",
     "@tiptap/starter-kit": "catalog:",
+    "@tiptap/static-renderer": "catalog:",
     "@tiptap/suggestion": "catalog:",
     "@workspace/agent": "workspace:*",
     "@workspace/server": "workspace:*",

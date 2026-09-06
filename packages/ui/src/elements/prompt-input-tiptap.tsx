@@ -1,14 +1,17 @@
+import type { JSONContent } from "@tiptap/core";
 import Mention from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extensions";
 import {
   EditorContent,
   mergeAttributes,
+  nodePasteRule,
   ReactRenderer,
   useEditor,
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 
 import "./prompt-input.tiptap.css";
+import { renderToReactElement } from "@tiptap/static-renderer";
 import type {
   SuggestionKeyDownProps,
   SuggestionProps,
@@ -33,15 +36,130 @@ import {
   usePromptInputAttachments,
 } from "./prompt-input";
 
+type SuggestionType = {
+  id: string;
+  label: string;
+  type: "skill" | "command" | "file";
+};
+
+type MentionTagConfig = {
+  /** XML tag name serialized into the plain text, e.g. "skill" */
+  tag: string;
+  /** Sticky pattern matching one serialized tag at the current cursor position */
+  pattern: RegExp;
+  /** Build mention attrs from a match; parse tag contents here if needed */
+  toAttrs: (match: RegExpExecArray) => Record<string, unknown>;
+};
+
+/** Extract the name attribute from a serialized tag, e.g. `<skill name="x" />` -> "x" */
+const extractNameAttr = (xml: string) => /name="([^"]+)"/.exec(xml)?.[1] ?? "";
+
+/**
+ * Registry of XML tags that serialize as mention nodes. renderText embeds
+ * attrs.id (the raw XML) into the plain text; entries here parse it back.
+ * Patterns only match the tag itself, not its contents. Add a new entry
+ * (e.g. command/resource) to support more mention types. Entries are tried
+ * in order, so the first match at a position wins.
+ */
+const MENTION_TAG_CONFIGS: MentionTagConfig[] = [
+  {
+    tag: "skill",
+    pattern: /<skill\s[^>]*\/>/y,
+    toAttrs: (match) => ({
+      id: match[0],
+      label: `skill:${extractNameAttr(match[0])}`,
+    }),
+  },
+];
+
+/**
+ * Rebuild a Tiptap doc from serialized plain text. Mention nodes are embedded
+ * in the text as XML tags (see MENTION_TAG_CONFIGS), so a scan restores them;
+ * everything else stays plain text. Each newline starts a new paragraph, and
+ * a blank line (two consecutive newlines) adds an empty paragraph.
+ */
+export const textToJSONContent = (text: string): JSONContent => {
+  // Mention tags are single-line, so scanning each line independently is
+  // equivalent to scanning the whole text.
+  const parseLine = (line: string): JSONContent[] => {
+    const content: JSONContent[] = [];
+    let cursor = 0;
+    let textStart = 0;
+
+    const pushText = (end: number) => {
+      if (end > textStart) {
+        content.push({ type: "text", text: line.slice(textStart, end) });
+      }
+    };
+
+    while (cursor < line.length) {
+      let matched = false;
+
+      for (const config of MENTION_TAG_CONFIGS) {
+        config.pattern.lastIndex = cursor;
+        const match = config.pattern.exec(line);
+
+        if (match) {
+          pushText(cursor);
+          content.push({
+            type: "mention",
+            attrs: { mentionSuggestionChar: "/", ...config.toAttrs(match) },
+          });
+          cursor = config.pattern.lastIndex;
+          textStart = cursor;
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        cursor++;
+      }
+    }
+
+    pushText(line.length);
+
+    return content;
+  };
+
+  const paragraphs = text.split("\n");
+  const content: JSONContent[] = [];
+  let prevParagraph = undefined;
+  for (const currParagraph of paragraphs) {
+    if (currParagraph) {
+      content.push({
+        type: "paragraph",
+        content: parseLine(currParagraph),
+      });
+    } else if (!prevParagraph) {
+      content.push({
+        type: "paragraph",
+      });
+      // content.at(-1)?.content?.push({ type: "hardBreak" });
+    }
+    prevParagraph = currParagraph;
+  }
+
+  return { type: "doc", content };
+};
+
 const MentionDropdown = forwardRef(
-  (props: SuggestionProps<string, { id: string; label: string }>, ref) => {
+  (
+    props: SuggestionProps<SessionResourcesType["skills"][0], SuggestionType>,
+    ref
+  ) => {
     const [selectedIndex, setSelectedIndex] = useState(0);
 
     const selectItem = (index: number) => {
       const item = props.items[index];
 
       if (item) {
-        props.command({ id: item, label: item });
+        const skillXML = `<skill name="${item.name}" path="${item.location}" />`;
+        props.command({
+          id: skillXML,
+          label: `skill:${item.name}`,
+          type: "skill",
+        });
       }
     };
 
@@ -104,7 +222,7 @@ const MentionDropdown = forwardRef(
                     selectItem(index);
                   }}
                 >
-                  {item}
+                  {item.name}
                 </div>
               ))
             : null}
@@ -117,6 +235,84 @@ const MentionDropdown = forwardRef(
 type SessionResourcesType = NonNullable<
   Awaited<ReturnType<typeof client.session.listSessionResources>>
 >;
+
+const PromptMention = Mention.extend({
+  addPasteRules() {
+    return [
+      nodePasteRule({
+        // Rebuild skill mentions from serialized XML tags pasted as plain
+        // text, e.g. `<skill name="language" path="/path/to/SKILL.md" />`.
+        // Keep the raw XML as attrs.id so copying the mention serializes back
+        // to the same tag (see renderText and MENTION_TAG_CONFIGS).
+        find: /<skill\s[^>]*\/>/g,
+        type: this.type,
+        getAttributes: (match) => {
+          const skillXML = match[0];
+          return {
+            id: skillXML,
+            label: `skill:${extractNameAttr(skillXML)}`,
+            type: "skill",
+            mentionSuggestionChar: "/",
+          };
+        },
+      }),
+    ];
+  },
+});
+
+const TIPTAP_EXTENSION_FOR_STATIC_RENDER = [
+  StarterKit.configure({
+    blockquote: false,
+    bulletList: false,
+    codeBlock: false,
+    hardBreak: { keepMarks: true },
+    heading: false,
+    horizontalRule: false,
+    listItem: false,
+    orderedList: false,
+    bold: false,
+    code: false,
+    italic: false,
+    link: false,
+    strike: false,
+    underline: false,
+    listKeymap: false,
+    trailingNode: false,
+  }),
+  PromptMention.configure({
+    HTMLAttributes: {
+      class: "mention",
+    },
+    deleteTriggerWithBackspace: true,
+    renderHTML({ options, node }) {
+      return [
+        "span",
+        mergeAttributes(options.HTMLAttributes, {
+          class: "mention mention-skill",
+        }),
+        `${node.attrs.mentionSuggestionChar}${node.attrs.label}`,
+      ];
+    },
+    renderText({ node }) {
+      return node.attrs.id as string;
+    },
+    suggestions: [
+      {
+        char: "/",
+        placement: "top-start",
+        offset: { mainAxis: 8 },
+      },
+    ],
+  }),
+];
+
+export const renderTextToReactElement = (text: string) => {
+  const jsonContent = textToJSONContent(text);
+  return renderToReactElement({
+    content: jsonContent,
+    extensions: TIPTAP_EXTENSION_FOR_STATIC_RENDER,
+  });
+};
 
 export type PromptInputTiptapProps = {
   placeholder?: string;
@@ -141,89 +337,104 @@ export const PromptInputTiptap = ({
     resourcesRef.current = resources;
   }, [resources]);
 
-  const editor = useEditor({
-    // disable Markdown when pasting
-    enablePasteRules: false,
-    // disable Markdown when typing
-    enableInputRules: false,
-    extensions: [
-      StarterKit,
-      Placeholder.configure({
-        placeholder,
-      }),
-      Mention.configure({
-        HTMLAttributes: {
-          class: cn("mention text-purple-700"),
-        },
-        deleteTriggerWithBackspace: true,
-        renderHTML({ options, node }) {
-          return [
-            "span",
-            mergeAttributes({}, options.HTMLAttributes),
-            `${node.attrs.mentionSuggestionChar}skills:${node.attrs.label ?? node.attrs.id}`,
-          ];
-        },
-        renderText({ node }) {
-          return `${node.attrs.mentionSuggestionChar}skills:${node.attrs.label ?? node.attrs.id}`;
-        },
-        suggestions: [
-          {
-            char: "/",
-            placement: "top-start",
-            offset: { mainAxis: 8 },
-            initialItems: resourcesRef.current?.skills.map((e) => e.name),
-            items: ({ query }) => {
-              if (!resourcesRef.current?.skills) {
-                return [];
-              }
-              const keyword = query.toLowerCase();
-              return resourcesRef.current?.skills
-                .map((e) => e.name)
-                .filter((e) => e.toLowerCase().includes(keyword));
-            },
-            render: () => {
-              let component: ReactRenderer<unknown, any>;
-              let unmount: (() => void) | null = null;
-
-              return {
-                onStart(
-                  props: SuggestionProps<string, { id: string; label: string }>
-                ) {
-                  component = new ReactRenderer(MentionDropdown, {
-                    props,
-                    editor: props.editor,
-                  });
-
-                  // The plugin mounts the element, positions it, and keeps it anchored.
-                  unmount = props.mount(component.element);
-                  mentionStateRef.current = true;
-                },
-                onUpdate(
-                  props: SuggestionProps<string, { id: string; label: string }>
-                ) {
-                  component.updateProps(props);
-                },
-                onKeyDown(props: SuggestionKeyDownProps) {
-                  if (props.event.key === "Escape") {
-                    component.destroy();
-                    return true;
-                  }
-                  const handlers = component.ref as {
-                    onKeyDown?: (props: SuggestionKeyDownProps) => boolean;
-                  };
-                  return handlers.onKeyDown?.(props) ?? false;
-                },
-                onExit() {
-                  unmount?.();
-                  component.destroy();
-                  mentionStateRef.current = false;
-                },
-              };
-            },
+  const extensions = [
+    StarterKit.configure({
+      blockquote: false,
+      bulletList: false,
+      codeBlock: false,
+      hardBreak: { keepMarks: true },
+      heading: false,
+      horizontalRule: false,
+      listItem: false,
+      orderedList: false,
+      bold: false,
+      code: false,
+      italic: false,
+      link: false,
+      strike: false,
+      underline: false,
+      listKeymap: false,
+      trailingNode: false,
+    }),
+    Placeholder.configure({
+      placeholder,
+    }),
+    PromptMention.configure({
+      HTMLAttributes: {
+        class: "mention",
+      },
+      deleteTriggerWithBackspace: true,
+      renderHTML({ options, node }) {
+        return [
+          "span",
+          mergeAttributes(options.HTMLAttributes, {
+            class: "mention mention-skill",
+          }),
+          `${node.attrs.mentionSuggestionChar}${node.attrs.label}`,
+        ];
+      },
+      renderText({ node }) {
+        return node.attrs.id as string;
+      },
+      suggestions: [
+        {
+          char: "/",
+          placement: "top-start",
+          offset: { mainAxis: 8 },
+          initialItems: resourcesRef.current?.skills,
+          items: ({ query }) => {
+            if (!resourcesRef.current?.skills) {
+              return [];
+            }
+            const keyword = query.toLowerCase();
+            return resourcesRef.current?.skills.filter((e) =>
+              e.name.toLowerCase().includes(keyword)
+            );
           },
-        ],
-      }),
-    ],
+          render: () => {
+            let component: ReactRenderer<unknown, any>;
+            let unmount: (() => void) | null = null;
+
+            return {
+              onStart(props: SuggestionProps<string, SuggestionType>) {
+                component = new ReactRenderer(MentionDropdown, {
+                  props,
+                  editor: props.editor,
+                });
+
+                // The plugin mounts the element, positions it, and keeps it anchored.
+                unmount = props.mount(component.element);
+                mentionStateRef.current = true;
+              },
+              onUpdate(props: SuggestionProps<string, SuggestionType>) {
+                component.updateProps(props);
+              },
+              onKeyDown(props: SuggestionKeyDownProps) {
+                if (props.event.key === "Escape") {
+                  component.destroy();
+                  return true;
+                }
+                const handlers = component.ref as {
+                  onKeyDown?: (props: SuggestionKeyDownProps) => boolean;
+                };
+                return handlers.onKeyDown?.(props) ?? false;
+              },
+              onExit() {
+                unmount?.();
+                component.destroy();
+                mentionStateRef.current = false;
+              },
+            };
+          },
+        },
+      ],
+    }),
+  ];
+
+  const editor = useEditor({
+    enablePasteRules: true,
+    enableInputRules: true,
+    extensions,
     editorProps: {
       handleKeyDown: (_, event) => handleKeyDown(event),
       attributes: {
@@ -286,7 +497,7 @@ export const PromptInputTiptap = ({
         return true;
       }
     },
-    [editor, isComposing, attachments, controller?.formRef]
+    [isComposing, attachments, controller?.formRef]
   );
 
   // Sync editor instance out to parent via editorRef, and report initial empty state
@@ -308,7 +519,6 @@ export const PromptInputTiptap = ({
       name="message"
       onCompositionEnd={handleCompositionEnd}
       onCompositionStart={handleCompositionStart}
-      // onKeyDown={handleKeyDown}
       className="flex w-full border-input px-2.5 text-base transition-colors outline-none focus-visible:border-ring focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 md:text-sm dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 flex-1 resize-none rounded-none border-0 bg-transparent py-2 shadow-none ring-0 focus-visible:ring-0 disabled:bg-transparent aria-invalid:ring-0 dark:bg-transparent dark:disabled:bg-transparent field-sizing-content max-h-48 min-h-16 overflow-scroll"
       editor={editor}
     />
