@@ -15,21 +15,20 @@ import {
 } from "@workspace/ui/components/input-group"
 import { SearchIcon, CheckIcon } from "lucide-react"
 
-function Command({
-  className,
-  ...props
-}: React.ComponentProps<typeof CommandPrimitive>) {
-  return (
-    <CommandPrimitive
-      data-slot="command"
-      className={cn(
-        "flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+const Command = React.forwardRef<
+  React.ComponentRef<typeof CommandPrimitive>,
+  React.ComponentPropsWithoutRef<typeof CommandPrimitive>
+>(({ className, ...props }, ref) => (
+  <CommandPrimitive
+    ref={ref}
+    data-slot="command"
+    className={cn(
+      "flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground",
+      className
+    )}
+    {...props}
+  />
+))
 
 function CommandDialog({
   title = "Command Palette",

@@ -133,6 +133,13 @@ const PromptInputAttachmentsDisplay = () => {
   );
 };
 
+export type AgentCommand = {
+  id: string;
+  type: "command";
+  name: string;
+  description: string;
+};
+
 export type SessionProps = React.ComponentProps<"div"> & {
   sessionId: string | undefined;
   initialMessages?: AgentUIMessage[];
@@ -241,6 +248,15 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   const tokenUsage =
     messages.findLast((e) => e.metadata?.usage)?.metadata?.usage ||
     defaultTokenUsage;
+
+  const commands: AgentCommand[] = [
+    {
+      id: "compact",
+      type: "command",
+      name: "compact",
+      description: "压缩此聊天的上下文",
+    },
+  ];
 
   const handleSubmit = (message: PromptInputMessage) => {
     console.log("handleSubmit", messages, message);
@@ -367,7 +383,13 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                 <PromptInputBody>
                   {/* <PromptInputTextarea /> */}
                   <PromptInputTiptap
-                    resources={listSessionResourcesQuery.data}
+                    skills={
+                      listSessionResourcesQuery.data?.skills.map((e) => ({
+                        ...e,
+                        type: "skill",
+                      })) || []
+                    }
+                    commands={commands}
                     onEmptyChange={(isEmpty) => {
                       if (isEmpty !== isEditorEmpty) {
                         setIsEditorEmpty(isEmpty);

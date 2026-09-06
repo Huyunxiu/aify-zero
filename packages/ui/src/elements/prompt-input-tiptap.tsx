@@ -9,13 +9,12 @@ import {
   useEditor,
 } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-
-import "./prompt-input.tiptap.css";
 import { renderToReactElement } from "@tiptap/static-renderer";
 import type {
   SuggestionKeyDownProps,
   SuggestionProps,
 } from "@tiptap/suggestion";
+import type { SkillInfo } from "@workspace/agent/skill/index";
 import {
   forwardRef,
   useCallback,
@@ -24,17 +23,23 @@ import {
   useRef,
   useState,
 } from "react";
+import type { ComponentRef } from "react";
 
 import {
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-} from "../components/dropdown-menu";
-import type { client } from "../lib/orpc";
-import { cn } from "../lib/utils";
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "../components/command";
 import {
   useOptionalPromptInputController,
   usePromptInputAttachments,
 } from "./prompt-input";
+import type { AgentCommand } from "./session";
+
+import "./prompt-input.tiptap.css";
 
 type SuggestionType = {
   id: string;
@@ -68,6 +73,14 @@ const MENTION_TAG_CONFIGS: MentionTagConfig[] = [
     toAttrs: (match) => ({
       id: match[0],
       label: `skill:${extractNameAttr(match[0])}`,
+    }),
+  },
+  {
+    tag: "command",
+    pattern: /<command\s[^>]*\/>/y,
+    toAttrs: (match) => ({
+      id: match[0],
+      label: `command:${extractNameAttr(match[0])}`,
     }),
   },
 ];
@@ -144,57 +157,48 @@ export const textToJSONContent = (text: string): JSONContent => {
 };
 
 const MentionDropdown = forwardRef(
-  (
-    props: SuggestionProps<SessionResourcesType["skills"][0], SuggestionType>,
-    ref
-  ) => {
-    const [selectedIndex, setSelectedIndex] = useState(0);
+  (props: SuggestionProps<PromptResource, SuggestionType>, ref) => {
+    const commandRootRef = useRef<ComponentRef<typeof Command>>(null);
 
-    const selectItem = (index: number) => {
-      const item = props.items[index];
-
-      if (item) {
+    const selectItem = (item?: PromptResource) => {
+      if (item?.type === "skill") {
         const skillXML = `<skill name="${item.name}" path="${item.location}" />`;
         props.command({
           id: skillXML,
           label: `skill:${item.name}`,
           type: "skill",
         });
+      } else if (item?.type === "command") {
+        const commandXML = `<command id="${item.id}" name="${item.name}" />`;
+        props.command({
+          id: commandXML,
+          label: `command:${item.name}`,
+          type: "command",
+        });
       }
     };
 
-    const upHandler = () => {
-      setSelectedIndex(
-        (selectedIndex + props.items.length - 1) % props.items.length
-      );
-    };
-
-    const downHandler = () => {
-      setSelectedIndex((selectedIndex + 1) % props.items.length);
-    };
-
-    const enterHandler = () => {
-      selectItem(selectedIndex);
-    };
-
-    useEffect(() => {
-      setSelectedIndex(0);
-    }, [props.items]);
-
     useImperativeHandle(ref, () => ({
       onKeyDown: ({ event }: { event: KeyboardEvent }) => {
-        if (event.key === "ArrowUp") {
-          upHandler();
-          return true;
+        // Don't select an item while an IME composition is in flight
+        if (event.key === "Enter" && event.isComposing) {
+          return false;
         }
 
-        if (event.key === "ArrowDown") {
-          downHandler();
-          return true;
-        }
-
-        if (event.key === "Enter") {
-          enterHandler();
+        if (
+          event.key === "ArrowUp" ||
+          event.key === "ArrowDown" ||
+          event.key === "Enter"
+        ) {
+          // Re-dispatch navigation keys on the Command root so its internal
+          // state (highlight, Enter selection) drives the dropdown.
+          commandRootRef.current?.dispatchEvent(
+            new KeyboardEvent("keydown", {
+              key: event.key,
+              bubbles: true,
+              cancelable: true,
+            })
+          );
           return true;
         }
 
@@ -202,39 +206,55 @@ const MentionDropdown = forwardRef(
       },
     }));
 
+    const { skill, command } = Object.groupBy(props.items, (e) => e.type) as {
+      skill?: AgentSkill[];
+      command?: AgentCommand[];
+    };
+
     return (
-      <div className="z-50 max-h-(--available-height) w-72 min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="font-normal">Skill</DropdownMenuLabel>
-          {props.items.length
-            ? props.items.map((item, index) => (
-                <div
-                  data-slot="dropdown-menu-item"
-                  className={cn(
-                    "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive",
-                    {
-                      "bg-accent text-accent-foreground":
-                        index === selectedIndex,
-                    }
-                  )}
-                  key={index}
-                  onClick={() => {
-                    selectItem(index);
+      <Command
+        ref={commandRootRef}
+        loop
+        className="z-50 max-h-(--available-height) w-72 min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95"
+      >
+        <CommandList>
+          <CommandEmpty>No results found.</CommandEmpty>
+          {command?.length && (
+            <CommandGroup heading="Command">
+              {command.map((c) => (
+                <CommandItem
+                  key={c.id}
+                  value={c.id}
+                  onSelect={() => {
+                    selectItem(c);
                   }}
                 >
-                  {item.name}
-                </div>
-              ))
-            : null}
-        </DropdownMenuGroup>
-      </div>
+                  <span>{c.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {command?.length && <CommandSeparator />}
+          {skill?.length && (
+            <CommandGroup heading="Skill">
+              {skill.map((c) => (
+                <CommandItem
+                  key={`${c.category}-${c.location}`}
+                  value={`${c.category}-${c.location}`}
+                  onSelect={() => {
+                    selectItem(c);
+                  }}
+                >
+                  <span>{c.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+        </CommandList>
+      </Command>
     );
   }
 );
-
-type SessionResourcesType = NonNullable<
-  Awaited<ReturnType<typeof client.session.listSessionResources>>
->;
 
 const PromptMention = Mention.extend({
   addPasteRules() {
@@ -252,6 +272,19 @@ const PromptMention = Mention.extend({
             id: skillXML,
             label: `skill:${extractNameAttr(skillXML)}`,
             type: "skill",
+            mentionSuggestionChar: "/",
+          };
+        },
+      }),
+      nodePasteRule({
+        find: /<command\s[^>]*\/>/g,
+        type: this.type,
+        getAttributes: (match) => {
+          const commandXML = match[0];
+          return {
+            id: commandXML,
+            label: `command:${extractNameAttr(commandXML)}`,
+            type: "command",
             mentionSuggestionChar: "/",
           };
         },
@@ -314,28 +347,51 @@ export const renderTextToReactElement = (text: string) => {
   });
 };
 
+export type AgentSkill = SkillInfo & {
+  type: "skill";
+};
+
 export type PromptInputTiptapProps = {
   placeholder?: string;
   onEmptyChange?: (isEmpty: boolean) => void;
-  resources?: SessionResourcesType;
+  skills: AgentSkill[];
+  commands: AgentCommand[];
 };
+
+type PromptResource = AgentSkill | AgentCommand;
 
 export const PromptInputTiptap = ({
   placeholder = "What would you like to know?",
   onEmptyChange,
-  resources,
+  skills,
+  commands,
 }: PromptInputTiptapProps) => {
   const controller = useOptionalPromptInputController();
   const attachments = usePromptInputAttachments();
   const [isComposing, setIsComposing] = useState(false);
   const mentionStateRef = useRef(false);
-  const resourcesRef = useRef(resources);
+  const resourcesRef = useRef({ skills, commands });
   const textValueRef = useRef("");
   const editorRef = controller?.editorRef;
 
   useEffect(() => {
-    resourcesRef.current = resources;
-  }, [resources]);
+    resourcesRef.current.skills = skills;
+    resourcesRef.current.commands = commands;
+  }, [skills, commands]);
+
+  const searchPromptResources = (
+    promptResources: PromptResource[],
+    query?: string
+  ): PromptResource[] => {
+    if (!query) {
+      return promptResources;
+    }
+
+    const keyword = query.toLowerCase();
+    return promptResources.filter((e) =>
+      e.name.toLowerCase().includes(keyword)
+    );
+  };
 
   const extensions = [
     StarterKit.configure({
@@ -381,14 +437,17 @@ export const PromptInputTiptap = ({
           char: "/",
           placement: "top-start",
           offset: { mainAxis: 8 },
-          initialItems: resourcesRef.current?.skills,
+          initialItems: [
+            ...resourcesRef.current.commands,
+            ...resourcesRef.current.skills,
+          ],
           items: ({ query }) => {
-            if (!resourcesRef.current?.skills) {
-              return [];
-            }
-            const keyword = query.toLowerCase();
-            return resourcesRef.current?.skills.filter((e) =>
-              e.name.toLowerCase().includes(keyword)
+            return searchPromptResources(
+              [
+                ...resourcesRef.current.commands,
+                ...resourcesRef.current.skills,
+              ],
+              query
             );
           },
           render: () => {

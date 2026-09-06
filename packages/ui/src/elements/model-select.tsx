@@ -1,6 +1,7 @@
 import { MODEL_EFFORT_LABELS, ModelEffort } from "@workspace/shared/constants";
 import { ChevronLeftIcon, XIcon } from "lucide-react";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "../components/button";
@@ -42,6 +43,7 @@ export function ModelSelect({
   const [open, setOpen] = useState(false);
   const [effortClose, setEffortClose] = useState(false);
   const [effort, setEffor] = useState(modelEffort);
+  const commandRef = useRef<ComponentRef<typeof Command>>(null);
 
   const groupedModels = useMemo(() => {
     const groups = new Map<string, AiModelItem[]>();
@@ -65,6 +67,15 @@ export function ModelSelect({
     () => [...groupedModels.entries()],
     [groupedModels]
   );
+
+  // The popover's default focus lands on its container (cmdk's root is
+  // tabIndex=-1, not tabbable), so cmdk's internal keydown handler would
+  // never see arrow/enter keys. Focus the root whenever the list is shown.
+  useEffect(() => {
+    if (open && (!selectedModel || effortClose)) {
+      commandRef.current?.focus();
+    }
+  }, [open, effortClose, selectedModel]);
 
   return (
     <Popover
@@ -155,7 +166,7 @@ export function ModelSelect({
             </div>
           </div>
         ) : (
-          <Command className="p-0">
+          <Command ref={commandRef} className="p-0">
             <CommandList>
               <CommandEmpty>No results found.</CommandEmpty>
               {providerEntries.map(([provider, providerModels], index) => (
