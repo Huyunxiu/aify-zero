@@ -77,5 +77,8 @@
   },
   "promptCommand": {
     "compact": "压缩"
+  },
+  "sessions": {
+    "loadingMore": "加载更多..."
   }
 }

@@ -77,5 +77,8 @@
   },
   "promptCommand": {
     "compact": "compact"
+  },
+  "sessions": {
+    "loadingMore": "Loading more..."
   }
 }
