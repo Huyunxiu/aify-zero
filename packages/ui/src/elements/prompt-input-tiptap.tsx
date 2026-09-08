@@ -1,4 +1,3 @@
-import type { JSONContent } from "@tiptap/core";
 import Mention from "@tiptap/extension-mention";
 import { Placeholder } from "@tiptap/extensions";
 import {
@@ -37,6 +36,12 @@ import {
   useOptionalPromptInputController,
   usePromptInputAttachments,
 } from "./prompt-input";
+import {
+  PromptCommandTag,
+  PromptSkillTag,
+  PROMPT_TAGS,
+  textToJSONContent,
+} from "./prompt-tag";
 import type { AgentCommand } from "./session";
 
 import "./prompt-input.tiptap.css";
@@ -44,136 +49,36 @@ import "./prompt-input.tiptap.css";
 type SuggestionType = {
   id: string;
   label: string;
-  type: "skill" | "command" | "file";
-};
-
-type MentionTagConfig = {
-  /** XML tag name serialized into the plain text, e.g. "skill" */
-  tag: string;
-  /** Sticky pattern matching one serialized tag at the current cursor position */
-  pattern: RegExp;
-  /** Build mention attrs from a match; parse tag contents here if needed */
-  toAttrs: (match: RegExpExecArray) => Record<string, unknown>;
-};
-
-/** Extract the name attribute from a serialized tag, e.g. `<skill name="x" />` -> "x" */
-const extractNameAttr = (xml: string) => /name="([^"]+)"/.exec(xml)?.[1] ?? "";
-
-/**
- * Registry of XML tags that serialize as mention nodes. renderText embeds
- * attrs.id (the raw XML) into the plain text; entries here parse it back.
- * Patterns only match the tag itself, not its contents. Add a new entry
- * (e.g. command/resource) to support more mention types. Entries are tried
- * in order, so the first match at a position wins.
- */
-const MENTION_TAG_CONFIGS: MentionTagConfig[] = [
-  {
-    tag: "skill",
-    pattern: /<skill\s[^>]*\/>/y,
-    toAttrs: (match) => ({
-      id: match[0],
-      label: `skill:${extractNameAttr(match[0])}`,
-    }),
-  },
-  {
-    tag: "command",
-    pattern: /<command\s[^>]*\/>/y,
-    toAttrs: (match) => ({
-      id: match[0],
-      label: `command:${extractNameAttr(match[0])}`,
-    }),
-  },
-];
-
-/**
- * Rebuild a Tiptap doc from serialized plain text. Mention nodes are embedded
- * in the text as XML tags (see MENTION_TAG_CONFIGS), so a scan restores them;
- * everything else stays plain text. Each newline starts a new paragraph, and
- * a blank line (two consecutive newlines) adds an empty paragraph.
- */
-export const textToJSONContent = (text: string): JSONContent => {
-  // Mention tags are single-line, so scanning each line independently is
-  // equivalent to scanning the whole text.
-  const parseLine = (line: string): JSONContent[] => {
-    const content: JSONContent[] = [];
-    let cursor = 0;
-    let textStart = 0;
-
-    const pushText = (end: number) => {
-      if (end > textStart) {
-        content.push({ type: "text", text: line.slice(textStart, end) });
-      }
-    };
-
-    while (cursor < line.length) {
-      let matched = false;
-
-      for (const config of MENTION_TAG_CONFIGS) {
-        config.pattern.lastIndex = cursor;
-        const match = config.pattern.exec(line);
-
-        if (match) {
-          pushText(cursor);
-          content.push({
-            type: "mention",
-            attrs: { mentionSuggestionChar: "/", ...config.toAttrs(match) },
-          });
-          cursor = config.pattern.lastIndex;
-          textStart = cursor;
-          matched = true;
-          break;
-        }
-      }
-
-      if (!matched) {
-        cursor++;
-      }
-    }
-
-    pushText(line.length);
-
-    return content;
-  };
-
-  const paragraphs = text.split("\n");
-  const content: JSONContent[] = [];
-  let prevParagraph = undefined;
-  for (const currParagraph of paragraphs) {
-    if (currParagraph) {
-      content.push({
-        type: "paragraph",
-        content: parseLine(currParagraph),
-      });
-    } else if (!prevParagraph) {
-      content.push({
-        type: "paragraph",
-      });
-      // content.at(-1)?.content?.push({ type: "hardBreak" });
-    }
-    prevParagraph = currParagraph;
-  }
-
-  return { type: "doc", content };
 };
 
 const MentionDropdown = forwardRef(
   (props: SuggestionProps<PromptResource, SuggestionType>, ref) => {
     const commandRootRef = useRef<ComponentRef<typeof Command>>(null);
 
+    // Commands only take effect at the start of the text, so offer them only
+    // when the trigger is at the very beginning of the document. This also
+    // covers the initialItems shown before the search resolves.
+    const isAtTextStart =
+      props.editor.state.doc.textBetween(0, props.range.from) === "";
+    const items = isAtTextStart
+      ? props.items
+      : props.items.filter((item) => item.type !== "command");
+
     const selectItem = (item?: PromptResource) => {
       if (item?.type === "skill") {
-        const skillXML = `<skill name="${item.name}" path="${item.location}" />`;
+        const skill = {
+          name: item.name,
+          path: item.location,
+        };
         props.command({
-          id: skillXML,
-          label: `skill:${item.name}`,
-          type: "skill",
+          id: PromptSkillTag.render(skill),
+          label: PromptSkillTag.renderLabel(skill),
         });
       } else if (item?.type === "command") {
-        const commandXML = `<command id="${item.id}" name="${item.name}" />`;
+        const command = { id: item.id };
         props.command({
-          id: commandXML,
-          label: `command:${item.name}`,
-          type: "command",
+          id: PromptCommandTag.render(command),
+          label: PromptCommandTag.renderLabel(command),
         });
       }
     };
@@ -206,7 +111,7 @@ const MentionDropdown = forwardRef(
       },
     }));
 
-    const { skill, command } = Object.groupBy(props.items, (e) => e.type) as {
+    const { skill, command } = Object.groupBy(items, (e) => e.type) as {
       skill?: AgentSkill[];
       command?: AgentCommand[];
     };
@@ -215,9 +120,9 @@ const MentionDropdown = forwardRef(
       <Command
         ref={commandRootRef}
         loop
-        className="z-50 max-h-(--available-height) w-72 min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95"
+        className="z-50 max-h-(--available-height) w-72 min-w-32 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-0 text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95"
       >
-        <CommandList>
+        <CommandList className="scroll-fade">
           <CommandEmpty>No results found.</CommandEmpty>
           {command?.length && (
             <CommandGroup heading="Command">
@@ -258,38 +163,26 @@ const MentionDropdown = forwardRef(
 
 const PromptMention = Mention.extend({
   addPasteRules() {
-    return [
+    // Rebuild mentions from serialized XML tags pasted as plain text, e.g.
+    // `<skill name="language" path="/path/to/SKILL.md" />`. Keep the raw XML
+    // as attrs.id so copying the mention serializes back to the same tag
+    // (see renderText and PROMPT_TAGS).
+    return PROMPT_TAGS.map((tagConfig) =>
       nodePasteRule({
-        // Rebuild skill mentions from serialized XML tags pasted as plain
-        // text, e.g. `<skill name="language" path="/path/to/SKILL.md" />`.
-        // Keep the raw XML as attrs.id so copying the mention serializes back
-        // to the same tag (see renderText and MENTION_TAG_CONFIGS).
-        find: /<skill\s[^>]*\/>/g,
+        // Tag patterns are sticky for cursor scanning; paste rules need global.
+        find: new RegExp(tagConfig.pattern.source, "g"),
         type: this.type,
         getAttributes: (match) => {
-          const skillXML = match[0];
+          const [xml] = match;
           return {
-            id: skillXML,
-            label: `skill:${extractNameAttr(skillXML)}`,
-            type: "skill",
+            id: xml,
+            label: tagConfig.renderLabel(tagConfig.extract(xml)),
+            type: tagConfig.tag,
             mentionSuggestionChar: "/",
           };
         },
-      }),
-      nodePasteRule({
-        find: /<command\s[^>]*\/>/g,
-        type: this.type,
-        getAttributes: (match) => {
-          const commandXML = match[0];
-          return {
-            id: commandXML,
-            label: `command:${extractNameAttr(commandXML)}`,
-            type: "command",
-            mentionSuggestionChar: "/",
-          };
-        },
-      }),
-    ];
+      })
+    );
   },
 });
 
@@ -360,6 +253,18 @@ export type PromptInputTiptapProps = {
 
 type PromptResource = AgentSkill | AgentCommand;
 
+const searchPromptResources = (
+  promptResources: PromptResource[],
+  query?: string
+): PromptResource[] => {
+  if (!query) {
+    return promptResources;
+  }
+
+  const keyword = query.toLowerCase();
+  return promptResources.filter((e) => e.name.toLowerCase().includes(keyword));
+};
+
 export const PromptInputTiptap = ({
   placeholder = "What would you like to know?",
   onEmptyChange,
@@ -378,20 +283,6 @@ export const PromptInputTiptap = ({
     resourcesRef.current.skills = skills;
     resourcesRef.current.commands = commands;
   }, [skills, commands]);
-
-  const searchPromptResources = (
-    promptResources: PromptResource[],
-    query?: string
-  ): PromptResource[] => {
-    if (!query) {
-      return promptResources;
-    }
-
-    const keyword = query.toLowerCase();
-    return promptResources.filter((e) =>
-      e.name.toLowerCase().includes(keyword)
-    );
-  };
 
   const extensions = [
     StarterKit.configure({
@@ -441,15 +332,14 @@ export const PromptInputTiptap = ({
             ...resourcesRef.current.commands,
             ...resourcesRef.current.skills,
           ],
-          items: ({ query }) => {
-            return searchPromptResources(
+          items: ({ query }) =>
+            searchPromptResources(
               [
                 ...resourcesRef.current.commands,
                 ...resourcesRef.current.skills,
               ],
               query
-            );
-          },
+            ),
           render: () => {
             let component: ReactRenderer<unknown, any>;
             let unmount: (() => void) | null = null;

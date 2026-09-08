@@ -70,5 +70,12 @@
       "high": "High",
       "ultra": "Ultra"
     }
+  },
+  "promptTag": {
+    "skill": "skill",
+    "command": "command"
+  },
+  "promptCommand": {
+    "compact": "compact"
   }
 }

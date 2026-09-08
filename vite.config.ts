@@ -71,6 +71,8 @@ export default defineConfig({
       "typescript/no-non-null-assertion": "allow",
       "typescript/no-floating-promises": "allow",
       "typescript/no-confusing-void-expression": "allow",
+      "typescript/no-empty-object-type": "allow",
+      "typescript/ban-types": "allow",
     },
   },
   run: {

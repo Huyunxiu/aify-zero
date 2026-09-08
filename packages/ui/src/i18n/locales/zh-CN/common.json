@@ -70,5 +70,12 @@
       "high": "高",
       "ultra": "超高"
     }
+  },
+  "promptTag": {
+    "skill": "技能",
+    "command": "命令"
+  },
+  "promptCommand": {
+    "compact": "压缩"
   }
 }

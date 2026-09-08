@@ -35,6 +35,7 @@ export type AgentUIDataParts = {
     messages: ModelMessage[];
     createdAt: number;
   };
+  "command:compact": {};
 };
 
 export type AgentUITools = {

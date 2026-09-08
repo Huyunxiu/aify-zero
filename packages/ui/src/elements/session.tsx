@@ -64,6 +64,7 @@ import {
 } from "./prompt-input";
 import type { PromptInputMessage } from "./prompt-input";
 import { PromptInputTiptap } from "./prompt-input-tiptap";
+import { parseLeadingCommand } from "./prompt-tag";
 import { TitleBar } from "./title-bar";
 import { UserMessage } from "./user-message";
 
@@ -205,6 +206,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
   const {
+    setMessages,
     sendMessage,
     messages,
     addToolOutput,
@@ -260,21 +262,34 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
 
   const handleSubmit = (message: PromptInputMessage) => {
     console.log("handleSubmit", messages, message);
-    sendMessage({
-      role: "user",
-      id: generateMessageId(),
-      parts: [
+    const command = parseLeadingCommand(message.text);
+
+    const parts: AgentUIMessage["parts"] = [];
+    if (command?.id) {
+      parts.push({
+        type: "data-command:compact",
+        data: {},
+      });
+    }
+    if (message.files.length) {
+      parts.push(
         ...message.files.map((file) => ({
           mediaType: file.mediaType,
           name: file.filename,
           type: "file" as const,
           url: file.url,
-        })),
-        {
-          text: message.text,
-          type: "text",
-        },
-      ],
+        }))
+      );
+    }
+    parts.push({
+      type: "text",
+      text: message.text,
+    });
+    parts.push();
+    sendMessage({
+      role: "user",
+      id: generateMessageId(),
+      parts,
     });
   };
 

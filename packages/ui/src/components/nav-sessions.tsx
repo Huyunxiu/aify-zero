@@ -16,13 +16,13 @@ export function NavSessions() {
 
   const listChatsQuery = useQuery({
     queryKey: ["list_chats"],
-    queryFn: () => client.session.list({ limit: 20, direction: "desc" }),
+    queryFn: () => client.session.list({ limit: 30, direction: "desc" }),
   });
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+    <SidebarGroup className="group-data-[collapsible=icon]:hidden h-[calc(100vh-136px)]">
       <SidebarGroupLabel>Sessions</SidebarGroupLabel>
-        <SidebarGroupContent>
+        <SidebarGroupContent className="scroll-fade scrollbar-none overflow-y-auto">
           <SidebarMenu>
             {listChatsQuery.data?.sessions.map((item) => (
               <SidebarMenuItem key={item.id}>
