@@ -70,7 +70,9 @@ export function NavSessions() {
                     className="cursor-pointer"
                     render={<div />}
                   >
-                    <span>{item.title}</span>
+                    <span>
+                      {item.title || t("sessions.untitled")}
+                    </span>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )),

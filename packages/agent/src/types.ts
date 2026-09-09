@@ -26,7 +26,10 @@ export type AgentUIMetadata = {
 };
 
 export type AgentUIDataParts = {
-  "session:title": string;
+  "session:title": {
+    title: string;
+    createdAt: number;
+  };
   "compaction:start": {
     createdAt: number;
   };

@@ -164,7 +164,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
     mutationFn: async (options: ForkSessionType) =>
       await client.session.fork(options),
     onSuccess: async ({ sessionId: forkSessionId }) => {
-      await queryClient.invalidateQueries({ queryKey: ["list_chats"] });
+      await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
       await navigate({ to: `/sessions/${forkSessionId}` });
     },
   });
@@ -229,21 +229,34 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
           return;
         }
 
-        const stream = eventIteratorToUnproxiedDataStream(
-          await client.session.create(
-            {
-              sessionId: options.chatId,
-              messages: options.messages,
-              model: modelId,
-              modelEffort: selectedEffortRef.current,
-            },
-            { signal: options.abortSignal }
-          )
+        const result = await client.session.create(
+          {
+            sessionId: options.chatId,
+            messages: options.messages,
+            model: modelId,
+            modelEffort: selectedEffortRef.current,
+          },
+          { signal: options.abortSignal }
         );
 
-        // oxlint-disable-next-line typescript/no-unsafe-return
-        return stream as any;
+        // The first message creates the session row server-side with an
+        // empty title. The response is now streaming, so the row exists —
+        // refresh the sidebar so the new session shows up with its localized
+        // default title without waiting for the AI-generated title
+        // (data-session:title) to arrive.
+        if (options.messages.length === 1) {
+          void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+        }
+
+        return eventIteratorToUnproxiedDataStream(result);
       },
+    },
+    onData: (part) => {
+      if (part.type === "data-session:title") {
+        // The agent finished generating the session title — refresh the
+        // sidebar session list.
+        void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+      }
     },
   });
 

@@ -79,6 +79,7 @@
     "compact": "compact"
   },
   "sessions": {
+    "untitled": "Untitled",
     "loadingMore": "Loading more..."
   }
 }

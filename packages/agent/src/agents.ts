@@ -96,13 +96,22 @@ export class Agent {
 
     const session = await this.store.getSessionById(this.sessionId);
     if (!session) {
+      // The title stays empty until the AI-generated one lands; the UI
+      // renders a localized placeholder for empty titles, so no hardcoded
+      // (language-specific) default is stored here.
       await this.store.saveSession({
         id: this.sessionId,
-        title: "New session",
+        title: "",
         metadata: "",
       });
+    }
 
-      // Start title generation in parallel (don't await)
+    // Start title generation in parallel (don't await) when this is the
+    // session's first stream (the row above was just created). Once the
+    // generated title lands, the row is updated and the UI is notified via
+    // the data-session:title event; until then the title stays empty and the
+    // UI shows its localized placeholder.
+    if (!session) {
       titlePromise = this.generateChatTitle(mostRecentMessage);
     }
 
@@ -142,7 +151,10 @@ export class Agent {
           await this.store.updateSessionById(this.sessionId, title);
           writer.write({
             type: "data-session:title",
-            data: title,
+            data: {
+              title,
+              createdAt: Date.now(),
+            },
             transient: true,
           });
         });

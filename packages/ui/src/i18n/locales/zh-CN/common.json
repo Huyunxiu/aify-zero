@@ -79,6 +79,7 @@
     "compact": "压缩"
   },
   "sessions": {
+    "untitled": "未命名",
     "loadingMore": "加载更多..."
   }
 }
