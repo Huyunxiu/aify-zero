@@ -71,6 +71,21 @@
       "ultra": "Ultra"
     }
   },
+  "modelCapability": {
+    "reasoning": "Reasoning",
+    "input": "Input modalities",
+    "output": "Output modalities",
+    "noResults": "No results found.",
+    "contextWindow": "Context window",
+    "save": "Save",
+    "modalities": {
+      "text": "Text",
+      "audio": "Audio",
+      "image": "Image",
+      "video": "Video",
+      "pdf": "PDF"
+    }
+  },
   "promptTag": {
     "skill": "skill",
     "command": "command"
