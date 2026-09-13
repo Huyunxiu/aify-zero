@@ -163,20 +163,20 @@ const MentionDropdown = forwardRef(
 
 const PromptMention = Mention.extend({
   addPasteRules() {
-    // Rebuild mentions from serialized XML tags pasted as plain text, e.g.
-    // `<skill name="language" path="/path/to/SKILL.md" />`. Keep the raw XML
-    // as attrs.id so copying the mention serializes back to the same tag
-    // (see renderText and PROMPT_TAGS).
+    // Rebuild mentions from serialized links pasted as plain text, e.g.
+    // `[$language](/path/to/SKILL.md)`. Keep the raw link as attrs.id so
+    // copying the mention serializes back to the same link (see renderText
+    // and PROMPT_TAGS).
     return PROMPT_TAGS.map((tagConfig) =>
       nodePasteRule({
-        // Tag patterns are sticky for cursor scanning; paste rules need global.
+        // Mention patterns are sticky for cursor scanning; paste rules need global.
         find: new RegExp(tagConfig.pattern.source, "g"),
         type: this.type,
         getAttributes: (match) => {
-          const [xml] = match;
+          const [link] = match;
           return {
-            id: xml,
-            label: tagConfig.renderLabel(tagConfig.extract(xml)),
+            id: link,
+            label: tagConfig.renderLabel(tagConfig.extract(link)),
             type: tagConfig.tag,
             mentionSuggestionChar: "/",
           };
