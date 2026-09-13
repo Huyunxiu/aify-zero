@@ -14,6 +14,8 @@ import type { LanguageModel, ModelMessage, ToolSet, UIMessagePart } from "ai";
 
 import { compactMessages, shouldCompact } from "./compaction/compaction";
 import type { AgentContext } from "./context";
+import { HooksManager } from "./hooks-manager";
+import type { ExtensionAPI } from "./hooks-manager";
 import { AgentSession } from "./session";
 import type { AgentStore } from "./storage";
 import { SQLiteStore } from "./storage/sqlite-store";
@@ -54,6 +56,8 @@ export type AgentOptions = {
   systemPrompt?: string;
   effort?: ModelEffort;
   context: AgentContext;
+  hooks?: HooksManager;
+  extensionApi?: ExtensionAPI;
 };
 
 export type AgentStreamOptions = {
@@ -72,6 +76,8 @@ export class Agent {
   store: AgentStore;
   context: AgentContext;
   effort?: ModelEffort;
+  hooks: HooksManager;
+  extensionApi: ExtensionAPI;
 
   constructor(options: AgentOptions) {
     this.name = options.name;
@@ -83,6 +89,8 @@ export class Agent {
     this.store = new SQLiteStore();
     this.context = options.context;
     this.effort = options.effort;
+    this.hooks = options.hooks ?? new HooksManager();
+    this.extensionApi = options.extensionApi ?? {};
   }
 
   async stream({ messages, model, abortSignal }: AgentStreamOptions) {
@@ -93,6 +101,16 @@ export class Agent {
     if (!mostRecentMessage) {
       throw new Error("no message.");
     }
+
+    await this.hooks.emit(
+      "session_start",
+      {
+        sessionId: this.sessionId,
+        name: this.name,
+        workdir: this.context.workdir,
+      },
+      this.extensionApi
+    );
 
     const session = await this.store.getSessionById(this.sessionId);
     if (!session) {
@@ -157,6 +175,11 @@ export class Agent {
             },
             transient: true,
           });
+          await this.hooks.emit(
+            "title_generated",
+            { sessionId: this.sessionId, title },
+            this.extensionApi
+          );
         });
 
         const compactionConfig: CompactionConfig = {
@@ -187,25 +210,42 @@ export class Agent {
               messages: options.messages,
               abortSignal,
               model,
-              onBeforeCompact() {
+              onBeforeCompact: async () => {
+                const createdAt = Date.now();
                 writer.write({
                   id: generatePartId(),
                   type: "data-compaction:start",
                   data: {
-                    createdAt: Date.now(),
+                    createdAt,
                   },
                 });
+                await this.hooks.emit(
+                  "compaction:start",
+                  { sessionId: this.sessionId, createdAt },
+                  this.extensionApi
+                );
               },
-              onAfterCompact(params) {
+              onAfterCompact: async (params) => {
+                const createdAt = Date.now();
                 writer.write({
                   id: generatePartId(),
                   type: "data-compaction:end",
                   data: {
                     compacted: params.compacted,
                     messages: params.messages,
-                    createdAt: Date.now(),
+                    createdAt,
                   },
                 });
+                await this.hooks.emit(
+                  "compaction:end",
+                  {
+                    sessionId: this.sessionId,
+                    compacted: params.compacted,
+                    messages: params.messages,
+                    createdAt,
+                  },
+                  this.extensionApi
+                );
               },
             });
 
@@ -264,20 +304,25 @@ export class Agent {
             finishedMsg.parts,
             finishedMsg.metadata
           );
-          return;
+        } else {
+          await this.store.saveMessage({
+            id: finishedMsg.id,
+            sessionId: this.sessionId,
+            role: finishedMsg.role,
+            metadata: finishedMsg.metadata,
+            content: finishedMsg.parts,
+            parentId: lastMessageId,
+            createdAt: new Date(),
+          });
+          lastMessageId = finishedMsg.id;
+          await this.store.setActiveHead(this.sessionId, lastMessageId);
         }
 
-        await this.store.saveMessage({
-          id: finishedMsg.id,
-          sessionId: this.sessionId,
-          role: finishedMsg.role,
-          metadata: finishedMsg.metadata,
-          content: finishedMsg.parts,
-          parentId: lastMessageId,
-          createdAt: new Date(),
-        });
-        lastMessageId = finishedMsg.id;
-        await this.store.setActiveHead(this.sessionId, lastMessageId);
+        await this.hooks.emit(
+          "session_end",
+          { sessionId: this.sessionId, messageId: finishedMsg.id },
+          this.extensionApi
+        );
       },
     });
   }
@@ -357,11 +402,11 @@ export class Agent {
     readonly abortSignal?: AbortSignal;
     readonly messages: ModelMessage[];
     readonly model: LanguageModel;
-    readonly onBeforeCompact?: () => void;
+    readonly onBeforeCompact?: () => void | Promise<void>;
     readonly onAfterCompact?: (params: {
       compacted: boolean;
       messages: ModelMessage[];
-    }) => void;
+    }) => void | Promise<void>;
   }): Promise<{
     readonly compacted: boolean;
     readonly messages: ModelMessage[];
@@ -374,7 +419,7 @@ export class Agent {
       return { compacted: false, messages };
     }
 
-    onBeforeCompact?.();
+    await onBeforeCompact?.();
 
     messages = await compactMessages(
       messages,
@@ -386,7 +431,7 @@ export class Agent {
 
     const result = { compacted: true, messages };
 
-    onAfterCompact?.(result);
+    await onAfterCompact?.(result);
 
     return result;
   }
