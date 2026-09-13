@@ -53,6 +53,24 @@ type AssistantMessageProps = {
   onFork?: (messageId: string) => void;
 };
 
+/** Max characters of the first line used as a Frame title. */
+const REASON_TOOL_LABEL_MAX_LENGTH = 180;
+
+const getReasonToolLabel = (text: string | undefined, fallback: string) => {
+  const firstLine = text
+    ?.split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!firstLine) {
+    return fallback;
+  }
+
+  return firstLine.length > REASON_TOOL_LABEL_MAX_LENGTH
+    ? `${firstLine.slice(0, REASON_TOOL_LABEL_MAX_LENGTH)}…`
+    : firstLine;
+};
+
 const splitAssistantMessageParts = (message: AgentUIMessage) => {
   const answerPartIndex = message.parts.findLastIndex(
     (part) => part.type === "text"
@@ -101,7 +119,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={TextIcon}
-                  label={part.text}
+                  label={getReasonToolLabel(part.text, "Text")}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
                   <Frame variant="outline" maxHeight={180}>
@@ -140,7 +158,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={BrainIcon}
-                  label="Reasoning"
+                  label={getReasonToolLabel(part.text, "Reasoningt")}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
                   <Frame variant="outline" maxHeight={180}>
