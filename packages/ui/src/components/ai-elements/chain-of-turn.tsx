@@ -221,7 +221,7 @@ export const ChainOfTurnStep = memo(
             />
             <span className="text-left truncate">{label}</span>
           </CollapsibleTrigger>
-          <CollapsibleContent className="flex-1 space-y-2 overflow-hidden">
+          <CollapsibleContent className="flex-1 space-y-2">
             <div className="ml-2 border-l pl-4">
               {description && (
                 <div className="text-muted-foreground text-xs">

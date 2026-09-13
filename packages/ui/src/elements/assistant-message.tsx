@@ -23,6 +23,12 @@ import {
 } from "../components/ai-elements/chain-of-turn";
 import { CopyButton } from "../components/copy-button";
 import {
+  Frame,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from "../components/frame";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -98,27 +104,34 @@ export const AssistantMessage = ({
                   label={part.text}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
-                  <MessageResponse
-                    controls={{
-                      code: {
-                        copy: true,
-                        download: false,
-                      },
-                      table: {
-                        copy: true,
-                        download: false,
-                        fullscreen: false,
-                      },
-                      mermaid: {
-                        copy: true,
-                        download: false,
-                        fullscreen: false,
-                        panZoom: true,
-                      },
-                    }}
-                  >
-                    {part.text}
-                  </MessageResponse>
+                  <Frame variant="outline" maxHeight={180}>
+                    <FrameHeader>
+                      <FrameTitle>Text</FrameTitle>
+                    </FrameHeader>
+                    <FramePanel>
+                      <MessageResponse
+                        controls={{
+                          code: {
+                            copy: true,
+                            download: false,
+                          },
+                          table: {
+                            copy: true,
+                            download: false,
+                            fullscreen: false,
+                          },
+                          mermaid: {
+                            copy: true,
+                            download: false,
+                            fullscreen: false,
+                            panZoom: true,
+                          },
+                        }}
+                      >
+                        {part.text}
+                      </MessageResponse>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             } else if (part.type === "reasoning") {
@@ -130,27 +143,34 @@ export const AssistantMessage = ({
                   label="Reasoning"
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
-                  <MessageResponse
-                    controls={{
-                      code: {
-                        copy: true,
-                        download: false,
-                      },
-                      table: {
-                        copy: true,
-                        download: false,
-                        fullscreen: false,
-                      },
-                      mermaid: {
-                        copy: true,
-                        download: false,
-                        fullscreen: false,
-                        panZoom: true,
-                      },
-                    }}
-                  >
-                    {part.text}
-                  </MessageResponse>
+                  <Frame variant="outline" maxHeight={180}>
+                    <FrameHeader>
+                      <FrameTitle>Reasoning</FrameTitle>
+                    </FrameHeader>
+                    <FramePanel>
+                      <MessageResponse
+                        controls={{
+                          code: {
+                            copy: true,
+                            download: false,
+                          },
+                          table: {
+                            copy: true,
+                            download: false,
+                            fullscreen: false,
+                          },
+                          mermaid: {
+                            copy: true,
+                            download: false,
+                            fullscreen: false,
+                            panZoom: true,
+                          },
+                        }}
+                      >
+                        {part.text}
+                      </MessageResponse>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             } else if (part.type === "tool-read-file") {
@@ -232,9 +252,34 @@ export const AssistantMessage = ({
                   label={`Load skill ${part.output?.title}`}
                   status="complete"
                 >
-                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
-                    {part.output?.output ?? ""}
-                  </div>
+                  <Frame variant="outline" maxHeight={180}>
+                    <FrameHeader>
+                      <FrameTitle>{part.input?.skill}</FrameTitle>
+                    </FrameHeader>
+                    <FramePanel>
+                      <MessageResponse
+                        controls={{
+                          code: {
+                            copy: true,
+                            download: false,
+                          },
+                          table: {
+                            copy: true,
+                            download: false,
+                            fullscreen: false,
+                          },
+                          mermaid: {
+                            copy: true,
+                            download: false,
+                            fullscreen: false,
+                            panZoom: true,
+                          },
+                        }}
+                      >
+                        {part.output?.output ?? ""}
+                      </MessageResponse>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             } else if (part.type === "tool-bash") {
