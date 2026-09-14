@@ -12,9 +12,10 @@ import { cors } from "hono/cors";
 import { requestId } from "hono/request-id";
 
 import { createContext } from "./context";
+import { getErrorCause } from "./errors";
 import { appRouter } from "./routers/index";
 
-type HonoEnv = StructuredLoggerEnv<Logger, "logger">;
+type HonoEnv = StructuredLoggerEnv<Logger>;
 
 export const app = new Hono<HonoEnv>();
 
@@ -23,7 +24,7 @@ app.use(
   structuredLogger<HonoEnv, Logger, string>({
     createLogger: (c) => logger.createLogger({ scope: c.var.requestId }),
     contextKey: "logger",
-    onResponse: async (_logger, c, elapsedMs) => {
+    onResponse: (_logger, c, elapsedMs) => {
       _logger.info(
         `${c.req.method} ${c.req.path} ${c.res.status} ${elapsedMs.toFixed(0)}ms`
       );
@@ -46,8 +47,11 @@ app.use(
 
 export const apiHandler = new OpenAPIHandler(appRouter, {
   interceptors: [
-    onError((error) => {
-      console.error(error);
+    onError((error, options) => {
+      options.context.logger.error(
+        "orpc api handler error",
+        getErrorCause(error) ?? error
+      );
     }),
   ],
   plugins: [
@@ -59,8 +63,11 @@ export const apiHandler = new OpenAPIHandler(appRouter, {
 
 export const rpcHandler = new RPCHandler(appRouter, {
   interceptors: [
-    onError((error) => {
-      console.error(error);
+    onError((error, options) => {
+      options.context.logger.error(
+        "orpc rpc handler error",
+        getErrorCause(error) ?? error
+      );
     }),
   ],
 });

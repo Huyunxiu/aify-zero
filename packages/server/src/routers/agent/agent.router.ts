@@ -1,7 +1,7 @@
-import { ORPCError } from "@orpc/server";
 import { nanoid } from "nanoid";
 import z from "zod";
 
+import { commonErrors } from "../../errors";
 import { publicProcedure } from "../../index";
 import {
   createAgent,
@@ -49,9 +49,7 @@ const get = publicProcedure
   .handler(async ({ input }) => {
     const agent = await findAgentById(input.agentId);
     if (!agent) {
-      throw new ORPCError("NOT_FOUND", {
-        message: "Agent not found",
-      });
+      throw commonErrors.notFound("Agent not found");
     }
     return agent;
   });
@@ -70,9 +68,7 @@ const update = publicProcedure
 
     const existing = await findAgentById(agentId);
     if (!existing) {
-      throw new ORPCError("NOT_FOUND", {
-        message: "Agent not found",
-      });
+      throw commonErrors.notFound("Agent not found");
     }
 
     const agent = await updateAgent(agentId, data);
@@ -86,9 +82,7 @@ const remove = publicProcedure
   .handler(async ({ input }) => {
     const agent = await deleteAgent(input.agentId);
     if (!agent) {
-      throw new ORPCError("NOT_FOUND", {
-        message: "Agent not found",
-      });
+      throw commonErrors.notFound("Agent not found");
     }
     return agent;
   });

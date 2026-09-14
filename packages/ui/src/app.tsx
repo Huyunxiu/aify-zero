@@ -6,6 +6,10 @@ import {
 } from "@tanstack/react-router";
 import { LangProvider } from "@workspace/ui/components/lang-provider";
 import { ThemeProvider } from "@workspace/ui/components/theme-provider";
+import {
+  AnchoredToastProvider,
+  ToastProvider,
+} from "@workspace/ui/components/toast";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { LayoutProvider } from "@workspace/ui/elements/layout-provider";
 import { StrictMode } from "react";
@@ -44,7 +48,11 @@ createRoot(rootElement).render(
       <LangProvider>
         <LayoutProvider>
           <TooltipProvider>
-            <App />
+            <ToastProvider>
+              <AnchoredToastProvider>
+                <App />
+              </AnchoredToastProvider>
+            </ToastProvider>
           </TooltipProvider>
         </LayoutProvider>
       </LangProvider>

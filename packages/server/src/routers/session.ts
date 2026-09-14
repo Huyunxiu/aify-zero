@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
   eventIteratorToUnproxiedDataStream,
-  ORPCError,
   streamToEventIterator,
   type,
 } from "@orpc/server";
@@ -32,15 +31,12 @@ import {
   generateMessageId,
   generateSessionId,
 } from "@workspace/agent/utils/id-util";
-import type {
-  MessageInsertModel,
-  MessageModel,
-  SessionModel,
-} from "@workspace/db";
+import type { MessageInsertModel, MessageModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import type { UIMessagePart } from "ai";
 import z from "zod";
 
+import { errorMap } from "../errors";
 import { publicProcedure } from "../index";
 import { forkSessionSchema, listSessionMessagesSchema } from "./session.schema";
 import { findAiModelById } from "./settings/settings.service";
@@ -68,6 +64,7 @@ function convertAgentUIMessages(
 
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
+  .errors({ MODEL_NOT_FOUND: errorMap.MODEL_NOT_FOUND })
   .input(
     type<{
       sessionId: string;
@@ -76,14 +73,12 @@ const createSession = publicProcedure
       modelEffort?: string;
     }>()
   )
-  .handler(async ({ input }) => {
+  .handler(async ({ input, errors }) => {
     const { sessionId, messages, model, modelEffort } = input;
 
     const aiModel = await findAiModelById(model);
     if (!aiModel) {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "ai model not found.",
-      });
+      throw errors.MODEL_NOT_FOUND({ data: { model } });
     }
 
     const provider = createOpenAICompatible({
@@ -156,16 +151,8 @@ export const listSessionMessages = publicProcedure
   .handler(async ({ input }) => {
     const { sessionId } = input;
 
-    let session: SessionModel | null;
-
     const store = new SQLiteStore();
-    try {
-      session = await store.getSessionById(sessionId);
-    } catch {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "chat not found.",
-      });
-    }
+    const session = await store.getSessionById(sessionId);
 
     if (!session) {
       return [];
@@ -182,16 +169,19 @@ export const listSessionMessages = publicProcedure
 
 export const forkSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/fork" })
+  .errors({
+    SESSION_NOT_FOUND: errorMap.SESSION_NOT_FOUND,
+    MESSAGE_NOT_FOUND: errorMap.MESSAGE_NOT_FOUND,
+    NOTHING_TO_FORK: errorMap.NOTHING_TO_FORK,
+  })
   .input(forkSessionSchema)
-  .handler(async ({ input }) => {
+  .handler(async ({ input, errors }) => {
     const { sessionId, messageId } = input;
 
     const store = new SQLiteStore();
     const source = await store.getSessionById(sessionId);
     if (!source) {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "chat not found.",
-      });
+      throw errors.SESSION_NOT_FOUND({ data: { sessionId } });
     }
 
     const messages = await store.getAllMessagesBySessionId(sessionId);
@@ -200,16 +190,12 @@ export const forkSession = publicProcedure
       ? branchMessages.findIndex((message) => message.id === messageId)
       : branchMessages.length - 1;
     if (upToIndex < 0) {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "message not found on branch.",
-      });
+      throw errors.MESSAGE_NOT_FOUND({ data: { sessionId, messageId } });
     }
 
     const prefix = branchMessages.slice(0, upToIndex + 1);
     if (prefix.length === 0) {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "nothing to fork.",
-      });
+      throw errors.NOTHING_TO_FORK();
     }
 
     const newSessionId = generateSessionId();

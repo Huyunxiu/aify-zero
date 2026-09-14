@@ -96,5 +96,19 @@
   "sessions": {
     "untitled": "Untitled",
     "loadingMore": "Loading more..."
+  },
+  "errors": {
+    "default": "Something went wrong. Please try again later.",
+    "retry": "Retry",
+    "BAD_REQUEST": "The request couldn't be processed. Please check your input and try again.",
+    "UNAUTHORIZED": "You need to sign in before continuing.",
+    "FORBIDDEN": "Your account does not have access to this feature.",
+    "NOT_FOUND": "The requested resource was not found.",
+    "RATE_LIMITED": "You've reached the rate limit. Please wait {{retryAfter}} seconds and try again.",
+    "INTERNAL_SERVER_ERROR": "Something went wrong. Please try again later.",
+    "MODEL_NOT_FOUND": "The selected model is not configured. Please pick another model.",
+    "SESSION_NOT_FOUND": "The requested chat was not found. Please check the session and try again.",
+    "MESSAGE_NOT_FOUND": "The requested message was not found in this chat.",
+    "NOTHING_TO_FORK": "There is nothing to fork in this chat yet."
   }
 }

@@ -96,5 +96,19 @@
   "sessions": {
     "untitled": "未命名",
     "loadingMore": "加载更多..."
+  },
+  "errors": {
+    "default": "出了点问题，请稍后重试。",
+    "retry": "重试",
+    "BAD_REQUEST": "请求无法处理，请检查输入后重试。",
+    "UNAUTHORIZED": "请先登录后再继续。",
+    "FORBIDDEN": "你的账号没有使用该功能的权限。",
+    "NOT_FOUND": "未找到请求的资源。",
+    "RATE_LIMITED": "已触发频率限制，请等待 {{retryAfter}} 秒后重试。",
+    "INTERNAL_SERVER_ERROR": "出了点问题，请稍后重试。",
+    "MODEL_NOT_FOUND": "所选模型未配置，请重新选择模型。",
+    "SESSION_NOT_FOUND": "未找到该会话，请检查后重试。",
+    "MESSAGE_NOT_FOUND": "该会话中未找到这条消息。",
+    "NOTHING_TO_FORK": "该会话暂无可分叉的内容。"
   }
 }

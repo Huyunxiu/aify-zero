@@ -11,6 +11,7 @@ import type { LanguageModelUsage } from "ai";
 import { MessageSquareIcon } from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   Attachment,
@@ -45,6 +46,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "../components/message-scroller";
+import { getErrorMessage } from "../lib/errors";
 import { client, queryClient } from "../lib/orpc";
 import { AssistantMessage } from "./assistant-message";
 import { Message, MessageContent, MessageResponse } from "./message";
@@ -148,6 +150,7 @@ export type SessionProps = React.ComponentProps<"div"> & {
 
 export function Session({ sessionId, initialMessages }: SessionProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const getSettingsQuery = useQuery({
     queryKey: ["settings"],
@@ -257,6 +260,9 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
         // sidebar session list.
         void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
       }
+    },
+    onError: (err) => {
+      console.error(err);
     },
   });
 
@@ -380,7 +386,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                                 <Message from="assistant">
                                   <MessageContent>
                                     <MessageResponse className="text-destructive">
-                                      {error.message}
+                                      {getErrorMessage(error, t)}
                                     </MessageResponse>
                                   </MessageContent>
                                 </Message>

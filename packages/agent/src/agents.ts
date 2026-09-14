@@ -25,6 +25,7 @@ import type {
   AgentUITools,
   CompactionConfig,
 } from "./types";
+import { getErrorMessage } from "./utils/error";
 import { generateMessageId, generatePartId } from "./utils/id-util";
 
 registerTelemetry(DevToolsTelemetry());
@@ -323,6 +324,12 @@ export class Agent {
           { sessionId: this.sessionId, messageId: finishedMsg.id },
           this.extensionApi
         );
+      },
+      onError(error) {
+        // The returned string becomes `useChat.error.message` on the client,
+        // so it carries the encoded code the UI resolves a message from.
+        console.error("Agent#stream error.", error);
+        return getErrorMessage(error);
       },
     });
   }

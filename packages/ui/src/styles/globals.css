@@ -102,6 +102,75 @@
   --color-foreground-80: var(--foreground-80);
   --color-foreground-90: var(--foreground-90);
   --color-foreground-95: var(--foreground-95);
+
+  /* coss toast */
+  --animate-toast-success-odd: toast-success-odd 0.32s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-success-even: toast-success-even 0.32s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-error-odd: toast-error-odd 0.28s cubic-bezier(0.5, 1, 0.89, 1);
+  --animate-toast-error-even: toast-error-even 0.28s cubic-bezier(0.5, 1, 0.89, 1);
+  --color-destructive-foreground: var(--destructive-foreground);
+  @keyframes toast-success-odd {
+  0% {
+    scale: 1;
+    }
+  30% {
+    scale: 1.025;
+    }
+  60% {
+    scale: 0.99;
+    }
+  100% {
+    scale: 1;
+    }
+  }
+  @keyframes toast-error-odd {
+  0% {
+    translate: 0 0;
+    }
+  25% {
+    translate: -3px 0;
+    }
+  50% {
+    translate: 3px 0;
+    }
+  75% {
+    translate: -3px 0;
+    }
+  100% {
+    translate: 0 0;
+    }
+  }
+  @keyframes toast-success-even {
+  0% {
+    scale: 1;
+    }
+  30% {
+    scale: 1.025;
+    }
+  60% {
+    scale: 0.99;
+    }
+  100% {
+    scale: 1;
+    }
+  }
+  @keyframes toast-error-even {
+  0% {
+    translate: 0 0;
+    }
+  25% {
+    translate: -3px 0;
+    }
+  50% {
+    translate: 3px 0;
+    }
+  75% {
+    translate: -3px 0;
+    }
+  100% {
+    translate: 0 0;
+    }
+  }
 }
 
 :root {
@@ -198,6 +267,7 @@
   --sidebar-accent-foreground: oklch(0.2206 0 0);
   --sidebar-border: oklch(0.9302 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --destructive-foreground: var(--color-red-700);
 }
 
 .dark {
@@ -293,6 +363,7 @@
   --sidebar-accent-foreground: oklch(1 0 0);
   --sidebar-border: oklch(0.3466 0.0104 270.86);
   --sidebar-ring: oklch(0.556 0 0);
+  --destructive-foreground: var(--color-red-400);
 }
 
 @layer base {
