@@ -20,6 +20,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     extraResource: ["./resources"],
+    icon: "resources/icons",
   },
   plugins: [
     new VitePlugin({
