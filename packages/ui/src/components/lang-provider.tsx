@@ -1,4 +1,8 @@
-import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
+import type { LanguageOption } from "@workspace/shared/constants";
+import {
+  LanguageOptions,
+  LOCAL_STORAGE_KEYS,
+} from "@workspace/shared/constants";
 import { i18n, resources } from "@workspace/ui/i18n";
 import type { ReactNode } from "react";
 import {
@@ -9,8 +13,6 @@ import {
   useMemo,
   useContext,
 } from "react";
-import type { Language } from "../i18n/langs";
-import { LanguageOptions } from "../i18n/langs";
 
 // import { isEditableTarget } from "@/utils/html-utils";
 
@@ -25,7 +27,7 @@ type LangProviderProps = {
 type LangProviderState = {
   lang: Lang;
   langs: readonly Lang[];
-  langOptions: readonly Language[];
+  langOptions: readonly LanguageOption[];
   setLang: (lang: Lang) => void;
 };
 

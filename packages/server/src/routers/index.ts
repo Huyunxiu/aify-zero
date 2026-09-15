@@ -12,6 +12,7 @@ export const appRouter = {
   session,
   setting,
   healthCheck: publicProcedure.handler(() => "OK"),
+  lang: publicProcedure.handler((c) => ({ message: c.context.language })),
 };
 export type AppRouter = typeof appRouter;
 export type AppRouterClient = RouterClient<typeof appRouter>;

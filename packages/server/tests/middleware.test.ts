@@ -1,4 +1,5 @@
 import { call, ORPCError } from "@orpc/server";
+import { DEFAULT_LANGUAGE } from "@workspace/shared/constants";
 import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
 import { describe, expect, test } from "vitest";
@@ -6,7 +7,11 @@ import { describe, expect, test } from "vitest";
 import { ApiError } from "../src/errors";
 import { apiErrorMiddleware, o, publicProcedure } from "../src/index";
 
-const context = { requestId: "req-test", logger };
+const context = {
+  requestId: "req-test",
+  logger,
+  language: DEFAULT_LANGUAGE,
+};
 
 describe("apiErrorMiddleware translation", () => {
   test("should convert an ApiError thrown by the handler", async () => {
