@@ -1,4 +1,5 @@
 import { call, ORPCError } from "@orpc/server";
+import type { Language } from "@workspace/shared/constants";
 import { DEFAULT_LANGUAGE } from "@workspace/shared/constants";
 import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
@@ -7,11 +8,13 @@ import { describe, expect, test } from "vitest";
 import { ApiError } from "../src/errors";
 import { apiErrorMiddleware, o, publicProcedure } from "../src/index";
 
-const context = {
+const contextFor = (language: Language) => ({
   requestId: "req-test",
   logger,
-  language: DEFAULT_LANGUAGE,
-};
+  language,
+});
+
+const context = contextFor(DEFAULT_LANGUAGE);
 
 describe("apiErrorMiddleware translation", () => {
   test("should convert an ApiError thrown by the handler", async () => {
@@ -58,6 +61,19 @@ describe("publicProcedure pipeline", () => {
       code: "NOT_FOUND",
       status: 404,
       message: "Agent not found",
+    });
+  });
+
+  test("should answer an inherited message in the language the request asked for", async () => {
+    const procedure = publicProcedure.handler(() => {
+      throw new ApiError("MODEL_NOT_FOUND", { data: { model: "gpt" } });
+    });
+
+    await expect(
+      call(procedure, undefined, { context: contextFor("zh-CN") })
+    ).rejects.toMatchObject({
+      code: "MODEL_NOT_FOUND",
+      message: "所选模型未配置，请重新选择模型。",
     });
   });
 

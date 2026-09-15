@@ -5,8 +5,11 @@ import type {
   Schema,
 } from "@orpc/server";
 import { createORPCErrorConstructorMap, ORPCError } from "@orpc/server";
+import type { Language } from "@workspace/shared/constants";
 import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import z from "zod";
+
+import { errorMessage } from "./i18n";
 
 /**
  * The vocabulary of this API: every code it can answer with, what that code
@@ -87,6 +90,13 @@ export type ApiErrorOptions<TCode extends ErrorCode = ErrorCode> = {
  * and its HTTP answer can never drift apart. A `message` in the options
  * overrides that default, for the few cases where the caller knows better.
  *
+ * Which message the client ends up reading follows from who wrote it. An
+ * explicit one is the caller's own words — it says something the code cannot,
+ * and there is no translation for it — so it goes out verbatim. An error that
+ * inherits the default goes out translated, in the language the request asked
+ * for (see `getLocalizedMessage`). `this.message` is always the authored one,
+ * so the server's own log reads the same whoever asked.
+ *
  * Everything after the code travels in one options object rather than in
  * positional arguments, so a call site that only carries `data` does not have
  * to say anything about the message it is happy to inherit:
@@ -108,11 +118,19 @@ export class ApiError<TCode extends ErrorCode = ErrorCode> extends Error {
   readonly code: TCode;
   readonly data: ErrorDataOf<TCode> | undefined;
 
+  /**
+   * The message the call site wrote, if it wrote one. Kept apart from
+   * `message` rather than compared against the code's default, so passing the
+   * very same string as the default still counts as the caller's own words.
+   */
+  private readonly ownMessage: string | undefined;
+
   constructor(code: TCode, options: ApiErrorOptions<TCode> = {}) {
     super(options.message ?? ErrorMap[code].message, { cause: options.cause });
     this.name = "ApiError";
     this.code = code;
     this.data = options.data;
+    this.ownMessage = options.message;
   }
 
   get status(): number {
@@ -120,13 +138,24 @@ export class ApiError<TCode extends ErrorCode = ErrorCode> extends Error {
   }
 
   /**
+   * What the client reads: the caller's own message when there is one, and
+   * otherwise what this code says in `language`.
+   */
+  getLocalizedMessage(language: Language): string {
+    return this.ownMessage ?? errorMessage(language, this.code);
+  }
+
+  /**
    * The wire form of this error: same code, status and data, with the
    * `ApiError` kept as `cause` so the server log still points back at the
-   * throw site. The payload type travels with it.
+   * throw site. The payload type travels with it, and the message is the one
+   * `language` asks for.
    */
-  toORPCError(): ORPCError<TCode, ErrorDataOf<TCode> | undefined> {
+  toORPCError(
+    language: Language
+  ): ORPCError<TCode, ErrorDataOf<TCode> | undefined> {
     return new ORPCError(this.code, {
-      message: this.message,
+      message: this.getLocalizedMessage(language),
       status: this.status,
       data: this.data,
       cause: this,

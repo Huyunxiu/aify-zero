@@ -8,5 +8,6 @@
     "composite": true,
     "strictNullChecks": true
   },
+  "include": ["src/**/*.ts", "src/**/*.json", "tests/**/*.ts"],
   "exclude": ["node_modules"]
 }
