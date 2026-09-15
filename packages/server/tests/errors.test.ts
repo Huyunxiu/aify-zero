@@ -1,6 +1,5 @@
 import { ORPCError } from "@orpc/server";
 import { DEFAULT_LANGUAGE } from "@workspace/shared/constants";
-import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
 import { ApiError, errors } from "../src/errors";
@@ -35,10 +34,10 @@ describe("errors factory map", () => {
     expect(error.message).toBe("Not Found");
   });
 
-  test("should keep the generic message for a code that declares it", () => {
+  test("should name what was missing rather than fall back to the generic message", () => {
     const error = errors.MESSAGE_NOT_FOUND({ data: { sessionId: "s1" } });
 
-    expect(error.message).toBe(DEFAULT_ERROR_MESSAGE);
+    expect(error.message).toBe("The requested message was not found.");
   });
 });
 

@@ -6,12 +6,12 @@ import type { AgentUIMessage } from "@workspace/agent";
 import { generateMessageId } from "@workspace/agent/utils/id-util";
 import type { ForkSessionType } from "@workspace/server/routers/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
+import { getErrorMessage } from "@workspace/shared/errors";
 import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import type { LanguageModelUsage } from "ai";
 import { MessageSquareIcon } from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
-import { useTranslation } from "react-i18next";
 
 import {
   Attachment,
@@ -46,7 +46,6 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "../components/message-scroller";
-import { getErrorMessage } from "../lib/errors";
 import { client, queryClient } from "../lib/orpc";
 import { AssistantMessage } from "./assistant-message";
 import { Message, MessageContent, MessageResponse } from "./message";
@@ -150,7 +149,6 @@ export type SessionProps = React.ComponentProps<"div"> & {
 
 export function Session({ sessionId, initialMessages }: SessionProps) {
   const navigate = useNavigate();
-  const { t } = useTranslation();
 
   const getSettingsQuery = useQuery({
     queryKey: ["settings"],
@@ -386,7 +384,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                                 <Message from="assistant">
                                   <MessageContent>
                                     <MessageResponse className="text-destructive">
-                                      {getErrorMessage(error, t)}
+                                      {getErrorMessage(error)}
                                     </MessageResponse>
                                   </MessageContent>
                                 </Message>

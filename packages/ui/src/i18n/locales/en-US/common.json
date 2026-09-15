@@ -97,31 +97,5 @@
     "untitled": "Untitled",
     "loadingMore": "Loading more..."
   },
-  "errors": {
-    "default": "Something went wrong. Please try again later.",
-    "retry": "Retry",
-    "BAD_REQUEST": "The request couldn't be processed. Please check your input and try again.",
-    "UNAUTHORIZED": "You need to sign in before continuing.",
-    "FORBIDDEN": "Your account does not have access to this feature.",
-    "NOT_FOUND": "The requested resource was not found.",
-    "METHOD_NOT_SUPPORTED": "That request method isn't supported.",
-    "NOT_ACCEPTABLE": "We can't return the requested content.",
-    "TIMEOUT": "The request timed out. Please try again.",
-    "CONFLICT": "This was changed elsewhere. Please refresh and try again.",
-    "PRECONDITION_FAILED": "The request couldn't be completed as-is. Please refresh and try again.",
-    "PAYLOAD_TOO_LARGE": "That content is too large. Please trim it and try again.",
-    "UNSUPPORTED_MEDIA_TYPE": "That content type isn't supported.",
-    "UNPROCESSABLE_CONTENT": "We couldn't process that content. Please check it and try again.",
-    "TOO_MANY_REQUESTS": "You're doing that too often. Please wait a moment and try again.",
-    "CLIENT_CLOSED_REQUEST": "The request was cancelled.",
-    "INTERNAL_SERVER_ERROR": "Something went wrong. Please try again later.",
-    "NOT_IMPLEMENTED": "This feature isn't available yet.",
-    "BAD_GATEWAY": "The service is temporarily unavailable. Please try again.",
-    "SERVICE_UNAVAILABLE": "The service is under maintenance. Please try again later.",
-    "GATEWAY_TIMEOUT": "The service took too long to respond. Please try again.",
-    "MODEL_NOT_FOUND": "The selected model is not configured. Please pick another model.",
-    "SESSION_NOT_FOUND": "The requested chat was not found. Please check the session and try again.",
-    "MESSAGE_NOT_FOUND": "The requested message was not found in this chat.",
-    "NOTHING_TO_FORK": "There is nothing to fork in this chat yet."
-  }
+  "requestFailed": "Request failed"
 }

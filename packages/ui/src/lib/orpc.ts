@@ -3,10 +3,10 @@ import { RPCLink } from "@orpc/client/fetch";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import type { AppRouterClient } from "@workspace/server/routers/index";
+import { getErrorMessage } from "@workspace/shared/errors";
 import { toastManager } from "@workspace/ui/components/toast";
 
 import { i18n } from "../i18n";
-import { getErrorMessage } from "./errors";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,8 +21,8 @@ export const queryClient = new QueryClient({
     // the i18n instance rather than a hook because this runs outside React.
     onError: (error, query) => {
       toastManager.add({
-        description: getErrorMessage(error, i18n.t),
-        title: i18n.t("errors.retry"),
+        description: getErrorMessage(error),
+        title: i18n.t("requestFailed"),
         type: "error",
         onClose() {
           query.invalidate();

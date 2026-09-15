@@ -6,7 +6,6 @@ import type {
 } from "@orpc/server";
 import { createORPCErrorConstructorMap, ORPCError } from "@orpc/server";
 import type { Language } from "@workspace/shared/constants";
-import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import z from "zod";
 
 import { errorMessage } from "./i18n";
@@ -46,7 +45,7 @@ export const ErrorMap = {
   },
   MESSAGE_NOT_FOUND: {
     status: 404,
-    message: DEFAULT_ERROR_MESSAGE,
+    message: "The requested message was not found.",
     // `messageId` is optional because the throw site has no id to name when
     // the client asked for the branch as a whole and there is nothing in it.
     data: z.object({ sessionId: z.string(), messageId: z.string().optional() }),

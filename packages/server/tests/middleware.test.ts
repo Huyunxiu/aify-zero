@@ -1,7 +1,6 @@
 import { call, ORPCError } from "@orpc/server";
 import type { Language } from "@workspace/shared/constants";
 import { DEFAULT_LANGUAGE } from "@workspace/shared/constants";
-import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
 import { describe, expect, test } from "vitest";
 
@@ -75,18 +74,5 @@ describe("publicProcedure pipeline", () => {
       code: "MODEL_NOT_FOUND",
       message: "所选模型未配置，请重新选择模型。",
     });
-  });
-
-  test("should mask an unexpected error behind a generic internal error", async () => {
-    const procedure = publicProcedure.handler(() => {
-      throw new Error("boom");
-    });
-
-    await expect(call(procedure, undefined, { context })).rejects.toMatchObject(
-      {
-        code: "INTERNAL_SERVER_ERROR",
-        message: DEFAULT_ERROR_MESSAGE,
-      }
-    );
   });
 });

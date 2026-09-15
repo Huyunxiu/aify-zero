@@ -13,8 +13,9 @@ import zhCNErrors from "./locales/zh-CN/errors.json";
  *
  * Deliberately not the UI's `packages/ui/src/i18n/locales/*`: those are strings
  * for a screen, these are messages an API hands back, and the two are free to
- * diverge. The error half (`errors.json`) is on purpose word-for-word the UI's
- * wording, so the same failure reads the same whichever surface shows it.
+ * diverge. The error half (`errors.json`) has no counterpart there: a failure
+ * is worded once, here, and the UI displays the message the server sent, so the
+ * same failure reads the same whichever surface shows it.
  */
 const messages: Record<Language, typeof enUSMessages> = {
   "en-US": enUSMessages,
