@@ -2,12 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import {
-  commonErrors,
-  errors,
-  getErrorCause,
-  normalizeError,
-} from "../src/errors";
+import { ApiError, errors, getErrorCause } from "../src/errors";
 
 describe("errors factory map", () => {
   test("should build an error carrying its declared status and default message", () => {
@@ -30,46 +25,66 @@ describe("errors factory map", () => {
 
     expectTypeOf(error.data.sessionId).toEqualTypeOf<string>();
   });
+
+  test("should build a common code straight from the map", () => {
+    const error = errors.NOT_FOUND();
+
+    expect(error.code).toBe("NOT_FOUND");
+    expect(error.status).toBe(404);
+    expect(error.message).toBe("Not Found");
+  });
+
+  test("should keep the generic message for a code that declares it", () => {
+    expect(errors.MESSAGE_NOT_FOUND().message).toBe(DEFAULT_ERROR_MESSAGE);
+  });
 });
 
-describe("commonErrors handle", () => {
-  test("should build a plain ORPCError for common codes", () => {
-    const error = commonErrors.notFound("Agent not found");
+describe(ApiError, () => {
+  test("should derive the status from the error map", () => {
+    const error = new ApiError("NOT_FOUND", "Agent not found");
 
-    expect(error).toBeInstanceOf(ORPCError);
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe("ApiError");
     expect(error.code).toBe("NOT_FOUND");
+    expect(error.status).toBe(404);
     expect(error.message).toBe("Agent not found");
   });
 
-  test("should never leak the cause into a generic internal error", () => {
-    const error = commonErrors.internal(new Error("secret"), "req-1");
+  test("should fall back to the message the code declares", () => {
+    const error = new ApiError("BAD_REQUEST");
 
-    expect(error.message).toBe(DEFAULT_ERROR_MESSAGE);
-    expect(error.data).toStrictEqual({ requestId: "req-1" });
-    expect(getErrorCause(error)).toBeInstanceOf(Error);
-  });
-});
-
-describe(normalizeError, () => {
-  test("should pass an existing ORPCError through untouched", () => {
-    const thrown = errors.NOTHING_TO_FORK();
-
-    expect(normalizeError(thrown)).toBe(thrown);
+    expect(error.message).toBe("Bad Request");
+    expect(error.status).toBe(400);
   });
 
-  test("should mask an unexpected error behind a generic internal error", () => {
-    const normalized = normalizeError(new Error("boom"), "req-2");
+  test("should infer the data payload from the options", () => {
+    const error = new ApiError("NOT_FOUND", "Agent not found", {
+      data: { agentId: "a1" },
+    });
 
-    expect(normalized.code).toBe("INTERNAL_SERVER_ERROR");
-    expect(normalized.message).toBe(DEFAULT_ERROR_MESSAGE);
-    expect(normalized.message).not.toContain("boom");
-    expect(getErrorCause(normalized)).toBeInstanceOf(Error);
+    expectTypeOf(error.data).toEqualTypeOf<{ agentId: string }>();
+    expectTypeOf(error.toORPCError().data).toEqualTypeOf<{
+      agentId: string;
+    }>();
   });
 
-  test("should not serialize the cause onto the wire", () => {
-    const normalized = normalizeError(new Error("boom"));
+  test("should fall back to an unknown payload type", () => {
+    const error = new ApiError("BAD_REQUEST");
 
-    expect(normalized.toJSON()).not.toHaveProperty("cause");
-    expect(JSON.stringify(normalized.toJSON())).not.toContain("boom");
+    expectTypeOf(error.data).toBeUnknown();
+  });
+
+  test("should convert into an ORPCError of the same code, status and data", () => {
+    const error = new ApiError("NOT_FOUND", "Agent not found", {
+      data: { agentId: "a1" },
+    });
+
+    const orpcError = error.toORPCError();
+
+    expect(orpcError).toBeInstanceOf(ORPCError);
+    expect(orpcError.code).toBe("NOT_FOUND");
+    expect(orpcError.status).toBe(404);
+    expect(orpcError.data).toStrictEqual({ agentId: "a1" });
+    expect(getErrorCause(orpcError)).toBe(error);
   });
 });

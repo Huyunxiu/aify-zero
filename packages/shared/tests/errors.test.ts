@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import { DEFAULT_ERROR_MESSAGE, ERROR_STATUS, parseError } from "../src/errors";
+import { DEFAULT_ERROR_MESSAGE, parseError } from "../src/errors";
 
 describe(parseError, () => {
   test("should keep code, status and data from an ORPCError-shaped object", () => {
@@ -50,12 +50,5 @@ describe(parseError, () => {
     expectTypeOf(parsed.code).toEqualTypeOf<string>();
     expectTypeOf(parsed.message).toEqualTypeOf<string>();
     expectTypeOf(parsed.status).toEqualTypeOf<number | undefined>();
-  });
-});
-
-describe("error code metadata", () => {
-  test("should carry an HTTP status for every code", () => {
-    expect(ERROR_STATUS.MODEL_NOT_FOUND).toBe(400);
-    expect(ERROR_STATUS.SESSION_NOT_FOUND).toBe(404);
   });
 });

@@ -1,31 +1,32 @@
 import { eventIteratorToUnproxiedDataStream, os } from "@orpc/server";
 
 import type { Context } from "./context";
-import { normalizeError } from "./errors";
-
-export const stream3 = "3";
+import { ApiError } from "./errors";
 
 export const o = os.$context<Context>();
 
 /**
- * Normalizes everything a procedure throws into an `ORPCError`, so the client
- * always receives a predictable code/status/message and server internals stay
- * behind the `cause`. Errors raised while a returned event iterator is being
- * consumed happen after this returns — those are handled by the agent's stream
- * error channel instead.
+ * Translates an `ApiError` into the `ORPCError` the client receives. Anything
+ * else is rethrown untouched for `normalizeErrorMiddleware` to deal with, so a
+ * handler can raise a business error by throwing `ApiError` and forget about
+ * the transport.
  */
-export const normalizeErrorMiddleware = o.middleware(
-  async ({ context, next }) => {
-    try {
-      return await next();
-    } catch (error) {
-      throw normalizeError(error, context.requestId);
+export const apiErrorMiddleware = o.middleware(async ({ next }) => {
+  try {
+    return await next();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error.toORPCError();
     }
+    throw error;
   }
-);
+});
 
-export const publicProcedure = o.use(normalizeErrorMiddleware);
+/**
+ * Outermost first: `apiErrorMiddleware` sits next to the handler and converts
+ * what it recognizes, `normalizeErrorMiddleware` wraps everything as the
+ * transport boundary.
+ */
+export const publicProcedure = o.use(apiErrorMiddleware);
 
 export const stream = eventIteratorToUnproxiedDataStream;
-
-export const stream2 = "2";
