@@ -35,13 +35,21 @@ describe("errors factory map", () => {
   });
 
   test("should keep the generic message for a code that declares it", () => {
-    expect(errors.MESSAGE_NOT_FOUND().message).toBe(DEFAULT_ERROR_MESSAGE);
+    const error = errors.MESSAGE_NOT_FOUND({ data: { sessionId: "s1" } });
+
+    expect(error.message).toBe(DEFAULT_ERROR_MESSAGE);
   });
 });
 
+// The `@ts-expect-error` is the assertion: a payload the code's schema does not
+// accept is a compile error, so this is never meant to be called.
+const withAnUnknownField = () =>
+  // @ts-expect-error — SESSION_NOT_FOUND declares `{ sessionId: string }`
+  new ApiError("SESSION_NOT_FOUND", { data: { id: "s1" } });
+
 describe(ApiError, () => {
   test("should derive the status from the error map", () => {
-    const error = new ApiError("NOT_FOUND", "Agent not found");
+    const error = new ApiError("NOT_FOUND", { message: "Agent not found" });
 
     expect(error).toBeInstanceOf(Error);
     expect(error.name).toBe("ApiError");
@@ -57,15 +65,22 @@ describe(ApiError, () => {
     expect(error.status).toBe(400);
   });
 
-  test("should infer the data payload from the options", () => {
-    const error = new ApiError("NOT_FOUND", "Agent not found", {
-      data: { agentId: "a1" },
+  test("should type the payload from the schema the code declares", () => {
+    const error = new ApiError("SESSION_NOT_FOUND", {
+      data: { sessionId: "s1" },
     });
 
-    expectTypeOf(error.data).toEqualTypeOf<{ agentId: string }>();
-    expectTypeOf(error.toORPCError().data).toEqualTypeOf<{
-      agentId: string;
-    }>();
+    expectTypeOf(error.data).toEqualTypeOf<{ sessionId: string } | undefined>();
+    expectTypeOf(error.toORPCError().data).toEqualTypeOf<
+      { sessionId: string } | undefined
+    >();
+  });
+
+  test("should take the payload from a data-only options object", () => {
+    const error = new ApiError("MODEL_NOT_FOUND", { data: { model: "gpt" } });
+
+    expectTypeOf(error.data).toEqualTypeOf<{ model: string } | undefined>();
+    expect(error.message).toBe("The requested AI model was not found.");
   });
 
   test("should fall back to an unknown payload type", () => {
@@ -74,8 +89,23 @@ describe(ApiError, () => {
     expectTypeOf(error.data).toBeUnknown();
   });
 
+  test("should take any payload for a code that declares no schema", () => {
+    const error = new ApiError("NOT_FOUND", {
+      message: "Agent not found",
+      data: { agentId: "a1" },
+    });
+
+    expectTypeOf(error.data).toBeUnknown();
+    expect(error.data).toStrictEqual({ agentId: "a1" });
+  });
+
+  test("should reject a payload the code's schema does not accept", () => {
+    expect(withAnUnknownField).toBeTypeOf("function");
+  });
+
   test("should convert into an ORPCError of the same code, status and data", () => {
-    const error = new ApiError("NOT_FOUND", "Agent not found", {
+    const error = new ApiError("NOT_FOUND", {
+      message: "Agent not found",
       data: { agentId: "a1" },
     });
 

@@ -49,7 +49,7 @@ const get = publicProcedure
   .handler(async ({ input }) => {
     const agent = await findAgentById(input.agentId);
     if (!agent) {
-      throw new ApiError("NOT_FOUND", "Agent not found");
+      throw new ApiError("NOT_FOUND", { message: "Agent not found" });
     }
     return agent;
   });
@@ -68,7 +68,7 @@ const update = publicProcedure
 
     const existing = await findAgentById(agentId);
     if (!existing) {
-      throw new ApiError("NOT_FOUND", "Agent not found");
+      throw new ApiError("NOT_FOUND", { message: "Agent not found" });
     }
 
     const agent = await updateAgent(agentId, data);
@@ -82,7 +82,7 @@ const remove = publicProcedure
   .handler(async ({ input }) => {
     const agent = await deleteAgent(input.agentId);
     if (!agent) {
-      throw new ApiError("NOT_FOUND", "Agent not found");
+      throw new ApiError("NOT_FOUND", { message: "Agent not found" });
     }
     return agent;
   });

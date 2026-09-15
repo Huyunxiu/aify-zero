@@ -36,7 +36,7 @@ import { ModelEffort } from "@workspace/shared/constants";
 import type { UIMessagePart } from "ai";
 import z from "zod";
 
-import { errorMap } from "../errors";
+import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
 import { forkSessionSchema, listSessionMessagesSchema } from "./session.schema";
 import { findAiModelById } from "./settings/settings.service";
@@ -64,7 +64,7 @@ function convertAgentUIMessages(
 
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
-  .errors({ MODEL_NOT_FOUND: errorMap.MODEL_NOT_FOUND })
+  .errors({ MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND })
   .input(
     type<{
       sessionId: string;
@@ -73,12 +73,12 @@ const createSession = publicProcedure
       modelEffort?: string;
     }>()
   )
-  .handler(async ({ input, errors }) => {
+  .handler(async ({ input }) => {
     const { sessionId, messages, model, modelEffort } = input;
 
     const aiModel = await findAiModelById(model);
     if (!aiModel) {
-      throw errors.MODEL_NOT_FOUND({ data: { model } });
+      throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
     }
 
     const provider = createOpenAICompatible({
@@ -170,18 +170,18 @@ export const listSessionMessages = publicProcedure
 export const forkSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/fork" })
   .errors({
-    SESSION_NOT_FOUND: errorMap.SESSION_NOT_FOUND,
-    MESSAGE_NOT_FOUND: errorMap.MESSAGE_NOT_FOUND,
-    NOTHING_TO_FORK: errorMap.NOTHING_TO_FORK,
+    SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND,
+    MESSAGE_NOT_FOUND: ErrorMap.MESSAGE_NOT_FOUND,
+    NOTHING_TO_FORK: ErrorMap.NOTHING_TO_FORK,
   })
   .input(forkSessionSchema)
-  .handler(async ({ input, errors }) => {
+  .handler(async ({ input }) => {
     const { sessionId, messageId } = input;
 
     const store = new SQLiteStore();
     const source = await store.getSessionById(sessionId);
     if (!source) {
-      throw errors.SESSION_NOT_FOUND({ data: { sessionId } });
+      throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
     }
 
     const messages = await store.getAllMessagesBySessionId(sessionId);
@@ -190,12 +190,14 @@ export const forkSession = publicProcedure
       ? branchMessages.findIndex((message) => message.id === messageId)
       : branchMessages.length - 1;
     if (upToIndex < 0) {
-      throw errors.MESSAGE_NOT_FOUND({ data: { sessionId, messageId } });
+      throw new ApiError("MESSAGE_NOT_FOUND", {
+        data: { sessionId, messageId },
+      });
     }
 
     const prefix = branchMessages.slice(0, upToIndex + 1);
     if (prefix.length === 0) {
-      throw errors.NOTHING_TO_FORK();
+      throw new ApiError("NOTHING_TO_FORK");
     }
 
     const newSessionId = generateSessionId();

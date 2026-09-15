@@ -1,5 +1,9 @@
 import { COMMON_ORPC_ERROR_DEFS } from "@orpc/client";
-import type { ErrorMap } from "@orpc/server";
+import type {
+  ErrorMap as ErrorMapType,
+  InferSchemaOutput,
+  Schema,
+} from "@orpc/server";
 import { createORPCErrorConstructorMap, ORPCError } from "@orpc/server";
 import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import z from "zod";
@@ -19,7 +23,7 @@ import z from "zod";
  * Register an entry on a procedure with `.errors({...})` to get the typed
  * `errors` constructor map inside its handler.
  */
-export const errorMap = {
+export const ErrorMap = {
   ...COMMON_ORPC_ERROR_DEFS,
 
   // App-specific codes: the ones that say something the status alone cannot.
@@ -40,22 +44,36 @@ export const errorMap = {
   MESSAGE_NOT_FOUND: {
     status: 404,
     message: DEFAULT_ERROR_MESSAGE,
+    // `messageId` is optional because the throw site has no id to name when
+    // the client asked for the branch as a whole and there is nothing in it.
+    data: z.object({ sessionId: z.string(), messageId: z.string().optional() }),
   },
-} satisfies ErrorMap;
+} satisfies ErrorMapType;
 
 /** Every code above, i.e. the whole set a throw site may use. */
-export type ErrorCode = keyof typeof errorMap;
+export type ErrorCode = keyof typeof ErrorMap;
 
-export type AppErrorMap = typeof errorMap;
+/**
+ * The payload a code carries, read back out of the schema `ErrorMap` declares
+ * for it — `unknown` for a code that declares none.
+ */
+export type ErrorDataOf<TCode extends ErrorCode> =
+  (typeof ErrorMap)[TCode] extends {
+    data: infer TSchema extends Schema<any, any>;
+  }
+    ? InferSchemaOutput<TSchema>
+    : unknown;
 
 /** Imperative constructors for the codes above, e.g. `throw errors.MODEL_NOT_FOUND({ data: { model } })`. */
-export const errors = createORPCErrorConstructorMap(errorMap);
+export const errors = createORPCErrorConstructorMap(ErrorMap);
 
-export type ApiErrorOptions<TData = unknown> = {
+export type ApiErrorOptions<TCode extends ErrorCode = ErrorCode> = {
+  /** Overrides the message the code declares. Rarely needed. */
+  message?: string;
   /** The underlying failure, kept for the server-side log. */
   cause?: unknown;
   /** Structured payload handed to the client, e.g. the id that was missing. */
-  data?: TData;
+  data?: ErrorDataOf<TCode>;
 };
 
 /**
@@ -65,33 +83,40 @@ export type ApiErrorOptions<TData = unknown> = {
  * transport boundary calls it.
  *
  * The code alone decides what the error means: `status` and the default
- * `message` are read back out of `errorMap` rather than passed in, so a code
- * and its HTTP answer can never drift apart.
+ * `message` are read back out of `ErrorMap` rather than passed in, so a code
+ * and its HTTP answer can never drift apart. A `message` in the options
+ * overrides that default, for the few cases where the caller knows better.
  *
- * `data` is the type parameter because it is the only thing a throw site can
- * say something useful about: `new ApiError(code, message, { data: {
- * agentId } })` infers `ApiError<{ agentId: string }>`, while a bare
- * `new ApiError(code)` stays `ApiError<unknown>`.
+ * Everything after the code travels in one options object rather than in
+ * positional arguments, so a call site that only carries `data` does not have
+ * to say anything about the message it is happy to inherit:
+ *
+ *   throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
+ *
+ * The code is the type parameter, and the payload follows from it: `data` is
+ * typed by the schema `ErrorMap` declares for that code, so the call above is
+ * an `ApiError<"MODEL_NOT_FOUND">` whose `data` is `{ model: string }` — the
+ * same schema the client's error type is derived from. A code that declares no
+ * schema, such as `NOTHING_TO_FORK`, has nothing to check against and takes
+ * `data: unknown`.
+ *
+ * `data` is optional at every call site, so an error that carries nothing
+ * beyond its code is just `new ApiError("NOTHING_TO_FORK")`. The property says
+ * as much by being `| undefined`, hence `error.data?.model` where it is read.
  */
-export class ApiError<TData = unknown> extends Error {
-  readonly code: ErrorCode;
-  readonly data: TData;
+export class ApiError<TCode extends ErrorCode = ErrorCode> extends Error {
+  readonly code: TCode;
+  readonly data: ErrorDataOf<TCode> | undefined;
 
-  constructor(
-    code: ErrorCode,
-    message: string = errorMap[code].message,
-    options: ApiErrorOptions<TData> = {}
-  ) {
-    super(message, { cause: options.cause });
+  constructor(code: TCode, options: ApiErrorOptions<TCode> = {}) {
+    super(options.message ?? ErrorMap[code].message, { cause: options.cause });
     this.name = "ApiError";
     this.code = code;
-    // The `{}` default above means `data` can be absent at runtime even when
-    // `TData` is a concrete type, so the widening back is on us.
-    this.data = options.data as TData;
+    this.data = options.data;
   }
 
   get status(): number {
-    return errorMap[this.code].status;
+    return ErrorMap[this.code].status;
   }
 
   /**
@@ -99,7 +124,7 @@ export class ApiError<TData = unknown> extends Error {
    * `ApiError` kept as `cause` so the server log still points back at the
    * throw site. The payload type travels with it.
    */
-  toORPCError(): ORPCError<string, TData> {
+  toORPCError(): ORPCError<TCode, ErrorDataOf<TCode> | undefined> {
     return new ORPCError(this.code, {
       message: this.message,
       status: this.status,

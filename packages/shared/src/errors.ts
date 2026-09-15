@@ -1,7 +1,7 @@
 // Shared error helpers for the receiving side of the wire.
 //
 // The vocabulary itself — which codes exist, their status, their message —
-// lives in the server's `errorMap`, which owns it. This module only knows how
+// lives in the server's `ErrorMap`, which owns it. This module only knows how
 // to turn whatever the transport handed back into something displayable, and
 // it stays dependency-free so the same helpers serve the oRPC transport, the
 // AI SDK stream error channel, and the Electron IPC surface.

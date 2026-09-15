@@ -11,7 +11,8 @@ const context = { requestId: "req-test", logger };
 describe("apiErrorMiddleware translation", () => {
   test("should convert an ApiError thrown by the handler", async () => {
     const procedure = o.use(apiErrorMiddleware).handler(() => {
-      throw new ApiError("NOT_FOUND", "Agent not found", {
+      throw new ApiError("NOT_FOUND", {
+        message: "Agent not found",
         data: { agentId: "a1" },
       });
     });
@@ -42,7 +43,7 @@ describe("apiErrorMiddleware translation", () => {
 describe("publicProcedure pipeline", () => {
   test("should hand an ApiError to the client untouched by the normalizer", async () => {
     const procedure = publicProcedure.handler(() => {
-      throw new ApiError("NOT_FOUND", "Agent not found");
+      throw new ApiError("NOT_FOUND", { message: "Agent not found" });
     });
 
     const called = call(procedure, undefined, { context });
