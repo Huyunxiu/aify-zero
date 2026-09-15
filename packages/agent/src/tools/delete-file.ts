@@ -1,12 +1,12 @@
 import { stat, unlink, rm } from "node:fs/promises";
 import path from "node:path";
 
+import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
-import { getErrorMessage } from "../utils/error";
 import type { ToolOutput } from "./types";
 
 const DESCRIPTION = `

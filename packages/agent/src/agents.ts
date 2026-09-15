@@ -1,6 +1,7 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
 import type { MessageModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
+import { getErrorMessage } from "@workspace/shared/errors";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -25,7 +26,6 @@ import type {
   AgentUITools,
   CompactionConfig,
 } from "./types";
-import { getErrorMessage } from "./utils/error";
 import { generateMessageId, generatePartId } from "./utils/id-util";
 
 registerTelemetry(DevToolsTelemetry());

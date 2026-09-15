@@ -5,6 +5,7 @@ import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
 import { onError } from "@orpc/server";
 import { RPCHandler } from "@orpc/server/fetch";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
+import { getErrorCause } from "@workspace/shared/errors";
 import type { Logger } from "@workspace/shared/logger";
 import { logger } from "@workspace/shared/logger";
 import { Hono } from "hono";
@@ -12,7 +13,6 @@ import { cors } from "hono/cors";
 import { requestId } from "hono/request-id";
 
 import { createContext } from "./context";
-import { getErrorCause } from "./errors";
 import { appRouter } from "./routers/index";
 
 type HonoEnv = StructuredLoggerEnv<Logger>;

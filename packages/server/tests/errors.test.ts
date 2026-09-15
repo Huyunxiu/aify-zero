@@ -2,7 +2,7 @@ import { ORPCError } from "@orpc/server";
 import { DEFAULT_ERROR_MESSAGE } from "@workspace/shared/errors";
 import { describe, expect, expectTypeOf, test } from "vitest";
 
-import { ApiError, errors, getErrorCause } from "../src/errors";
+import { ApiError, errors } from "../src/errors";
 
 describe("errors factory map", () => {
   test("should build an error carrying its declared status and default message", () => {
@@ -85,6 +85,5 @@ describe(ApiError, () => {
     expect(orpcError.code).toBe("NOT_FOUND");
     expect(orpcError.status).toBe(404);
     expect(orpcError.data).toStrictEqual({ agentId: "a1" });
-    expect(getErrorCause(orpcError)).toBe(error);
   });
 });

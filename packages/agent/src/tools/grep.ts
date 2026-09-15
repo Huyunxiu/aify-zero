@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
 import { isAbsolute, relative } from "node:path";
 
+import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
-import { getErrorMessage } from "../utils/error";
 import { normalizePath, shellQuote } from "../utils/fs-util";
 import { getRipgrepAvailable } from "../utils/ripgrep";
 import { truncateContent } from "../utils/truncate";

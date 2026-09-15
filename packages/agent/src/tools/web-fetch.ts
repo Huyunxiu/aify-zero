@@ -1,9 +1,9 @@
+import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import type { InferUITool, Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
-import { getErrorMessage } from "../utils/error";
 import { convertHtmlToMarkdown, extractTextFromHtml } from "../utils/html";
 import { truncateContent } from "../utils/truncate";
 import type { ToolOutput } from "./types";
