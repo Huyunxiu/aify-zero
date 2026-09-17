@@ -8,10 +8,20 @@ import {
   generateText,
   isStepCount,
   registerTelemetry,
-  ToolLoopAgent,
+  streamText,
   toUIMessageStream,
 } from "ai";
-import type { LanguageModel, ModelMessage, ToolSet, UIMessagePart } from "ai";
+import type {
+  FinishReason,
+  InferUIMessageChunk,
+  LanguageModel,
+  LanguageModelUsage,
+  ModelMessage,
+  ToolSet,
+  UIMessagePart,
+  UIMessageStreamWriter,
+} from "ai";
+import { addLanguageModelUsage } from "ai/internal";
 
 import { compactMessages, shouldCompact } from "./compaction/compaction";
 import type { AgentContext } from "./context";
@@ -47,6 +57,12 @@ const MODEL_EFFORT_TO_REASONING = {
   [ModelEffort.High]: "high",
   [ModelEffort.Ultra]: "xhigh",
 } as const;
+
+/**
+ * Step budget for one assistant turn. The manual loop issues one `streamText`
+ * call per step, so the budget lives here instead of in the SDK's `stopWhen`.
+ */
+const MAX_STEPS = 100;
 
 export type AgentOptions = {
   name: string;
@@ -193,107 +209,13 @@ export class Agent {
           lastKnownPromptMessageCount: originalMessages.length,
         };
 
-        const agent = new ToolLoopAgent({
-          instructions: this.systemPrompt,
+        await this.runLoop({
+          writer,
           model,
-          tools: this.tools,
-          reasoning: this.effort
-            ? MODEL_EFFORT_TO_REASONING[this.effort]
-            : undefined,
-          stopWhen: isStepCount(100),
-          prepareCall: async (options) => {
-            if (!options.messages) {
-              return options;
-            }
-
-            const compaction = await this.maybeCompact({
-              config: compactionConfig,
-              messages: options.messages,
-              abortSignal,
-              model,
-              onBeforeCompact: async () => {
-                const createdAt = Date.now();
-                writer.write({
-                  id: generatePartId(),
-                  type: "data-compaction:start",
-                  data: {
-                    createdAt,
-                  },
-                });
-                await this.hooks.emit(
-                  "compaction:start",
-                  { sessionId: this.sessionId, createdAt },
-                  this.extensionApi
-                );
-              },
-              onAfterCompact: async (params) => {
-                const createdAt = Date.now();
-                writer.write({
-                  id: generatePartId(),
-                  type: "data-compaction:end",
-                  data: {
-                    compacted: params.compacted,
-                    messages: params.messages,
-                    createdAt,
-                  },
-                });
-                await this.hooks.emit(
-                  "compaction:end",
-                  {
-                    sessionId: this.sessionId,
-                    compacted: params.compacted,
-                    messages: params.messages,
-                    createdAt,
-                  },
-                  this.extensionApi
-                );
-              },
-            });
-
-            compactionConfig.lastKnownPromptMessageCount =
-              compaction.messages.length;
-
-            return {
-              ...options,
-              messages: compaction.messages,
-            };
-          },
-        });
-
-        const result = await agent.stream({
-          messages: modelMessages,
           abortSignal,
+          compactionConfig,
+          messages: modelMessages,
         });
-
-        writer.merge(
-          toUIMessageStream({
-            stream: result.stream,
-            sendStart: false,
-            sendReasoning: true,
-            sendFinish: true,
-            generateMessageId,
-            messageMetadata: ({ part }) => {
-              if (part.type === "finish-step") {
-                compactionConfig.lastKnownInputTokens = part.usage.inputTokens;
-                return {
-                  createdAt: Date.now(),
-                  rawFinishReason: part.rawFinishReason,
-                  finishReason: part.finishReason,
-                  usage: part.usage,
-                  providerMetadata: part.providerMetadata,
-                  performance: part.performance,
-                };
-              } else if (part.type === "finish") {
-                return {
-                  createdAt: Date.now(),
-                  rawFinishReason: part.rawFinishReason,
-                  finishReason: part.finishReason,
-                  totalUsage: part.totalUsage,
-                };
-              }
-            },
-          })
-        );
       },
       originalMessages,
       onEnd: async (data) => {
@@ -395,13 +317,233 @@ export class Agent {
   }
 
   /**
+   * Drives the model/tool loop by hand so compaction can run before every
+   * model call. `ToolLoopAgent` invokes `prepareCall` once per stream — its
+   * step loop lives inside a single `streamText` call — so the compaction
+   * check only ever saw the first prompt, and the token count each step
+   * reported was never read. One `streamText` call per step keeps the
+   * estimate in sync with the prompt the model is about to receive.
+   *
+   * Every step streams into the single UI message started by {@link Agent.stream};
+   * the `finish` chunk is written here, once, after the last step, because
+   * only then is "last" known.
+   */
+  private async runLoop(input: {
+    readonly abortSignal?: AbortSignal;
+    readonly compactionConfig: CompactionConfig;
+    readonly messages: ModelMessage[];
+    readonly model: LanguageModel;
+    readonly writer: UIMessageStreamWriter<AgentUIMessage>;
+  }): Promise<void> {
+    const { abortSignal, compactionConfig, model, writer } = input;
+    let { messages } = input;
+
+    // Set only once a step has completed. Aborting or failing a step leaves it
+    // unset, which suppresses the `finish` chunk — `streamText` emits an
+    // `abort`/`error` part instead of `finish` in exactly those cases.
+    let lastStep:
+      | { finishReason: FinishReason; rawFinishReason: string | undefined }
+      | undefined;
+    // Each call reports only its own step's usage; the persisted metadata has
+    // to total the turn, which the SDK did for us when one call drove it all.
+    let totalUsage: LanguageModelUsage | undefined;
+
+    for (let step = 0; step < MAX_STEPS; step += 1) {
+      // A doomed call would emit a second `abort` chunk and reject its result
+      // promises; stopping here keeps it to one abort per turn.
+      if (abortSignal?.aborted) {
+        return;
+      }
+
+      const compaction = await this.maybeCompact({
+        config: compactionConfig,
+        messages,
+        abortSignal,
+        model,
+        onBeforeCompact: () => this.announceCompactionStart(writer),
+        onAfterCompact: (params) => this.announceCompactionEnd(writer, params),
+      });
+      ({ messages } = compaction);
+      compactionConfig.lastKnownPromptMessageCount = messages.length;
+
+      const result = streamText({
+        instructions: this.systemPrompt,
+        model,
+        tools: this.tools,
+        // One step per call: `runLoop` owns the step budget, and a step must
+        // not execute a tool call whose result is never sent back.
+        stopWhen: isStepCount(1),
+        reasoning: this.effort
+          ? MODEL_EFFORT_TO_REASONING[this.effort]
+          : undefined,
+        messages,
+        abortSignal,
+      });
+
+      const reader = toUIMessageStream({
+        stream: result.stream,
+        sendStart: false,
+        // The single `finish` chunk is written once the last step is known; a
+        // per-step one would also report only that step's totals.
+        sendFinish: false,
+        sendReasoning: true,
+        messageMetadata: ({ part }) => {
+          if (part.type !== "finish-step") {
+            return;
+          }
+          // Feeds the next iteration's compaction estimate: the prompt's real
+          // token count is only known once the model reports it.
+          compactionConfig.lastKnownInputTokens = part.usage.inputTokens;
+          return {
+            createdAt: Date.now(),
+            rawFinishReason: part.rawFinishReason,
+            finishReason: part.finishReason,
+            usage: part.usage,
+            providerMetadata: part.providerMetadata,
+            performance: part.performance,
+          };
+        },
+      }).getReader();
+
+      // Chunks are forwarded one at a time rather than through
+      // `writer.merge`: `merge` pumps asynchronously, so the `finish` chunk
+      // written after the loop would overtake a step's remaining chunks —
+      // clients treat `finish` as end-of-message.
+      //
+      // The cast is `toUIMessageStream` defaulting its `UI_MESSAGE` to the
+      // generic `UIMessage`, whose metadata is `unknown`; the chunks are the
+      // same shape, and `writer` is what actually constrains them. Naming the
+      // message type on the call instead would reject the `finish-step`
+      // metadata below, which carries keys `AgentUIMetadata` does not declare.
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        writer.write(value as InferUIMessageChunk<AgentUIMessage>);
+      }
+
+      try {
+        const [
+          finishReason,
+          rawFinishReason,
+          stepUsage,
+          toolCalls,
+          toolResults,
+        ] = await Promise.all([
+          result.finishReason,
+          result.rawFinishReason,
+          // `usage` is the whole call's usage, which for a one-step call is
+          // exactly this step's — the same number `totalUsage` reported.
+          result.usage,
+          result.toolCalls,
+          result.toolResults,
+        ]);
+
+        // Exactly the messages the SDK feeds its own next step: the assistant
+        // message for this step plus a tool message for whatever executed.
+        messages.push(...(await result.responseMessages));
+
+        totalUsage =
+          totalUsage === undefined
+            ? stepUsage
+            : addLanguageModelUsage(totalUsage, stepUsage);
+
+        // The SDK's own continuation rule: keep going only while every client
+        // tool call came back. A tool without `execute`, or a denied approval,
+        // still finishes with `tool-calls`; continuing there would send an
+        // assistant tool call with no matching tool message.
+        const clientToolCalls = toolCalls.filter(
+          (call) => call.providerExecuted !== true
+        );
+        const clientToolResults = toolResults.filter(
+          (toolResult) => toolResult.providerExecuted !== true
+        );
+
+        lastStep = { finishReason, rawFinishReason };
+        if (
+          clientToolCalls.length === 0 ||
+          clientToolCalls.length !== clientToolResults.length
+        ) {
+          break;
+        }
+      } catch (error) {
+        // Aborted or the model call failed: the stream already delivered its
+        // `abort`/`error` chunk, so the turn ends without a `finish` chunk.
+        console.error(error);
+        return;
+      }
+    }
+
+    if (lastStep === undefined) {
+      return;
+    }
+
+    writer.write({
+      type: "finish",
+      finishReason: lastStep.finishReason,
+      messageMetadata: {
+        createdAt: Date.now(),
+        rawFinishReason: lastStep.rawFinishReason,
+        finishReason: lastStep.finishReason,
+        totalUsage,
+      },
+    });
+  }
+
+  private async announceCompactionStart(
+    writer: UIMessageStreamWriter<AgentUIMessage>
+  ): Promise<void> {
+    const createdAt = Date.now();
+    writer.write({
+      id: generatePartId(),
+      type: "data-compaction:start",
+      data: {
+        createdAt,
+      },
+    });
+    await this.hooks.emit(
+      "compaction:start",
+      { sessionId: this.sessionId, createdAt },
+      this.extensionApi
+    );
+  }
+
+  private async announceCompactionEnd(
+    writer: UIMessageStreamWriter<AgentUIMessage>,
+    params: { compacted: boolean; messages: ModelMessage[] }
+  ): Promise<void> {
+    const createdAt = Date.now();
+    writer.write({
+      id: generatePartId(),
+      type: "data-compaction:end",
+      data: {
+        compacted: params.compacted,
+        messages: params.messages,
+        createdAt,
+      },
+    });
+    await this.hooks.emit(
+      "compaction:end",
+      {
+        sessionId: this.sessionId,
+        compacted: params.compacted,
+        messages: params.messages,
+        createdAt,
+      },
+      this.extensionApi
+    );
+  }
+
+  /**
    * Runs the compaction pipeline once if the session's input-token estimate
    * is over the configured threshold. Mutates neither input; returns the new
    * messages array and (possibly updated) session.
    *
-   * Kept in the tool-loop (rather than the AI SDK's `prepareStep` hook) so
-   * the compacted messages flow through the same `messages` variable the
-   * harness uses to rebuild `session.history` after the step.
+   * Called by {@link Agent.runLoop} before every model call, so the compacted
+   * messages become the history the next step — and every step after it —
+   * sends to the model. Gating on `shouldCompact` is what keeps that from
+   * re-summarizing the same conversation on every step.
    */
   private async maybeCompact(input: {
     readonly force?: boolean;
