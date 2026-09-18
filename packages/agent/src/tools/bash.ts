@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 import { tool } from "ai";
-import type { InferUITool, Tool } from "ai";
+import type { Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -172,4 +172,4 @@ export const createBashTool = ({
     }),
   });
 
-export type BashToolType = InferUITool<ReturnType<typeof createBashTool>>;
+export type BashToolType = ReturnType<typeof createBashTool>;

@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
-import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -83,6 +82,6 @@ const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>
     },
   });
 
-type DeleteFileToolType = InferUITool<ReturnType<typeof createDeleteFileTool>>;
+type DeleteFileToolType = ReturnType<typeof createDeleteFileTool>;
 
 export { createDeleteFileTool, type DeleteFileToolType };

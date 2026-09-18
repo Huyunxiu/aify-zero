@@ -2,7 +2,6 @@ import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { tool } from "ai";
-import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -76,6 +75,6 @@ const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>
     }),
   });
 
-type WriteFileToolType = InferUITool<ReturnType<typeof createWriteFileTool>>;
+type WriteFileToolType = ReturnType<typeof createWriteFileTool>;
 
 export { createWriteFileTool, type WriteFileToolType };

@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
-import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -252,6 +251,6 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
     },
   });
 
-type EditFileToolType = InferUITool<ReturnType<typeof createEditFileTool>>;
+type EditFileToolType = ReturnType<typeof createEditFileTool>;
 
 export { createEditFileTool, type EditFileToolType };

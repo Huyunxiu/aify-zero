@@ -1,5 +1,6 @@
 import type {
   FinishReason,
+  InferUITool,
   LanguageModelUsage,
   ModelMessage,
   UIMessage,
@@ -41,7 +42,7 @@ export type AgentUIDataParts = {
   "command:compact": {};
 };
 
-export type AgentUITools = {
+export type AgentToolSet = {
   "delete-file": DeleteFileToolType;
   "edit-file": EditFileToolType;
   grep: GrepToolType;
@@ -51,6 +52,18 @@ export type AgentUITools = {
   "web-fetch": WebFetchToolType;
   "load-skill": LoadSkillToolType;
   bash: BashToolType;
+};
+
+export type AgentUITools = {
+  "delete-file": InferUITool<DeleteFileToolType>;
+  "edit-file": InferUITool<EditFileToolType>;
+  grep: InferUITool<GrepToolType>;
+  glob: InferUITool<GlobToolType>;
+  "read-file": InferUITool<ReadFileToolType>;
+  "write-file": InferUITool<WriteFileToolType>;
+  "web-fetch": InferUITool<WebFetchToolType>;
+  "load-skill": InferUITool<LoadSkillToolType>;
+  bash: InferUITool<BashToolType>;
 };
 
 export type AgentUIMessage = UIMessage<
@@ -69,3 +82,5 @@ export interface CompactionConfig {
   threshold: number;
   thresholdPercent?: number;
 }
+
+export type AgentRuntimeContext = Record<string, unknown>;

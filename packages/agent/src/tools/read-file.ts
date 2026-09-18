@@ -11,7 +11,6 @@ import {
 import { createInterface } from "node:readline";
 
 import { tool } from "ai";
-import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -447,6 +446,6 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
     },
   });
 
-type ReadFileToolType = InferUITool<ReturnType<typeof createReadFileTool>>;
+type ReadFileToolType = ReturnType<typeof createReadFileTool>;
 
 export { createReadFileTool, type ReadFileToolType };

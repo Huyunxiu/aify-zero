@@ -3,7 +3,6 @@ import { isAbsolute, relative } from "node:path";
 
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
-import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -350,6 +349,6 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
     },
   });
 
-type GlobToolType = InferUITool<ReturnType<typeof createGlobTool>>;
+type GlobToolType = ReturnType<typeof createGlobTool>;
 
 export { createGlobTool, type GlobToolType };

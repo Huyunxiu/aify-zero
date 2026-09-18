@@ -1,6 +1,6 @@
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
-import type { InferUITool, Tool } from "ai";
+import type { Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -294,6 +294,6 @@ const createWebFetchTool = ({
     },
   });
 
-type WebFetchToolType = InferUITool<ReturnType<typeof createWebFetchTool>>;
+type WebFetchToolType = ReturnType<typeof createWebFetchTool>;
 
 export { createWebFetchTool, type WebFetchToolType };

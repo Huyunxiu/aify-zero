@@ -3,7 +3,6 @@ import { isAbsolute, relative } from "node:path";
 
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
-import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -409,6 +408,6 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
     },
   });
 
-type GrepToolType = InferUITool<ReturnType<typeof createGrepTool>>;
+type GrepToolType = ReturnType<typeof createGrepTool>;
 
 export { createGrepTool, type GrepToolType };

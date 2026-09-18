@@ -4,7 +4,6 @@ import { join, isAbsolute, resolve, dirname, basename } from "node:path";
 import { createInterface } from "node:readline";
 
 import { tool } from "ai";
-import type { InferUITool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../context";
@@ -493,6 +492,6 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
     },
   });
 
-type LoadSkillToolType = InferUITool<ReturnType<typeof createLoadSkillTool>>;
+type LoadSkillToolType = ReturnType<typeof createLoadSkillTool>;
 
 export { createLoadSkillTool, type LoadSkillToolType };
