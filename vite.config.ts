@@ -73,6 +73,9 @@ export default defineConfig({
       "typescript/no-confusing-void-expression": "allow",
       "typescript/no-empty-object-type": "allow",
       "typescript/ban-types": "allow",
+      "typescript/no-unsafe-argument": "allow",
+      "typescript/no-empty-interface": "allow",
+      "unicorn/filename-case": "allow",
     },
   },
   run: {

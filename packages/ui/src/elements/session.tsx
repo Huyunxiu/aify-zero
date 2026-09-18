@@ -207,7 +207,6 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
   const {
-    setMessages,
     sendMessage,
     messages,
     addToolOutput,

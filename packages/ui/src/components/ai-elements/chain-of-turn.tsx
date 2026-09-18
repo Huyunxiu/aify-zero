@@ -284,7 +284,7 @@ export const ChainOfTurnActions = ({
     className={cn("ml-auto flex items-center gap-1", className)}
     onClick={stopPropagation}
     onKeyDown={stopPropagation}
-    role="group"
+    role="details"
     {...props}
   >
     {children}

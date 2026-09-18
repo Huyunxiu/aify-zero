@@ -30,21 +30,12 @@ import { TitleBar } from "@workspace/ui/elements/title-bar";
 import { client } from "../../lib/orpc";
 
 const AgentPage = () => {
-  const { agentId } = Route.useParams();
-
-  const getAgentQuery = useQuery({
-    queryKey: ["get_agent"],
-    queryFn: () => client.agent.get({ agentId }),
-  });
-
   const listSkillsQuery = useQuery({
     queryKey: ["list_skills"],
     queryFn: () => client.skill.list(),
   });
 
-  const { toDataUri } = createAvatar();
-
-  const avatar = toDataUri();
+  const avatar = createAvatar().toDataUri();
 
   return (
     <IslandGroup orientation="horizontal">

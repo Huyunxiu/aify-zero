@@ -27,6 +27,7 @@ export function createDb() {
   const url =
     process.env.DATABASE_URL ?? `file:${path.join(dataDir, "aify-zero.db")}`;
   // create db file if not exists
+  // oxlint-disable-next-line no-unused-vars
   const db = new Database(url);
   const client = createClient({
     url,
