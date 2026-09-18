@@ -29,9 +29,7 @@ export const logger: Logger = {
   verbose: (...data: any[]) => logWrap("verbose", () => console.log(...data)),
   debug: (...data: any[]) => logWrap("debug", () => console.debug(...data)),
   silly: (...data: any[]) => logWrap("silly", () => console.log(...data)),
-  createLogger: ({ scope }: { scope: string }): Logger => {
-    return logger;
-  },
+  createLogger: ({ scope }: { scope: string }): Logger => logger,
   setLevel,
 };
 
@@ -52,7 +50,7 @@ function setLevel(level: LogLevel) {
 }
 
 function logWrap(level: LogLevel, logFunction: LoggerFunction) {
-  const levelOrder = LEVEL_ORDER_MAP[level] || LEVEL_ORDER_MAP["log"];
+  const levelOrder = LEVEL_ORDER_MAP[level] || LEVEL_ORDER_MAP.log;
   if (levelOrder < currentLevelOrder) {
     return;
   }

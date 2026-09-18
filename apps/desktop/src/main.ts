@@ -36,12 +36,10 @@ log.transports.file.format = ({ data, level, message }) => {
 };
 // 10MB
 log.transports.file.maxSize = 10 * 1024 * 1024;
-Logger.createLogger = ({ scope }) => {
-  return {
-    ...Logger,
-    ...log.scope(scope),
-  };
-};
+Logger.createLogger = ({ scope }) => ({
+  ...Logger,
+  ...log.scope(scope),
+});
 Object.assign(console, log.functions);
 
 const logger = Logger.createLogger({ scope: "main.js" });

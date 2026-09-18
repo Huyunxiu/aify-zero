@@ -12,7 +12,7 @@ export default defineConfig({
       ".claude/**",
       ".agents/**",
       "apps/desktop/vite.renderer.config.mts",
-      "apps/desktop/src/routeTree.gen.ts",
+      "packages/ui/src/routeTree.gen.ts",
       "packages/db/src/migrations",
       "packages/ui/src/components/**.tsx",
       "packages/ui/src/elements/prompt-input.tsx",

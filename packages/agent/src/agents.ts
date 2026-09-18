@@ -28,7 +28,6 @@ import { HooksManager } from "./hooks-manager";
 import type { ExtensionAPI } from "./hooks-manager";
 import { AgentSession } from "./session";
 import type { AgentStore } from "./storage";
-import { SQLiteStore } from "./storage/sqlite-store";
 import type {
   AgentRuntimeContext,
   AgentUIDataParts,
@@ -70,6 +69,7 @@ export type AgentOptions = {
   model: LanguageModel;
   session?: AgentSession;
   tools?: ToolSet;
+  store: AgentStore;
   systemPrompt?: string;
   effort?: ModelEffort;
   context: AgentContext;
@@ -127,7 +127,7 @@ export class Agent {
     this.systemPrompt = options.systemPrompt;
     this.session = options.session ?? new AgentSession({ messages: [] });
     this.tools = options.tools ?? {};
-    this.store = new SQLiteStore();
+    this.store = options.store;
     this.context = options.context;
     this.effort = options.effort;
     this.hooks = options.hooks ?? new HooksManager();

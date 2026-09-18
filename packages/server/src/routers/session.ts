@@ -119,6 +119,7 @@ const createSession = publicProcedure
         "web-fetch": createWebFetchTool({ agentContext }),
         "load-skill": createLoadSkillTool({ agentContext }),
       },
+      store: new SQLiteStore(),
     });
 
     const stream = await agent.stream({
