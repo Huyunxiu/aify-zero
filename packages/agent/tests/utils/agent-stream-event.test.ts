@@ -12,9 +12,9 @@ import {
 } from "ai/internal";
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 
-import { toAgentStreamPart } from "../src/agent-stream.js";
-import type { BashToolType } from "../src/tools";
-import type { AgentStreamPart, AgentToolSet } from "../src/types";
+import type { BashToolType } from "../../src/tools/index.js";
+import type { AgentStreamEvent, AgentToolSet } from "../../src/types.js";
+import { toAgentStreamEvent } from "../../src/utils/to-agent-stream-event.js";
 
 const turnId = "turn-1";
 const stepId = "step-1";
@@ -35,7 +35,7 @@ const usage: LanguageModelUsage = createNullLanguageModelUsage();
 /** Runs chunks through the converter and collects everything it emits. */
 async function convert<TOOLS extends ToolSet>(
   chunks: TextStreamPart<TOOLS>[]
-): Promise<AgentStreamPart<TOOLS>[]> {
+): Promise<AgentStreamEvent<TOOLS>[]> {
   const stream = createAsyncIterableStream(
     simulateReadableStream({
       chunks,
@@ -44,14 +44,14 @@ async function convert<TOOLS extends ToolSet>(
     })
   );
 
-  const parts: AgentStreamPart<TOOLS>[] = [];
-  for await (const part of toAgentStreamPart(turnId, stepId, stream)) {
+  const parts: AgentStreamEvent<TOOLS>[] = [];
+  for await (const part of toAgentStreamEvent(turnId, stepId, stream)) {
     parts.push(part);
   }
   return parts;
 }
 
-describe(toAgentStreamPart, () => {
+describe(toAgentStreamEvent, () => {
   test("should rename the text and reasoning parts", async () => {
     const parts = await convert<ToolSet>([
       { type: "text-start", id: "t" },
@@ -186,7 +186,7 @@ describe(toAgentStreamPart, () => {
       })
     );
 
-    for await (const part of toAgentStreamPart(turnId, stepId, source)) {
+    for await (const part of toAgentStreamEvent(turnId, stepId, source)) {
       expect(part.type).toBe("text.delta");
       break;
     }
@@ -198,7 +198,7 @@ describe(toAgentStreamPart, () => {
 
   test("should keep the tool parts discriminated per tool", () => {
     type BashCall = Extract<
-      AgentStreamPart<AgentToolSet>,
+      AgentStreamEvent<AgentToolSet>,
       { type: "tool.call"; toolName: "bash" }
     >;
 
