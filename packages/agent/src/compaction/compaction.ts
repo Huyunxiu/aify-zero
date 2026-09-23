@@ -1,7 +1,7 @@
+import type { CompactionConfig } from "@workspace/agent-client";
 import type { LanguageModel, ModelMessage } from "ai";
 import { generateText } from "ai";
 
-import type { CompactionConfig } from "../types";
 import { estimateTokens } from "../utils/token-estimate";
 import {
   COMPACTION_CHECKPOINT_MARKER,

@@ -5,8 +5,6 @@ import type {
   ModelMessage,
   ToolResultPart,
 } from "@ai-sdk/provider-utils";
-import { createToolModelOutput } from "ai/internal";
-
 import {
   getToolName,
   isAgentCompactionPart,
@@ -14,14 +12,16 @@ import {
   isAgentReasoningPart,
   isAgentTextPart,
   isAgentToolPart,
-} from "../types";
+} from "@workspace/agent-client";
 import type {
   AgentDynamicToolPart,
   AgentPart,
   AgentStep,
   AgentToolPart,
   AgentTurn,
-} from "../types";
+} from "@workspace/agent-client";
+import { createToolModelOutput } from "ai/internal";
+
 import { getOwn } from "./get-own";
 
 export async function convertAgentTurnToModalMessage<TOOLS extends ToolSet>(

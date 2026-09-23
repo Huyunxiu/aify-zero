@@ -1,7 +1,7 @@
 import { parsePartialJson } from "ai";
 import type { ToolSet } from "ai";
 
-import { isAgentDynamicToolPart, isAgentStaticToolPart } from "../types";
+import { isAgentDynamicToolPart, isAgentStaticToolPart } from "./types";
 import type {
   AgentAssistantStep,
   AgentAssistantTurn,
@@ -22,7 +22,7 @@ import type {
   TextStreamFinishTurnEvent,
   TextStreamStartStepEvent,
   TextStreamStartTurnEvent,
-} from "../types";
+} from "./types";
 
 export class AgentTurnBuilder<TOOLS extends ToolSet> {
   turns: AgentTurn<TOOLS>[];

@@ -1,4 +1,15 @@
 import type {
+  BashToolType,
+  DeleteFileToolType,
+  EditFileToolType,
+  GlobToolType,
+  GrepToolType,
+  ReadFileToolType,
+  WebFetchToolType,
+  WriteFileToolType,
+} from "@workspace/agent/tools/index";
+import type { LoadSkillToolType } from "@workspace/agent/tools/load-skill";
+import type {
   CallWarning,
   DeepPartial,
   FinishReason,
@@ -17,18 +28,6 @@ import type {
   UIMessage,
   UITool,
 } from "ai";
-
-import type {
-  BashToolType,
-  DeleteFileToolType,
-  EditFileToolType,
-  GlobToolType,
-  GrepToolType,
-  ReadFileToolType,
-  WebFetchToolType,
-  WriteFileToolType,
-} from "./tools";
-import type { LoadSkillToolType } from "./tools/load-skill";
 
 /**
  * A JSON value can be a string, number, boolean, object, array, or null.

@@ -1,8 +1,11 @@
+import type {
+  AgentStep,
+  AgentStreamEvent,
+  AgentTurn,
+} from "@workspace/agent-client";
 import { getErrorMessage } from "@workspace/shared/errors";
 import type { AsyncIterableStream, TextStreamPart, ToolSet } from "ai";
 import { createAsyncIterableStream } from "ai/internal";
-
-import type { AgentStep, AgentStreamEvent, AgentTurn } from "../types";
 
 /**
  * Maps one `streamText` chunk onto the part the protocol carries, or

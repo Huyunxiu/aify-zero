@@ -1,4 +1,11 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
+import type {
+  AgentRuntimeContext,
+  AgentUIDataParts,
+  AgentUIMessage,
+  AgentUITools,
+  CompactionConfig,
+} from "@workspace/agent-client";
 import type { MessageModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
@@ -28,13 +35,6 @@ import { HooksManager } from "./hooks-manager";
 import type { ExtensionAPI } from "./hooks-manager";
 import { AgentSession } from "./session";
 import type { AgentStore } from "./storage";
-import type {
-  AgentRuntimeContext,
-  AgentUIDataParts,
-  AgentUIMessage,
-  AgentUITools,
-  CompactionConfig,
-} from "./types";
 import { generateMessageId, generatePartId } from "./utils/id-util";
 
 registerTelemetry(DevToolsTelemetry());

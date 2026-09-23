@@ -1,4 +1,4 @@
-import type { AgentUIMessage } from "@workspace/agent";
+import type { AgentUIMessage } from "@workspace/agent-client";
 import { nanoid } from "nanoid";
 
 import {
