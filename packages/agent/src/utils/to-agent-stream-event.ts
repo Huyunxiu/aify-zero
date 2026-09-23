@@ -1,15 +1,19 @@
+import { getErrorMessage } from "@workspace/shared/errors";
 import type { AsyncIterableStream, TextStreamPart, ToolSet } from "ai";
 import { createAsyncIterableStream } from "ai/internal";
 
-import type { AgentStreamEvent } from "../types";
+import type { AgentStep, AgentStreamEvent, AgentTurn } from "../types";
 
 /**
  * Maps one `streamText` chunk onto the part the protocol carries, or
  * `undefined` for the chunks the protocol has no part for.
  */
 function toAgentEvent<TOOLS extends ToolSet>(
+  turnType: AgentTurn<TOOLS>["type"],
   turnId: string,
+  stepType: AgentStep<TOOLS>["type"],
   stepId: string,
+  model: string,
   part: TextStreamPart<TOOLS>
 ): AgentStreamEvent<TOOLS> | undefined {
   const createdAt = Date.now();
@@ -42,13 +46,27 @@ function toAgentEvent<TOOLS extends ToolSet>(
       return { ...part, type: "tool.input-end", turnId, stepId, createdAt };
     }
     case "tool-call": {
-      return { ...part, type: "tool.call", turnId, stepId, createdAt };
+      return {
+        ...part,
+        type: "tool.call",
+        error: getErrorMessage(part.error),
+        turnId,
+        stepId,
+        createdAt,
+      };
     }
     case "tool-result": {
       return { ...part, type: "tool.result", turnId, stepId, createdAt };
     }
     case "tool-error": {
-      return { ...part, type: "tool.error", turnId, stepId, createdAt };
+      return {
+        ...part,
+        type: "tool.error",
+        error: getErrorMessage(part.error),
+        turnId,
+        stepId,
+        createdAt,
+      };
     }
     case "tool-output-denied": {
       return { ...part, type: "tool.output-denied", turnId, stepId, createdAt };
@@ -58,27 +76,34 @@ function toAgentEvent<TOOLS extends ToolSet>(
     case "start-step": {
       return {
         type: "step.start",
+        stepType,
+        model,
         warnings: part.warnings,
         turnId,
-        stepId,
+        id: stepId,
         createdAt,
       };
     }
-    case "finish-step": {
-      const { response: _response, ...step } = part;
-      return { ...step, type: "step.finish", turnId, stepId, createdAt };
-    }
     case "start": {
-      return { type: "turn.start", turnId, stepId, createdAt };
-    }
-    case "finish": {
-      return { ...part, type: "turn.finish", turnId, stepId, createdAt };
+      return { type: "turn.start", id: turnId, turnType, createdAt };
     }
     case "abort": {
       return { ...part, type: "abort", turnId, stepId, createdAt };
     }
     case "error": {
-      return { ...part, type: "error", turnId, stepId, createdAt };
+      return {
+        ...part,
+        type: "error",
+        error: getErrorMessage(part.error),
+        turnId,
+        stepId,
+        createdAt,
+      };
+    }
+    case "finish-step":
+    case "finish": {
+      // ignore
+      return;
     }
     // Sources, files, raw provider chunks and tool approvals have no protocol
     // part; dropping them keeps the stream serializable as-is.
@@ -90,11 +115,10 @@ function toAgentEvent<TOOLS extends ToolSet>(
     case "tool-approval-response":
     case "raw": {
       console.warn(`toAgentPart unprocessed part: ${JSON.stringify(part)}`);
-      return undefined;
+      return;
     }
     default: {
       console.warn(`toAgentPart unknown part: ${JSON.stringify(part)}`);
-      return undefined;
     }
   }
 }
@@ -104,11 +128,18 @@ function toAgentEvent<TOOLS extends ToolSet>(
  * renaming each chunk's `type` (e.g. `text-delta` to `text.delta`) and dropping
  * the chunks the protocol does not define.
  *
+ * `model` is stamped onto `step.start` alone: the chunks never name the model,
+ * and the step object is rendered before the step's result reports anything
+ * else about it.
+ *
  * Cancelling the returned stream cancels `stream`.
  */
 export function toAgentStreamEvent<TOOLS extends ToolSet>(
+  turnType: AgentTurn<TOOLS>["type"],
   turnId: string,
+  stepType: AgentStep<TOOLS>["type"],
   stepId: string,
+  model: string,
   stream: AsyncIterableStream<TextStreamPart<TOOLS>>
 ): AsyncIterableStream<AgentStreamEvent<TOOLS>> {
   const transform = new TransformStream<
@@ -116,7 +147,14 @@ export function toAgentStreamEvent<TOOLS extends ToolSet>(
     AgentStreamEvent<TOOLS>
   >({
     transform(part, controller) {
-      const agentPart = toAgentEvent(turnId, stepId, part);
+      const agentPart = toAgentEvent(
+        turnType,
+        turnId,
+        stepType,
+        stepId,
+        model,
+        part
+      );
       if (agentPart !== undefined) {
         controller.enqueue(agentPart);
       }

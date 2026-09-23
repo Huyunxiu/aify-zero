@@ -16,7 +16,6 @@ import type {
   TypedToolResult,
   UIMessage,
   UITool,
-  UITools,
 } from "ai";
 
 import type {
@@ -198,26 +197,46 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
     RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
-type TextStreamStartStepEvent = TextStreamEventBase & {
+export type TextStreamStartStepEvent = {
+  id: string;
+  turnId: string;
   type: "step.start";
+  createdAt: number;
+  stepType: AgentStep<any>["type"];
+  /**
+   * The model the step is about to be produced with. No other part of the
+   * stream reports it, and `AgentAssistantStep.model` is needed as soon as the
+   * step object is — while it is still streaming.
+   */
+  model: string;
   warnings: CallWarning[];
 };
-type TextStreamFinishStepEvent = TextStreamEventBase & {
+export type TextStreamFinishStepEvent = {
+  id: string;
+  turnId: string;
   type: "step.finish";
+  createdAt: number;
   usage: LanguageModelUsage;
   performance: StepResultPerformance;
   finishReason: FinishReason;
   rawFinishReason: string | undefined;
   providerMetadata: ProviderMetadata | undefined;
 };
-type TextStreamStartTurnEvent = TextStreamEventBase & {
+export type TextStreamStartTurnEvent = {
+  id: string;
+  createdAt: number;
   type: "turn.start";
+  turnType: AgentTurn<any>["type"];
 };
-type TextStreamFinishTurnEvent = TextStreamEventBase & {
+export type TextStreamFinishTurnEvent = {
+  id: string;
   type: "turn.finish";
+  createdAt: number;
+  usage: LanguageModelUsage;
+  performance: StepResultPerformance;
   finishReason: FinishReason;
   rawFinishReason: string | undefined;
-  totalUsage: LanguageModelUsage;
+  providerMetadata: ProviderMetadata | undefined;
 };
 type TextStreamAbortEvent = TextStreamEventBase & {
   type: "abort";
@@ -438,27 +457,40 @@ type AgentToolInvocation<TOOL extends UITool | Tool> = AgentToolInvocationBase<
   asUITool<TOOL>["input"],
   asUITool<TOOL>["output"]
 >;
-export type AgentToolPart<TOOLS extends UITools = UITools> = ValueOf<{
+export type AgentToolPart<TOOLS extends ToolSet = ToolSet> = ValueOf<{
   [NAME in keyof TOOLS & string]: {
     type: `tool-${NAME}`;
+    rawInput: string;
   } & AgentToolInvocation<TOOLS[NAME]>;
 }>;
+export function isAgentStaticToolPart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentToolPart<TOOLS> {
+  return part.type.startsWith("tool-");
+}
 export type AgentDynamicToolPart = AgentToolInvocationBase<unknown, unknown> & {
   type: "dynamic-tool";
   /**
    * Name of the tool that is being called.
    */
   toolName: string;
+
+  rawInput: string;
 };
+export function isAgentDynamicToolPart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentDynamicToolPart {
+  return part.type === "dynamic-tool";
+}
 export type AgentCompactionPart = {
   id: string;
   type: "compaction";
-  compacted: boolean;
-  messages: ModelMessage[];
+  compacted?: boolean;
+  messages?: ModelMessage[];
   /**
    * The state of the reasoning part.
    */
-  state?: "streaming" | "done";
+  state: "streaming" | "done";
 };
 /**
  * Parts a user step can hold.
@@ -468,7 +500,7 @@ export type AgentUserPart = AgentTextPart | AgentFilePart;
  * Parts an assistant step can hold. Reasoning and tool activity only exist on
  * the assistant side, files only on the user side.
  */
-export type AgentAssistantPart<TOOLS extends UITools> =
+export type AgentAssistantPart<TOOLS extends ToolSet> =
   | AgentTextPart
   | AgentReasoningPart
   | AgentToolPart<TOOLS>
@@ -480,9 +512,10 @@ export type AgentAssistantPart<TOOLS extends UITools> =
  * turns: parts line up with `UIMessage` parts, whose discriminant is fixed by
  * the AI SDK, while the step and turn levels are ours.
  */
-export type AgentPart<TOOLS extends UITools> =
+export type AgentPart<TOOLS extends ToolSet> =
   | AgentUserPart
-  | AgentAssistantPart<TOOLS>;
+  | AgentAssistantPart<TOOLS>
+  | AgentCompactionPart;
 
 /**
  * Identity and wall-clock bounds, held by both steps and turns: each level
@@ -507,6 +540,22 @@ export type AgentStepBase = {
    * Epoch (ms). Absent while the step (or turn) is still running.
    */
   completedAt?: number;
+
+  usage?: LanguageModelUsage;
+
+  /**
+   * Unknown while the step is streaming, for the same reason as `usage`.
+   */
+  performance?: StepResultPerformance;
+
+  /**
+   * Unknown while the step is streaming, which is why they are optional: the
+   * step object exists — and is rendered — before the model has finished, and
+   * `status` says whether they are supposed to be there yet.
+   */
+  finishReason?: FinishReason;
+  rawFinishReason?: string;
+  providerMetadata?: ProviderMetadata;
 };
 
 export type AgentTurnBase = {
@@ -525,12 +574,21 @@ export type AgentTurnBase = {
    */
   completedAt?: number;
 
+  usage?: LanguageModelUsage;
+
   /**
-   * Usage aggregated across the turn's steps with the AI SDK's usage addition
-   * helper, not simply the last step's usage. Named to match the `turn.finish`
-   * stream part and `AgentUIMetadata.totalUsage`.
+   * Unknown while the step is streaming, for the same reason as `usage`.
    */
-  totalUsage?: LanguageModelUsage;
+  performance?: StepResultPerformance;
+
+  /**
+   * Unknown while the step is streaming, which is why they are optional: the
+   * step object exists — and is rendered — before the model has finished, and
+   * `status` says whether they are supposed to be there yet.
+   */
+  finishReason?: FinishReason;
+  rawFinishReason?: string;
+  providerMetadata?: ProviderMetadata;
 };
 
 /**
@@ -550,17 +608,19 @@ export type AgentStepStatus =
   | { status: "done" }
   | { status: "aborted"; abortReason?: string }
   | { status: "error"; error: unknown };
+export type AgentTurnStatus = AgentStepStatus;
 
-export type AgentUserStep = AgentStepBase & {
-  /**
-   * The type of the step.
-   */
-  type: "user";
+export type AgentUserStep = AgentStepBase &
+  AgentStepStatus & {
+    /**
+     * The type of the step.
+     */
+    type: "user";
 
-  content: AgentUserPart[];
-};
+    content: AgentUserPart[];
+  };
 
-export type AgentAssistantStep<TOOLS extends UITools> = AgentStepBase &
+export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase &
   AgentStepStatus & {
     /**
      * The type of the step.
@@ -574,23 +634,6 @@ export type AgentAssistantStep<TOOLS extends UITools> = AgentStepBase &
      * when the runtime falls back to another model mid-turn.
      */
     model: string;
-
-    /**
-     * Usage of this step alone. Turn-level totals live on
-     * `AgentAssistantTurn.totalUsage`.
-     */
-    usage: LanguageModelUsage;
-
-    performance: StepResultPerformance;
-
-    /**
-     * Unknown while the step is streaming, which is why they are optional: the
-     * step object exists — and is rendered — before the model has finished, and
-     * `status` says whether they are supposed to be there yet.
-     */
-    finishReason: FinishReason;
-    rawFinishReason: string;
-    providerMetadata?: ProviderMetadata;
   };
 
 export type AgentCompactionStep = AgentStepBase &
@@ -607,43 +650,28 @@ export type AgentCompactionStep = AgentStepBase &
      * when the runtime falls back to another model mid-turn.
      */
     model: string;
-
-    /**
-     * Usage of this step alone. Turn-level totals live on
-     * `AgentAssistantTurn.totalUsage`.
-     */
-    usage: LanguageModelUsage;
-
-    performance: StepResultPerformance;
-
-    /**
-     * Unknown while the step is streaming, which is why they are optional: the
-     * step object exists — and is rendered — before the model has finished, and
-     * `status` says whether they are supposed to be there yet.
-     */
-    finishReason: FinishReason;
-    rawFinishReason: string;
-    providerMetadata?: ProviderMetadata;
   };
 
 /**
  * A step of a turn. Discriminated by `kind`, so a consumer that switches over
  * it gets exhaustiveness checking when a new type of step is introduced.
  */
-export type AgentStep<TOOLS extends UITools> =
+export type AgentStep<TOOLS extends ToolSet> =
   | AgentUserStep
-  | AgentAssistantStep<TOOLS>;
+  | AgentAssistantStep<TOOLS>
+  | AgentCompactionStep;
 
-export type AgentUserTurn = AgentTurnBase & {
-  /**
-   * The type of the turn.
-   */
-  type: "user";
+export type AgentUserTurn = AgentTurnBase &
+  AgentTurnStatus & {
+    /**
+     * The type of the turn.
+     */
+    type: "user";
 
-  content: AgentUserStep[];
-};
-export type AgentAssistantTurn<TOOLS extends UITools> = AgentTurnBase &
-  AgentStepStatus & {
+    content: AgentUserStep[];
+  };
+export type AgentAssistantTurn<TOOLS extends ToolSet> = AgentTurnBase &
+  AgentTurnStatus & {
     /**
      * The type of the turn.
      */
@@ -656,7 +684,7 @@ export type AgentAssistantTurn<TOOLS extends UITools> = AgentTurnBase &
     content: (AgentAssistantStep<TOOLS> | AgentCompactionStep)[];
   };
 export type AgentCompactionTurn = AgentTurnBase &
-  AgentStepStatus & {
+  AgentTurnStatus & {
     /**
      * The type of the turn.
      */
@@ -669,7 +697,7 @@ export type AgentCompactionTurn = AgentTurnBase &
     content: AgentCompactionStep[];
   };
 
-export type AgentTurn<TOOLS extends UITools> =
+export type AgentTurn<TOOLS extends ToolSet> =
   | AgentUserTurn
   | AgentAssistantTurn<TOOLS>
   | AgentCompactionTurn;

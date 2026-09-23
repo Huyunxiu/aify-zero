@@ -8,8 +8,8 @@ export function getErrorCause(error: unknown): unknown {
 }
 
 export function getErrorMessage(error: unknown | undefined) {
-  if (error === null) {
-    return "unknown error";
+  if (!error) {
+    return;
   }
 
   if (typeof error === "string") {

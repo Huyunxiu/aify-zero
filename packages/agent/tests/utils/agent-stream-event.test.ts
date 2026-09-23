@@ -18,6 +18,7 @@ import { toAgentStreamEvent } from "../../src/utils/to-agent-stream-event.js";
 
 const turnId = "turn-1";
 const stepId = "step-1";
+const model = "test-model";
 
 const performance: StepResultPerformance = {
   effectiveOutputTokensPerSecond: 1,
@@ -45,7 +46,14 @@ async function convert<TOOLS extends ToolSet>(
   );
 
   const parts: AgentStreamEvent<TOOLS>[] = [];
-  for await (const part of toAgentStreamEvent(turnId, stepId, stream)) {
+  for await (const part of toAgentStreamEvent(
+    "assistant",
+    turnId,
+    "assistant",
+    stepId,
+    model,
+    stream
+  )) {
     parts.push(part);
   }
   return parts;
@@ -141,7 +149,7 @@ describe(toAgentStreamEvent, () => {
 
     expect(parts).toStrictEqual([
       { turnId, stepId, type: "turn.start" },
-      { turnId, stepId, type: "step.start", warnings: [] },
+      { turnId, stepId, type: "step.start", model, warnings: [] },
       {
         turnId,
         stepId,
@@ -186,7 +194,14 @@ describe(toAgentStreamEvent, () => {
       })
     );
 
-    for await (const part of toAgentStreamEvent(turnId, stepId, source)) {
+    for await (const part of toAgentStreamEvent(
+      "assistant",
+      turnId,
+      "assistant",
+      stepId,
+      model,
+      source
+    )) {
       expect(part.type).toBe("text.delta");
       break;
     }
