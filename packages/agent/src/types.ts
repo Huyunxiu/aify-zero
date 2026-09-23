@@ -287,6 +287,12 @@ export type AgentTextPart = {
    */
   providerMetadata?: ProviderMetadata;
 };
+export function isAgentTextPart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentTextPart {
+  return part.type === "text";
+}
+
 /**
  * A reasoning part of a message.
  */
@@ -305,6 +311,11 @@ export type AgentReasoningPart = {
    */
   providerMetadata?: ProviderMetadata;
 };
+export function isAgentReasoningPart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentReasoningPart {
+  return part.type === "reasoning";
+}
 export type AgentFilePart = {
   type: "file";
   /**
@@ -340,6 +351,11 @@ export type AgentFilePart = {
    */
   providerMetadata?: ProviderMetadata;
 };
+export function isAgentFilePart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentFilePart {
+  return part.type === "file";
+}
 type asUITool<TOOL extends UITool | Tool> = TOOL extends Tool
   ? InferUITool<TOOL>
   : TOOL;
@@ -482,6 +498,35 @@ export function isAgentDynamicToolPart<TOOLS extends ToolSet>(
 ): part is AgentDynamicToolPart {
   return part.type === "dynamic-tool";
 }
+export function isAgentToolPart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentToolPart<TOOLS> | AgentDynamicToolPart {
+  return isAgentStaticToolPart(part) || isAgentDynamicToolPart(part);
+}
+
+/**
+ * Returns the name of the static tool.
+ *
+ * The possible values are the keys of the tool set.
+ */
+export function getStaticToolName<TOOLS extends ToolSet>(
+  part: AgentToolPart<TOOLS>
+): keyof TOOLS {
+  return part.type.split("-").slice(1).join("-") as keyof TOOLS;
+}
+
+/**
+ * Returns the name of the tool (static or dynamic).
+ *
+ * This function will not restrict the name to the keys of the tool set.
+ * If you need to restrict the name to the keys of the tool set, use `getStaticToolName` instead.
+ */
+export function getToolName(
+  part: AgentToolPart<any> | AgentDynamicToolPart
+): string {
+  return isAgentDynamicToolPart(part) ? part.toolName : getStaticToolName(part);
+}
+
 export type AgentCompactionPart = {
   id: string;
   type: "compaction";
@@ -492,6 +537,13 @@ export type AgentCompactionPart = {
    */
   state: "streaming" | "done";
 };
+
+export function isAgentCompactionPart(
+  part: AgentPart<any>
+): part is AgentCompactionPart {
+  return part.type === "compaction";
+}
+
 /**
  * Parts a user step can hold.
  */
@@ -670,6 +722,11 @@ export type AgentUserTurn = AgentTurnBase &
 
     content: AgentUserStep[];
   };
+export function isAgentUserTurn<TOOLS extends ToolSet>(
+  part: AgentTurn<TOOLS>
+): part is AgentUserTurn {
+  return part.type === "user";
+}
 export type AgentAssistantTurn<TOOLS extends ToolSet> = AgentTurnBase &
   AgentTurnStatus & {
     /**
