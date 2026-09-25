@@ -400,7 +400,19 @@ export class Agent {
       }
     }
 
-    const turn = builder.completedTurn;
+    await writer.write(
+      {
+        id: turnId,
+        type: "turn.finish",
+        createdAt: Date.now(),
+        usage: totalUsage,
+      },
+      builder
+    );
+
+    writer.close();
+
+    const turn = builder.completedTurns[-1];
     if (turn) {
       const existingTurn = await this.store.existsMessages(turn.id);
       if (existingTurn) {
@@ -419,18 +431,6 @@ export class Agent {
         await this.store.setActiveHead(this.sessionId, lastTurnId);
       }
     }
-
-    await writer.write(
-      {
-        id: turnId,
-        type: "turn.finish",
-        createdAt: Date.now(),
-        usage: totalUsage,
-      },
-      builder
-    );
-
-    writer.close();
   }
 
   /**

@@ -206,15 +206,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   selectedEffortRef.current = selectedModelEffort;
   const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
-  const {
-    sendMessage,
-    messages,
-    addToolOutput,
-    addToolApprovalResponse,
-    regenerate,
-    error,
-    status,
-  } = useChat<AgentUIMessage>({
+  const { sendMessage, messages, error, status } = useChat<AgentUIMessage>({
     messages: initialMessages,
     id: sessionId,
     generateId: generateMessageId,
@@ -323,11 +315,8 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
               forkSessionMutation.mutate({ sessionId, messageId });
             }
           }}
-          addToolApprovalResponse={addToolApprovalResponse}
-          addToolOutput={addToolOutput}
           key={message.id}
           message={message}
-          regenerate={regenerate}
         />
       );
     }

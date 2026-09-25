@@ -1,4 +1,3 @@
-import type { UseChatHelpers } from "@ai-sdk/react";
 import type {
   AgentUIDataParts,
   AgentUIMessage,
@@ -47,9 +46,6 @@ import {
 type AssistantMessageProps = {
   loading?: boolean;
   message: AgentUIMessage;
-  regenerate: UseChatHelpers<AgentUIMessage>["regenerate"];
-  addToolOutput: UseChatHelpers<AgentUIMessage>["addToolOutput"];
-  addToolApprovalResponse: UseChatHelpers<AgentUIMessage>["addToolApprovalResponse"];
   onFork?: (messageId: string) => void;
 };
 
@@ -91,10 +87,7 @@ const splitAssistantMessageParts = (message: AgentUIMessage) => {
 
 export const AssistantMessage = ({
   loading,
-  addToolOutput: _addToolOutput,
-  addToolApprovalResponse: _addToolApprovalResponse,
   message,
-  regenerate: _regenerate,
   onFork,
 }: AssistantMessageProps) => {
   if (message.role !== "assistant") {

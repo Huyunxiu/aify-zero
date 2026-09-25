@@ -8,11 +8,13 @@ import {
 } from "@orpc/server";
 import { Agent } from "@workspace/agent";
 import type {
+  AgentToolSet,
   AgentUIDataParts,
   AgentUIMessage,
   AgentUIMetadata,
   AgentUITools,
 } from "@workspace/agent";
+import type { AgentTurn } from "@workspace/agent-client";
 import type { AgentContext } from "@workspace/agent/context";
 import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
@@ -68,13 +70,13 @@ const createSession = publicProcedure
   .input(
     type<{
       sessionId: string;
-      messages: AgentUIMessage[];
+      turns: AgentTurn<AgentToolSet>[];
       model: string;
       modelEffort?: string;
     }>()
   )
   .handler(async ({ input }) => {
-    const { sessionId, messages, model, modelEffort } = input;
+    const { sessionId, turns, model, modelEffort } = input;
 
     const aiModel = await findAiModelById(model);
     if (!aiModel) {
@@ -123,7 +125,7 @@ const createSession = publicProcedure
     });
 
     const stream = await agent.stream({
-      messages,
+      messages: turns,
       model: selectedModel,
       modelId: aiModel.model,
     });

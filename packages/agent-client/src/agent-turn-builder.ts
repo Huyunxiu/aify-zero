@@ -29,7 +29,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
   pendingTurns: Map<string, AgentTurn<TOOLS>>;
   pendingSteps: Map<string, AgentStep<TOOLS>>;
   pendingParts: Map<string, AgentPart<TOOLS>>;
-  completedTurn?: AgentTurn<TOOLS>;
+  completedTurns: AgentTurn<TOOLS>[] = [];
 
   constructor({ turns }: { turns: AgentTurn<TOOLS>[] }) {
     this.turns = turns;
@@ -52,7 +52,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         const turn = this.finishTurn(event);
         if (turn) {
           this.pendingTurns.delete(turn.id);
-          this.completedTurn = turn;
+          this.completedTurns.push(turn);
         }
         break;
       }
