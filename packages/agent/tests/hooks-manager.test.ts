@@ -208,11 +208,7 @@ describe(HooksManager, () => {
       hooks.off("session_start");
 
       await hooks.emit("session_start", sessionStart("s1"), api);
-      await hooks.emit(
-        "session_end",
-        { sessionId: "s1", messageId: "m1" },
-        api
-      );
+      await hooks.emit("session_end", { sessionId: "s1" }, api);
 
       expect(first).not.toHaveBeenCalled();
       expect(second).not.toHaveBeenCalled();

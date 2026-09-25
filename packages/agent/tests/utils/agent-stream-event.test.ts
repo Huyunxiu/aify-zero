@@ -1,4 +1,4 @@
-import type { AgentStreamEvent, AgentToolSet } from "@workspace/agent-client";
+import type { AgentStreamEvent } from "@workspace/agent-client";
 import { simulateReadableStream } from "ai";
 import type {
   InferToolInput,
@@ -14,6 +14,7 @@ import {
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import type { BashToolType } from "../../src/tools/index.js";
+import type { AgentToolSet } from "../../src/types.js";
 import { toAgentStreamEvent } from "../../src/utils/to-agent-stream-event.js";
 
 const turnId = "turn-1";
@@ -46,14 +47,7 @@ async function convert<TOOLS extends ToolSet>(
   );
 
   const parts: AgentStreamEvent<TOOLS>[] = [];
-  for await (const part of toAgentStreamEvent(
-    "assistant",
-    turnId,
-    "assistant",
-    stepId,
-    model,
-    stream
-  )) {
+  for await (const part of toAgentStreamEvent(turnId, stepId, stream)) {
     parts.push(part);
   }
   return parts;
@@ -194,14 +188,7 @@ describe(toAgentStreamEvent, () => {
       })
     );
 
-    for await (const part of toAgentStreamEvent(
-      "assistant",
-      turnId,
-      "assistant",
-      stepId,
-      model,
-      source
-    )) {
+    for await (const part of toAgentStreamEvent(turnId, stepId, source)) {
       expect(part.type).toBe("text.delta");
       break;
     }

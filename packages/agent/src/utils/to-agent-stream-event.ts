@@ -1,8 +1,4 @@
-import type {
-  AgentStep,
-  AgentStreamEvent,
-  AgentTurn,
-} from "@workspace/agent-client";
+import type { AgentStreamEvent } from "@workspace/agent-client";
 import { getErrorMessage } from "@workspace/shared/errors";
 import type { AsyncIterableStream, TextStreamPart, ToolSet } from "ai";
 import { createAsyncIterableStream } from "ai/internal";
@@ -11,12 +7,9 @@ import { createAsyncIterableStream } from "ai/internal";
  * Maps one `streamText` chunk onto the part the protocol carries, or
  * `undefined` for the chunks the protocol has no part for.
  */
-function toAgentEvent<TOOLS extends ToolSet>(
-  turnType: AgentTurn<TOOLS>["type"],
+export function toAgentEvent<TOOLS extends ToolSet>(
   turnId: string,
-  stepType: AgentStep<TOOLS>["type"],
   stepId: string,
-  model: string,
   part: TextStreamPart<TOOLS>
 ): AgentStreamEvent<TOOLS> | undefined {
   const createdAt = Date.now();
@@ -74,22 +67,6 @@ function toAgentEvent<TOOLS extends ToolSet>(
     case "tool-output-denied": {
       return { ...part, type: "tool.output-denied", turnId, stepId, createdAt };
     }
-    // The model request and response these parts also carry belong to the
-    // server: the protocol's step parts take the rest alone.
-    case "start-step": {
-      return {
-        type: "step.start",
-        stepType,
-        model,
-        warnings: part.warnings,
-        turnId,
-        id: stepId,
-        createdAt,
-      };
-    }
-    case "start": {
-      return { type: "turn.start", id: turnId, turnType, createdAt };
-    }
     case "abort": {
       return { ...part, type: "abort", turnId, stepId, createdAt };
     }
@@ -103,6 +80,8 @@ function toAgentEvent<TOOLS extends ToolSet>(
         createdAt,
       };
     }
+    case "start-step":
+    case "start":
     case "finish-step":
     case "finish": {
       // ignore
@@ -138,11 +117,8 @@ function toAgentEvent<TOOLS extends ToolSet>(
  * Cancelling the returned stream cancels `stream`.
  */
 export function toAgentStreamEvent<TOOLS extends ToolSet>(
-  turnType: AgentTurn<TOOLS>["type"],
   turnId: string,
-  stepType: AgentStep<TOOLS>["type"],
   stepId: string,
-  model: string,
   stream: AsyncIterableStream<TextStreamPart<TOOLS>>
 ): AsyncIterableStream<AgentStreamEvent<TOOLS>> {
   const transform = new TransformStream<
@@ -150,14 +126,7 @@ export function toAgentStreamEvent<TOOLS extends ToolSet>(
     AgentStreamEvent<TOOLS>
   >({
     transform(part, controller) {
-      const agentPart = toAgentEvent(
-        turnType,
-        turnId,
-        stepType,
-        stepId,
-        model,
-        part
-      );
+      const agentPart = toAgentEvent(turnId, stepId, part);
       if (agentPart !== undefined) {
         controller.enqueue(agentPart);
       }

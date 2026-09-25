@@ -2,7 +2,7 @@ import { useChat } from "@ai-sdk/react";
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { AgentUIMessage } from "@workspace/agent-client";
+import type { AgentUIMessage } from "@workspace/agent";
 import { generateMessageId } from "@workspace/agent/utils/id-util";
 import type { ForkSessionType } from "@workspace/server/routers/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";

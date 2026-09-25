@@ -1,31 +1,21 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
+import { AgentTurnBuilder } from "@workspace/agent-client";
 import type {
   AgentRuntimeContext,
-  AgentUIDataParts,
-  AgentUIMessage,
-  AgentUITools,
+  AgentStep,
+  AgentStreamEvent,
+  AgentTurn,
   CompactionConfig,
 } from "@workspace/agent-client";
 import type { MessageModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
-import { getErrorMessage } from "@workspace/shared/errors";
-import {
-  convertToModelMessages,
-  createUIMessageStream,
-  generateText,
-  isStepCount,
-  registerTelemetry,
-  streamText,
-  toUIMessageStream,
-} from "ai";
+import { generateText, isStepCount, registerTelemetry, streamText } from "ai";
 import type {
   FinishReason,
   LanguageModel,
   LanguageModelUsage,
   ModelMessage,
   ToolSet,
-  UIMessagePart,
-  UIMessageStreamWriter,
 } from "ai";
 import { addLanguageModelUsage } from "ai/internal";
 
@@ -35,7 +25,10 @@ import { HooksManager } from "./hooks-manager";
 import type { ExtensionAPI } from "./hooks-manager";
 import { AgentSession } from "./session";
 import type { AgentStore } from "./storage";
+import type { AgentToolSet } from "./types";
+import { convertAgentTurnToModalMessage } from "./utils/convert-to-model-message";
 import { generateMessageId, generatePartId } from "./utils/id-util";
+import { toAgentEvent } from "./utils/to-agent-stream-event";
 
 registerTelemetry(DevToolsTelemetry());
 
@@ -79,17 +72,44 @@ export type AgentOptions = {
 
 export type AgentStreamOptions = {
   model: LanguageModel;
+  modelId: string;
   abortSignal?: AbortSignal;
-  messages: AgentUIMessage[];
+  messages: AgentTurn<AgentToolSet>[];
 };
 
-/** What one step of the model loop needs to run. */
-type AgentStepInput = {
+interface UIMessageStreamWriter {
+  /**
+   * Appends a data stream part to the stream.
+   */
+  write(
+    data: AgentStreamEvent<AgentToolSet>,
+    builder?: AgentTurnBuilder<AgentToolSet>
+  ): Promise<void>;
+  close(): void;
+  /**
+   * Error handler that is used by the data stream writer.
+   * This is intended for forwarding when merging streams
+   * to prevent duplicated error masking.
+   */
+  error: (error: unknown) => void;
+}
+
+type AgentTurnInput = {
+  readonly turnType: AgentTurn<AgentToolSet>["type"];
+  readonly turnId: string;
+  readonly modelId: string;
   readonly abortSignal?: AbortSignal;
   readonly compactionConfig: CompactionConfig;
   readonly messages: ModelMessage[];
+  readonly turns: AgentTurn<AgentToolSet>[];
   readonly model: LanguageModel;
-  readonly writer: UIMessageStreamWriter<AgentUIMessage>;
+  readonly writer: UIMessageStreamWriter;
+};
+
+type AgentStepInput = AgentTurnInput & {
+  readonly stepId: string;
+  readonly stepType: AgentStep<AgentToolSet>["type"];
+  readonly builder: AgentTurnBuilder<AgentToolSet>;
 };
 
 /** What one completed step of the model loop reported back. */
@@ -134,12 +154,12 @@ export class Agent {
     this.extensionApi = options.extensionApi ?? {};
   }
 
-  async stream({ messages, model, abortSignal }: AgentStreamOptions) {
+  async stream({ messages, model, modelId, abortSignal }: AgentStreamOptions) {
     let titlePromise: Promise<string> | null = null;
 
-    const mostRecentMessage = messages.at(-1);
+    const mostRecentTurn = messages.at(-1);
 
-    if (!mostRecentMessage) {
+    if (!mostRecentTurn) {
       throw new Error("no message.");
     }
 
@@ -168,176 +188,143 @@ export class Agent {
     // Start title generation in parallel (don't await) when this is the
     // session's first stream (the row above was just created). Once the
     // generated title lands, the row is updated and the UI is notified via
-    // the data-session:title event; until then the title stays empty and the
+    // the session.title event; until then the title stays empty and the
     // UI shows its localized placeholder.
     if (!session) {
-      titlePromise = this.generateChatTitle(mostRecentMessage);
+      titlePromise = this.generateChatTitle(mostRecentTurn);
     }
 
     const previousMessages = await this.store.getBranchMessages(this.sessionId);
-    const previousUIMessages = this.toAgentUIMessage(previousMessages);
-    const originalMessages = [...previousUIMessages, mostRecentMessage];
-    const modelMessages = await this.convertToModalMessage(originalMessages);
+    const previousTurns = this.toAgentTurns(previousMessages);
+    const originalTurns = [...previousTurns, mostRecentTurn];
+    const modelMessages =
+      await convertAgentTurnToModalMessage<AgentToolSet>(originalTurns);
 
-    let lastMessageId = previousMessages.at(-1)?.id;
+    let lastTurnId = previousMessages.at(-1)?.id;
 
-    if (mostRecentMessage?.role === "user") {
+    if (mostRecentTurn?.type === "user") {
       await this.store.saveMessage({
-        id: mostRecentMessage.id,
+        id: mostRecentTurn.id,
         sessionId: this.sessionId,
         role: "user",
         metadata: "{}",
-        parentId: lastMessageId,
-        content: mostRecentMessage.parts,
+        parentId: lastTurnId,
+        content: mostRecentTurn,
         createdAt: new Date(),
       });
-      lastMessageId = mostRecentMessage.id;
-      await this.store.setActiveHead(this.sessionId, lastMessageId);
+      lastTurnId = mostRecentTurn.id;
+      await this.store.setActiveHead(this.sessionId, lastTurnId);
     }
 
-    return createUIMessageStream<AgentUIMessage>({
-      execute: async ({ writer }) => {
-        writer.write({
-          type: "start",
-          messageId: generateMessageId(),
-          messageMetadata: {
-            createdAt: Date.now(),
-          },
-        });
+    let controller!: ReadableStreamDefaultController<
+      AgentStreamEvent<AgentToolSet>
+    >;
 
-        // Handle title generation in parallel
-        titlePromise?.then(async (title) => {
-          await this.store.updateSessionById(this.sessionId, title);
-          writer.write({
-            type: "data-session:title",
-            data: {
-              title,
-              createdAt: Date.now(),
-            },
-            transient: true,
-          });
-          await this.hooks.emit(
-            "title_generated",
-            { sessionId: this.sessionId, title },
-            this.extensionApi
-          );
-        });
-
-        const compactionConfig: CompactionConfig = {
-          recentWindowSize: 10,
-          threshold: 100_000,
-          thresholdPercent: 0.9,
-          lastKnownInputTokens:
-            originalMessages.findLast((m) => m.role === "assistant")?.metadata
-              ?.usage?.inputTokens ?? 0,
-          lastKnownPromptMessageCount: originalMessages.length,
-        };
-
-        await this.runTurn({
-          writer,
-          model,
-          abortSignal,
-          compactionConfig,
-          messages: modelMessages,
-        });
-      },
-      originalMessages,
-      onEnd: async (data) => {
-        const finishedMsg = data.responseMessage;
-        const existingMsg = await this.store.existsMessages(finishedMsg.id);
-        if (existingMsg) {
-          await this.store.updateMessage(
-            finishedMsg.id,
-            finishedMsg.parts,
-            finishedMsg.metadata
-          );
-        } else {
-          await this.store.saveMessage({
-            id: finishedMsg.id,
-            sessionId: this.sessionId,
-            role: finishedMsg.role,
-            metadata: finishedMsg.metadata,
-            content: finishedMsg.parts,
-            parentId: lastMessageId,
-            createdAt: new Date(),
-          });
-          lastMessageId = finishedMsg.id;
-          await this.store.setActiveHead(this.sessionId, lastMessageId);
-        }
-
-        await this.hooks.emit(
-          "session_end",
-          { sessionId: this.sessionId, messageId: finishedMsg.id },
-          this.extensionApi
-        );
-      },
-      onError(error) {
-        // The returned string becomes `useChat.error.message` on the client,
-        // so it carries the encoded code the UI resolves a message from.
-        console.error("Agent#stream error.", error);
-        return getErrorMessage(error);
+    const stream = new ReadableStream({
+      start(controllerArg) {
+        controller = controllerArg;
       },
     });
-  }
 
-  async convertToModalMessage(
-    originalMessages: AgentUIMessage[]
-  ): Promise<ModelMessage[]> {
-    let messages: AgentUIMessage[] = [];
-
-    const compactedMessage: ModelMessage[] = [];
-    for (const m of originalMessages) {
-      let newParts: UIMessagePart<AgentUIDataParts, AgentUITools>[] = [];
-      const newMessage: AgentUIMessage = { ...m, parts: newParts };
-      for (const p of m.parts) {
-        if (
-          p.type === "data-compaction:end" &&
-          p.data.compacted &&
-          p.data.messages.length
-        ) {
-          compactedMessage.push(...p.data.messages);
-          messages = [];
-          newParts = [];
-          newMessage.parts = newParts;
-        }
-
-        newParts.push(p);
+    function safeError(error: unknown) {
+      try {
+        controller.error(error);
+      } catch {
+        // suppress errors when the stream has been closed
       }
-      messages.push(newMessage);
     }
 
-    const m2 = await convertToModelMessages<AgentUIMessage>(messages);
+    function safeClose() {
+      try {
+        controller.close();
+      } catch {
+        // suppress errors when the stream has been closed
+      }
+    }
 
-    return [...compactedMessage, ...m2];
+    async function safeEnqueue(
+      event: AgentStreamEvent<AgentToolSet>,
+      builder?: AgentTurnBuilder<AgentToolSet>
+    ) {
+      try {
+        await builder?.push(event);
+        controller.enqueue(event);
+      } catch {
+        // suppress errors when the stream has been closed
+      }
+    }
+
+    const compactionConfig: CompactionConfig = {
+      recentWindowSize: 10,
+      threshold: 100_000,
+      thresholdPercent: 0.9,
+      lastKnownInputTokens:
+        originalTurns.findLast((e) => e.usage)?.usage?.inputTokens ?? 0,
+      lastKnownPromptMessageCount: originalTurns.length,
+    };
+
+    const turnId = generateMessageId();
+
+    // Handle title generation in parallel
+    titlePromise?.then(async (title) => {
+      await this.store.updateSessionById(this.sessionId, title);
+      // await safeEnqueue({
+      //   type: "session.title",
+      //   title,
+      //   createdAt: Date.now(),
+      // });
+      await this.hooks.emit(
+        "title_generated",
+        { sessionId: this.sessionId, title },
+        this.extensionApi
+      );
+    });
+
+    await this.runTurn({
+      turnType: "assistant",
+      writer: {
+        write: safeEnqueue,
+        close: safeClose,
+        error: safeError,
+      },
+      turnId,
+      modelId,
+      model,
+      turns: originalTurns,
+      abortSignal,
+      compactionConfig,
+      messages: modelMessages,
+    });
+
+    await this.hooks.emit(
+      "session_end",
+      { sessionId: this.sessionId },
+      this.extensionApi
+    );
+
+    return stream;
   }
 
-  async generateChatTitle(message: AgentUIMessage) {
+  async generateChatTitle(message: AgentTurn<AgentToolSet>) {
     const { text: title } = await generateText({
       model: this.model,
       system: TITLE_PROMPT,
-      prompt: this.getTextFromMessage(message),
+      prompt: this.getTextFromUserTurn(message),
     });
 
     return title;
   }
 
-  getTextFromMessage(message: AgentUIMessage): string {
-    return message.parts
-      .filter((part) => part.type === "text")
+  getTextFromUserTurn(turn: AgentTurn<AgentToolSet>): string {
+    return turn.content
+      .filter((step) => step.type === "user")
+      .flatMap((step) => step.content.filter((e) => e.type === "text"))
       .map((part) => part.text)
       .join("");
   }
 
-  toAgentUIMessage(messages: MessageModel[]): AgentUIMessage[] {
-    return messages.map(
-      (e) =>
-        ({
-          id: e.id,
-          role: e.role,
-          metadata: e.metadata,
-          parts: e.content,
-        }) as AgentUIMessage
-    );
+  toAgentTurns(messages: MessageModel[]): AgentTurn<AgentToolSet>[] {
+    return messages.map((e) => e.content as AgentTurn<AgentToolSet>);
   }
 
   /**
@@ -356,16 +343,24 @@ export class Agent {
    * {@link Agent.stream}; the `finish` chunk is written here, once, after the
    * last step, because only then is "last" known.
    */
-  private async runTurn(input: AgentStepInput): Promise<void> {
-    const { abortSignal, writer } = input;
+  private async runTurn(
+    input: AgentTurnInput
+  ): Promise<AgentTurn<AgentToolSet> | undefined> {
+    const { abortSignal, writer, turnId, turns } = input;
     let { messages } = input;
 
-    // Set only once a step has completed. Aborting or failing a step leaves it
-    // unset, which suppresses the `finish` chunk — `streamText` emits an
-    // `abort`/`error` part instead of `finish` in exactly those cases.
-    let lastStep:
-      | { finishReason: FinishReason; rawFinishReason: string | undefined }
-      | undefined;
+    const builder = new AgentTurnBuilder<AgentToolSet>({ turns });
+
+    await writer.write(
+      {
+        type: "turn.start",
+        id: turnId,
+        turnType: "assistant",
+        createdAt: Date.now(),
+      },
+      builder
+    );
+
     // Each step reports only its own usage; the persisted metadata has to
     // total the turn, which the SDK did for us when one call drove it all.
     let totalUsage: LanguageModelUsage | undefined;
@@ -379,7 +374,14 @@ export class Agent {
 
       // The step reads the history `messages` currently holds, which compaction
       // or the previous step may have replaced.
-      const stepResult = await this.runStep({ ...input, messages });
+      const stepId = generateMessageId();
+      const stepResult = await this.runStep({
+        ...input,
+        messages,
+        stepId,
+        stepType: "assistant",
+        builder,
+      });
 
       // Aborted or the model call failed: the stream already delivered its
       // `abort`/`error` chunk, so the turn ends without a `finish` chunk.
@@ -392,27 +394,43 @@ export class Agent {
         totalUsage === undefined
           ? stepResult.usage
           : addLanguageModelUsage(totalUsage, stepResult.usage);
-      lastStep = stepResult;
 
       if (!stepResult.toolCallsResolved) {
         break;
       }
     }
 
-    if (lastStep === undefined) {
-      return;
+    const turn = builder.completedTurn;
+    if (turn) {
+      const existingTurn = await this.store.existsMessages(turn.id);
+      if (existingTurn) {
+        await this.store.updateMessage(turn.id, turn, {});
+      } else {
+        const lastTurnId = turns.at(-1)?.id;
+        await this.store.saveMessage({
+          id: turn.id,
+          sessionId: this.sessionId,
+          role: turn.type,
+          metadata: {},
+          content: turn,
+          parentId: lastTurnId,
+          createdAt: new Date(),
+        });
+        await this.store.setActiveHead(this.sessionId, lastTurnId);
+      }
     }
 
-    writer.write({
-      type: "finish",
-      finishReason: lastStep.finishReason,
-      messageMetadata: {
+    await writer.write(
+      {
+        id: turnId,
+        type: "turn.finish",
         createdAt: Date.now(),
-        rawFinishReason: lastStep.rawFinishReason,
-        finishReason: lastStep.finishReason,
-        totalUsage,
+        usage: totalUsage,
       },
-    });
+      builder
+    );
+
+    writer.close();
   }
 
   /**
@@ -428,25 +446,53 @@ export class Agent {
   private async runStep(
     input: AgentStepInput
   ): Promise<AgentStepResult | undefined> {
-    const { abortSignal, compactionConfig, model, writer } = input;
+    const {
+      abortSignal,
+      compactionConfig,
+      model,
+      modelId,
+      turnId,
+      stepId,
+      writer,
+      builder,
+    } = input;
 
+    const compactionStepId = generateMessageId();
     const compaction = await this.maybeCompact({
       config: compactionConfig,
       messages: input.messages,
       abortSignal,
       model,
-      onBeforeCompact: () => this.announceCompactionStart(writer),
-      onAfterCompact: (params) => this.announceCompactionEnd(writer, params),
+      onBeforeCompact: () =>
+        this.announceCompactionStart(turnId, compactionStepId, builder, writer),
+      onAfterCompact: (params) =>
+        this.announceCompactionEnd(
+          turnId,
+          compactionStepId,
+          builder,
+          writer,
+          params
+        ),
     });
     const { messages } = compaction;
     compactionConfig.lastKnownPromptMessageCount = messages.length;
+
+    await writer.write(
+      {
+        type: "step.start",
+        stepType: "assistant",
+        model: modelId,
+        turnId,
+        id: stepId,
+        createdAt: Date.now(),
+      },
+      builder
+    );
 
     const result = streamText<ToolSet, AgentRuntimeContext>({
       instructions: this.systemPrompt,
       model,
       tools: this.tools,
-      // One step per call: `runTurn` owns the step budget, and a step must
-      // not execute a tool call whose result is never sent back.
       stopWhen: isStepCount(1),
       reasoning: this.effort
         ? MODEL_EFFORT_TO_REASONING[this.effort]
@@ -455,47 +501,22 @@ export class Agent {
       abortSignal,
     });
 
-    const reader = toUIMessageStream<ToolSet, AgentUIMessage>({
-      stream: result.stream,
-      sendStart: false,
-      // The single `finish` chunk is written once the last step is known; a
-      // per-step one would also report only that step's totals.
-      sendFinish: false,
-      sendReasoning: true,
-      messageMetadata: ({ part }) => {
-        if (part.type !== "finish-step") {
-          return;
+    const reader = result.stream.getReader();
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
         }
-        // Feeds the next iteration's compaction estimate: the prompt's real
-        // token count is only known once the model reports it.
-        compactionConfig.lastKnownInputTokens = part.usage.inputTokens;
-        return {
-          createdAt: Date.now(),
-          rawFinishReason: part.rawFinishReason,
-          finishReason: part.finishReason,
-          usage: part.usage,
-          providerMetadata: part.providerMetadata,
-          performance: part.performance,
-        };
-      },
-    }).getReader();
-
-    // Chunks are forwarded one at a time rather than through
-    // `writer.merge`: `merge` pumps asynchronously, so the `finish` chunk
-    // written after the loop would overtake a step's remaining chunks —
-    // clients treat `finish` as end-of-message.
-    //
-    // The cast is `toUIMessageStream` defaulting its `UI_MESSAGE` to the
-    // generic `UIMessage`, whose metadata is `unknown`; the chunks are the
-    // same shape, and `writer` is what actually constrains them. Naming the
-    // message type on the call instead would reject the `finish-step`
-    // metadata below, which carries keys `AgentUIMetadata` does not declare.
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
+        const event = toAgentEvent<AgentToolSet>(turnId, stepId, value as any);
+        if (event) {
+          await writer.write(event, builder);
+        }
       }
-      writer.write(value);
+    } catch (error) {
+      writer.error(error);
+    } finally {
+      reader.releaseLock();
     }
 
     try {
@@ -505,6 +526,23 @@ export class Agent {
       ]);
       const { finishReason, rawFinishReason, usage, toolCalls, toolResults } =
         step;
+
+      compactionConfig.lastKnownInputTokens = step.usage.inputTokens;
+
+      await writer.write(
+        {
+          id: stepId,
+          turnId,
+          type: "step.finish",
+          createdAt: Date.now(),
+          usage: step.usage,
+          performance: step.performance,
+          finishReason: step.finishReason,
+          rawFinishReason: step.rawFinishReason,
+          providerMetadata: step.providerMetadata,
+        },
+        builder
+      );
 
       // Exactly the messages the SDK feeds its own next step: the assistant
       // message for this step plus a tool message for whatever executed.
@@ -532,21 +570,28 @@ export class Agent {
       };
     } catch (error) {
       console.error(error);
+      writer.error(error);
       return undefined;
     }
   }
 
   private async announceCompactionStart(
-    writer: UIMessageStreamWriter<AgentUIMessage>
+    turnId: string,
+    stepId: string,
+    builder: AgentTurnBuilder<AgentToolSet>,
+    writer: UIMessageStreamWriter
   ): Promise<void> {
     const createdAt = Date.now();
-    writer.write({
-      id: generatePartId(),
-      type: "data-compaction:start",
-      data: {
+    await writer.write(
+      {
+        turnId,
+        stepId,
+        id: generatePartId(),
+        type: "compaction.start",
         createdAt,
       },
-    });
+      builder
+    );
     await this.hooks.emit(
       "compaction:start",
       { sessionId: this.sessionId, createdAt },
@@ -555,19 +600,25 @@ export class Agent {
   }
 
   private async announceCompactionEnd(
-    writer: UIMessageStreamWriter<AgentUIMessage>,
+    turnId: string,
+    stepId: string,
+    builder: AgentTurnBuilder<AgentToolSet>,
+    writer: UIMessageStreamWriter,
     params: { compacted: boolean; messages: ModelMessage[] }
   ): Promise<void> {
     const createdAt = Date.now();
-    writer.write({
-      id: generatePartId(),
-      type: "data-compaction:end",
-      data: {
+    await writer.write(
+      {
+        turnId,
+        stepId,
+        id: generatePartId(),
+        type: "compaction.end",
         compacted: params.compacted,
         messages: params.messages,
         createdAt,
       },
-    });
+      builder
+    );
     await this.hooks.emit(
       "compaction:end",
       {

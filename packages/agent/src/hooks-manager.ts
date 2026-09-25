@@ -15,7 +15,6 @@ export type SessionStartEvent = {
 
 export type SessionEndEvent = {
   sessionId: string;
-  messageId: string;
 };
 
 export type TitleGeneratedEvent = {

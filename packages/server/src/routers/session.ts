@@ -125,6 +125,7 @@ const createSession = publicProcedure
     const stream = await agent.stream({
       messages,
       model: selectedModel,
+      modelId: aiModel.model,
     });
 
     return streamToEventIterator(stream);

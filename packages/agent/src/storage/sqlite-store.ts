@@ -103,7 +103,10 @@ export class SQLiteStore implements AgentStore {
     return path;
   }
 
-  async setActiveHead(sessionId: string, messageId: string): Promise<number> {
+  async setActiveHead(
+    sessionId: string,
+    messageId: string | undefined
+  ): Promise<number> {
     const result = await db
       .update(session_table)
       .set({ activeHeadId: messageId })

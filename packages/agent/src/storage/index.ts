@@ -40,7 +40,10 @@ export interface AgentStore {
     messages?: MessageModel[]
   ): Promise<MessageModel[]>;
 
-  setActiveHead(sessionId: string, messageId: string): Promise<number>;
+  setActiveHead(
+    sessionId: string,
+    messageId: string | undefined
+  ): Promise<number>;
 
   existsMessages(id: string): Promise<boolean>;
 
