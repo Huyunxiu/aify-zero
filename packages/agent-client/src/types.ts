@@ -540,7 +540,7 @@ export type AgentPart<TOOLS extends ToolSet> =
  * turn containing it. A user turn wraps exactly one user step, so those two
  * ids sit next to each other and are easy to mix up.
  */
-export type AgentStepBase = {
+export type AgentStepBase = AgentStepStatus & {
   /**
    * A unique identifier for the step (or turn).
    */
@@ -573,7 +573,7 @@ export type AgentStepBase = {
   providerMetadata?: ProviderMetadata;
 };
 
-export type AgentTurnBase = {
+export type AgentTurnBase = AgentTurnStatus & {
   /**
    * A unique identifier for the step (or turn).
    */
@@ -625,63 +625,59 @@ export type AgentStepStatus =
   | { status: "error"; error: unknown };
 export type AgentTurnStatus = AgentStepStatus;
 
-export type AgentUserStep = AgentStepBase &
-  AgentStepStatus & {
-    /**
-     * The type of the step.
-     */
-    type: "user";
+export type AgentUserStep = AgentStepBase & {
+  /**
+   * The type of the step.
+   */
+  type: "user";
 
-    content: AgentUserPart[];
-  };
+  content: AgentUserPart[];
+};
 
-export type AgentSessionTitleStep = AgentStepBase &
-  AgentStepStatus & {
-    /**
-     * The type of the step.
-     */
-    type: "session.title";
+export type AgentSessionTitleStep = AgentStepBase & {
+  /**
+   * The type of the step.
+   */
+  type: "session.title";
 
-    content: AgentSessionTitlePart[];
+  content: AgentSessionTitlePart[];
 
-    /**
-     * The model that produced this step. Steps of one turn can disagree here
-     * when the runtime falls back to another model mid-turn.
-     */
-    model: string;
-  };
+  /**
+   * The model that produced this step. Steps of one turn can disagree here
+   * when the runtime falls back to another model mid-turn.
+   */
+  model: string;
+};
 
-export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase &
-  AgentStepStatus & {
-    /**
-     * The type of the step.
-     */
-    type: "assistant";
+export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase & {
+  /**
+   * The type of the step.
+   */
+  type: "assistant";
 
-    content: AgentAssistantPart<TOOLS>[];
+  content: AgentAssistantPart<TOOLS>[];
 
-    /**
-     * The model that produced this step. Steps of one turn can disagree here
-     * when the runtime falls back to another model mid-turn.
-     */
-    model: string;
-  };
+  /**
+   * The model that produced this step. Steps of one turn can disagree here
+   * when the runtime falls back to another model mid-turn.
+   */
+  model: string;
+};
 
-export type AgentCompactionStep = AgentStepBase &
-  AgentStepStatus & {
-    /**
-     * The type of the step.
-     */
-    type: "compaction";
+export type AgentCompactionStep = AgentStepBase & {
+  /**
+   * The type of the step.
+   */
+  type: "compaction";
 
-    content: AgentCompactionPart[];
+  content: AgentCompactionPart[];
 
-    /**
-     * The model that produced this step. Steps of one turn can disagree here
-     * when the runtime falls back to another model mid-turn.
-     */
-    model: string;
-  };
+  /**
+   * The model that produced this step. Steps of one turn can disagree here
+   * when the runtime falls back to another model mid-turn.
+   */
+  model: string;
+};
 
 /**
  * A step of a turn. Discriminated by `kind`, so a consumer that switches over
@@ -693,46 +689,43 @@ export type AgentStep<TOOLS extends ToolSet> =
   | AgentCompactionStep
   | AgentSessionTitleStep;
 
-export type AgentUserTurn = AgentTurnBase &
-  AgentTurnStatus & {
-    /**
-     * The type of the turn.
-     */
-    type: "user";
+export type AgentUserTurn = AgentTurnBase & {
+  /**
+   * The type of the turn.
+   */
+  type: "user";
 
-    content: AgentUserStep[];
-  };
+  content: AgentUserStep[];
+};
 export function isAgentUserTurn<TOOLS extends ToolSet>(
   part: AgentTurn<TOOLS>
 ): part is AgentUserTurn {
   return part.type === "user";
 }
-export type AgentAssistantTurn<TOOLS extends ToolSet> = AgentTurnBase &
-  AgentTurnStatus & {
-    /**
-     * The type of the turn.
-     */
-    type: "assistant";
+export type AgentAssistantTurn<TOOLS extends ToolSet> = AgentTurnBase & {
+  /**
+   * The type of the turn.
+   */
+  type: "assistant";
 
-    /**
-     * The steps of the turn in order. One turn is one assistant reply: the model
-     * step, then a step per round of tool calls, until it stops calling tools.
-     */
-    content: (AgentAssistantStep<TOOLS> | AgentCompactionStep)[];
-  };
-export type AgentCompactionTurn = AgentTurnBase &
-  AgentTurnStatus & {
-    /**
-     * The type of the turn.
-     */
-    type: "compaction";
+  /**
+   * The steps of the turn in order. One turn is one assistant reply: the model
+   * step, then a step per round of tool calls, until it stops calling tools.
+   */
+  content: (AgentAssistantStep<TOOLS> | AgentCompactionStep)[];
+};
+export type AgentCompactionTurn = AgentTurnBase & {
+  /**
+   * The type of the turn.
+   */
+  type: "compaction";
 
-    /**
-     * The steps of the turn in order. One turn is one assistant reply: the model
-     * step, then a step per round of tool calls, until it stops calling tools.
-     */
-    content: AgentCompactionStep[];
-  };
+  /**
+   * The steps of the turn in order. One turn is one assistant reply: the model
+   * step, then a step per round of tool calls, until it stops calling tools.
+   */
+  content: AgentCompactionStep[];
+};
 
 export type AgentTurn<TOOLS extends ToolSet> =
   | AgentUserTurn
