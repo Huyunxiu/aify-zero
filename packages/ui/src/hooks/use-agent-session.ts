@@ -7,6 +7,7 @@ import {
 import type { AgentStreamEvent, AgentTurn } from "@workspace/agent-client";
 import { parseJsonEventStream } from "ai";
 import * as React from "react";
+import throttle from "throttleit";
 
 export type UseAgentSessionOptions = {
   id: string;
@@ -16,6 +17,21 @@ export type UseAgentSessionOptions = {
     turns: AgentTurn<AgentToolSet>[];
     abortSignal: AbortSignal;
   }) => Promise<ReadableStream | undefined>;
+  /**
+   * Minimum gap, in milliseconds, between the `turns` snapshots published while
+   * a response streams, defaulting to `200`. Every publish hands subscribers a
+   * new array, and a text delta arrives per token, so without this the
+   * transcript re-renders once per token; the intermediate frames are collapsed
+   * and only the latest state is painted. `0` publishes every event.
+   *
+   * Only the turn snapshots are throttled. `status` and `error` changes and
+   * `onEvent` are not, and the last snapshot of a request is always published
+   * immediately.
+   *
+   * Like `api`, this is read when the store is created, so a new value takes
+   * effect when the session id changes.
+   */
+  throttleMs?: number;
   turns: AgentTurn<AgentToolSet>[];
   /**
    * Called for every event as it arrives, before it is folded into the turns.
@@ -136,6 +152,7 @@ function createAgentSessionStore({
   id,
   api,
   apiStream,
+  throttleMs = 200,
   turns,
   emit,
 }: AgentSessionStoreOptions): AgentSessionStore {
@@ -185,16 +202,41 @@ function createAgentSessionStore({
 
     const builder = new AgentTurnBuilder<AgentToolSet>({ turns: nextTurns });
 
-    const publish = (): void => {
+    const commit = (): void => {
       currentTurns = [...builder.turns];
       notify();
     };
 
+    // `publish` is `commit` on a leash: at most one snapshot per window while a
+    // response streams, so per-token deltas stop forcing a render each. The
+    // throttle is consulted inside the body rather than at the call site
+    // because the trailing call arrives from a timer that can outlive the
+    // request that scheduled it — only `active` says whether those turns still
+    // belong on screen, and by then it may name a newer request, or none.
+    //
+    // `commit` reads `builder.turns` when it runs rather than being handed a
+    // snapshot, so a collapsed call publishes the latest state and nothing is
+    // lost but the intermediate frames.
+    //
+    // One instance per request, never one per store: the leading call is the
+    // one that fires immediately, and every send has to paint its own turns
+    // without waiting out the window the previous send left open.
+    const publish =
+      throttleMs > 0
+        ? throttle((): void => {
+            if (active === controller) {
+              commit();
+            }
+          }, throttleMs)
+        : commit;
+
     // Surface the caller's turns straight away, so a new user turn is visible
-    // before the first event arrives.
+    // before the first event arrives. `commit`, not `publish`: this is the
+    // state the throttle exists to hold back, and `status` above rides on its
+    // notify, so it must not wait out a window.
     currentError = undefined;
     status = "submitted";
-    publish();
+    commit();
 
     const forwardAbort = (): void => controller.abort();
 
@@ -261,6 +303,10 @@ function createAgentSessionStore({
           await builder.push(value);
           emit(value);
 
+          // The guard is repeated inside the throttle, which is what covers
+          // the trailing call; this one is what covers the unthrottled branch,
+          // where `publish` is `commit`. It also spares a request that is
+          // already superseded the timer.
           if (active === controller) {
             publish();
           }
@@ -291,7 +337,13 @@ function createAgentSessionStore({
         settleUnfinished(builder, failure && !aborted ? "error" : "aborted");
         currentError = failure;
         status = failure ? "error" : "ready";
-        publish();
+        // `commit`, not `publish`: the settled turns, the status and the error
+        // have to land now rather than when a window closes. Clearing `active`
+        // above is also what turns any trailing call this request scheduled
+        // into a no-op — it must not move below this line, because `notify`
+        // runs listeners synchronously and a send re-entered from one would
+        // otherwise be clobbered by this request clearing `active` afterwards.
+        commit();
       }
     }
   };
@@ -307,6 +359,7 @@ export function useAgentSession({
   id,
   api,
   apiStream,
+  throttleMs,
   turns,
   onEvent,
 }: UseAgentSessionOptions): UseAgentSessionResponse {
@@ -327,6 +380,7 @@ export function useAgentSession({
       id,
       api,
       apiStream,
+      throttleMs,
       turns,
       emit,
     });
