@@ -8,14 +8,14 @@ export type SessionContainerProps = {
 };
 
 export function SessionContainer({ sessionId }: SessionContainerProps) {
-  const listSessionMessagesQuery = useQuery({
-    queryKey: ["listSessionMessages", sessionId],
+  const listSessionTurnsQuery = useQuery({
+    queryKey: ["listSessionTurns", sessionId],
     queryFn: async () =>
-      await client.session.listSessionMessages({ sessionId: sessionId ?? "" }),
+      await client.session.listSessionTurns({ sessionId: sessionId ?? "" }),
     enabled: Boolean(sessionId),
   });
 
-  const initialTurns = listSessionMessagesQuery.data;
+  const initialTurns = listSessionTurnsQuery.data;
 
   return (
     <>

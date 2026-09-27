@@ -18,6 +18,7 @@
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "@workspace/agent": "workspace:*",
+    "@workspace/agent-client": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/shared": "workspace:*",
     "nanoid": "catalog:",

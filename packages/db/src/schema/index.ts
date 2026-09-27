@@ -47,14 +47,14 @@ export const session_table = sqliteTable("session", {
 export type SessionModel = InferSelectModel<typeof session_table>;
 export type SessionInsertModel = InferInsertModel<typeof session_table>;
 
-export const message_table = sqliteTable(
-  "message",
+export const turn_table = sqliteTable(
+  "turn",
   {
     id: text("id", { length: 36 })
       .primaryKey()
       .$defaultFn(() => randomUUID()),
     sessionId: text("session_id"),
-    role: text("role").notNull(),
+    type: text("type").notNull(),
     metadata: text("metadata", { mode: "json" }),
     content: text("content", { mode: "json" }).notNull(),
     parentId: text("parent_id"),
@@ -67,13 +67,13 @@ export const message_table = sqliteTable(
   },
   (table) => [
     index("idx_sessionid").on(table.sessionId),
-    index("idx_message_parent").on(table.parentId),
-    index("idx_message_session_parent").on(table.sessionId, table.parentId),
+    index("idx_turn_parent").on(table.parentId),
+    index("idx_turn_session_parent").on(table.sessionId, table.parentId),
   ]
 );
 
-export type MessageModel = InferSelectModel<typeof message_table>;
-export type MessageInsertModel = InferInsertModel<typeof message_table>;
+export type TurnModel = InferSelectModel<typeof turn_table>;
+export type TurnInsertModel = InferInsertModel<typeof turn_table>;
 
 export const dict_table = sqliteTable("dict", {
   code: text("code").primaryKey(),

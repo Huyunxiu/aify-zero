@@ -43,6 +43,13 @@
       "when": 1788095397762,
       "tag": "0005_mysterious_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790522475383,
+      "tag": "0006_shallow_squirrel_girl",
+      "breakpoints": true
     }
   ]
 }

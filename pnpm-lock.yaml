@@ -490,6 +490,9 @@ importers:
       '@workspace/agent':
         specifier: workspace:*
         version: link:../agent
+      '@workspace/agent-client':
+        specifier: workspace:*
+        version: link:../agent-client
       '@workspace/db':
         specifier: workspace:*
         version: link:../db

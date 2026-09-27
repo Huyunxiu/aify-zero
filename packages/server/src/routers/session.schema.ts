@@ -1,6 +1,6 @@
 import z from "zod";
 
-export const listSessionMessagesSchema = z.object({
+export const listSessionTurnsSchema = z.object({
   sessionId: z.string(),
 });
 

@@ -1,9 +1,9 @@
-import { session_table, db, message_table } from "@workspace/db";
+import { session_table, db, turn_table } from "@workspace/db";
 import type {
   SessionInsertModel,
   SessionModel,
-  MessageInsertModel,
-  MessageModel,
+  TurnInsertModel,
+  TurnModel,
 } from "@workspace/db";
 import { and, asc, count, desc, eq, gt, lt } from "drizzle-orm";
 
@@ -70,36 +70,32 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async getAllMessagesBySessionId(sessionId: string): Promise<MessageModel[]> {
+  async getAllTurnsBySessionId(sessionId: string): Promise<TurnModel[]> {
     return await db
       .select()
-      .from(message_table)
-      .where(eq(message_table.sessionId, sessionId))
-      .orderBy(asc(message_table.createdAt), asc(message_table.id));
+      .from(turn_table)
+      .where(eq(turn_table.sessionId, sessionId))
+      .orderBy(asc(turn_table.createdAt), asc(turn_table.id));
   }
 
-  async getBranchMessages(
+  async getBranchTurns(
     sessionId: string,
-    messages?: MessageModel[]
-  ): Promise<MessageModel[]> {
+    turns?: TurnModel[]
+  ): Promise<TurnModel[]> {
     const session = await this.getSessionById(sessionId);
     if (!session?.activeHeadId) {
       return [];
     }
 
-    messages ||= await this.getAllMessagesBySessionId(sessionId);
-    const messagesMap = new Map(
-      messages.map((message) => [message.id, message])
-    );
+    turns ||= await this.getAllTurnsBySessionId(sessionId);
+    const turnsMap = new Map(turns.map((message) => [message.id, message]));
 
-    const path: MessageModel[] = [];
-    let current = messagesMap.get(session.activeHeadId);
+    const path: TurnModel[] = [];
+    let current = turnsMap.get(session.activeHeadId);
     while (current) {
       path.unshift(current);
-      messagesMap.delete(current.id);
-      current = current.parentId
-        ? messagesMap.get(current.parentId)
-        : undefined;
+      turnsMap.delete(current.id);
+      current = current.parentId ? turnsMap.get(current.parentId) : undefined;
     }
     return path;
   }
@@ -115,23 +111,23 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async existsMessages(id: string): Promise<boolean> {
+  async existsTurn(id: string): Promise<boolean> {
     const result = await db
       .select({ count: count() })
-      .from(message_table)
-      .where(eq(message_table.id, id));
+      .from(turn_table)
+      .where(eq(turn_table.id, id));
     return (result[0]?.count ?? 0) > 0;
   }
 
-  async saveMessage(message: MessageInsertModel): Promise<number> {
+  async saveTurn(message: TurnInsertModel): Promise<number> {
     // Upsert: client resends existing message ids on regenerate; only
     // content/metadata change in that case — parentId keeps its original
     // branch position.
     const result = await db
-      .insert(message_table)
+      .insert(turn_table)
       .values(message)
       .onConflictDoUpdate({
-        target: message_table.id,
+        target: turn_table.id,
         set: {
           content: message.content,
           metadata: message.metadata,
@@ -141,20 +137,20 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async saveMessages(messages: MessageInsertModel[]): Promise<number> {
-    const result = await db.insert(message_table).values(messages);
+  async saveTurns(messages: TurnInsertModel[]): Promise<number> {
+    const result = await db.insert(turn_table).values(messages);
     return result.rowsAffected;
   }
 
-  async updateMessage(
+  async updateTurn(
     id: string,
     content: unknown,
     metadata: unknown
   ): Promise<number> {
     const result = await db
-      .update(message_table)
+      .update(turn_table)
       .set({ content, metadata })
-      .where(eq(message_table.id, id));
+      .where(eq(turn_table.id, id));
     return result.rowsAffected;
   }
 }

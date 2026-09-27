@@ -1,8 +1,8 @@
 import type {
   SessionInsertModel,
   SessionModel,
-  MessageInsertModel,
-  MessageModel,
+  TurnInsertModel,
+  TurnModel,
 } from "@workspace/db";
 
 export interface AgentStore {
@@ -28,28 +28,28 @@ export interface AgentStore {
    * All messages of the session, including every branch version.
    * @param sessionId
    */
-  getAllMessagesBySessionId(sessionId: string): Promise<MessageModel[]>;
+  getAllTurnsBySessionId(sessionId: string): Promise<TurnModel[]>;
 
   /**
    * Messages on the branch, walking parent_id from session.activeHeadId.
    * @param sessionId
    * @param messages
    */
-  getBranchMessages(
+  getBranchTurns(
     sessionId: string,
-    messages?: MessageModel[]
-  ): Promise<MessageModel[]>;
+    messages?: TurnModel[]
+  ): Promise<TurnModel[]>;
 
   setActiveHead(
     sessionId: string,
     messageId: string | undefined
   ): Promise<number>;
 
-  existsMessages(id: string): Promise<boolean>;
+  existsTurn(id: string): Promise<boolean>;
 
-  saveMessage(message: MessageInsertModel): Promise<number>;
+  saveTurn(message: TurnInsertModel): Promise<number>;
 
-  saveMessages(messages: MessageInsertModel[]): Promise<number>;
+  saveTurns(messages: TurnInsertModel[]): Promise<number>;
 
-  updateMessage(id: string, parts: unknown, metadata: unknown): Promise<number>;
+  updateTurn(id: string, parts: unknown, metadata: unknown): Promise<number>;
 }

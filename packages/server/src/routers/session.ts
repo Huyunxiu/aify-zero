@@ -1,11 +1,7 @@
 import { homedir } from "node:os";
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import {
-  eventIteratorToUnproxiedDataStream,
-  streamToEventIterator,
-  type,
-} from "@orpc/server";
+import { streamToEventIterator, type } from "@orpc/server";
 import { Agent } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import type { AgentTurn } from "@workspace/agent-client";
@@ -27,13 +23,13 @@ import {
   generateMessageId,
   generateSessionId,
 } from "@workspace/agent/utils/id-util";
-import type { MessageInsertModel } from "@workspace/db";
+import type { TurnInsertModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
-import { forkSessionSchema, listSessionMessagesSchema } from "./session.schema";
+import { forkSessionSchema, listSessionTurnsSchema } from "./session.schema";
 import { findAiModelById } from "./settings/settings.service";
 
 const createSession = publicProcedure
@@ -122,9 +118,9 @@ const listSessions = publicProcedure
     return { sessions };
   });
 
-export const listSessionMessages = publicProcedure
-  .route({ method: "GET", path: "/sessions/{sessionId}/messages" })
-  .input(listSessionMessagesSchema)
+export const listSessionTurns = publicProcedure
+  .route({ method: "GET", path: "/sessions/{sessionId}/turns" })
+  .input(listSessionTurnsSchema)
   .handler(async ({ input }) => {
     const { sessionId } = input;
 
@@ -135,13 +131,10 @@ export const listSessionMessages = publicProcedure
       return [];
     }
 
-    const messages = await store.getAllMessagesBySessionId(session.id);
-    const activeBranchMessages = await store.getBranchMessages(
-      session.id,
-      messages
-    );
+    const messages = await store.getAllTurnsBySessionId(session.id);
+    const activeBranchTurns = await store.getBranchTurns(session.id, messages);
 
-    return activeBranchMessages.map(
+    return activeBranchTurns.map(
       (message) => message.content as AgentTurn<AgentToolSet>
     );
   });
@@ -163,8 +156,8 @@ export const forkSession = publicProcedure
       throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
     }
 
-    const messages = await store.getAllMessagesBySessionId(sessionId);
-    const branchMessages = await store.getBranchMessages(source.id, messages);
+    const messages = await store.getAllTurnsBySessionId(sessionId);
+    const branchMessages = await store.getBranchTurns(source.id, messages);
     const upToIndex = messageId
       ? branchMessages.findIndex((message) => message.id === messageId)
       : branchMessages.length - 1;
@@ -184,13 +177,13 @@ export const forkSession = publicProcedure
     // fork must be self-contained — later edits in either session must not
     // affect the other.
     const idMap = new Map<string, string>();
-    const copies: MessageInsertModel[] = prefix.map((message) => {
+    const copies: TurnInsertModel[] = prefix.map((message) => {
       const newId = generateMessageId();
       idMap.set(message.id, newId);
       return {
         id: newId,
         sessionId: newSessionId,
-        role: message.role,
+        type: message.type,
         metadata: message.metadata,
         content: message.content,
         parentId: message.parentId
@@ -208,7 +201,7 @@ export const forkSession = publicProcedure
       forkedFromSessionId: source.id,
       forkedFromMessageId: messageId ?? prefix.at(-1)?.id,
     });
-    await store.saveMessages(copies);
+    await store.saveTurns(copies);
 
     return { sessionId: newSessionId };
   });
@@ -224,12 +217,10 @@ export const listSessionResources = publicProcedure
     return { skills: skillManager.listAll() };
   });
 
-export { eventIteratorToUnproxiedDataStream };
-
 export const session = {
   create: createSession,
   list: listSessions,
-  listSessionMessages,
+  listSessionTurns,
   listSessionResources,
   fork: forkSession,
 };

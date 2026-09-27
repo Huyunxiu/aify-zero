@@ -7,7 +7,7 @@ import type {
   AgentTurn,
   CompactionConfig,
 } from "@workspace/agent-client";
-import type { MessageModel } from "@workspace/db";
+import type { TurnModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import { logger } from "@workspace/shared/logger";
 import { generateText, isStepCount, registerTelemetry, streamText } from "ai";
@@ -186,7 +186,7 @@ export class Agent {
       });
     }
 
-    const previousMessages = await this.store.getBranchMessages(this.sessionId);
+    const previousMessages = await this.store.getBranchTurns(this.sessionId);
     const previousTurns = this.toAgentTurns(previousMessages);
     const originalTurns = [...previousTurns, mostRecentTurn];
     const modelMessages =
@@ -195,10 +195,10 @@ export class Agent {
     let lastTurnId = previousMessages.at(-1)?.id;
 
     if (mostRecentTurn?.type === "user") {
-      await this.store.saveMessage({
+      await this.store.saveTurn({
         id: mostRecentTurn.id,
         sessionId: this.sessionId,
-        role: "user",
+        type: "user",
         metadata: {},
         parentId: lastTurnId,
         content: mostRecentTurn,
@@ -397,7 +397,7 @@ export class Agent {
       .join("");
   }
 
-  toAgentTurns(messages: MessageModel[]): AgentTurn<AgentToolSet>[] {
+  toAgentTurns(messages: TurnModel[]): AgentTurn<AgentToolSet>[] {
     return messages.map((e) => e.content as AgentTurn<AgentToolSet>);
   }
 
@@ -496,15 +496,15 @@ export class Agent {
 
     const turn = builder.completedTurns.at(-1);
     if (turn) {
-      const existingTurn = await this.store.existsMessages(turn.id);
+      const existingTurn = await this.store.existsTurn(turn.id);
       if (existingTurn) {
-        await this.store.updateMessage(turn.id, turn, {});
+        await this.store.updateTurn(turn.id, turn, {});
       } else {
         const lastTurnId = turns.at(-2)?.id;
-        await this.store.saveMessage({
+        await this.store.saveTurn({
           id: turn.id,
           sessionId: this.sessionId,
-          role: turn.type,
+          type: turn.type,
           metadata: {},
           content: turn,
           parentId: lastTurnId,
