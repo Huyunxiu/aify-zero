@@ -96,6 +96,7 @@ export class SQLiteStore implements AgentStore {
     let current = messagesMap.get(session.activeHeadId);
     while (current) {
       path.unshift(current);
+      messagesMap.delete(current.id);
       current = current.parentId
         ? messagesMap.get(current.parentId)
         : undefined;

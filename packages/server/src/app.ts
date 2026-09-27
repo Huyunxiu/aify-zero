@@ -106,6 +106,7 @@ app.use("/*", async (c, next) => {
     requestId: c.var.requestId,
     logger: c.var.logger,
     language: c.var.language,
+    signal: c.req.raw.signal,
   });
 
   const rpcResult = await rpcHandler.handle(c.req.raw, {

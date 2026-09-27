@@ -7,13 +7,7 @@ import {
   type,
 } from "@orpc/server";
 import { Agent } from "@workspace/agent";
-import type {
-  AgentToolSet,
-  AgentUIDataParts,
-  AgentUIMessage,
-  AgentUIMetadata,
-  AgentUITools,
-} from "@workspace/agent";
+import type { AgentToolSet } from "@workspace/agent";
 import type { AgentTurn } from "@workspace/agent-client";
 import type { AgentContext } from "@workspace/agent/context";
 import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
@@ -33,36 +27,14 @@ import {
   generateMessageId,
   generateSessionId,
 } from "@workspace/agent/utils/id-util";
-import type { MessageInsertModel, MessageModel } from "@workspace/db";
+import type { MessageInsertModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
-import type { UIMessagePart } from "ai";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
 import { forkSessionSchema, listSessionMessagesSchema } from "./session.schema";
 import { findAiModelById } from "./settings/settings.service";
-
-function convertAgentUIMessages(
-  messages: MessageModel[]
-): AgentUIMessage[] | undefined {
-  if (!messages?.length) {
-    return;
-  }
-
-  const agentUIMessages: AgentUIMessage[] = [];
-
-  for (const message of messages) {
-    agentUIMessages.push({
-      id: message.id,
-      role: message.role as "system" | "user" | "assistant",
-      parts: message.content as UIMessagePart<AgentUIDataParts, AgentUITools>[],
-      metadata: message.metadata as AgentUIMetadata,
-    });
-  }
-
-  return agentUIMessages;
-}
 
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
@@ -75,7 +47,7 @@ const createSession = publicProcedure
       modelEffort?: string;
     }>()
   )
-  .handler(async ({ input }) => {
+  .handler(async ({ input, context }) => {
     const { sessionId, turns, model, modelEffort } = input;
 
     const aiModel = await findAiModelById(model);
@@ -128,6 +100,7 @@ const createSession = publicProcedure
       messages: turns,
       model: selectedModel,
       modelId: aiModel.model,
+      abortSignal: context.signal,
     });
 
     return streamToEventIterator(stream);
@@ -168,7 +141,9 @@ export const listSessionMessages = publicProcedure
       messages
     );
 
-    return convertAgentUIMessages(activeBranchMessages);
+    return activeBranchMessages.map(
+      (message) => message.content as AgentTurn<AgentToolSet>
+    );
   });
 
 export const forkSession = publicProcedure

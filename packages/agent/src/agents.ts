@@ -9,6 +9,7 @@ import type {
 } from "@workspace/agent-client";
 import type { MessageModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
+import { logger } from "@workspace/shared/logger";
 import { generateText, isStepCount, registerTelemetry, streamText } from "ai";
 import type {
   FinishReason,
@@ -95,8 +96,10 @@ interface UIMessageStreamWriter {
 }
 
 type AgentTurnInput = {
+  readonly title?: string;
   readonly turnType: AgentTurn<AgentToolSet>["type"];
   readonly turnId: string;
+  readonly prevTurnId?: string;
   readonly modelId: string;
   readonly abortSignal?: AbortSignal;
   readonly compactionConfig: CompactionConfig;
@@ -155,8 +158,6 @@ export class Agent {
   }
 
   async stream({ messages, model, modelId, abortSignal }: AgentStreamOptions) {
-    let titlePromise: Promise<string> | null = null;
-
     const mostRecentTurn = messages.at(-1);
 
     if (!mostRecentTurn) {
@@ -185,15 +186,6 @@ export class Agent {
       });
     }
 
-    // Start title generation in parallel (don't await) when this is the
-    // session's first stream (the row above was just created). Once the
-    // generated title lands, the row is updated and the UI is notified via
-    // the session.title event; until then the title stays empty and the
-    // UI shows its localized placeholder.
-    if (!session) {
-      titlePromise = this.generateChatTitle(mostRecentTurn);
-    }
-
     const previousMessages = await this.store.getBranchMessages(this.sessionId);
     const previousTurns = this.toAgentTurns(previousMessages);
     const originalTurns = [...previousTurns, mostRecentTurn];
@@ -207,22 +199,34 @@ export class Agent {
         id: mostRecentTurn.id,
         sessionId: this.sessionId,
         role: "user",
-        metadata: "{}",
+        metadata: {},
         parentId: lastTurnId,
         content: mostRecentTurn,
         createdAt: new Date(),
       });
       lastTurnId = mostRecentTurn.id;
-      await this.store.setActiveHead(this.sessionId, lastTurnId);
+      await this.store.setActiveHead(this.sessionId, mostRecentTurn.id);
     }
 
     let controller!: ReadableStreamDefaultController<
       AgentStreamEvent<AgentToolSet>
     >;
 
-    const stream = new ReadableStream({
+    // Downstream can stop reading at any moment — the client aborts, the window
+    // closes — and `cancel` is the only notification the stream gets. It drives
+    // a controller of its own, merged with the caller's signal, so either one
+    // stops the turn and the model call it is waiting on.
+    const turnAbort = new AbortController();
+    const turnSignal = abortSignal
+      ? AbortSignal.any([abortSignal, turnAbort.signal])
+      : turnAbort.signal;
+
+    const stream = new ReadableStream<AgentStreamEvent<AgentToolSet>>({
       start(controllerArg) {
         controller = controllerArg;
+      },
+      cancel(reason) {
+        turnAbort.abort(reason);
       },
     });
 
@@ -265,54 +269,124 @@ export class Agent {
 
     const turnId = generateMessageId();
 
-    // Handle title generation in parallel
-    titlePromise?.then(async (title) => {
+    // Started, not awaited: the turn runs as a producer into `stream` while the
+    // caller begins reading it. Awaiting here would run the whole turn to
+    // completion first — the stream's queue never blocks, so every chunk would
+    // sit buffered until the last one had already been produced.
+    void (async () => {
+      try {
+        await this.runTurn({
+          turnType: "assistant",
+          writer: {
+            write: safeEnqueue,
+            close: safeClose,
+            error: safeError,
+          },
+          title: session?.title,
+          turnId,
+          modelId,
+          model,
+          turns: originalTurns,
+          abortSignal: turnSignal,
+          compactionConfig,
+          messages: modelMessages,
+        });
+      } catch (error) {
+        // `runStep` reports its own failures through the writer; this covers
+        // the rest of the turn — the store writes around it in particular —
+        // which would otherwise reject unobserved and leave the reader waiting
+        // for a stream that never ends.
+        safeError(error);
+      } finally {
+        await this.hooks.emit(
+          "session_end",
+          { sessionId: this.sessionId },
+          this.extensionApi
+        );
+      }
+    })();
+
+    return stream;
+  }
+
+  async generateSessionTitle(
+    turnId: string,
+    modelId: string,
+    builder: AgentTurnBuilder<AgentToolSet>,
+    turn: AgentTurn<AgentToolSet>,
+    writer: UIMessageStreamWriter
+  ) {
+    try {
+      const stepId = generateMessageId();
+      await writer.write(
+        {
+          type: "step.start",
+          stepType: "session.title",
+          model: modelId,
+          turnId,
+          id: stepId,
+          createdAt: Date.now(),
+        },
+        builder
+      );
+
+      const eventId = generateMessageId();
+      await writer.write(
+        {
+          id: eventId,
+          type: "session.title.start",
+          turnId,
+          stepId,
+          createdAt: Date.now(),
+        },
+        builder
+      );
+
+      const step = await generateText({
+        model: this.model,
+        system: TITLE_PROMPT,
+        prompt: this.getTextFromUserTurn(turn),
+      });
+      const title = step.text;
+
       await this.store.updateSessionById(this.sessionId, title);
-      // await safeEnqueue({
-      //   type: "session.title",
-      //   title,
-      //   createdAt: Date.now(),
-      // });
+
+      await writer.write(
+        {
+          id: eventId,
+          type: "session.title.end",
+          title,
+          turnId,
+          stepId,
+          createdAt: Date.now(),
+        },
+        builder
+      );
+
+      await writer.write(
+        {
+          id: stepId,
+          turnId,
+          type: "step.finish",
+          createdAt: Date.now(),
+          usage: step.usage,
+          performance: step.finalStep.performance,
+          finishReason: step.finalStep.finishReason,
+          rawFinishReason: step.finalStep.rawFinishReason,
+          providerMetadata: step.finalStep.providerMetadata,
+        },
+        builder
+      );
+
       await this.hooks.emit(
         "title_generated",
         { sessionId: this.sessionId, title },
         this.extensionApi
       );
-    });
-
-    await this.runTurn({
-      turnType: "assistant",
-      writer: {
-        write: safeEnqueue,
-        close: safeClose,
-        error: safeError,
-      },
-      turnId,
-      modelId,
-      model,
-      turns: originalTurns,
-      abortSignal,
-      compactionConfig,
-      messages: modelMessages,
-    });
-
-    await this.hooks.emit(
-      "session_end",
-      { sessionId: this.sessionId },
-      this.extensionApi
-    );
-
-    return stream;
-  }
-
-  async generateChatTitle(message: AgentTurn<AgentToolSet>) {
-    const { text: title } = await generateText({
-      model: this.model,
-      system: TITLE_PROMPT,
-      prompt: this.getTextFromUserTurn(message),
-    });
-
-    return title;
+      return title;
+    } catch (error) {
+      logger.warn("[agent] failed to generate session title", error);
+    }
   }
 
   getTextFromUserTurn(turn: AgentTurn<AgentToolSet>): string {
@@ -346,7 +420,7 @@ export class Agent {
   private async runTurn(
     input: AgentTurnInput
   ): Promise<AgentTurn<AgentToolSet> | undefined> {
-    const { abortSignal, writer, turnId, turns } = input;
+    const { abortSignal, writer, turnId, turns, title, modelId } = input;
     let { messages } = input;
 
     const builder = new AgentTurnBuilder<AgentToolSet>({ turns });
@@ -360,6 +434,14 @@ export class Agent {
       },
       builder
     );
+
+    // Start title generation in the background (never awaited)
+    if (!title) {
+      const userTurn = turns.findLast((e) => e.type === "user");
+      if (userTurn) {
+        this.generateSessionTitle(turnId, modelId, builder, userTurn, writer);
+      }
+    }
 
     // Each step reports only its own usage; the persisted metadata has to
     // total the turn, which the SDK did for us when one call drove it all.
@@ -412,13 +494,13 @@ export class Agent {
 
     writer.close();
 
-    const turn = builder.completedTurns[-1];
+    const turn = builder.completedTurns.at(-1);
     if (turn) {
       const existingTurn = await this.store.existsMessages(turn.id);
       if (existingTurn) {
         await this.store.updateMessage(turn.id, turn, {});
       } else {
-        const lastTurnId = turns.at(-1)?.id;
+        const lastTurnId = turns.at(-2)?.id;
         await this.store.saveMessage({
           id: turn.id,
           sessionId: this.sessionId,
@@ -428,7 +510,7 @@ export class Agent {
           parentId: lastTurnId,
           createdAt: new Date(),
         });
-        await this.store.setActiveHead(this.sessionId, lastTurnId);
+        await this.store.setActiveHead(this.sessionId, turn.id);
       }
     }
   }

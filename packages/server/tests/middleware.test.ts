@@ -11,6 +11,7 @@ const contextFor = (language: Language) => ({
   requestId: "req-test",
   logger,
   language,
+  signal: new AbortController().signal,
 });
 
 const context = contextFor(DEFAULT_LANGUAGE);

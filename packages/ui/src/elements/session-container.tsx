@@ -15,15 +15,15 @@ export function SessionContainer({ sessionId }: SessionContainerProps) {
     enabled: Boolean(sessionId),
   });
 
-  const initialMessages = listSessionMessagesQuery.data;
+  const initialTurns = listSessionMessagesQuery.data;
 
   return (
     <>
-      {(initialMessages?.length ?? 0) > 0 && (
-        <Session sessionId={sessionId} initialMessages={initialMessages} />
+      {(initialTurns?.length ?? 0) > 0 && (
+        <Session sessionId={sessionId} initialTurns={initialTurns} />
       )}
-      {!initialMessages?.length && (
-        <Session sessionId={sessionId} initialMessages={initialMessages} />
+      {!initialTurns?.length && (
+        <Session sessionId={sessionId} initialTurns={initialTurns} />
       )}
     </>
   );

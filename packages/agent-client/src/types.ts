@@ -165,6 +165,18 @@ export type TextStreamFinishTurnEvent = {
   createdAt: number;
   usage?: LanguageModelUsage;
 };
+
+export type TextStreamTitleStartEvent = TextStreamEventBase & {
+  id: string;
+  type: "session.title.start";
+  createdAt: number;
+};
+export type TextStreamTitleEndEvent = TextStreamEventBase & {
+  id: string;
+  type: "session.title.end";
+  title: string;
+  createdAt: number;
+};
 type TextStreamAbortEvent = TextStreamEventBase & {
   type: "abort";
   reason?: string;
@@ -191,10 +203,30 @@ export type AgentStreamEvent<TOOLS extends ToolSet> =
   | TextStreamFinishStepEvent
   | TextStreamStartTurnEvent
   | TextStreamFinishTurnEvent
+  | TextStreamTitleStartEvent
+  | TextStreamTitleEndEvent
   | TextStreamAbortEvent
   | TextStreamErrorEvent
   | TextStreamCompactionStartEvent
   | TextStreamCompactionEndEvent;
+
+export type AgentSessionTitlePart = {
+  id: string;
+  type: "session.title";
+  /**
+   * The text content.
+   */
+  title?: string;
+  /**
+   * The state of the text part.
+   */
+  state?: "streaming" | "done";
+};
+export function isAgentSessionTitlePart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentSessionTitlePart {
+  return part.type === "session.title";
+}
 
 /**
  * A text part of a message.
@@ -350,6 +382,9 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
    * Whether the tool call was executed by the provider.
    */
   providerExecuted?: boolean;
+  callProviderMetadata?: ProviderMetadata;
+  resultProviderMetadata?: ProviderMetadata;
+  preliminary?: boolean;
 } & (
   | {
       state: "input-streaming";
@@ -483,7 +518,8 @@ export type AgentAssistantPart<TOOLS extends ToolSet> =
   | AgentTextPart
   | AgentReasoningPart
   | AgentToolPart<TOOLS>
-  | AgentDynamicToolPart;
+  | AgentDynamicToolPart
+  | AgentSessionTitlePart;
 /**
  * Every part a step can hold, whichever side produced it.
  *
@@ -599,6 +635,22 @@ export type AgentUserStep = AgentStepBase &
     content: AgentUserPart[];
   };
 
+export type AgentSessionTitleStep = AgentStepBase &
+  AgentStepStatus & {
+    /**
+     * The type of the step.
+     */
+    type: "session.title";
+
+    content: AgentSessionTitlePart[];
+
+    /**
+     * The model that produced this step. Steps of one turn can disagree here
+     * when the runtime falls back to another model mid-turn.
+     */
+    model: string;
+  };
+
 export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase &
   AgentStepStatus & {
     /**
@@ -638,7 +690,8 @@ export type AgentCompactionStep = AgentStepBase &
 export type AgentStep<TOOLS extends ToolSet> =
   | AgentUserStep
   | AgentAssistantStep<TOOLS>
-  | AgentCompactionStep;
+  | AgentCompactionStep
+  | AgentSessionTitleStep;
 
 export type AgentUserTurn = AgentTurnBase &
   AgentTurnStatus & {

@@ -10,8 +10,19 @@ import * as React from "react";
 
 export type UseAgentSessionOptions = {
   id: string;
-  api: string;
+  api?: string;
+  apiStream?: (options: {
+    sessionId: string;
+    turns: AgentTurn<AgentToolSet>[];
+    abortSignal: AbortSignal;
+  }) => Promise<ReadableStream | undefined>;
   turns: AgentTurn<AgentToolSet>[];
+  /**
+   * Called for every event as it arrives, before it is folded into the turns.
+   * For events that are not part of any turn — the session title — this is the
+   * only way to see them.
+   */
+  onEvent?: (event: AgentStreamEvent<AgentToolSet>) => void;
 };
 
 type AgentSessionStatus = "submitted" | "streaming" | "ready" | "error";
@@ -26,6 +37,13 @@ export type UseAgentSessionResponse = {
 type SendTurnsOptions = {
   turns: AgentTurn<AgentToolSet>[];
   abortSignal: AbortSignal;
+  /**
+   * Extra fields merged into the request body alongside `sessionId` and
+   * `turns`. What a send needs beyond the transcript — the model, the effort —
+   * is chosen per message, so it belongs to the call rather than to the hook's
+   * options, which are only read when the store is created.
+   */
+  payload?: Record<string, unknown>;
 };
 
 type AgentSessionStore = {
@@ -37,8 +55,44 @@ type AgentSessionStore = {
   dispose: () => void;
 };
 
+type AgentSessionStoreOptions = UseAgentSessionOptions & {
+  /**
+   * Stable indirection onto the latest `onEvent`. The store is created in a
+   * render and then outlives it, so capturing the callback directly would pin
+   * the first render's closure forever.
+   */
+  emit: (event: AgentStreamEvent<AgentToolSet>) => void;
+};
+
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
+
+/**
+ * Pulls the message out of a failed response.
+ *
+ * A thrown oRPC procedure answers with a JSON body carrying the fields the
+ * typed client would have decoded into an `ORPCError`; throwing that text
+ * verbatim would put a wall of JSON in the error bubble.
+ */
+const readErrorMessage = async (response: Response): Promise<string> => {
+  const body = await response.text();
+
+  if (!body) {
+    return "Failed to fetch the chat response.";
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(body);
+    const message = (parsed as { message?: unknown } | null)?.message;
+    if (typeof message === "string") {
+      return message;
+    }
+  } catch {
+    // Not JSON — fall through to the raw body.
+  }
+
+  return body;
+};
 
 /**
  * Compensates for `AgentTurnBuilder` treating `abort` and `error` events as
@@ -81,8 +135,10 @@ const settleUnfinished = (
 function createAgentSessionStore({
   id,
   api,
+  apiStream,
   turns,
-}: UseAgentSessionOptions): AgentSessionStore {
+  emit,
+}: AgentSessionStoreOptions): AgentSessionStore {
   const listeners = new Set<() => void>();
 
   let currentTurns = turns;
@@ -120,6 +176,7 @@ function createAgentSessionStore({
   const sendTurns = async ({
     turns: nextTurns,
     abortSignal,
+    payload,
   }: SendTurnsOptions): Promise<void> => {
     // One request at a time: a newer call takes over and cancels the older one.
     active?.abort();
@@ -151,36 +208,47 @@ function createAgentSessionStore({
     let aborted = false;
 
     try {
-      const response = await fetch(api, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ sessionId: id, turns: nextTurns }),
-        signal: controller.signal,
-      });
+      const body = { sessionId: id, turns: nextTurns, ...payload };
+      let stream: ReadableStream | undefined = undefined;
+      if (apiStream) {
+        stream = await apiStream({ ...body, abortSignal: controller.signal });
+      } else if (api) {
+        const response = await fetch(api, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        const responseBody = await response.text();
-        throw new Error(responseBody || "Failed to fetch the chat response.");
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        if (!response.body) {
+          throw new Error("The response body is empty.");
+        }
+
+        // The response has arrived, so the model is streaming — even if the first
+        // event is still in flight.
+        if (active === controller) {
+          setStatus("streaming");
+        }
+
+        stream = parseJsonEventStream<AgentStreamEvent<AgentToolSet>>({
+          stream: response.body,
+          // `schema` is required by the signature but optional at runtime, where
+          // a null schema yields the unvalidated JSON as-is.
+          schema: undefined as any,
+        });
       }
 
-      if (!response.body) {
-        throw new Error("The response body is empty.");
+      if (!stream) {
+        throw new Error("streaming is null.");
       }
 
-      // The response has arrived, so the model is streaming — even if the first
-      // event is still in flight.
-      if (active === controller) {
-        setStatus("streaming");
-      }
-
-      const reader = parseJsonEventStream<AgentStreamEvent<AgentToolSet>>({
-        stream: response.body,
-        // `schema` is required by the signature but optional at runtime, where
-        // a null schema yields the unvalidated JSON as-is.
-        schema: undefined as any,
-      }).getReader();
+      const reader = stream.getReader();
 
       try {
         while (true) {
@@ -190,11 +258,8 @@ function createAgentSessionStore({
             break;
           }
 
-          if (!value.success) {
-            throw value.error;
-          }
-
-          await builder.push(value.value);
+          await builder.push(value);
+          emit(value);
 
           if (active === controller) {
             publish();
@@ -241,16 +306,30 @@ function createAgentSessionStore({
 export function useAgentSession({
   id,
   api,
+  apiStream,
   turns,
+  onEvent,
 }: UseAgentSessionOptions): UseAgentSessionResponse {
   const storeRef = React.useRef<AgentSessionStore | null>(null);
   const storeIdRef = React.useRef(id);
+  const onEventRef = React.useRef(onEvent);
+  onEventRef.current = onEvent;
+
+  const emit = React.useCallback((event: AgentStreamEvent<AgentToolSet>) => {
+    onEventRef.current?.(event);
+  }, []);
 
   // Same as `useChat`: `turns` is only an initial value, read on mount and
   // whenever the session id changes.
   if (storeRef.current === null || storeIdRef.current !== id) {
     storeIdRef.current = id;
-    storeRef.current = createAgentSessionStore({ id, api, turns });
+    storeRef.current = createAgentSessionStore({
+      id,
+      api,
+      apiStream,
+      turns,
+      emit,
+    });
   }
 
   const store = storeRef.current;

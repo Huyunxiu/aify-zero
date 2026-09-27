@@ -1,9 +1,9 @@
+import type { AgentToolSet } from "@workspace/agent";
 import type {
-  AgentUIDataParts,
-  AgentUIMessage,
-  AgentUITools,
-} from "@workspace/agent";
-import type { TextUIPart, UIMessagePart } from "ai";
+  AgentAssistantTurn,
+  AgentPart,
+  AgentTextPart,
+} from "@workspace/agent-client";
 import {
   BrainIcon,
   EyeIcon,
@@ -45,7 +45,7 @@ import {
 
 type AssistantMessageProps = {
   loading?: boolean;
-  message: AgentUIMessage;
+  turn: AgentAssistantTurn<AgentToolSet>;
   onFork?: (messageId: string) => void;
 };
 
@@ -67,17 +67,17 @@ const getReasonToolLabel = (text: string | undefined, fallback: string) => {
     : firstLine;
 };
 
-const splitAssistantMessageParts = (message: AgentUIMessage) => {
-  const answerPartIndex = message.parts.findLastIndex(
-    (part) => part.type === "text"
+const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
+  const parts: AgentPart<AgentToolSet>[] = turn.content.flatMap(
+    (e) => e.content as AgentPart<AgentToolSet>[]
   );
+  const answerPartIndex = parts.findLastIndex((part) => part.type === "text");
 
-  const answerPart: TextUIPart | undefined =
+  const answerPart: AgentTextPart | undefined =
     answerPartIndex !== -1
-      ? (message.parts[answerPartIndex] as TextUIPart)
+      ? (parts[answerPartIndex] as AgentTextPart)
       : undefined;
-  const stepParts: UIMessagePart<AgentUIDataParts, AgentUITools>[] =
-    message.parts.slice(0, answerPartIndex);
+  const stepParts: AgentPart<AgentToolSet>[] = parts.slice(0, answerPartIndex);
 
   return {
     stepParts,
@@ -87,16 +87,16 @@ const splitAssistantMessageParts = (message: AgentUIMessage) => {
 
 export const AssistantMessage = ({
   loading,
-  message,
+  turn,
   onFork,
 }: AssistantMessageProps) => {
-  if (message.role !== "assistant") {
+  if (turn.type !== "assistant") {
     return null;
   }
 
   const isTouch = useTouchPrimary();
 
-  const { answerPart, stepParts } = splitAssistantMessageParts(message);
+  const { answerPart, stepParts } = splitAssistantMessageSteps(turn);
 
   return (
     <div className="flex flex-col gap-4 group">
@@ -351,7 +351,7 @@ export const AssistantMessage = ({
                   size="icon-sm"
                   variant="ghost"
                   label="Copy"
-                  message={answerPart}
+                  message={answerPart.text}
                 />
               </TooltipTrigger>
               <TooltipContent>
@@ -360,7 +360,7 @@ export const AssistantMessage = ({
             </Tooltip>
           </TooltipProvider>
           <MessageAction
-            onClick={() => onFork?.(message.id)}
+            onClick={() => onFork?.(turn.id)}
             className="text-muted-foreground"
           >
             <SplitIcon />

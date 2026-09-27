@@ -9,7 +9,7 @@ import { defineConfig } from "vite";
 // https://vite.dev/config/
 export default defineConfig({
   optimizeDeps: {
-    exclude: ["@workspace/ui", "@workspace/shared", "@workspace/server"],
+    exclude: ["@workspace/ui", "@workspace/shared", "@workspace/server", "@workspace/agent-client"],
   },
   plugins: [
     tanstackRouter({

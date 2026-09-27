@@ -1,4 +1,5 @@
-import type { AgentUIMessage } from "@workspace/agent-client";
+import type { AgentUserPart, AgentUserTurn } from "@workspace/agent-client";
+import { isAgentFilePart, isAgentTextPart } from "@workspace/agent-client";
 import { nanoid } from "nanoid";
 
 import {
@@ -11,53 +12,50 @@ import { Message, MessageContent } from "./message";
 import { renderTextToReactElement } from "./prompt-input-tiptap";
 
 type UserMessageProps = {
-  message: AgentUIMessage;
+  turn: AgentUserTurn;
 };
 
-export const UserMessage = ({ message }: UserMessageProps) => {
-  if (message.role !== "user") {
-    return null;
-  }
+export const UserMessage = ({ turn }: UserMessageProps) => {
+  // A user turn wraps exactly one user step, so flattening gives back the flat
+  // part list the rendering below was written against.
+  const parts: AgentUserPart[] = turn.content.flatMap((step) => step.content);
 
-  return message.parts.map((part, partIndex) => {
-    if (part.type !== "text") {
-      return null;
-    }
+  const files = parts.filter(isAgentFilePart).map((file) => ({
+    filename: file.filename,
+    id: nanoid(),
+    mediaType: file.mediaType,
+    type: file.type,
+    url: file.url,
+  }));
 
-    const files = message.parts
-      .filter((e) => e.type === "file")
-      .map((file) => ({
-        filename: file.filename,
-        id: nanoid(),
-        mediaType: file.mediaType,
-        type: file.type,
-        url: file.url,
-      }));
+  const text = parts
+    .filter(isAgentTextPart)
+    .map((e) => e.text)
+    .join("\n\n");
 
-    return (
-      <Message from="user" key={`${message.id}-user-text-${partIndex}`}>
-        {files.length > 0 && (
-          <Attachments
-            className="flex items-start flex-wrap gap-2 ml-auto w-fit"
-            variant="grid"
-          >
-            {files.map((file, i) => (
-              <Attachment
-                data={file}
-                key={`${file.type}-${file.mediaType}-${file.filename}-${i}`}
-              >
-                <AttachmentPreview />
-                <AttachmentRemove />
-              </Attachment>
-            ))}
-          </Attachments>
-        )}
-        <MessageContent>
-          <div className="size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            {renderTextToReactElement(part.text)}
-          </div>
-        </MessageContent>
-      </Message>
-    );
-  });
+  return (
+    <Message from="user">
+      {files.length > 0 && (
+        <Attachments
+          className="flex items-start flex-wrap gap-2 ml-auto w-fit"
+          variant="grid"
+        >
+          {files.map((file, i) => (
+            <Attachment
+              data={file}
+              key={`${file.type}-${file.mediaType}-${file.filename}-${i}`}
+            >
+              <AttachmentPreview />
+              <AttachmentRemove />
+            </Attachment>
+          ))}
+        </Attachments>
+      )}
+      <MessageContent>
+        <div className="size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+          {renderTextToReactElement(text)}
+        </div>
+      </MessageContent>
+    </Message>
+  );
 };

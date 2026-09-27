@@ -1,13 +1,20 @@
-import { useChat } from "@ai-sdk/react";
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { AgentUIMessage } from "@workspace/agent";
-import { generateMessageId } from "@workspace/agent/utils/id-util";
+import type { AgentToolSet } from "@workspace/agent";
+import type {
+  AgentStreamEvent,
+  AgentTurn,
+  AgentUserPart,
+  AgentUserTurn,
+} from "@workspace/agent-client";
+import {
+  generateMessageId,
+  generateSessionId,
+} from "@workspace/agent/utils/id-util";
 import type { ForkSessionType } from "@workspace/server/routers/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
-import { lastAssistantMessageIsCompleteWithApprovalResponses } from "ai";
 import type { LanguageModelUsage } from "ai";
 import { MessageSquareIcon } from "lucide-react";
 import * as React from "react";
@@ -46,6 +53,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "../components/message-scroller";
+import { useAgentSession } from "../hooks/use-agent-session";
 import { client, queryClient } from "../lib/orpc";
 import { AssistantMessage } from "./assistant-message";
 import { Message, MessageContent, MessageResponse } from "./message";
@@ -65,7 +73,6 @@ import {
 } from "./prompt-input";
 import type { PromptInputMessage } from "./prompt-input";
 import { PromptInputTiptap } from "./prompt-input-tiptap";
-import { parseLeadingCommand } from "./prompt-tag";
 import { TitleBar } from "./title-bar";
 import { UserMessage } from "./user-message";
 
@@ -89,7 +96,7 @@ interface AttachmentItemProps {
     id: string;
     type: "file";
     filename?: string;
-    mediaType?: string;
+    mediaType: string;
     url: string;
   };
   onRemove: (id: string) => void;
@@ -144,10 +151,10 @@ export type AgentCommand = {
 
 export type SessionProps = React.ComponentProps<"div"> & {
   sessionId: string | undefined;
-  initialMessages?: AgentUIMessage[];
+  initialTurns?: AgentTurn<AgentToolSet>[];
 };
 
-export function Session({ sessionId, initialMessages }: SessionProps) {
+export function Session({ sessionId, initialTurns = [] }: SessionProps) {
   const navigate = useNavigate();
 
   const getSettingsQuery = useQuery({
@@ -200,64 +207,49 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
     setSelectedModelEffort(effort);
   };
 
-  const selectedModelIdRef = React.useRef(selectedModelId);
-  selectedModelIdRef.current = selectedModelId;
-  const selectedEffortRef = React.useRef(selectedModelEffort);
-  selectedEffortRef.current = selectedModelEffort;
   const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
-  const { sendMessage, messages, error, status } = useChat<AgentUIMessage>({
-    messages: initialMessages,
-    id: sessionId,
-    generateId: generateMessageId,
-    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithApprovalResponses,
-    transport: {
-      reconnectToStream() {
-        throw new Error("Unsupported");
-      },
-      async sendMessages(options) {
-        const modelId = selectedModelIdRef.current;
-        if (!modelId) {
-          return;
-        }
+  // The desktop home route renders the session with no id. `useChat` used to
+  // mint one; keep doing that, and keep it stable across renders so the hook's
+  // store is not rebuilt under the conversation.
+  const sessionKey = React.useMemo(
+    () => sessionId ?? generateSessionId(),
+    [sessionId]
+  );
 
-        const result = await client.session.create(
-          {
-            sessionId: options.chatId,
-            messages: options.messages,
-            model: modelId,
-            modelEffort: selectedEffortRef.current,
-          },
-          { signal: options.abortSignal }
-        );
+  const onEvent = React.useCallback((event: AgentStreamEvent<AgentToolSet>) => {
+    if (event.type === "session.title.end") {
+      // The generated title replaces the localized placeholder the sidebar
+      // showed until now.
+      void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+    }
+  }, []);
 
-        // The first message creates the session row server-side with an
-        // empty title. The response is now streaming, so the row exists —
-        // refresh the sidebar so the new session shows up with its localized
-        // default title without waiting for the AI-generated title
-        // (data-session:title) to arrive.
-        if (options.messages.length === 1) {
-          void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
-        }
-
-        return eventIteratorToUnproxiedDataStream(result);
-      },
-    },
-    onData: (part) => {
-      if (part.type === "data-session:title") {
-        // The agent finished generating the session title — refresh the
-        // sidebar session list.
-        void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+  const { sendTurns, turns, error } = useAgentSession({
+    id: sessionKey,
+    apiStream: async (options) => {
+      if (!selectedModelId || !selectedModelEffort || !options.turns.length) {
+        return;
       }
+      const result = await client.session.create(
+        {
+          sessionId: options.sessionId,
+          turns: [options.turns.at(-1)!],
+          model: selectedModelId,
+          modelEffort: selectedModelEffort,
+        },
+        { signal: options.abortSignal }
+      );
+      return eventIteratorToUnproxiedDataStream(result);
     },
-    onError: (err) => {
-      console.error(err);
-    },
+    turns: initialTurns,
+    onEvent,
   });
 
+  // console.log("session page refresh.", sessionId, initialTurns.length);
+
   const tokenUsage =
-    messages.findLast((e) => e.metadata?.usage)?.metadata?.usage ||
-    defaultTokenUsage;
+    turns.findLast((turn) => turn.usage)?.usage || defaultTokenUsage;
 
   const commands: AgentCommand[] = [
     {
@@ -269,21 +261,17 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
   ];
 
   const handleSubmit = (message: PromptInputMessage) => {
-    console.log("handleSubmit", messages, message);
-    const command = parseLeadingCommand(message.text);
-
-    const parts: AgentUIMessage["parts"] = [];
-    if (command?.id) {
-      parts.push({
-        type: "data-command:compact",
-        data: {},
-      });
+    const modelId = selectedModelId;
+    if (!modelId) {
+      return;
     }
+
+    const parts: AgentUserPart[] = [];
     if (message.files.length) {
       parts.push(
         ...message.files.map((file) => ({
+          filename: file.filename,
           mediaType: file.mediaType,
-          name: file.filename,
           type: "file" as const,
           url: file.url,
         }))
@@ -293,30 +281,56 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
       type: "text",
       text: message.text,
     });
-    parts.push();
-    sendMessage({
-      role: "user",
+
+    // A user turn wraps exactly one user step, and the two are separate levels
+    // with separate ids — a step's id is never the id of the turn around it.
+    const turn: AgentUserTurn = {
       id: generateMessageId(),
-      parts,
+      type: "user",
+      createdAt: Date.now(),
+      status: "done",
+      content: [
+        {
+          id: generateMessageId(),
+          type: "user",
+          createdAt: Date.now(),
+          status: "done",
+          content: parts,
+        },
+      ],
+    };
+
+    // The server writes the session row when the first turn arrives, with an
+    // empty title; refresh now so the row shows up with its localized
+    // placeholder, and again when the title event lands.
+    if (turns.length === 0) {
+      void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+    }
+
+    void sendTurns({
+      turns: [...turns, turn],
+      // A newer send cancels the older request on its own, so nothing aborts
+      // this one.
+      abortSignal: new AbortController().signal,
+      payload: { model: modelId, modelEffort: selectedModelEffort },
     });
   };
 
-  const renderMessage = (message: AgentUIMessage) => {
-    if (message.role === "user") {
-      return <UserMessage key={message.id} message={message} />;
+  const renderTurn = (turn: AgentTurn<AgentToolSet>) => {
+    if (turn.type === "user") {
+      return <UserMessage key={turn.id} turn={turn} />;
     }
 
-    if (message.role === "assistant") {
+    if (turn.type === "assistant") {
       return (
         <AssistantMessage
-          loading={status === "streaming" || status === "submitted"}
+          key={turn.id}
+          turn={turn}
           onFork={(messageId) => {
             if (sessionId) {
               forkSessionMutation.mutate({ sessionId, messageId });
             }
           }}
-          key={message.id}
-          message={message}
         />
       );
     }
@@ -343,7 +357,7 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                   <MessageScroller>
                     <MessageScrollerViewport>
                       <MessageScrollerContent className="px-3 py-3 md:px-5 md:py-5">
-                        {messages.length === 0 ? (
+                        {turns.length === 0 ? (
                           <Empty className="h-full">
                             <EmptyHeader>
                               <EmptyMedia variant="icon">
@@ -358,13 +372,13 @@ export function Session({ sessionId, initialMessages }: SessionProps) {
                           </Empty>
                         ) : (
                           <>
-                            {messages.map((message) => (
+                            {turns.map((turn) => (
                               <MessageScrollerItem
-                                key={message.id}
-                                messageId={message.id}
-                                scrollAnchor={message.role === "user"}
+                                key={turn.id}
+                                messageId={turn.id}
+                                scrollAnchor={turn.type === "user"}
                               >
-                                {renderMessage(message)}
+                                {renderTurn(turn)}
                               </MessageScrollerItem>
                             ))}
                             {error && (

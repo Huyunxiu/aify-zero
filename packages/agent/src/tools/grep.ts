@@ -158,8 +158,6 @@ function buildRipgrepCommand(input: BuildCommandInput): string {
   parts.push(shellQuote(input.pattern));
   parts.push(shellQuote(input.normalizedPath));
 
-  console.log(123, parts.join(" "));
-
   return parts.join(" ");
 }
 

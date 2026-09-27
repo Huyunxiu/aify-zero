@@ -2,11 +2,10 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { Button, buttonVariants } from "./button";
 import { useCopyToClipboard } from "../hooks/use-copy-to-clipboard";
-import type { TextUIPart } from "ai";
 import type { VariantProps } from "class-variance-authority";
 
 export type CopyButtonProps = ButtonPrimitive.Props & VariantProps<typeof buttonVariants> & { loading?: boolean } & {
-  message: TextUIPart | undefined;
+  message: string | undefined;
   label: string;
 }
 
@@ -14,11 +13,11 @@ export function CopyButton({ message, label, ...props }: CopyButtonProps) {
   const { copyToClipboard, isCopied } = useCopyToClipboard();
 
   const handleCopy = () => {
-    if (!message?.text) {
+    if (!message) {
       return;
     }
 
-    copyToClipboard(message?.text);
+    copyToClipboard(message);
   };
 
   return (

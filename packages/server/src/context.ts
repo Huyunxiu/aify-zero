@@ -16,17 +16,26 @@ export type CreateContextOptions = {
    * without checking it first.
    */
   language: Language;
+  /**
+   * The request's own signal: it aborts when the client hangs up, so a handler
+   * that keeps working after it has answered — the agent turn in
+   * `session.create` outlives the response it is streaming into — has
+   * something to stop it.
+   */
+  signal: AbortSignal;
 };
 
 export async function createContext({
   requestId,
   logger,
   language,
+  signal,
 }: CreateContextOptions) {
   return {
     requestId,
     logger,
     language,
+    signal,
   };
 }
 

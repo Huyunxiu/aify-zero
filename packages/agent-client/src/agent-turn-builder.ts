@@ -11,6 +11,8 @@ import type {
   AgentDynamicToolPart,
   AgentPart,
   AgentReasoningPart,
+  AgentSessionTitlePart,
+  AgentSessionTitleStep,
   AgentStep,
   AgentStreamEvent,
   AgentTextPart,
@@ -289,10 +291,9 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.toolMetadata = event.toolMetadata;
             part.toolName = event.toolName;
             part.providerExecuted = event.providerExecuted;
-            if (part.state === "output-available") {
-              part.resultProviderMetadata = event.providerMetadata;
-              part.preliminary = event.preliminary;
-            }
+            part.output = event.output;
+            part.resultProviderMetadata = event.providerMetadata;
+            part.preliminary = event.preliminary;
             this.pendingParts.delete(uk);
           } else if (isAgentStaticToolPart(part)) {
             part.state = "output-available";
@@ -302,10 +303,9 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.toolCallId = event.toolCallId;
             part.toolMetadata = event.toolMetadata;
             part.providerExecuted = event.providerExecuted;
-            if (part.state === "output-available") {
-              part.resultProviderMetadata = event.providerMetadata;
-              part.preliminary = event.preliminary;
-            }
+            part.output = event.output;
+            part.resultProviderMetadata = event.providerMetadata;
+            part.preliminary = event.preliminary;
             this.pendingParts.delete(uk);
           }
         }
@@ -344,9 +344,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.toolMetadata = event.toolMetadata;
             part.toolName = event.toolName;
             part.providerExecuted = event.providerExecuted;
-            if (part.state === "output-error") {
-              part.resultProviderMetadata = event.providerMetadata;
-            }
+            part.resultProviderMetadata = event.providerMetadata;
             this.pendingParts.delete(uk);
           } else if (isAgentStaticToolPart(part)) {
             part.state = "output-error";
@@ -356,9 +354,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.toolCallId = event.toolCallId;
             part.toolMetadata = event.toolMetadata;
             part.providerExecuted = event.providerExecuted;
-            if (part.state === "output-error") {
-              part.resultProviderMetadata = event.providerMetadata;
-            }
+            part.resultProviderMetadata = event.providerMetadata;
             this.pendingParts.delete(uk);
           }
         }
@@ -391,7 +387,34 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         }
         break;
       }
+      case "session.title.start": {
+        const part: AgentSessionTitlePart = {
+          id: event.id,
+          type: "session.title",
+          state: "streaming",
+        };
+        const uk = `${event.turnId}-${event.stepId}-${event.id}`;
+        this.pendingParts.set(uk, part);
+        const step = this.pendingSteps.get(event.stepId);
+        if (step) {
+          (step.content as AgentPart<TOOLS>[]).push(part);
+        }
+        break;
+      }
+      case "session.title.end": {
+        const uk = `${event.turnId}-${event.stepId}-${event.id}`;
+        const part = this.pendingParts.get(uk) as
+          | AgentSessionTitlePart
+          | undefined;
+        if (part) {
+          part.title = event.title;
+          part.state = "done";
+          this.pendingParts.delete(uk);
+        }
+        break;
+      }
       case "error": {
+        console.error("AgentTurnBuilder#push error", event.error);
         break;
       }
       case "abort": {
@@ -487,9 +510,19 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         model: event.model,
       };
       return step;
+    } else if (event.stepType === "session.title") {
+      const step: AgentSessionTitleStep = {
+        type: "session.title",
+        id: event.id,
+        createdAt: event.createdAt,
+        status: "streaming",
+        content: [],
+        model: event.model,
+      };
+      return step;
     }
 
-    console.error(
+    console.log(
       `AgentTurnBuilder#startStep unknown event ${JSON.stringify(event)}`
     );
     return null;
