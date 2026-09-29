@@ -1,10 +1,12 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
-import { AgentTurnBuilder } from "@workspace/agent-client";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
 import type {
   AgentRuntimeContext,
   AgentStep,
   AgentStreamEvent,
   AgentTurn,
+  AgentTurnStatus,
   CompactionConfig,
 } from "@workspace/agent-client";
 import type { TurnModel } from "@workspace/db";
@@ -16,19 +18,18 @@ import type {
   LanguageModel,
   LanguageModelUsage,
   ModelMessage,
+  TextStreamPart,
   ToolSet,
 } from "ai";
-import { addLanguageModelUsage } from "ai/internal";
 
+import type { AgentContext } from "./agent-context";
+import { AgentSession } from "./agent-session";
 import { compactMessages, shouldCompact } from "./compaction/compaction";
-import type { AgentContext } from "./context";
 import { HooksManager } from "./hooks-manager";
 import type { ExtensionAPI } from "./hooks-manager";
-import { AgentSession } from "./session";
 import type { AgentStore } from "./storage";
 import type { AgentToolSet } from "./types";
-import { convertAgentTurnToModalMessage } from "./utils/convert-to-model-message";
-import { generateMessageId, generatePartId } from "./utils/id-util";
+import { generateEventId, generateStepId } from "./utils/id-util";
 import { toAgentEvent } from "./utils/to-agent-stream-event";
 
 registerTelemetry(DevToolsTelemetry());
@@ -60,66 +61,42 @@ const MAX_STEPS = 100;
 export type AgentOptions = {
   name: string;
   sessionId: string;
-  model: LanguageModel;
   session?: AgentSession;
   tools?: ToolSet;
   store: AgentStore;
   systemPrompt?: string;
-  effort?: ModelEffort;
   context: AgentContext;
   hooks?: HooksManager;
   extensionApi?: ExtensionAPI;
+  apiKey: string;
+  apiUrl: string;
+  providerId: string;
+  modelId: string;
+  modelEffort?: ModelEffort;
 };
 
 export type AgentStreamOptions = {
-  model: LanguageModel;
   modelId: string;
-  abortSignal?: AbortSignal;
-  messages: AgentTurn<AgentToolSet>[];
+  turns: AgentTurn<AgentToolSet>[];
 };
-
-interface UIMessageStreamWriter {
-  /**
-   * Appends a data stream part to the stream.
-   */
-  write(
-    data: AgentStreamEvent<AgentToolSet>,
-    builder?: AgentTurnBuilder<AgentToolSet>
-  ): Promise<void>;
-  close(): void;
-  /**
-   * Error handler that is used by the data stream writer.
-   * This is intended for forwarding when merging streams
-   * to prevent duplicated error masking.
-   */
-  error: (error: unknown) => void;
-}
 
 type AgentTurnInput = {
   readonly title?: string;
   readonly turnType: AgentTurn<AgentToolSet>["type"];
   readonly turnId: string;
-  readonly prevTurnId?: string;
-  readonly modelId: string;
-  readonly abortSignal?: AbortSignal;
-  readonly compactionConfig: CompactionConfig;
-  readonly messages: ModelMessage[];
-  readonly turns: AgentTurn<AgentToolSet>[];
-  readonly model: LanguageModel;
-  readonly writer: UIMessageStreamWriter;
+  readonly parentId?: string;
 };
 
 type AgentStepInput = AgentTurnInput & {
   readonly stepId: string;
   readonly stepType: AgentStep<AgentToolSet>["type"];
-  readonly builder: AgentTurnBuilder<AgentToolSet>;
 };
 
 /** What one completed step of the model loop reported back. */
-type AgentStepResult = {
+export type AgentStepResult = {
   /** The step's history, including its own assistant and tool messages. */
   readonly messages: ModelMessage[];
-  /** This step's usage alone; {@link Agent.runTurn} totals it across steps. */
+  /** This step's usage alone; {@link Agent.#runTurn} totals it across steps. */
   readonly usage: LanguageModelUsage;
   readonly finishReason: FinishReason;
   readonly rawFinishReason: string | undefined;
@@ -130,35 +107,64 @@ type AgentStepResult = {
   readonly toolCallsResolved: boolean;
 };
 
+/** What one call of {@link Agent.#runSteps} reported back to the turn loop. */
+type StepOutcome =
+  | { readonly ok: true; readonly result: AgentStepResult }
+  /** The turn was aborted: nothing failed, the caller stopped it. */
+  | { readonly ok: false; readonly reason: "aborted" }
+  /** The model call failed, or the model ended the step with an error. */
+  | { readonly ok: false; readonly reason: "error"; readonly error: unknown };
+
 export class Agent {
   name: string;
   sessionId: string;
-  model: LanguageModel;
   systemPrompt?: string;
-  session: AgentSession;
   tools: ToolSet;
+
   store: AgentStore;
-  context: AgentContext;
-  effort?: ModelEffort;
   hooks: HooksManager;
   extensionApi: ExtensionAPI;
+
+  apiKey: string;
+  apiUrl: string;
+  providerId: string;
+  provider: OpenAICompatibleProvider;
+
+  context: AgentContext;
+  session: AgentSession;
 
   constructor(options: AgentOptions) {
     this.name = options.name;
     this.sessionId = options.sessionId;
-    this.model = options.model;
     this.systemPrompt = options.systemPrompt;
-    this.session = options.session ?? new AgentSession({ messages: [] });
     this.tools = options.tools ?? {};
     this.store = options.store;
-    this.context = options.context;
-    this.effort = options.effort;
     this.hooks = options.hooks ?? new HooksManager();
     this.extensionApi = options.extensionApi ?? {};
+    this.apiKey = options.apiKey;
+    this.apiUrl = options.apiUrl;
+    this.providerId = options.providerId;
+
+    this.context = options.context;
+    this.context.modelId = options.modelId;
+    this.context.modelEffort = options.modelEffort;
+    this.session = options.session ?? new AgentSession({ turns: [] });
+    this.provider = createOpenAICompatible({
+      apiKey: this.apiKey,
+      baseURL: this.apiUrl,
+      name: this.providerId,
+    });
   }
 
-  async stream({ messages, model, modelId, abortSignal }: AgentStreamOptions) {
-    const mostRecentTurn = messages.at(-1);
+  #getModel() {
+    return this.provider.chatModel(this.context.modelId);
+  }
+
+  async stream({ turns, modelId }: AgentStreamOptions) {
+    this.context.modelId = modelId;
+    this.session.turns = turns;
+
+    const mostRecentTurn = turns.at(-1);
 
     if (!mostRecentTurn) {
       throw new Error("no message.");
@@ -182,15 +188,13 @@ export class Agent {
       await this.store.saveSession({
         id: this.sessionId,
         title: "",
-        metadata: "",
+        metadata: {},
       });
     }
 
     const previousMessages = await this.store.getBranchTurns(this.sessionId);
     const previousTurns = this.toAgentTurns(previousMessages);
     const originalTurns = [...previousTurns, mostRecentTurn];
-    const modelMessages =
-      await convertAgentTurnToModalMessage<AgentToolSet>(originalTurns);
 
     let lastTurnId = previousMessages.at(-1)?.id;
 
@@ -212,62 +216,36 @@ export class Agent {
       AgentStreamEvent<AgentToolSet>
     >;
 
-    // Downstream can stop reading at any moment — the client aborts, the window
-    // closes — and `cancel` is the only notification the stream gets. It drives
-    // a controller of its own, merged with the caller's signal, so either one
-    // stops the turn and the model call it is waiting on.
-    const turnAbort = new AbortController();
-    const turnSignal = abortSignal
-      ? AbortSignal.any([abortSignal, turnAbort.signal])
-      : turnAbort.signal;
-
     const stream = new ReadableStream<AgentStreamEvent<AgentToolSet>>({
       start(controllerArg) {
         controller = controllerArg;
       },
-      cancel(reason) {
-        turnAbort.abort(reason);
-      },
     });
 
-    function safeError(error: unknown) {
+    const safeError = (error: unknown) => {
       try {
         controller.error(error);
       } catch {
         // suppress errors when the stream has been closed
       }
-    }
+    };
 
-    function safeClose() {
+    const safeClose = () => {
       try {
         controller.close();
       } catch {
         // suppress errors when the stream has been closed
       }
-    }
+    };
 
-    async function safeEnqueue(
-      event: AgentStreamEvent<AgentToolSet>,
-      builder?: AgentTurnBuilder<AgentToolSet>
-    ) {
+    const safeEnqueue = async (event: AgentStreamEvent<AgentToolSet>) => {
       try {
-        await builder?.push(event);
+        await this.session.builder?.push(event);
         controller.enqueue(event);
       } catch {
         // suppress errors when the stream has been closed
       }
-    }
-
-    const compactionConfig: CompactionConfig = {
-      recentWindowSize: 10,
-      threshold: 100_000,
-      thresholdPercent: 0.9,
-      lastKnownInputTokens:
-        originalTurns.findLast((e) => e.usage)?.usage?.inputTokens ?? 0,
-      lastKnownPromptMessageCount: originalTurns.length,
     };
-
-    const turnId = generateMessageId();
 
     // Started, not awaited: the turn runs as a producer into `stream` while the
     // caller begins reading it. Awaiting here would run the whole turn to
@@ -275,27 +253,31 @@ export class Agent {
     // sit buffered until the last one had already been produced.
     void (async () => {
       try {
-        await this.runTurn({
+        this.context.controller = {
+          write: safeEnqueue,
+          close: safeClose,
+          error: safeError,
+        };
+
+        const turnId = await this.session.startTurn({
+          turns: originalTurns,
+        });
+
+        const turn = await this.#runTurn({
           turnType: "assistant",
-          writer: {
-            write: safeEnqueue,
-            close: safeClose,
-            error: safeError,
-          },
           title: session?.title,
           turnId,
-          modelId,
-          model,
-          turns: originalTurns,
-          abortSignal: turnSignal,
-          compactionConfig,
-          messages: modelMessages,
+          parentId: lastTurnId,
         });
+
+        this.session.finishTurn({ turn });
+
+        this.context.controller?.close();
       } catch (error) {
-        // `runStep` reports its own failures through the writer; this covers
-        // the rest of the turn — the store writes around it in particular —
-        // which would otherwise reject unobserved and leave the reader waiting
-        // for a stream that never ends.
+        // A step reports its own ending through the turn's finish event; this
+        // covers the rest of the turn — the store writes around it in
+        // particular — which would otherwise reject unobserved and leave the
+        // reader waiting for a stream that never ends.
         safeError(error);
       } finally {
         await this.hooks.emit(
@@ -312,38 +294,32 @@ export class Agent {
   async generateSessionTitle(
     turnId: string,
     modelId: string,
-    builder: AgentTurnBuilder<AgentToolSet>,
-    turn: AgentTurn<AgentToolSet>,
-    writer: UIMessageStreamWriter
+    turn: AgentTurn<AgentToolSet>
   ) {
     try {
-      const stepId = generateMessageId();
-      await writer.write(
-        {
-          type: "step.start",
-          stepType: "session.title",
-          model: modelId,
-          turnId,
-          id: stepId,
-          createdAt: Date.now(),
-        },
-        builder
-      );
+      const stepId = generateStepId();
+      await this.context.controller?.write({
+        type: "step.start",
+        stepType: "session.title",
+        model: modelId,
+        turnId,
+        id: stepId,
+        createdAt: Date.now(),
+      });
 
-      const eventId = generateMessageId();
-      await writer.write(
-        {
-          id: eventId,
-          type: "session.title.start",
-          turnId,
-          stepId,
-          createdAt: Date.now(),
-        },
-        builder
-      );
+      const eventId = generateEventId();
+      await this.context.controller?.write({
+        id: eventId,
+        type: "session.title.start",
+        turnId,
+        stepId,
+        createdAt: Date.now(),
+      });
 
       const step = await generateText({
-        model: this.model,
+        // The turn may be reusing a `context.modelId` that a later call has
+        // already replaced, so the model is resolved from the argument.
+        model: this.provider.chatModel(modelId),
         system: TITLE_PROMPT,
         prompt: this.getTextFromUserTurn(turn),
       });
@@ -351,32 +327,27 @@ export class Agent {
 
       await this.store.updateSessionById(this.sessionId, title);
 
-      await writer.write(
-        {
-          id: eventId,
-          type: "session.title.end",
-          title,
-          turnId,
-          stepId,
-          createdAt: Date.now(),
-        },
-        builder
-      );
+      await this.context.controller?.write({
+        id: eventId,
+        type: "session.title.end",
+        title,
+        turnId,
+        stepId,
+        createdAt: Date.now(),
+      });
 
-      await writer.write(
-        {
-          id: stepId,
-          turnId,
-          type: "step.finish",
-          createdAt: Date.now(),
-          usage: step.usage,
-          performance: step.finalStep.performance,
-          finishReason: step.finalStep.finishReason,
-          rawFinishReason: step.finalStep.rawFinishReason,
-          providerMetadata: step.finalStep.providerMetadata,
-        },
-        builder
-      );
+      await this.context.controller?.write({
+        id: stepId,
+        turnId,
+        type: "step.finish",
+        createdAt: Date.now(),
+        usage: step.usage,
+        performance: step.finalStep.performance,
+        finishReason: step.finalStep.finishReason,
+        rawFinishReason: step.finalStep.rawFinishReason,
+        providerMetadata: step.finalStep.providerMetadata,
+        status: "done",
+      });
 
       await this.hooks.emit(
         "title_generated",
@@ -397,14 +368,13 @@ export class Agent {
       .join("");
   }
 
-  toAgentTurns(messages: TurnModel[]): AgentTurn<AgentToolSet>[] {
-    return messages.map((e) => e.content as AgentTurn<AgentToolSet>);
+  toAgentTurns(turns: TurnModel[]): AgentTurn<AgentToolSet>[] {
+    return turns.map((e) => e.content as AgentTurn<AgentToolSet>);
   }
 
   /**
-   * Drives one assistant turn: repeated {@link Agent.runStep} calls until the
-   * model stops asking for tools, the step budget runs out, or a step is
-   * aborted or fails.
+   * Drives one assistant turn: repeated `#runSteps` calls until the model stops
+   * asking for tools, the step budget runs out, or a step is aborted or fails.
    *
    * The loop is driven by hand so compaction can run before every model call.
    * `ToolLoopAgent` invokes `prepareCall` once per stream — its step loop lives
@@ -414,105 +384,100 @@ export class Agent {
    * the model is about to receive.
    *
    * Every step streams into the single UI message started by
-   * {@link Agent.stream}; the `finish` chunk is written here, once, after the
-   * last step, because only then is "last" known.
+   * {@link Agent.stream}; the finish is written once, by `#finishTurn`, because
+   * only after the last step is "last" known.
    */
-  private async runTurn(
+  async #runTurn(
     input: AgentTurnInput
   ): Promise<AgentTurn<AgentToolSet> | undefined> {
-    const { abortSignal, writer, turnId, turns, title, modelId } = input;
-    let { messages } = input;
+    const { turnId, title } = input;
 
-    const builder = new AgentTurnBuilder<AgentToolSet>({ turns });
-
-    await writer.write(
-      {
-        type: "turn.start",
-        id: turnId,
-        turnType: "assistant",
-        createdAt: Date.now(),
-      },
-      builder
-    );
+    await this.context.controller?.write({
+      type: "turn.start",
+      id: turnId,
+      turnType: "assistant",
+      createdAt: Date.now(),
+    });
 
     // Start title generation in the background (never awaited)
     if (!title) {
-      const userTurn = turns.findLast((e) => e.type === "user");
+      const userTurn = this.session.turns.findLast((e) => e.type === "user");
       if (userTurn) {
-        this.generateSessionTitle(turnId, modelId, builder, userTurn, writer);
+        this.generateSessionTitle(turnId, this.context.modelId, userTurn);
       }
     }
 
-    // Each step reports only its own usage; the persisted metadata has to
-    // total the turn, which the SDK did for us when one call drove it all.
-    let totalUsage: LanguageModelUsage | undefined;
-
+    // [TODO] remove hardcode
+    let status: AgentTurnStatus = { status: "done" };
     for (let step = 0; step < MAX_STEPS; step += 1) {
       // A doomed call would emit a second `abort` chunk and reject its result
       // promises; stopping here keeps it to one abort per turn.
-      if (abortSignal?.aborted) {
-        return;
+      if (this.context.abortSignal?.aborted) {
+        status = { status: "aborted" };
+        break;
       }
 
       // The step reads the history `messages` currently holds, which compaction
       // or the previous step may have replaced.
-      const stepId = generateMessageId();
-      const stepResult = await this.runStep({
+      const stepId = generateStepId();
+
+      const outcome = await this.#runSteps({
         ...input,
-        messages,
         stepId,
         stepType: "assistant",
-        builder,
       });
 
-      // Aborted or the model call failed: the stream already delivered its
-      // `abort`/`error` chunk, so the turn ends without a `finish` chunk.
-      if (stepResult === undefined) {
-        return;
+      if (!outcome.ok) {
+        status =
+          outcome.reason === "aborted"
+            ? { status: "aborted" }
+            : { status: "error", error: outcome.error };
+        break;
       }
 
-      ({ messages } = stepResult);
-      totalUsage =
-        totalUsage === undefined
-          ? stepResult.usage
-          : addLanguageModelUsage(totalUsage, stepResult.usage);
+      this.session.finishStep(outcome.result);
 
-      if (!stepResult.toolCallsResolved) {
+      // An abort that landed after the last chunk still ends the turn as
+      // aborted, however cleanly the step itself finished.
+      if (this.context.abortSignal?.aborted) {
+        status = { status: "aborted" };
+        break;
+      }
+
+      if (!outcome.result.toolCallsResolved) {
+        status = { status: "done" };
         break;
       }
     }
 
-    await writer.write(
-      {
-        id: turnId,
-        type: "turn.finish",
-        createdAt: Date.now(),
-        usage: totalUsage,
-      },
-      builder
-    );
+    await this.context.controller?.write({
+      id: turnId,
+      type: "turn.finish",
+      createdAt: Date.now(),
+      usage: this.session.usage,
+      ...status,
+    });
 
-    writer.close();
+    const turn = this.session.builder?.completedTurns.at(-1);
 
-    const turn = builder.completedTurns.at(-1);
     if (turn) {
-      const existingTurn = await this.store.existsTurn(turn.id);
-      if (existingTurn) {
+      if (await this.store.existsTurn(turn.id)) {
         await this.store.updateTurn(turn.id, turn, {});
       } else {
-        const lastTurnId = turns.at(-2)?.id;
         await this.store.saveTurn({
           id: turn.id,
           sessionId: this.sessionId,
           type: turn.type,
           metadata: {},
           content: turn,
-          parentId: lastTurnId,
+          parentId: input.parentId ?? null,
           createdAt: new Date(),
         });
         await this.store.setActiveHead(this.sessionId, turn.id);
       }
     }
+
+    return turn;
   }
 
   /**
@@ -521,67 +486,60 @@ export class Agent {
    * message, and folds the step's assistant and tool messages back into that
    * history so the next step sees them.
    *
-   * Returns `undefined` when the step was aborted or the model call failed.
-   * In both cases the stream has already emitted its `abort`/`error` chunk,
-   * and the turn has to end without a `finish` chunk.
+   * Reports how the step ended rather than failing the stream: an aborted or
+   * failed step is an ending the turn has to record, not a reason for the reader
+   * to be left without one.
    */
-  private async runStep(
-    input: AgentStepInput
-  ): Promise<AgentStepResult | undefined> {
-    const {
-      abortSignal,
-      compactionConfig,
-      model,
-      modelId,
-      turnId,
-      stepId,
-      writer,
-      builder,
-    } = input;
+  async #runSteps(input: AgentStepInput): Promise<StepOutcome> {
+    const { turnId, stepId } = input;
+    const model = this.#getModel();
 
-    const compactionStepId = generateMessageId();
-    const compaction = await this.maybeCompact({
-      config: compactionConfig,
-      messages: input.messages,
-      abortSignal,
+    this.context.compactionConfig.lastKnownInputTokens =
+      this.session.lastKnownInputTokens;
+    this.context.compactionConfig.lastKnownPromptMessageCount =
+      this.session.modelMessages.length;
+
+    const compactionStepId = generateStepId();
+    const compaction = await this.#maybeCompact({
+      config: this.context.compactionConfig,
+      messages: this.session.modelMessages,
+      abortSignal: this.context.abortSignal,
       model,
       onBeforeCompact: () =>
-        this.announceCompactionStart(turnId, compactionStepId, builder, writer),
+        this.#announceCompactionStart(turnId, compactionStepId),
       onAfterCompact: (params) =>
-        this.announceCompactionEnd(
-          turnId,
-          compactionStepId,
-          builder,
-          writer,
-          params
-        ),
+        this.#announceCompactionEnd(turnId, compactionStepId, params),
     });
     const { messages } = compaction;
-    compactionConfig.lastKnownPromptMessageCount = messages.length;
 
-    await writer.write(
-      {
-        type: "step.start",
-        stepType: "assistant",
-        model: modelId,
-        turnId,
-        id: stepId,
-        createdAt: Date.now(),
-      },
-      builder
-    );
+    await this.context.controller?.write({
+      type: "step.start",
+      stepType: "assistant",
+      model: this.context.modelId,
+      turnId,
+      id: stepId,
+      createdAt: Date.now(),
+    });
 
     const result = streamText<ToolSet, AgentRuntimeContext>({
       instructions: this.systemPrompt,
       model,
       tools: this.tools,
       stopWhen: isStepCount(1),
-      reasoning: this.effort
-        ? MODEL_EFFORT_TO_REASONING[this.effort]
+      reasoning: this.context.modelEffort
+        ? MODEL_EFFORT_TO_REASONING[this.context.modelEffort]
         : undefined,
       messages,
-      abortSignal,
+      abortSignal: this.context.abortSignal,
+      include: {
+        requestBody: true,
+      }
     });
+
+    // A provider that fails mid-stream reports it as an `error` chunk, which the
+    // protocol forwards as a part; keeping the last one lets the turn carry the
+    // reason, which is known nowhere else.
+    let streamError: unknown;
 
     const reader = result.stream.getReader();
     try {
@@ -590,13 +548,25 @@ export class Agent {
         if (done) {
           break;
         }
-        const event = toAgentEvent<AgentToolSet>(turnId, stepId, value as any);
+        if (value.type === "error") {
+          streamError = value.error;
+        }
+        // `streamText` is called with the plain `ToolSet`, so its chunks are
+        // typed that way; the protocol wants them as the agent's own tool set.
+        const event = toAgentEvent<AgentToolSet>(
+          turnId,
+          stepId,
+          value as TextStreamPart<AgentToolSet>
+        );
         if (event) {
-          await writer.write(event, builder);
+          await this.context.controller?.write(event);
         }
       }
     } catch (error) {
-      writer.error(error);
+      // An abort surfaces here as the stream is torn down.
+      return this.context.abortSignal?.aborted
+        ? { ok: false, reason: "aborted" }
+        : { ok: false, reason: "error", error };
     } finally {
       reader.releaseLock();
     }
@@ -609,22 +579,28 @@ export class Agent {
       const { finishReason, rawFinishReason, usage, toolCalls, toolResults } =
         step;
 
-      compactionConfig.lastKnownInputTokens = step.usage.inputTokens;
+      await this.context.controller?.write({
+        id: stepId,
+        turnId,
+        type: "step.finish",
+        createdAt: Date.now(),
+        usage: step.usage,
+        performance: step.performance,
+        finishReason: step.finishReason,
+        rawFinishReason: step.rawFinishReason,
+        providerMetadata: step.providerMetadata,
+        status: "done",
+      });
 
-      await writer.write(
-        {
-          id: stepId,
-          turnId,
-          type: "step.finish",
-          createdAt: Date.now(),
-          usage: step.usage,
-          performance: step.performance,
-          finishReason: step.finishReason,
-          rawFinishReason: step.rawFinishReason,
-          providerMetadata: step.providerMetadata,
-        },
-        builder
-      );
+      // The step did end, hence the event above, but a step the model ended with
+      // `error` cannot be reported as a whole turn.
+      if (finishReason === "error") {
+        return {
+          ok: false,
+          reason: "error",
+          error: streamError ?? new Error("The model stream failed."),
+        };
+      }
 
       // Exactly the messages the SDK feeds its own next step: the assistant
       // message for this step plus a tool message for whatever executed.
@@ -642,38 +618,46 @@ export class Agent {
       );
 
       return {
-        messages,
-        usage,
-        finishReason,
-        rawFinishReason,
-        toolCallsResolved:
-          clientToolCalls.length > 0 &&
-          clientToolCalls.length === clientToolResults.length,
+        ok: true,
+        result: {
+          messages,
+          usage,
+          finishReason,
+          rawFinishReason,
+          toolCallsResolved:
+            clientToolCalls.length > 0 &&
+            clientToolCalls.length === clientToolResults.length,
+        },
       };
     } catch (error) {
-      console.error(error);
-      writer.error(error);
-      return undefined;
+      // The stream can fail before any step is recorded, which rejects the two
+      // promises above instead of ending the reader loop.
+      return this.context.abortSignal?.aborted
+        ? { ok: false, reason: "aborted" }
+        : { ok: false, reason: "error", error };
     }
   }
 
-  private async announceCompactionStart(
+  async #announceCompactionStart(
     turnId: string,
-    stepId: string,
-    builder: AgentTurnBuilder<AgentToolSet>,
-    writer: UIMessageStreamWriter
+    stepId: string
   ): Promise<void> {
     const createdAt = Date.now();
-    await writer.write(
-      {
-        turnId,
-        stepId,
-        id: generatePartId(),
-        type: "compaction.start",
-        createdAt,
-      },
-      builder
-    );
+    // await this.context.controller?.write({
+    //   type: "step.start",
+    //   stepType: "compaction",
+    //   model: modelId,
+    //   turnId,
+    //   id: stepId,
+    //   createdAt: Date.now(),
+    // });
+    await this.context.controller?.write({
+      turnId,
+      stepId,
+      id: generateEventId(),
+      type: "compaction.start",
+      createdAt,
+    });
     await this.hooks.emit(
       "compaction:start",
       { sessionId: this.sessionId, createdAt },
@@ -681,26 +665,33 @@ export class Agent {
     );
   }
 
-  private async announceCompactionEnd(
+  async #announceCompactionEnd(
     turnId: string,
     stepId: string,
-    builder: AgentTurnBuilder<AgentToolSet>,
-    writer: UIMessageStreamWriter,
     params: { compacted: boolean; messages: ModelMessage[] }
   ): Promise<void> {
     const createdAt = Date.now();
-    await writer.write(
-      {
-        turnId,
-        stepId,
-        id: generatePartId(),
-        type: "compaction.end",
-        compacted: params.compacted,
-        messages: params.messages,
-        createdAt,
-      },
-      builder
-    );
+    await this.context.controller?.write({
+      turnId,
+      stepId,
+      id: generateEventId(),
+      type: "compaction.end",
+      compacted: params.compacted,
+      messages: params.messages,
+      createdAt,
+    });
+    // await this.context.controller?.write({
+    //   id: stepId,
+    //   turnId,
+    //   type: "step.finish",
+    //   createdAt: Date.now(),
+    //   usage: step.usage,
+    //   performance: step.performance,
+    //   finishReason: step.finishReason,
+    //   rawFinishReason: step.rawFinishReason,
+    //   providerMetadata: step.providerMetadata,
+    //   status: "done",
+    // });
     await this.hooks.emit(
       "compaction:end",
       {
@@ -718,12 +709,12 @@ export class Agent {
    * is over the configured threshold. Mutates neither input; returns the new
    * messages array and (possibly updated) session.
    *
-   * Called by {@link Agent.runStep} before every model call, so the compacted
+   * Called by `#runSteps` before every model call, so the compacted
    * messages become the history the next step — and every step after it —
    * sends to the model. Gating on `shouldCompact` is what keeps that from
    * re-summarizing the same conversation on every step.
    */
-  private async maybeCompact(input: {
+  async #maybeCompact(input: {
     readonly force?: boolean;
     readonly config: CompactionConfig;
     readonly abortSignal?: AbortSignal;

@@ -5,7 +5,7 @@ import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
 
-import type { AgentContext } from "../context";
+import type { AgentContext } from "../agent-context";
 import { normalizePath, shellQuote } from "../utils/fs-util";
 import { getRipgrepAvailable } from "../utils/ripgrep";
 import { truncateContent } from "../utils/truncate";

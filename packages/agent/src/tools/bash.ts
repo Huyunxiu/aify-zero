@@ -4,7 +4,7 @@ import { tool } from "ai";
 import type { Tool } from "ai";
 import { z } from "zod";
 
-import type { AgentContext } from "../context";
+import type { AgentContext } from "../agent-context";
 import type { ToolOutput } from "./types";
 
 const MAX_OUTPUT_LENGTH = 30_000;

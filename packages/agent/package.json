@@ -17,6 +17,7 @@
     "ai": "catalog:",
     "file-type": "catalog:",
     "glob": "catalog:",
+    "nanoid": "catalog:",
     "turndown": "catalog:",
     "uuid": "catalog:"
   },

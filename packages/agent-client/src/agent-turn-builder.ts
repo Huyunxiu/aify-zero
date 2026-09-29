@@ -474,7 +474,13 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       return null;
     }
 
-    turn.status = "done";
+    turn.status = event.status;
+    if (event.status === "error" && turn.status === "error") {
+      turn.error = event.error;
+    }
+    if (event.status === "aborted" && turn.status === "aborted") {
+      turn.abortReason = event.abortReason;
+    }
     turn.usage = event.usage;
     turn.completedAt = event.createdAt;
     return turn;
@@ -536,7 +542,13 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       return null;
     }
 
-    step.status = "done";
+    step.status = event.status;
+    if (event.status === "error" && step.status === "error") {
+      step.error = event.error;
+    }
+    if (event.status === "aborted" && step.status === "aborted") {
+      step.abortReason = event.abortReason;
+    }
     step.usage = event.usage;
     step.performance = event.performance;
     step.finishReason = event.finishReason;

@@ -2,6 +2,7 @@ import type { AgentToolSet } from "@workspace/agent";
 import {
   AgentTurnBuilder,
   isAgentReasoningPart,
+  isAgentSessionTitlePart,
   isAgentTextPart,
 } from "@workspace/agent-client";
 import type { AgentStreamEvent, AgentTurn } from "@workspace/agent-client";
@@ -111,18 +112,19 @@ const readErrorMessage = async (response: Response): Promise<string> => {
 };
 
 /**
- * Compensates for `AgentTurnBuilder` treating `abort` and `error` events as
- * no-ops: without this, an interrupted turn stays `status: "streaming"` forever
- * and the UI keeps reporting that it is still working.
+ * Compensates for a stream that ended without the server's `turn.finish`:
+ * without this, an interrupted turn stays `status: "streaming"` forever and the
+ * UI keeps reporting that it is still working.
  *
- * `pendingTurns` / `pendingParts` are public, and the `turn.finish` / `*`.end`
- * events remove entries from them, so they hold exactly the objects that never
- * finished. Settling those is enough, and it is a no-op for a stream that ended
- * properly.
+ * `pendingTurns` / `pendingSteps` / `pendingParts` are public, and the
+ * `turn.finish` / `step.finish` / `*`.end events remove entries from them, so
+ * they hold exactly the objects that never finished. Settling those is enough,
+ * and it is a no-op for a stream that ended properly, where the ending arrives
+ * on the finish event instead.
  *
- * `turn.status` is a union of string literals, so a plain assignment is enough;
- * note that comparing it first would narrow the union and turn the assignment
- * into a type error. Tool parts run their own state machine and are left alone.
+ * `status` is a union of string literals, so a plain assignment is enough; note
+ * that comparing it first would narrow the union and turn the assignment into a
+ * type error. Tool parts run their own state machine and are left alone.
  */
 const settleUnfinished = (
   builder: AgentTurnBuilder<AgentToolSet>,
@@ -130,6 +132,10 @@ const settleUnfinished = (
 ): void => {
   for (const turn of builder.pendingTurns.values()) {
     turn.status = outcome;
+  }
+
+  for (const step of builder.pendingSteps.values()) {
+    step.status = outcome;
   }
 
   for (const part of builder.pendingParts.values()) {
@@ -224,10 +230,10 @@ function createAgentSessionStore({
     const publish =
       throttleMs > 0
         ? throttle((): void => {
-            if (active === controller) {
-              commit();
-            }
-          }, throttleMs)
+          if (active === controller) {
+            commit();
+          }
+        }, throttleMs)
         : commit;
 
     // Surface the caller's turns straight away, so a new user turn is visible

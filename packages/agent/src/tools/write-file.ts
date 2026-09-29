@@ -4,7 +4,7 @@ import path from "node:path";
 import { tool } from "ai";
 import { z } from "zod";
 
-import type { AgentContext } from "../context";
+import type { AgentContext } from "../agent-context";
 import type { ToolOutput } from "./types";
 
 const DESCRIPTION = `Write full content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.

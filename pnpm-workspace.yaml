@@ -78,7 +78,7 @@ catalog:
   hono: ^4.12.18
   i18next: ^26.2.0
   lucide-react: ^1.17.0
-  nanoid: ^5.1.11
+  nanoid: ^5.1.16
   react-i18next: ^17.0.8
   react-resizable-panels: ^4.11.2
   react-use: ^17.6.1

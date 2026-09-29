@@ -128,7 +128,7 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
   RenameEventType<TypedToolError<TOOLS>, "tool.error">;
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
-    RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
+  RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
 export type TextStreamStartStepEvent = {
   id: string;
   turnId: string;
@@ -142,7 +142,7 @@ export type TextStreamStartStepEvent = {
    */
   model: string;
 };
-export type TextStreamFinishStepEvent = {
+export type TextStreamFinishStepEvent = AgentStepStatus & {
   id: string;
   turnId: string;
   type: "step.finish";
@@ -159,7 +159,7 @@ export type TextStreamStartTurnEvent = {
   type: "turn.start";
   turnType: AgentTurn<any>["type"];
 };
-export type TextStreamFinishTurnEvent = {
+export type TextStreamFinishTurnEvent = AgentTurnStatus & {
   id: string;
   type: "turn.finish";
   createdAt: number;
@@ -386,21 +386,21 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
   resultProviderMetadata?: ProviderMetadata;
   preliminary?: boolean;
 } & (
-  | {
+    | {
       state: "input-streaming";
       input?: DeepPartial<INPUT> | undefined;
       output?: never;
       errorText?: never;
       callProviderMetadata?: ProviderMetadata;
     }
-  | {
+    | {
       state: "input-available";
       input: INPUT;
       output?: never;
       errorText?: never;
       callProviderMetadata?: ProviderMetadata;
     }
-  | {
+    | {
       state: "output-available";
       input: INPUT;
       output: OUTPUT;
@@ -409,7 +409,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       resultProviderMetadata?: ProviderMetadata;
       preliminary?: boolean;
     }
-  | {
+    | {
       state: "output-error";
       input: INPUT | undefined;
       rawInput?: unknown;
@@ -418,14 +418,14 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       resultProviderMetadata?: ProviderMetadata;
     }
-  | {
+    | {
       state: "output-denied";
       input: INPUT;
       output?: never;
       errorText?: never;
       callProviderMetadata?: ProviderMetadata;
     }
-);
+  );
 
 /**
  * An invocation of a known tool. Deriving it from the tool itself is what lets

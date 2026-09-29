@@ -1,11 +1,10 @@
 import { homedir } from "node:os";
 
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { streamToEventIterator, type } from "@orpc/server";
 import { Agent } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import type { AgentTurn } from "@workspace/agent-client";
-import type { AgentContext } from "@workspace/agent/context";
+import { AgentContext } from "@workspace/agent/agent-context";
 import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
 import {
@@ -20,8 +19,8 @@ import {
 } from "@workspace/agent/tools/index";
 import { createLoadSkillTool } from "@workspace/agent/tools/load-skill";
 import {
-  generateMessageId,
   generateSessionId,
+  generateTurnId,
 } from "@workspace/agent/utils/id-util";
 import type { TurnInsertModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
@@ -51,32 +50,38 @@ const createSession = publicProcedure
       throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
     }
 
-    const provider = createOpenAICompatible({
-      apiKey: aiModel.apiKey,
-      baseURL: aiModel.apiUrl,
-      name: aiModel.provider,
-    });
-
-    const selectedModel = provider.chatModel(aiModel.model);
     const workdir = homedir();
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
     await skillManager.loadSkills(workdir);
 
-    const agentContext: AgentContext = {
+    const effort = Object.values(ModelEffort).includes(
+      modelEffort as ModelEffort
+    )
+      ? (modelEffort as ModelEffort)
+      : undefined;
+
+    const agentContext = new AgentContext({
       workdir,
+      modelId: aiModel.model,
+      modelEffort: effort,
       skills: skillManager,
-    };
+      abortSignal: context.signal,
+      compactionConfig: {
+        recentWindowSize: 10,
+        threshold: 100_000,
+        thresholdPercent: 0.9,
+        lastKnownInputTokens: 0,
+        lastKnownPromptMessageCount: 0,
+      },
+    });
 
     const systemPrompt = skillManager.appendPrompt("");
 
     const agent = new Agent({
       name: "main",
       sessionId,
-      model: selectedModel,
       systemPrompt,
-      effort: Object.values(ModelEffort).includes(modelEffort as ModelEffort)
-        ? (modelEffort as ModelEffort)
-        : undefined,
+      modelEffort: effort,
       context: agentContext,
       tools: {
         bash: createBashTool({ agentContext }),
@@ -90,13 +95,15 @@ const createSession = publicProcedure
         "load-skill": createLoadSkillTool({ agentContext }),
       },
       store: new SQLiteStore(),
+      apiKey: aiModel.apiKey,
+      apiUrl: aiModel.apiUrl,
+      providerId: aiModel.provider,
+      modelId: aiModel.model,
     });
 
     const stream = await agent.stream({
-      messages: turns,
-      model: selectedModel,
+      turns,
       modelId: aiModel.model,
-      abortSignal: context.signal,
     });
 
     return streamToEventIterator(stream);
@@ -178,10 +185,10 @@ export const forkSession = publicProcedure
     // affect the other.
     const idMap = new Map<string, string>();
     const copies: TurnInsertModel[] = prefix.map((message) => {
-      const newId = generateMessageId();
-      idMap.set(message.id, newId);
+      const newTurnId = generateTurnId();
+      idMap.set(message.id, newTurnId);
       return {
-        id: newId,
+        id: newTurnId,
         sessionId: newSessionId,
         type: message.type,
         metadata: message.metadata,
@@ -196,7 +203,7 @@ export const forkSession = publicProcedure
     await store.saveSession({
       id: newSessionId,
       title: `Fork: ${source.title}`,
-      metadata: "",
+      metadata: {},
       activeHeadId: copies.at(-1)?.id ?? null,
       forkedFromSessionId: source.id,
       forkedFromMessageId: messageId ?? prefix.at(-1)?.id,

@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { tool } from "ai";
 import { z } from "zod";
 
-import type { AgentContext } from "../context";
+import type { AgentContext } from "../agent-context";
 import {
   getFileTypeFromBuffer,
   isBinaryFile,

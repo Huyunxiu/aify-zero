@@ -9,8 +9,9 @@ import type {
   AgentUserTurn,
 } from "@workspace/agent-client";
 import {
-  generateMessageId,
   generateSessionId,
+  generateStepId,
+  generateTurnId,
 } from "@workspace/agent/utils/id-util";
 import type { ForkSessionType } from "@workspace/server/routers/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
@@ -285,13 +286,13 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     // A user turn wraps exactly one user step, and the two are separate levels
     // with separate ids — a step's id is never the id of the turn around it.
     const turn: AgentUserTurn = {
-      id: generateMessageId(),
+      id: generateTurnId(),
       type: "user",
       createdAt: Date.now(),
       status: "done",
       content: [
         {
-          id: generateMessageId(),
+          id: generateStepId(),
           type: "user",
           createdAt: Date.now(),
           status: "done",

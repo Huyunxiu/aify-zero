@@ -3,7 +3,7 @@ import { tool } from "ai";
 import type { Tool } from "ai";
 import { z } from "zod";
 
-import type { AgentContext } from "../context";
+import type { AgentContext } from "../agent-context";
 import { convertHtmlToMarkdown, extractTextFromHtml } from "../utils/html";
 import { truncateContent } from "../utils/truncate";
 import type { ToolOutput } from "./types";
