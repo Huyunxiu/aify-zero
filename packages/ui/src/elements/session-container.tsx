@@ -17,14 +17,13 @@ export function SessionContainer({ sessionId }: SessionContainerProps) {
 
   const initialTurns = listSessionTurnsQuery.data;
 
-  return (
-    <>
-      {(initialTurns?.length ?? 0) > 0 && (
-        <Session sessionId={sessionId} initialTurns={initialTurns} />
-      )}
-      {!initialTurns?.length && (
-        <Session sessionId={sessionId} initialTurns={initialTurns} />
-      )}
-    </>
-  );
+  // The transcript has to be in hand before the session mounts: the hook reads
+  // its turns once, when the store is created, and a turn picked up mid-flight
+  // continues from them. The home route has no session yet, so there is nothing
+  // to wait for there.
+  if (sessionId && listSessionTurnsQuery.isPending) {
+    return null;
+  }
+
+  return <Session sessionId={sessionId} initialTurns={initialTurns ?? []} />;
 }

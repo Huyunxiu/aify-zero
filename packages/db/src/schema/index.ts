@@ -9,8 +9,8 @@ export const agent_table = sqliteTable("agent", {
     .primaryKey()
     .$defaultFn(() => randomUUID()),
   name: text("name").notNull(),
-  avatar: text("name"),
-  description: text("name"),
+  avatar: text("avatar"),
+  description: text("description"),
   instructions: text("instructions"),
   tools: text("tools", { mode: "json" }),
   models: text("models", { mode: "json" }),
@@ -34,6 +34,7 @@ export const session_table = sqliteTable("session", {
   title: text("title").notNull(),
   metadata: text("metadata", { mode: "json" }),
   activeHeadId: text("active_head_id"),
+  activeStreamId: text("active_stream_id"),
   forkedFromSessionId: text("forked_from_session_id"),
   forkedFromMessageId: text("forked_from_message_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })

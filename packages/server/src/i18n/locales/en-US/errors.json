@@ -21,5 +21,6 @@
   "MODEL_NOT_FOUND": "The selected model is not configured. Please pick another model.",
   "SESSION_NOT_FOUND": "The requested chat was not found. Please check the session and try again.",
   "NOTHING_TO_FORK": "There is nothing to fork in this chat yet.",
-  "MESSAGE_NOT_FOUND": "The requested message was not found in this chat."
+  "MESSAGE_NOT_FOUND": "The requested message was not found in this chat.",
+  "STREAM_NOT_FOUND": "There is no reply running for this chat."
 }

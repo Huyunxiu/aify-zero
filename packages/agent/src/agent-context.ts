@@ -25,13 +25,13 @@ export interface AgentStreamEventController {
 export type AgentContextOptions = AgentStateOptions & {
   workdir: string;
   skills: SkillManager;
-  abortSignal?: AbortSignal;
   compactionConfig: CompactionConfig;
   controller?: AgentStreamEventController;
 };
 export class AgentContext extends AgentState {
   workdir: string;
   skills: SkillManager;
+  /** The Agent that owns this context sets it; its `abort()` triggers it. */
   abortSignal?: AbortSignal;
   compactionConfig: CompactionConfig;
   controller?: AgentStreamEventController;
@@ -40,7 +40,6 @@ export class AgentContext extends AgentState {
     super(options);
     this.workdir = options.workdir;
     this.skills = options.skills;
-    this.abortSignal = options.abortSignal;
     this.compactionConfig = options.compactionConfig;
     this.controller = options.controller;
   }

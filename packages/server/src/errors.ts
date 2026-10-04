@@ -50,6 +50,11 @@ export const ErrorMap = {
     // the client asked for the branch as a whole and there is nothing in it.
     data: z.object({ sessionId: z.string(), messageId: z.string().optional() }),
   },
+  STREAM_NOT_FOUND: {
+    status: 404,
+    message: "No reply is running for this chat.",
+    data: z.object({ sessionId: z.string() }),
+  },
 } satisfies ErrorMapType;
 
 /** Every code above, i.e. the whole set a throw site may use. */

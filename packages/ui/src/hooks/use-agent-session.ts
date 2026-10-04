@@ -2,7 +2,6 @@ import type { AgentToolSet } from "@workspace/agent";
 import {
   AgentTurnBuilder,
   isAgentReasoningPart,
-  isAgentSessionTitlePart,
   isAgentTextPart,
 } from "@workspace/agent-client";
 import type { AgentStreamEvent, AgentTurn } from "@workspace/agent-client";
@@ -18,6 +17,13 @@ export type UseAgentSessionOptions = {
     turns: AgentTurn<AgentToolSet>[];
     abortSignal: AbortSignal;
   }) => Promise<ReadableStream | undefined>;
+  /**
+   * Stops the turn the session is running on the server. Located by
+   * `sessionId`, not by a stream id — the client holds only the session's.
+   *
+   * Read when the store is created, like `api` and `apiStream`.
+   */
+  apiStop?: (options: { sessionId: string }) => Promise<unknown>;
   /**
    * Minimum gap, in milliseconds, between the `turns` snapshots published while
    * a response streams, defaulting to `200`. Every publish hands subscribers a
@@ -47,6 +53,16 @@ type AgentSessionStatus = "submitted" | "streaming" | "ready" | "error";
 export type UseAgentSessionResponse = {
   turns: AgentTurn<AgentToolSet>[];
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
+  /**
+   * Attaches to the turn a session is already running, for a page that arrived
+   * mid-turn.
+   */
+  resume: (options: ResumeOptions) => Promise<void>;
+  /**
+   * Stops the turn the session is running, on both ends: the read this store is
+   * doing, and the server's turn, which outlives it.
+   */
+  stop: () => Promise<void>;
   error: Error | undefined;
   status: AgentSessionStatus;
 };
@@ -63,12 +79,24 @@ type SendTurnsOptions = {
   payload?: Record<string, unknown>;
 };
 
+type ResumeOptions = {
+  /**
+   * The running turn's events, which begin at its `turn.start`: the server
+   * replays what the turn has produced so far and then follows it live, so the
+   * turn is rebuilt whole rather than joined mid-sentence.
+   */
+  stream: ReadableStream;
+  abortSignal?: AbortSignal;
+};
+
 type AgentSessionStore = {
   subscribe: (onStoreChange: () => void) => () => void;
   getTurns: () => AgentTurn<AgentToolSet>[];
   getStatus: () => AgentSessionStatus;
   getError: () => Error | undefined;
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
+  resume: (options: ResumeOptions) => Promise<void>;
+  stop: () => Promise<void>;
   dispose: () => void;
 };
 
@@ -154,10 +182,11 @@ const settleUnfinished = (
  * a mutation — the identity changes exactly when the content does, which is
  * what `useSyncExternalStore` requires of a snapshot.
  */
-function createAgentSessionStore({
+export function createAgentSessionStore({
   id,
   api,
   apiStream,
+  apiStop,
   throttleMs = 200,
   turns,
   emit,
@@ -196,6 +225,137 @@ function createAgentSessionStore({
   const getStatus = (): AgentSessionStatus => status;
   const getError = (): Error | undefined => currentError;
 
+  /**
+   * `commit` on a leash: at most one snapshot per window while a response
+   * streams, so per-token deltas stop forcing a render each. The throttle is
+   * consulted inside the body rather than at the call site because the trailing
+   * call arrives from a timer that can outlive the request that scheduled it —
+   * only `active` says whether those turns still belong on screen, and by then
+   * it may name a newer request, or none.
+   *
+   * `commit` reads `builder.turns` when it runs rather than being handed a
+   * snapshot, so a collapsed call publishes the latest state and nothing is
+   * lost but the intermediate frames.
+   *
+   * One instance per request, never one per store: the leading call is the one
+   * that fires immediately, and every send has to paint its own turns without
+   * waiting out the window the previous send left open.
+   */
+  const makePublish = (
+    controller: AbortController,
+    commit: () => void
+  ): (() => void) =>
+    throttleMs > 0
+      ? throttle((): void => {
+          if (active === controller) {
+            commit();
+          }
+        }, throttleMs)
+      : commit;
+
+  /**
+   * Ends a request.
+   *
+   * Only the current request may write state — one that got superseded stops
+   * here rather than clobbering the newer one.
+   *
+   * A clean end of stream can still leave work unfinished: aborting a fetch may
+   * resolve a pending `read()` with `done: true` instead of rejecting it, and
+   * the server may close the stream without ever sending `turn.finish`. Whatever
+   * is still pending at this point is by definition unfinished, so it is settled
+   * as aborted.
+   *
+   * `commit`, not `publish`: the settled turns, the status and the error have to
+   * land now rather than when a window closes. Clearing `active` above is also
+   * what turns any trailing call this request scheduled into a no-op — it must
+   * not move below this line, because `notify` runs listeners synchronously and
+   * a send re-entered from one would otherwise be clobbered by this request
+   * clearing `active` afterwards.
+   */
+  const settle = ({
+    builder,
+    controller,
+    failure,
+    aborted,
+    commit,
+  }: {
+    builder: AgentTurnBuilder<AgentToolSet>;
+    controller: AbortController;
+    failure: Error | undefined;
+    aborted: boolean;
+    commit: () => void;
+  }): void => {
+    if (active !== controller) {
+      return;
+    }
+
+    active = null;
+    settleUnfinished(builder, failure && !aborted ? "error" : "aborted");
+    currentError = failure;
+    status = failure ? "error" : "ready";
+    commit();
+  };
+
+  /**
+   * Reads a turn's events into `builder` until the stream ends, publishing
+   * snapshots as they land and settling what the stream left unfinished.
+   *
+   * Shared by `sendTurns` and `resume`, which differ only in where the stream
+   * comes from: a send asks the server for a new turn, a resume attaches to one
+   * already running.
+   */
+  const readInto = async ({
+    stream,
+    builder,
+    controller,
+    commit,
+    publish,
+  }: {
+    stream: ReadableStream;
+    builder: AgentTurnBuilder<AgentToolSet>;
+    controller: AbortController;
+    commit: () => void;
+    publish: () => void;
+  }): Promise<void> => {
+    let failure: Error | undefined;
+    let aborted = false;
+
+    const reader = stream.getReader();
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        const event = value as AgentStreamEvent<AgentToolSet>;
+        await builder.push(event);
+        emit(event);
+
+        // The guard is repeated inside the throttle, which is what covers the
+        // trailing call; this one is what covers the unthrottled branch, where
+        // `publish` is `commit`. It also spares a request that is already
+        // superseded the timer.
+        if (active === controller) {
+          publish();
+        }
+      }
+    } catch (error) {
+      // An aborted fetch or stream rejects with an `AbortError`; that is a
+      // cancellation, not a failure.
+      if (controller.signal.aborted) {
+        aborted = true;
+      } else {
+        failure = toError(error);
+      }
+    } finally {
+      reader.releaseLock();
+      settle({ builder, controller, failure, aborted, commit });
+    }
+  };
+
   const sendTurns = async ({
     turns: nextTurns,
     abortSignal,
@@ -213,28 +373,7 @@ function createAgentSessionStore({
       notify();
     };
 
-    // `publish` is `commit` on a leash: at most one snapshot per window while a
-    // response streams, so per-token deltas stop forcing a render each. The
-    // throttle is consulted inside the body rather than at the call site
-    // because the trailing call arrives from a timer that can outlive the
-    // request that scheduled it — only `active` says whether those turns still
-    // belong on screen, and by then it may name a newer request, or none.
-    //
-    // `commit` reads `builder.turns` when it runs rather than being handed a
-    // snapshot, so a collapsed call publishes the latest state and nothing is
-    // lost but the intermediate frames.
-    //
-    // One instance per request, never one per store: the leading call is the
-    // one that fires immediately, and every send has to paint its own turns
-    // without waiting out the window the previous send left open.
-    const publish =
-      throttleMs > 0
-        ? throttle((): void => {
-          if (active === controller) {
-            commit();
-          }
-        }, throttleMs)
-        : commit;
+    const publish = makePublish(controller, commit);
 
     // Surface the caller's turns straight away, so a new user turn is visible
     // before the first event arrives. `commit`, not `publish`: this is the
@@ -252,14 +391,16 @@ function createAgentSessionStore({
       abortSignal.addEventListener("abort", forwardAbort, { once: true });
     }
 
-    let failure: Error | undefined;
-    let aborted = false;
-
     try {
       const body = { sessionId: id, turns: nextTurns, ...payload };
       let stream: ReadableStream | undefined = undefined;
       if (apiStream) {
         stream = await apiStream({ ...body, abortSignal: controller.signal });
+        // The stream has been handed over, so the turn is under way — the same
+        // transition the `api` branch makes when its response arrives.
+        if (stream && active === controller) {
+          setStatus("streaming");
+        }
       } else if (api) {
         const response = await fetch(api, {
           method: "POST",
@@ -296,61 +437,89 @@ function createAgentSessionStore({
         throw new Error("streaming is null.");
       }
 
-      const reader = stream.getReader();
-
-      try {
-        while (true) {
-          const { value, done } = await reader.read();
-
-          if (done) {
-            break;
-          }
-
-          await builder.push(value);
-          emit(value);
-
-          // The guard is repeated inside the throttle, which is what covers
-          // the trailing call; this one is what covers the unthrottled branch,
-          // where `publish` is `commit`. It also spares a request that is
-          // already superseded the timer.
-          if (active === controller) {
-            publish();
-          }
-        }
-      } finally {
-        reader.releaseLock();
-      }
+      await readInto({ stream, builder, controller, commit, publish });
     } catch (error) {
-      // An aborted fetch or stream rejects with an `AbortError`; that is a
-      // cancellation, not a failure.
-      if (controller.signal.aborted) {
-        aborted = true;
-      } else {
-        failure = toError(error);
-      }
+      // Nothing is being read — the request was refused, or the transport died
+      // before a stream existed — so the ending is settled here instead.
+      settle({
+        builder,
+        controller,
+        failure: controller.signal.aborted ? undefined : toError(error),
+        aborted: controller.signal.aborted,
+        commit,
+      });
     } finally {
       abortSignal.removeEventListener("abort", forwardAbort);
+    }
+  };
 
-      // Only the current request may write state — a request that got
-      // superseded stops here rather than clobbering the newer one.
-      if (active === controller) {
-        active = null;
-        // A clean end of stream can still leave work unfinished: aborting a
-        // fetch may resolve a pending `read()` with `done: true` instead of
-        // rejecting it, and the server may close the stream without ever
-        // sending `turn.finish`. Whatever is still pending at this point is by
-        // definition unfinished, so it is settled as aborted.
-        settleUnfinished(builder, failure && !aborted ? "error" : "aborted");
-        currentError = failure;
-        status = failure ? "error" : "ready";
-        // `commit`, not `publish`: the settled turns, the status and the error
-        // have to land now rather than when a window closes. Clearing `active`
-        // above is also what turns any trailing call this request scheduled
-        // into a no-op — it must not move below this line, because `notify`
-        // runs listeners synchronously and a send re-entered from one would
-        // otherwise be clobbered by this request clearing `active` afterwards.
-        commit();
-      }
+  /**
+   * Attaches to a turn that is already running.
+   *
+   * A page that reloads mid-turn has no stream of its own: the send that started
+   * the turn belongs to the page that left, and the turn keeps running without
+   * it. Attaching replays the running turn from its start, so seeding a builder
+   * with the turns already on screen rebuilds the turn and then follows it live
+   * — the turn is read whole rather than joined mid-sentence.
+   */
+  const resume = async ({
+    stream,
+    abortSignal,
+  }: ResumeOptions): Promise<void> => {
+    // Attaching is a request like a send, and takes over from whatever the
+    // store was doing.
+    active?.abort();
+    const controller = new AbortController();
+    active = controller;
+
+    const builder = new AgentTurnBuilder<AgentToolSet>({ turns: currentTurns });
+
+    const commit = (): void => {
+      currentTurns = [...builder.turns];
+      notify();
+    };
+
+    const publish = makePublish(controller, commit);
+
+    currentError = undefined;
+    status = "streaming";
+    commit();
+
+    const forwardAbort = (): void => controller.abort();
+
+    if (abortSignal?.aborted) {
+      controller.abort();
+    } else {
+      abortSignal?.addEventListener("abort", forwardAbort, { once: true });
+    }
+
+    try {
+      await readInto({ stream, builder, controller, commit, publish });
+    } finally {
+      abortSignal?.removeEventListener("abort", forwardAbort);
+    }
+  };
+
+  /**
+   * Stops the turn. Two independent things have to stop: the local read, so the
+   * transcript settles now, and the server's turn, which by design outlives the
+   * request that asked for it.
+   *
+   * `active` is deliberately not cleared here — the request's own `finally` owns
+   * that, and clearing it early would stop that request from settling the turn.
+   */
+  const stop = async (): Promise<void> => {
+    active?.abort();
+
+    if (!apiStop) {
+      return;
+    }
+
+    try {
+      await apiStop({ sessionId: id });
+    } catch {
+      // Stopping a turn that is not running is a no-op, not a failure, and a
+      // transport failure here is already covered by the aborted transcript.
     }
   };
 
@@ -358,13 +527,23 @@ function createAgentSessionStore({
     active = null;
   };
 
-  return { subscribe, getTurns, getStatus, getError, sendTurns, dispose };
+  return {
+    subscribe,
+    getTurns,
+    getStatus,
+    getError,
+    sendTurns,
+    resume,
+    stop,
+    dispose,
+  };
 }
 
 export function useAgentSession({
   id,
   api,
   apiStream,
+  apiStop,
   throttleMs,
   turns,
   onEvent,
@@ -386,6 +565,7 @@ export function useAgentSession({
       id,
       api,
       apiStream,
+      apiStop,
       throttleMs,
       turns,
       emit,
@@ -413,5 +593,12 @@ export function useAgentSession({
 
   React.useEffect(() => (): void => store.dispose(), [store]);
 
-  return { turns: currentTurns, sendTurns: store.sendTurns, error, status };
+  return {
+    turns: currentTurns,
+    sendTurns: store.sendTurns,
+    resume: store.resume,
+    stop: store.stop,
+    error,
+    status,
+  };
 }

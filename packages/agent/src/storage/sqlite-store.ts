@@ -111,6 +111,35 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
+  async setActiveStream(
+    sessionId: string,
+    streamId: string | null
+  ): Promise<number> {
+    const result = await db
+      .update(session_table)
+      .set({ activeStreamId: streamId })
+      .where(eq(session_table.id, sessionId));
+    return result.rowsAffected;
+  }
+
+  async clearActiveStream(
+    sessionId: string,
+    streamId: string
+  ): Promise<number> {
+    // Compare-and-clear: a stream that has already been superseded leaves the
+    // newer stream's marker alone.
+    const result = await db
+      .update(session_table)
+      .set({ activeStreamId: null })
+      .where(
+        and(
+          eq(session_table.id, sessionId),
+          eq(session_table.activeStreamId, streamId)
+        )
+      );
+    return result.rowsAffected;
+  }
+
   async existsTurn(id: string): Promise<boolean> {
     const result = await db
       .select({ count: count() })

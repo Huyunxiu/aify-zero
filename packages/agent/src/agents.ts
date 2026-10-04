@@ -78,6 +78,7 @@ export type AgentOptions = {
 export type AgentStreamOptions = {
   modelId: string;
   turns: AgentTurn<AgentToolSet>[];
+  onFinish: () => Promise<void>;
 };
 
 type AgentTurnInput = {
@@ -133,6 +134,8 @@ export class Agent {
   context: AgentContext;
   session: AgentSession;
 
+  readonly #abortController = new AbortController();
+
   constructor(options: AgentOptions) {
     this.name = options.name;
     this.sessionId = options.sessionId;
@@ -148,6 +151,9 @@ export class Agent {
     this.context = options.context;
     this.context.modelId = options.modelId;
     this.context.modelEffort = options.modelEffort;
+    // The turn's abort scope belongs to the agent running it: `abort()` is the
+    // only way in, and every step reads the signal back off the context.
+    this.context.abortSignal = this.#abortController.signal;
     this.session = options.session ?? new AgentSession({ turns: [] });
     this.provider = createOpenAICompatible({
       apiKey: this.apiKey,
@@ -156,11 +162,20 @@ export class Agent {
     });
   }
 
+  /**
+   * Stops the turn this agent is running: the model call in flight, the tool
+   * calls it has open, and the step loop all watch this signal. The turn still
+   * finishes — with `status: "aborted"` — so the reader sees an ending.
+   */
+  abort(): void {
+    this.#abortController.abort();
+  }
+
   #getModel() {
     return this.provider.chatModel(this.context.modelId);
   }
 
-  async stream({ turns, modelId }: AgentStreamOptions) {
+  async stream({ turns, modelId, onFinish }: AgentStreamOptions) {
     this.context.modelId = modelId;
     this.session.turns = turns;
 
@@ -285,6 +300,7 @@ export class Agent {
           { sessionId: this.sessionId },
           this.extensionApi
         );
+        onFinish();
       }
     })();
 
@@ -533,7 +549,7 @@ export class Agent {
       abortSignal: this.context.abortSignal,
       include: {
         requestBody: true,
-      }
+      },
     });
 
     // A provider that fails mid-stream reports it as an `error` chunk, which the

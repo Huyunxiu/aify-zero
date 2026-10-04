@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 
 import { streamToEventIterator, type } from "@orpc/server";
-import { Agent } from "@workspace/agent";
+import { Agent, STREAM_REGISTRY } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import type { AgentTurn } from "@workspace/agent-client";
 import { AgentContext } from "@workspace/agent/agent-context";
@@ -42,7 +42,7 @@ const createSession = publicProcedure
       modelEffort?: string;
     }>()
   )
-  .handler(async ({ input, context }) => {
+  .handler(async ({ input }) => {
     const { sessionId, turns, model, modelEffort } = input;
 
     const aiModel = await findAiModelById(model);
@@ -50,6 +50,7 @@ const createSession = publicProcedure
       throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
     }
 
+    const store = new SQLiteStore();
     const workdir = homedir();
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
     await skillManager.loadSkills(workdir);
@@ -65,7 +66,6 @@ const createSession = publicProcedure
       modelId: aiModel.model,
       modelEffort: effort,
       skills: skillManager,
-      abortSignal: context.signal,
       compactionConfig: {
         recentWindowSize: 10,
         threshold: 100_000,
@@ -101,12 +101,74 @@ const createSession = publicProcedure
       modelId: aiModel.model,
     });
 
+    const activeStreamId = generateSessionId();
+
     const stream = await agent.stream({
       turns,
       modelId: aiModel.model,
+      onFinish: async () => {
+        STREAM_REGISTRY.unregisterStream(activeStreamId);
+        await store.clearActiveStream(sessionId, activeStreamId);
+      },
     });
 
-    return streamToEventIterator(stream);
+    STREAM_REGISTRY.registerStream(activeStreamId, agent, stream);
+    await store.setActiveStream(sessionId, activeStreamId);
+
+    return {
+      activeStreamId,
+    };
+  });
+
+/**
+ * Reads the turn a session is running.
+ *
+ * Located by session rather than by stream id: the id a client holds is the
+ * session's, and the stream id names one particular turn.
+ *
+ * A reader that attaches part-way through gets the turn from its start — the
+ * entry replays what it has buffered — so a page that reloaded can pick the
+ * turn up rather than join it mid-sentence. Several readers may do this at
+ * once; each gets its own stream.
+ */
+export const streamSession = publicProcedure
+  .route({ method: "GET", path: "/sessions/{sessionId}/stream" })
+  .errors({ STREAM_NOT_FOUND: ErrorMap.STREAM_NOT_FOUND })
+  .input(z.object({ sessionId: z.string() }))
+  .handler(({ input }) => {
+    const streamEntry = STREAM_REGISTRY.getStreamEntryBySession(
+      input.sessionId
+    );
+    if (!streamEntry) {
+      throw new ApiError("STREAM_NOT_FOUND", {
+        data: { sessionId: input.sessionId },
+      });
+    }
+
+    return streamToEventIterator(streamEntry.readable());
+  });
+
+/**
+ * Stops the turn a session is running.
+ *
+ * Nothing else can, now that a turn outlives its request: closing the window
+ * that asked for it leaves it running on purpose. Absent a running turn this is
+ * a no-op rather than an error — the caller asked for the turn to not be
+ * running, and it is not.
+ */
+export const stopSession = publicProcedure
+  .route({ method: "POST", path: "/sessions/{sessionId}/stop" })
+  .input(z.object({ sessionId: z.string() }))
+  .handler(({ input }) => {
+    const streamEntry = STREAM_REGISTRY.getStreamEntryBySession(
+      input.sessionId
+    );
+    if (!streamEntry) {
+      return { aborted: false };
+    }
+
+    streamEntry.agent.abort();
+    return { aborted: true };
   });
 
 const listSessions = publicProcedure
@@ -123,6 +185,16 @@ const listSessions = publicProcedure
       direction,
     });
     return { sessions };
+  });
+
+const getSession = publicProcedure
+  .route({ method: "GET", path: "/sessions/{sessionId}" })
+  .input(z.object({ sessionId: z.string() }))
+  .handler(async ({ input }) => {
+    const { sessionId } = input;
+    const store = new SQLiteStore();
+    const session = await store.getSessionById(sessionId);
+    return { session };
   });
 
 export const listSessionTurns = publicProcedure
@@ -227,7 +299,10 @@ export const listSessionResources = publicProcedure
 export const session = {
   create: createSession,
   list: listSessions,
+  get: getSession,
   listSessionTurns,
   listSessionResources,
   fork: forkSession,
+  stream: streamSession,
+  stop: stopSession,
 };

@@ -155,6 +155,25 @@ export type SessionProps = React.ComponentProps<"div"> & {
   initialTurns?: AgentTurn<AgentToolSet>[];
 };
 
+/**
+ * Reads the turn a session is running.
+ *
+ * Located by session id, so a page that reloaded can ask without ever having
+ * held a stream id. A session with nothing running answers `STREAM_NOT_FOUND`,
+ * which is a rejection here — the caller decides whether that is worth
+ * reporting.
+ */
+async function openStream(
+  sessionId: string,
+  abortSignal: AbortSignal
+): Promise<ReadableStream> {
+  const stream = await client.session.stream(
+    { sessionId },
+    { signal: abortSignal }
+  );
+  return eventIteratorToUnproxiedDataStream(stream);
+}
+
 export function Session({ sessionId, initialTurns = [] }: SessionProps) {
   const navigate = useNavigate();
 
@@ -168,6 +187,17 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     queryFn: async () =>
       await client.session.listSessionResources({ sessionId: sessionId ?? "" }),
   });
+
+  // A turn outlives the page that asked for it, so a page entering a session
+  // asks what that session is up to rather than assuming it is idle.
+  const getSessionQuery = useQuery({
+    queryKey: ["getSession", sessionId],
+    queryFn: async () =>
+      await client.session.get({ sessionId: sessionId ?? "" }),
+    enabled: Boolean(sessionId),
+  });
+
+  const activeStreamId = getSessionQuery.data?.session?.activeStreamId ?? null;
 
   const forkSessionMutation = useMutation({
     mutationFn: async (options: ForkSessionType) =>
@@ -226,13 +256,16 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     }
   }, []);
 
-  const { sendTurns, turns, error } = useAgentSession({
+  const { sendTurns, turns, error, status, stop, resume } = useAgentSession({
     id: sessionKey,
+    // Sending and reading are two requests. The POST is accepted and answered
+    // at once — the turn runs on in the background — so its body says only that
+    // it was accepted, and the events come from the GET below.
     apiStream: async (options) => {
       if (!selectedModelId || !selectedModelEffort || !options.turns.length) {
         return;
       }
-      const result = await client.session.create(
+      const accepted = await client.session.create(
         {
           sessionId: options.sessionId,
           turns: [options.turns.at(-1)!],
@@ -241,7 +274,18 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
         },
         { signal: options.abortSignal }
       );
-      return eventIteratorToUnproxiedDataStream(result);
+      // The desktop client reaches the server over oRPC's RPC link, which
+      // always answers 200 — the 201 the REST route sends is not visible here,
+      // so the accepted `streamId` is what says the turn was taken.
+      if (!accepted?.activeStreamId) {
+        throw new Error("The chat did not accept the message.");
+      }
+      return await openStream(options.sessionId, options.abortSignal);
+    },
+    // Stopping is located by session id, so nothing here has to carry the
+    // stream id the POST handed back.
+    apiStop: async ({ sessionId: id }) => {
+      await client.session.stop({ sessionId: id });
     },
     turns: initialTurns,
     onEvent,
@@ -249,8 +293,44 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
 
   // console.log("session page refresh.", sessionId, initialTurns.length);
 
+  // Attach to a turn that is still running, once for that turn. The lookup can
+  // be repeated — a refetch answers with the same stream id — but a store has
+  // to attach to a given turn only once.
+  const resumedStreamRef = React.useRef<string | null>(null);
+
+  React.useEffect(() => {
+    if (!sessionId || !activeStreamId) {
+      return;
+    }
+
+    if (resumedStreamRef.current === activeStreamId) {
+      return;
+    }
+
+    resumedStreamRef.current = activeStreamId;
+
+    const id = sessionId;
+    const controller = new AbortController();
+
+    void (async () => {
+      try {
+        const stream = await openStream(id, controller.signal);
+        await resume({ stream, abortSignal: controller.signal });
+      } catch {
+        // The turn can end between the lookup and the attach; there is then
+        // nothing to resume, and the transcript already has it.
+      }
+    })();
+
+    return () => controller.abort();
+  }, [sessionId, activeStreamId, resume]);
+
   const tokenUsage =
     turns.findLast((turn) => turn.usage)?.usage || defaultTokenUsage;
+
+  // The submit button doubles as the stop control, so an empty editor — which
+  // is exactly what submitting leaves behind — must not disable it mid-turn.
+  const isGenerating = status === "submitted" || status === "streaming";
 
   const commands: AgentCommand[] = [
     {
@@ -468,7 +548,11 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
                       </ContextContent>
                     </Context>
                     <PromptInputSubmit
-                      disabled={!selectedModelId || isEditorEmpty}
+                      disabled={
+                        !isGenerating && (!selectedModelId || isEditorEmpty)
+                      }
+                      status={status}
+                      onStop={() => void stop()}
                     />
                   </div>
                 </PromptInputFooter>

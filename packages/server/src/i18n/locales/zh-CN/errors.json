@@ -21,5 +21,6 @@
   "MODEL_NOT_FOUND": "所选模型未配置，请重新选择模型。",
   "SESSION_NOT_FOUND": "未找到该会话，请检查后重试。",
   "NOTHING_TO_FORK": "该会话暂无可分叉的内容。",
-  "MESSAGE_NOT_FOUND": "该会话中未找到这条消息。"
+  "MESSAGE_NOT_FOUND": "该会话中未找到这条消息。",
+  "STREAM_NOT_FOUND": "该会话当前没有正在进行的回复。"
 }

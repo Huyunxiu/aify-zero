@@ -45,6 +45,20 @@ export interface AgentStore {
     messageId: string | undefined
   ): Promise<number>;
 
+  /**
+   * Records the stream currently running for the session; `null` marks it idle.
+   * The in-memory stream registry is what actually holds the running turn —
+   * this is the hint a freshly loaded client reads to find it again.
+   */
+  setActiveStream(sessionId: string, streamId: string | null): Promise<number>;
+
+  /**
+   * Clears the marker only while it still names this `streamId`. A stream that
+   * was replaced by a newer one must not wipe the newer one's marker when its
+   * own pump finishes.
+   */
+  clearActiveStream(sessionId: string, streamId: string): Promise<number>;
+
   existsTurn(id: string): Promise<boolean>;
 
   saveTurn(message: TurnInsertModel): Promise<number>;
