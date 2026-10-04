@@ -1,7 +1,12 @@
 import { parsePartialJson } from "ai";
 import type { ToolSet } from "ai";
 
-import { isAgentDynamicToolPart, isAgentStaticToolPart } from "./types";
+import {
+  isAgentDynamicToolPart,
+  isAgentReasoningPart,
+  isAgentStaticToolPart,
+  isAgentTextPart,
+} from "./types";
 import type {
   AgentAssistantStep,
   AgentAssistantTurn,
@@ -28,9 +33,9 @@ import type {
 
 export class AgentTurnBuilder<TOOLS extends ToolSet> {
   turns: AgentTurn<TOOLS>[];
-  pendingTurns: Map<string, AgentTurn<TOOLS>>;
-  pendingSteps: Map<string, AgentStep<TOOLS>>;
-  pendingParts: Map<string, AgentPart<TOOLS>>;
+  private readonly pendingTurns: Map<string, AgentTurn<TOOLS>>;
+  private readonly pendingSteps: Map<string, AgentStep<TOOLS>>;
+  private readonly pendingParts: Map<string, AgentPart<TOOLS>>;
   completedTurns: AgentTurn<TOOLS>[] = [];
 
   constructor({ turns }: { turns: AgentTurn<TOOLS>[] }) {
@@ -426,6 +431,37 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
           `AgentTurnBuilder#onEvent unknown event ${JSON.stringify(event)}`
         );
         break;
+      }
+    }
+  }
+
+  /**
+   * Ends whatever the stream left unfinished.
+   *
+   * The `turn.finish` / `step.finish` / `*`.end events remove entries from the
+   * pending maps, so they hold exactly the objects that never finished; settling
+   * those is enough, and it is a no-op for a stream that ended properly, where
+   * the ending arrives on the finish event instead.
+   *
+   * The caller supplies the outcome: a builder cannot tell from its own state
+   * whether the transport failed or was cancelled — only that nothing finished.
+   *
+   * `status` is a union of string literals, so a plain assignment is enough; note
+   * that comparing it first would narrow the union and turn the assignment into a
+   * type error. Tool parts run their own state machine and are left alone.
+   */
+  settle(outcome: "aborted" | "error"): void {
+    for (const turn of this.pendingTurns.values()) {
+      turn.status = outcome;
+    }
+
+    for (const step of this.pendingSteps.values()) {
+      step.status = outcome;
+    }
+
+    for (const part of this.pendingParts.values()) {
+      if (isAgentTextPart(part) || isAgentReasoningPart(part)) {
+        part.state = "done";
       }
     }
   }

@@ -474,6 +474,15 @@ export class Agent {
       ...status,
     });
 
+    // An aborted or failed step returns from `#runSteps` before its
+    // `step.finish`, so the step and its parts are still pending here; the
+    // `turn.finish` above only clears the turn. Settling first keeps the copy
+    // persisted below from carrying a `"streaming"` step forever. A `"done"`
+    // turn is skipped so a still-streaming background title is not marked.
+    if (status.status !== "done") {
+      this.session.builder?.settle(status.status);
+    }
+
     const turn = this.session.builder?.completedTurns.at(-1);
 
     if (turn) {

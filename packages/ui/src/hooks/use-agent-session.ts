@@ -1,9 +1,5 @@
 import type { AgentToolSet } from "@workspace/agent";
-import {
-  AgentTurnBuilder,
-  isAgentReasoningPart,
-  isAgentTextPart,
-} from "@workspace/agent-client";
+import { AgentTurnBuilder } from "@workspace/agent-client";
 import type { AgentStreamEvent, AgentTurn } from "@workspace/agent-client";
 import { parseJsonEventStream } from "ai";
 import * as React from "react";
@@ -140,40 +136,6 @@ const readErrorMessage = async (response: Response): Promise<string> => {
 };
 
 /**
- * Compensates for a stream that ended without the server's `turn.finish`:
- * without this, an interrupted turn stays `status: "streaming"` forever and the
- * UI keeps reporting that it is still working.
- *
- * `pendingTurns` / `pendingSteps` / `pendingParts` are public, and the
- * `turn.finish` / `step.finish` / `*`.end events remove entries from them, so
- * they hold exactly the objects that never finished. Settling those is enough,
- * and it is a no-op for a stream that ended properly, where the ending arrives
- * on the finish event instead.
- *
- * `status` is a union of string literals, so a plain assignment is enough; note
- * that comparing it first would narrow the union and turn the assignment into a
- * type error. Tool parts run their own state machine and are left alone.
- */
-const settleUnfinished = (
-  builder: AgentTurnBuilder<AgentToolSet>,
-  outcome: "aborted" | "error"
-): void => {
-  for (const turn of builder.pendingTurns.values()) {
-    turn.status = outcome;
-  }
-
-  for (const step of builder.pendingSteps.values()) {
-    step.status = outcome;
-  }
-
-  for (const part of builder.pendingParts.values()) {
-    if (isAgentTextPart(part) || isAgentReasoningPart(part)) {
-      part.state = "done";
-    }
-  }
-};
-
-/**
  * The mutable half of the hook, kept free of React so it can be driven
  * directly.
  *
@@ -263,7 +225,7 @@ export function createAgentSessionStore({
    * resolve a pending `read()` with `done: true` instead of rejecting it, and
    * the server may close the stream without ever sending `turn.finish`. Whatever
    * is still pending at this point is by definition unfinished, so it is settled
-   * as aborted.
+   * as aborted — or as errored when the transport failed outright.
    *
    * `commit`, not `publish`: the settled turns, the status and the error have to
    * land now rather than when a window closes. Clearing `active` above is also
@@ -290,7 +252,7 @@ export function createAgentSessionStore({
     }
 
     active = null;
-    settleUnfinished(builder, failure && !aborted ? "error" : "aborted");
+    builder.settle(failure && !aborted ? "error" : "aborted");
     currentError = failure;
     status = failure ? "error" : "ready";
     commit();
