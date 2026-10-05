@@ -525,17 +525,28 @@ export class Agent {
       this.session.modelMessages.length;
 
     const compactionStepId = generateStepId();
-    const compaction = await this.#maybeCompact({
-      config: this.context.compactionConfig,
-      messages: this.session.modelMessages,
-      abortSignal: this.context.abortSignal,
-      model,
-      onBeforeCompact: () =>
-        this.#announceCompactionStart(turnId, compactionStepId),
-      onAfterCompact: (params) =>
-        this.#announceCompactionEnd(turnId, compactionStepId, params),
-    });
-    const { messages } = compaction;
+    let messages: ModelMessage[];
+    try {
+      const compaction = await this.#maybeCompact({
+        config: this.context.compactionConfig,
+        messages: this.session.modelMessages,
+        abortSignal: this.context.abortSignal,
+        model,
+        onBeforeCompact: () =>
+          this.#announceCompactionStart(turnId, compactionStepId),
+        onAfterCompact: (params) =>
+          this.#announceCompactionEnd(turnId, compactionStepId, params),
+      });
+      ({ messages } = compaction);
+    } catch (error) {
+      // Compaction is a model call the step makes before its own, so a failure
+      // or an abort there is how the step ended, not a reason to fail the
+      // stream. Left to throw, it would skip `turn.finish` and the store write
+      // below and the turn would disappear instead of showing as aborted.
+      return this.context.abortSignal?.aborted
+        ? { ok: false, reason: "aborted" }
+        : { ok: false, reason: "error", error };
+    }
 
     await this.context.controller?.write({
       type: "step.start",

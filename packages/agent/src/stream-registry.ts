@@ -74,6 +74,10 @@ export class StreamEventEntry<TOOLS extends ToolSet> {
   readonly #subscribers = new Set<Subscriber<TOOLS>>();
   #done = false;
   #failure: unknown;
+  #resolveFinished!: () => void;
+  readonly #finished = new Promise<void>((resolve) => {
+    this.#resolveFinished = resolve;
+  });
 
   constructor(
     streamId: string,
@@ -83,6 +87,23 @@ export class StreamEventEntry<TOOLS extends ToolSet> {
     this.streamId = streamId;
     this.agent = agent;
     this.#source = stream;
+  }
+
+  /**
+   * Whether the turn has ended — cleanly or not. The turn is written to the
+   * store before its source closes, so a caller that sees this may stop treating
+   * the turn as running and read it back.
+   */
+  isDone(): boolean {
+    return this.#done;
+  }
+
+  /**
+   * Resolves once the turn has ended. A stop handler waits on this so the client
+   * that stopped the turn reads the settled one rather than racing its write.
+   */
+  whenFinished(): Promise<void> {
+    return this.#finished;
   }
 
   /** Drains the source into the buffer, feeding whoever is reading. */
@@ -186,6 +207,7 @@ export class StreamEventEntry<TOOLS extends ToolSet> {
 
     this.#subscribers.clear();
     this.#events.length = 0;
+    this.#resolveFinished();
   }
 
   #close(

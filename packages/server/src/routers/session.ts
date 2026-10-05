@@ -155,19 +155,37 @@ export const streamSession = publicProcedure
  * that asked for it leaves it running on purpose. Absent a running turn this is
  * a no-op rather than an error — the caller asked for the turn to not be
  * running, and it is not.
+ *
+ * Answers only once the turn has ended, so a caller that stops and then reads
+ * the session finds the aborted turn rather than racing its write.
+ *
+ * A session left marked as running with no turn behind it — one that ended with
+ * the process, or that finished just before the lookup — has that marker
+ * cleared, so a reloaded client is not left trying to resume a turn that is
+ * gone. That is also why the marker is cleared here rather than left to the
+ * turn's own finish: this one runs behind a hook and a store write, and the
+ * stop should answer with the session already idle.
  */
 export const stopSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/stop" })
   .input(z.object({ sessionId: z.string() }))
-  .handler(({ input }) => {
-    const streamEntry = STREAM_REGISTRY.getStreamEntryBySession(
-      input.sessionId
-    );
-    if (!streamEntry) {
+  .handler(async ({ input }) => {
+    const { sessionId } = input;
+    const store = new SQLiteStore();
+
+    const streamEntry = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
+    if (!streamEntry || streamEntry.isDone()) {
+      const session = await store.getSessionById(sessionId);
+      if (session?.activeStreamId) {
+        await store.clearActiveStream(sessionId, session.activeStreamId);
+      }
       return { aborted: false };
     }
 
     streamEntry.agent.abort();
+    await streamEntry.whenFinished();
+    await store.clearActiveStream(sessionId, streamEntry.streamId);
+
     return { aborted: true };
   });
 

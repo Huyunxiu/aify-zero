@@ -47,6 +47,7 @@ const source = () => {
     stream,
     push: (event: TestEvent): void => controller.enqueue(event),
     close: (): void => controller.close(),
+    fail: (reason: unknown): void => controller.error(reason),
   };
 };
 
@@ -189,5 +190,41 @@ describe(StreamEventEntry, () => {
 
     await expect(drain(first)).resolves.toStrictEqual([textDelta("shared")]);
     await expect(drain(second)).resolves.toStrictEqual([textDelta("shared")]);
+  });
+});
+
+// Stopping is what reads these: `isDone` says whether there is a turn left to
+// stop, and `whenFinished` is what the stop awaits before it answers.
+describe(`${StreamEventEntry.name} lifetime`, () => {
+  test("is not done while its source is open, and settles when it ends", async () => {
+    const registry = new StreamEventRegistry<AgentToolSet>();
+    const producer = source();
+    registry.registerStream("stream-a", agentOf("session-1"), producer.stream);
+    await tick();
+
+    const entry = registry.getStreamEntryBySession("session-1")!;
+    const finished = entry.whenFinished();
+
+    expect(entry.isDone()).toBeFalsy();
+
+    producer.close();
+    await finished;
+
+    expect(entry.isDone()).toBeTruthy();
+  });
+
+  test("settles even when its source fails", async () => {
+    const registry = new StreamEventRegistry<AgentToolSet>();
+    const producer = source();
+    registry.registerStream("stream-a", agentOf("session-1"), producer.stream);
+    await tick();
+
+    const entry = registry.getStreamEntryBySession("session-1")!;
+    const finished = entry.whenFinished();
+
+    producer.fail(new Error("the stream broke"));
+    await finished;
+
+    expect(entry.isDone()).toBeTruthy();
   });
 });
