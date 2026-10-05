@@ -93,7 +93,6 @@ type AgentSessionStore = {
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
   resume: (options: ResumeOptions) => Promise<void>;
   stop: () => Promise<void>;
-  dispose: () => void;
 };
 
 type AgentSessionStoreOptions = UseAgentSessionOptions & {
@@ -471,8 +470,6 @@ export function createAgentSessionStore({
    * that, and clearing it early would stop that request from settling the turn.
    */
   const stop = async (): Promise<void> => {
-    active?.abort();
-
     if (!apiStop) {
       return;
     }
@@ -485,10 +482,6 @@ export function createAgentSessionStore({
     }
   };
 
-  const dispose = (): void => {
-    active = null;
-  };
-
   return {
     subscribe,
     getTurns,
@@ -497,7 +490,6 @@ export function createAgentSessionStore({
     sendTurns,
     resume,
     stop,
-    dispose,
   };
 }
 
@@ -552,8 +544,6 @@ export function useAgentSession({
     store.getError,
     store.getError
   );
-
-  React.useEffect(() => (): void => store.dispose(), [store]);
 
   return {
     turns: currentTurns,

@@ -426,13 +426,6 @@ export class Agent {
     // [TODO] remove hardcode
     let status: AgentTurnStatus = { status: "done" };
     for (let step = 0; step < MAX_STEPS; step += 1) {
-      // A doomed call would emit a second `abort` chunk and reject its result
-      // promises; stopping here keeps it to one abort per turn.
-      if (this.context.abortSignal?.aborted) {
-        status = { status: "aborted" };
-        break;
-      }
-
       // The step reads the history `messages` currently holds, which compaction
       // or the previous step may have replaced.
       const stepId = generateStepId();
@@ -452,13 +445,6 @@ export class Agent {
       }
 
       this.session.finishStep(outcome.result);
-
-      // An abort that landed after the last chunk still ends the turn as
-      // aborted, however cleanly the step itself finished.
-      if (this.context.abortSignal?.aborted) {
-        status = { status: "aborted" };
-        break;
-      }
 
       if (!outcome.result.toolCallsResolved) {
         status = { status: "done" };
@@ -539,6 +525,11 @@ export class Agent {
       });
       ({ messages } = compaction);
     } catch (error) {
+      console.error(
+        "agent#runSteps compaction error.",
+        this.context.abortSignal?.aborted,
+        error
+      );
       // Compaction is a model call the step makes before its own, so a failure
       // or an abort there is how the step ended, not a reason to fail the
       // stream. Left to throw, it would skip `turn.finish` and the store write
@@ -557,20 +548,32 @@ export class Agent {
       createdAt: Date.now(),
     });
 
-    const result = streamText<ToolSet, AgentRuntimeContext>({
-      instructions: this.systemPrompt,
-      model,
-      tools: this.tools,
-      stopWhen: isStepCount(1),
-      reasoning: this.context.modelEffort
-        ? MODEL_EFFORT_TO_REASONING[this.context.modelEffort]
-        : undefined,
-      messages,
-      abortSignal: this.context.abortSignal,
-      include: {
-        requestBody: true,
-      },
-    });
+    let result;
+    try {
+      result = streamText<ToolSet, AgentRuntimeContext>({
+        instructions: this.systemPrompt,
+        model,
+        tools: this.tools,
+        stopWhen: isStepCount(1),
+        reasoning: this.context.modelEffort
+          ? MODEL_EFFORT_TO_REASONING[this.context.modelEffort]
+          : undefined,
+        messages,
+        abortSignal: this.context.abortSignal,
+        include: {
+          requestBody: true,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "agent#runSteps streamText error.",
+        this.context.abortSignal?.aborted,
+        error
+      );
+      return this.context.abortSignal?.aborted
+        ? { ok: false, reason: "aborted" }
+        : { ok: false, reason: "error", error };
+    }
 
     // A provider that fails mid-stream reports it as an `error` chunk, which the
     // protocol forwards as a part; keeping the last one lets the turn carry the
@@ -586,6 +589,17 @@ export class Agent {
         }
         if (value.type === "error") {
           streamError = value.error;
+          console.error(
+            "[agent] model stream failed4",
+            this.context.abortSignal?.aborted,
+            value.error
+          );
+        } else if (value.type === "abort") {
+          console.error(
+            "[agent] model stream aborted",
+            this.context.abortSignal?.aborted,
+            value.reason
+          );
         }
         // `streamText` is called with the plain `ToolSet`, so its chunks are
         // typed that way; the protocol wants them as the agent's own tool set.
@@ -599,6 +613,11 @@ export class Agent {
         }
       }
     } catch (error) {
+      console.error(
+        "agent#runSteps reader error.",
+        this.context.abortSignal?.aborted,
+        error
+      );
       // An abort surfaces here as the stream is torn down.
       return this.context.abortSignal?.aborted
         ? { ok: false, reason: "aborted" }
@@ -666,6 +685,11 @@ export class Agent {
         },
       };
     } catch (error) {
+      console.error(
+        "agent#runSteps stream final error.",
+        this.context.abortSignal?.aborted,
+        error
+      );
       // The stream can fail before any step is recorded, which rejects the two
       // promises above instead of ending the reader loop.
       return this.context.abortSignal?.aborted
