@@ -8,11 +8,13 @@ import throttle from "throttleit";
 export type UseAgentSessionOptions = {
   id: string;
   api?: string;
-  apiStream?: (options: {
-    sessionId: string;
-    turns: AgentTurn<AgentToolSet>[];
-    abortSignal: AbortSignal;
-  }) => Promise<ReadableStream | undefined>;
+  apiStream?: (
+    options: {
+      sessionId: string;
+      turns: AgentTurn<AgentToolSet>[];
+      abortSignal: AbortSignal;
+    } & Record<string, unknown>
+  ) => Promise<ReadableStream | undefined>;
   /**
    * Stops the turn the session is running on the server. Located by
    * `sessionId`, not by a stream id — the client holds only the session's.

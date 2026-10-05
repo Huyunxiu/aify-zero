@@ -262,15 +262,16 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     // at once — the turn runs on in the background — so its body says only that
     // it was accepted, and the events come from the GET below.
     apiStream: async (options) => {
-      if (!selectedModelId || !selectedModelEffort || !options.turns.length) {
+      if (!options.model || !options.modelEffort || !options.turns.length) {
         return;
       }
+
       const accepted = await client.session.create(
         {
           sessionId: options.sessionId,
           turns: [options.turns.at(-1)!],
-          model: selectedModelId,
-          modelEffort: selectedModelEffort,
+          model: options.model as string,
+          modelEffort: options.modelEffort as string,
         },
         { signal: options.abortSignal }
       );
@@ -290,6 +291,9 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     turns: initialTurns,
     onEvent,
   });
+
+  const finalError =
+    error ?? turns.findLast((turn) => turn.status === "error")?.error;
 
   // console.log("session page refresh.", sessionId, initialTurns.length);
 
@@ -462,12 +466,12 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
                                 {renderTurn(turn)}
                               </MessageScrollerItem>
                             ))}
-                            {error && (
+                            {finalError && (
                               <MessageScrollerItem scrollAnchor={false}>
                                 <Message from="assistant">
                                   <MessageContent>
                                     <MessageResponse className="text-destructive">
-                                      {getErrorMessage(error)}
+                                      {getErrorMessage(finalError)}
                                     </MessageResponse>
                                   </MessageContent>
                                 </Message>

@@ -11,8 +11,15 @@ import type {
 } from "@workspace/agent-client";
 import type { TurnModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
+import { getErrorMessage } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
-import { generateText, isStepCount, registerTelemetry, streamText } from "ai";
+import {
+  APICallError,
+  generateText,
+  isStepCount,
+  registerTelemetry,
+  streamText,
+} from "ai";
 import type {
   FinishReason,
   LanguageModel,
@@ -437,10 +444,15 @@ export class Agent {
       });
 
       if (!outcome.ok) {
-        status =
-          outcome.reason === "aborted"
-            ? { status: "aborted" }
-            : { status: "error", error: outcome.error };
+        if (outcome.reason === "aborted") {
+          status = { status: "aborted" };
+        } else {
+          status = { status: "error", error: outcome.error };
+          status.error =
+            status.error instanceof APICallError
+              ? status.error.responseBody
+              : getErrorMessage(status.error);
+        }
         break;
       }
 
@@ -590,15 +602,9 @@ export class Agent {
         if (value.type === "error") {
           streamError = value.error;
           console.error(
-            "[agent] model stream failed4",
+            "agent#runSteps stream event error",
             this.context.abortSignal?.aborted,
             value.error
-          );
-        } else if (value.type === "abort") {
-          console.error(
-            "[agent] model stream aborted",
-            this.context.abortSignal?.aborted,
-            value.reason
           );
         }
         // `streamText` is called with the plain `ToolSet`, so its chunks are
@@ -616,12 +622,13 @@ export class Agent {
       console.error(
         "agent#runSteps reader error.",
         this.context.abortSignal?.aborted,
+        streamError,
         error
       );
       // An abort surfaces here as the stream is torn down.
       return this.context.abortSignal?.aborted
         ? { ok: false, reason: "aborted" }
-        : { ok: false, reason: "error", error };
+        : { ok: false, reason: "error", error: streamError ?? error };
     } finally {
       reader.releaseLock();
     }
@@ -688,13 +695,14 @@ export class Agent {
       console.error(
         "agent#runSteps stream final error.",
         this.context.abortSignal?.aborted,
+        streamError,
         error
       );
       // The stream can fail before any step is recorded, which rejects the two
       // promises above instead of ending the reader loop.
       return this.context.abortSignal?.aborted
         ? { ok: false, reason: "aborted" }
-        : { ok: false, reason: "error", error };
+        : { ok: false, reason: "error", error: streamError ?? error };
     }
   }
 
