@@ -191,7 +191,7 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
       replace_all,
     }) => {
       try {
-        const { absolute: absolutePath, title } = resolveToolPath(
+        const { absolute: absolutePath } = resolveToolPath(
           filepath,
           agentContext.workdir
         );
@@ -229,7 +229,6 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
         await writeFile(absolutePath, result.content, "utf-8");
 
         return {
-          title,
           output: `Replaced ${result.replacements} occurrence${result.replacements !== 1 ? "s" : ""} in ${absolutePath}${lineRanges}`,
           code: "ok",
         };

@@ -44,10 +44,7 @@ Usage:
 - This tool can read image files and PDFs and return them as file attachments.
 `;
 
-async function miss(
-  title: string,
-  filepath: string
-): Promise<ReadFileToolOutput> {
+async function miss(filepath: string): Promise<ReadFileToolOutput> {
   const dir = dirname(filepath);
   const base = basename(filepath);
   let items: string[] = [];
@@ -68,7 +65,6 @@ async function miss(
 
   if (items.length > 0) {
     return {
-      title,
       output: `File not found: ${filepath}\n\nDid you mean one of these?\n${items.join("\n")}`,
       code: "error",
       metadata: {
@@ -79,7 +75,6 @@ async function miss(
   }
 
   return {
-    title,
     output: `File not found: ${filepath}`,
     code: "error",
     metadata: {
@@ -90,7 +85,6 @@ async function miss(
 }
 
 async function readDirectory(
-  title: string,
   filepath: string,
   offset: number,
   limit: number
@@ -133,7 +127,6 @@ async function readDirectory(
   ].join("\n");
 
   return {
-    title,
     output,
     code: "ok",
     metadata: {
@@ -149,14 +142,12 @@ async function readDirectory(
 }
 
 async function readAttachments(
-  title: string,
   filepath: string,
   mime: string
 ): Promise<ReadFileToolOutput> {
   const bytes = await readFile(filepath);
   const output = `File read successfully, mime.types: ${mime}`;
   return {
-    title,
     output,
     code: "ok",
     metadata: {
@@ -175,14 +166,9 @@ async function readAttachments(
   };
 }
 
-function readBinaryFile(
-  title: string,
-  filepath: string,
-  mime: string
-): ReadFileToolOutput {
+function readBinaryFile(filepath: string, mime: string): ReadFileToolOutput {
   const output = `Cannot read binary file: ${filepath}, mime: ${mime}`;
   return {
-    title,
     output,
     code: "error",
     metadata: {
@@ -194,7 +180,6 @@ function readBinaryFile(
 }
 
 async function readTextFile(
-  title: string,
   filepath: string,
   mime: string,
   offset: number,
@@ -269,7 +254,6 @@ async function readTextFile(
   ].join("\n");
 
   return {
-    title,
     output,
     code: "ok",
     metadata: {
@@ -367,7 +351,7 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
     inputSchema: READ_TOOL_INPUT_SCHEMA,
     execute: async (input) => {
       const { offset, limit } = input;
-      const { absolute: filepath, title } = resolveToolPath(
+      const { absolute: filepath } = resolveToolPath(
         input.path,
         agentContext.workdir
       );
@@ -379,16 +363,11 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
       try {
         stats = await stat(filepath);
       } catch {
-        return await miss(title, filepath);
+        return await miss(filepath);
       }
 
       if (stats.isDirectory()) {
-        return await readDirectory(
-          title,
-          filepath,
-          normalizedOffset,
-          normalizedLimit
-        );
+        return await readDirectory(filepath, normalizedOffset, normalizedLimit);
       }
 
       const [mime, ext, sample] = await getFileTypeFromBuffer(
@@ -397,15 +376,14 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
       );
 
       if (stats.isFile() && mime && SUPPORTED_ATTACHMENT_MIMES.has(mime)) {
-        return await readAttachments(title, filepath, mime);
+        return await readAttachments(filepath, mime);
       }
 
       if (stats.isFile() && ext && isBinaryFile(ext, sample)) {
-        return readBinaryFile(title, filepath, mime);
+        return readBinaryFile(filepath, mime);
       }
 
       return await readTextFile(
-        title,
         filepath,
         mime,
         normalizedOffset,

@@ -41,10 +41,7 @@ const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>
     inputSchema: WRITE_FILE_TOOL_INPUT_SCHEMA,
     execute: async ({ content, path: filepath }) => {
       try {
-        const { absolute, title } = resolveToolPath(
-          filepath,
-          agentContext.workdir
-        );
+        const { absolute } = resolveToolPath(filepath, agentContext.workdir);
         const existed = await fileExists(absolute);
         if (!existed) {
           await mkdir(dirname(absolute), { recursive: true });
@@ -52,7 +49,6 @@ const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>
         await writeFile(absolute, content, "utf-8");
 
         return {
-          title,
           output: "Wrote file successfully.",
           code: "ok",
         };

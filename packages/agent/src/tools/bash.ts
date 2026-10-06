@@ -57,10 +57,7 @@ export const createBashTool = ({
   tool<BashToolInput, BashToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: createBashToolSchema(agentContext),
-    execute: async (
-      { command, timeout, workdir, description },
-      { abortSignal }
-    ) => {
+    execute: async ({ command, timeout, workdir }, { abortSignal }) => {
       const context = agentContext;
       const cwd = resolveToolPath(
         workdir ?? context.workdir,
@@ -160,7 +157,6 @@ export const createBashTool = ({
           : output;
 
       return {
-        title: description,
         output: truncatedOutput,
         code: "ok",
         metadata: {

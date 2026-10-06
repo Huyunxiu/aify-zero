@@ -67,6 +67,10 @@ const getReasonToolLabel = (text: string | undefined, fallback: string) => {
     : firstLine;
 };
 
+/** Formats a tool step label, omitting the suffix while its detail is unknown. */
+const toolStepLabel = (action: string, detail?: string) =>
+  detail ? `${action} ${detail}` : action;
+
 const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
   const parts: AgentPart<AgentToolSet>[] = turn.content.flatMap(
     (e) => e.content as AgentPart<AgentToolSet>[]
@@ -190,7 +194,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={EyeIcon}
-                  label={`Read ${part.output?.title}`}
+                  label={toolStepLabel("Read", part.input?.path)}
                   status="complete"
                 >
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
@@ -204,7 +208,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={PenLineIcon}
-                  label={`Create ${part.output?.title}`}
+                  label={toolStepLabel("Create", part.input?.path)}
                   status="complete"
                 >
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
@@ -218,7 +222,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={PenLineIcon}
-                  label={`Grep ${part.output?.title}`}
+                  label={toolStepLabel("Grep", part.input?.pattern)}
                   status="complete"
                 >
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
@@ -232,7 +236,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={PenLineIcon}
-                  label={`Glob ${part.output?.title}`}
+                  label={toolStepLabel("Glob", part.input?.pattern)}
                   status="complete"
                 >
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
@@ -246,7 +250,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={GlobeIcon}
-                  label={`Fetch ${part.output?.title}`}
+                  label={toolStepLabel("Fetch", part.input?.url)}
                   status="complete"
                 >
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
@@ -260,7 +264,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={EyeIcon}
-                  label={`Load skill ${part.output?.title}`}
+                  label={toolStepLabel("Load skill", part.input?.skill)}
                   status="complete"
                 >
                   <Frame variant="outline" maxHeight={180}>
@@ -299,7 +303,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={SquareTerminalIcon}
-                  label={`Grep ${part.output?.title}`}
+                  label={toolStepLabel("Bash", part.input?.description)}
                   status="complete"
                 >
                   <div className="relative rounded-lg bg-muted p-4 whitespace-pre">

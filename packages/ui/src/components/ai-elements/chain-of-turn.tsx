@@ -120,7 +120,7 @@ export const ChainOfTurnHeader = memo(
           render={<div />}
           nativeButton={false}
         >
-          {!loading ? (
+          {loading ? (
             <>
               <div className={cn("size-4 group-hover/chain-header:hidden")}>
                 <LoaderGrid {...PATTERNS.Drive} />

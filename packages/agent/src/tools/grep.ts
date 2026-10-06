@@ -214,7 +214,7 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
     description: DESCRIPTION,
     inputSchema: GREP_TOOL_INPUT_SCHEMA,
     execute: async (input, { abortSignal }) => {
-      const { absolute: normalizedPath, title } = resolveToolPath(
+      const { absolute: normalizedPath } = resolveToolPath(
         input.path ?? agentContext.workdir,
         agentContext.workdir
       );
@@ -317,7 +317,6 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
             const detail =
               trimmedStderr.length > 0 ? trimmedStderr : "unknown error";
             resolve({
-              title,
               output: `Grep failed (exit ${exitCode}): ${detail}`,
               code: "error",
               metadata: {
@@ -333,7 +332,6 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
 
           if (stdout.trim().length === 0) {
             resolve({
-              title,
               output: "No matches found.",
               code: "ok",
               metadata: {
@@ -373,7 +371,6 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
               : truncated.lines.join("\n");
 
           resolve({
-            title,
             output: content,
             code: "ok",
             metadata: {

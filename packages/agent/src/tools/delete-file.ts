@@ -40,7 +40,7 @@ const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>
     inputSchema: DELETE_FILE_TOOL_INPUT_SCHEMA,
     execute: async ({ path: filepath, recursive }) => {
       try {
-        const { absolute: absolutePath, title } = resolveToolPath(
+        const { absolute: absolutePath } = resolveToolPath(
           filepath,
           agentContext.workdir
         );
@@ -53,7 +53,6 @@ const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>
         }
 
         return {
-          title,
           output: `Deleted ${absolutePath}`,
           code: "ok",
         };

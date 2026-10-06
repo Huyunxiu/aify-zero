@@ -43,10 +43,7 @@ Usage:
 - This tool can read image files and PDFs and return them as file attachments.
 `;
 
-async function miss(
-  title: string,
-  filepath: string
-): Promise<LoadSkillToolOutput> {
+async function miss(filepath: string): Promise<LoadSkillToolOutput> {
   const dir = dirname(filepath);
   const base = basename(filepath);
   let items: string[] = [];
@@ -67,7 +64,6 @@ async function miss(
 
   if (items.length > 0) {
     return {
-      title,
       output: `File not found: ${filepath}\n\nDid you mean one of these?\n${items.join("\n")}`,
       code: "error",
       metadata: {
@@ -78,7 +74,6 @@ async function miss(
   }
 
   return {
-    title,
     output: `File not found: ${filepath}`,
     code: "error",
     metadata: {
@@ -89,7 +84,6 @@ async function miss(
 }
 
 async function readDirectory(
-  title: string,
   filepath: string,
   offset: number,
   limit: number
@@ -132,7 +126,6 @@ async function readDirectory(
   ].join("\n");
 
   return {
-    title,
     output,
     code: "ok",
     metadata: {
@@ -148,14 +141,12 @@ async function readDirectory(
 }
 
 async function readAttachments(
-  title: string,
   filepath: string,
   mime: string
 ): Promise<LoadSkillToolOutput> {
   const bytes = await readFile(filepath);
   const output = `File read successfully, mime.types: ${mime}`;
   return {
-    title,
     output,
     code: "ok",
     metadata: {
@@ -174,14 +165,9 @@ async function readAttachments(
   };
 }
 
-function readBinaryFile(
-  title: string,
-  filepath: string,
-  mime: string
-): LoadSkillToolOutput {
+function readBinaryFile(filepath: string, mime: string): LoadSkillToolOutput {
   const output = `Cannot read binary file: ${filepath}, mime: ${mime}`;
   return {
-    title,
     output,
     code: "error",
     metadata: {
@@ -193,7 +179,6 @@ function readBinaryFile(
 }
 
 async function readTextFile(
-  title: string,
   filepath: string,
   mime: string,
   offset: number,
@@ -268,7 +253,6 @@ async function readTextFile(
   ].join("\n");
 
   return {
-    title,
     output,
     code: "ok",
     metadata: {
@@ -385,9 +369,7 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
           filepath = skillInfo.location;
         }
       } else {
-        const title = skill;
         return {
-          title,
           output: `Skill not found: ${skill}`,
           code: "error",
           metadata: {
@@ -399,7 +381,6 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
 
       if (!filepath) {
         return {
-          title: "load-skill",
           output: "Either skill name or path must be provided.",
           code: "error",
           metadata: {
@@ -410,12 +391,10 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
       }
 
       filepath = resolveToolPath(filepath, context.workdir).absolute;
-      const title = skill;
 
       // If skill was resolved by name, return its content directly
       if (skillContent) {
         return {
-          title,
           output: skillContent,
           code: "ok",
           metadata: {
@@ -435,16 +414,11 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
       try {
         stats = await stat(filepath);
       } catch {
-        return await miss(title, filepath);
+        return await miss(filepath);
       }
 
       if (stats.isDirectory()) {
-        return await readDirectory(
-          title,
-          filepath,
-          normalizedOffset,
-          normalizedLimit
-        );
+        return await readDirectory(filepath, normalizedOffset, normalizedLimit);
       }
 
       const [mime, ext, sample] = await getFileTypeFromBuffer(
@@ -453,15 +427,14 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
       );
 
       if (stats.isFile() && mime && SUPPORTED_ATTACHMENT_MIMES.has(mime)) {
-        return await readAttachments(title, filepath, mime);
+        return await readAttachments(filepath, mime);
       }
 
       if (stats.isFile() && ext && isBinaryFile(ext, sample)) {
-        return readBinaryFile(title, filepath, mime);
+        return readBinaryFile(filepath, mime);
       }
 
       return await readTextFile(
-        title,
         filepath,
         mime,
         normalizedOffset,

@@ -161,7 +161,7 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
     description: DESCRIPTION,
     inputSchema: GLOB_TOOL_INPUT_SCHEMA,
     execute: async (input, { abortSignal }) => {
-      const { absolute: normalizedPath, title } = resolveToolPath(
+      const { absolute: normalizedPath } = resolveToolPath(
         input.path ?? agentContext.workdir,
         agentContext.workdir
       );
@@ -246,7 +246,6 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
             const detail =
               trimmedStderr.length > 0 ? trimmedStderr : "unknown error";
             resolve({
-              title,
               output: `Glob failed (exit ${exitCode}): ${detail}`,
               code: "error",
               metadata: {
@@ -270,7 +269,6 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
 
           if (paths.length === 0) {
             resolve({
-              title,
               output: "No files found.",
               code: "ok",
               metadata: {
@@ -308,7 +306,6 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
               : truncated.lines.join("\n");
 
           resolve({
-            title,
             output: content,
             code: "ok",
             metadata: {
@@ -318,7 +315,6 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
               truncatedByLines: truncated.truncatedByLines,
               exitCode,
             },
-            // title,
             // output: truncated.lines.join("\n"),
             // code: "ok",
             // metadata: {
