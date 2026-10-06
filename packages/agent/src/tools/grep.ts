@@ -1,12 +1,15 @@
 import { spawn } from "node:child_process";
-import { isAbsolute, relative } from "node:path";
 
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
-import { normalizePath, shellQuote } from "../utils/fs-util";
+import {
+  resolveToolPath,
+  shellQuote,
+  toolPathDescription,
+} from "../utils/fs-util";
 import { getRipgrepAvailable } from "../utils/ripgrep";
 import { truncateContent } from "../utils/truncate";
 import type { ToolOutput } from "./types";
@@ -66,7 +69,7 @@ const GREP_TOOL_INPUT_SCHEMA = z.object({
     .string()
     .optional()
     .describe(
-      "The directory or file to search in. Defaults to the working directory. Must be an absolute path."
+      `${toolPathDescription("directory or file to search in")} Defaults to the working directory.`
     ),
   pattern: z
     .string()
@@ -211,24 +214,10 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
     description: DESCRIPTION,
     inputSchema: GREP_TOOL_INPUT_SCHEMA,
     execute: async (input, { abortSignal }) => {
-      const effectivePath = input.path ?? agentContext.workdir;
-
-      if (!isAbsolute(effectivePath)) {
-        return {
-          output: `Path must be an absolute path. Received: "${effectivePath}". Use an absolute path such as ${agentContext.workdir}/src.`,
-          code: "error",
-          metadata: {
-            matchCount: 0,
-            path: effectivePath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: null,
-          },
-        };
-      }
-
-      const normalizedPath = normalizePath(effectivePath);
-      const title = relative(agentContext.workdir, normalizedPath);
+      const { absolute: normalizedPath, title } = resolveToolPath(
+        input.path ?? agentContext.workdir,
+        agentContext.workdir
+      );
       const effectiveLimit = Math.min(
         Math.max(1, input.limit ?? DEFAULT_LIMIT),
         MAX_LIMIT

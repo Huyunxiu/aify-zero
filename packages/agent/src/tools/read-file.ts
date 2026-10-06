@@ -1,13 +1,6 @@
 import { createReadStream } from "node:fs";
 import { stat, readdir, readFile } from "node:fs/promises";
-import {
-  join,
-  isAbsolute,
-  relative,
-  resolve,
-  dirname,
-  basename,
-} from "node:path";
+import { join, dirname, basename } from "node:path";
 import { createInterface } from "node:readline";
 
 import { tool } from "ai";
@@ -17,7 +10,8 @@ import type { AgentContext } from "../agent-context";
 import {
   getFileTypeFromBuffer,
   isBinaryFile,
-  normalizePath,
+  resolveToolPath,
+  toolPathDescription,
 } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
@@ -38,7 +32,6 @@ const DESCRIPTION = `
 Read a file or directory from the local filesystem. If the path does not exist, an error is returned.
 
 Usage:
-- The path parameter should be an absolute path.
 - By default, this tool returns up to ${MAX_LINE_LENGTH} lines from the start of the file.
 - The offset parameter is the line number to start from (1-indexed).
 - To read later sections, call this tool again with a larger offset.
@@ -293,9 +286,7 @@ async function readTextFile(
 }
 
 const READ_TOOL_INPUT_SCHEMA = z.object({
-  path: z
-    .string()
-    .describe("The absolute path to the file or directory to read"),
+  path: z.string().describe(toolPathDescription("file or directory to read")),
   limit: z.coerce
     .number()
     .int()
@@ -375,14 +366,11 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
     description: DESCRIPTION,
     inputSchema: READ_TOOL_INPUT_SCHEMA,
     execute: async (input) => {
-      const context = agentContext;
-      let { path: filepath } = input;
       const { offset, limit } = input;
-      if (!isAbsolute(filepath)) {
-        filepath = resolve(context.workdir, filepath);
-      }
-      filepath = normalizePath(filepath);
-      const title = relative(context.workdir, filepath);
+      const { absolute: filepath, title } = resolveToolPath(
+        input.path,
+        agentContext.workdir
+      );
 
       const normalizedOffset = offset ?? 1;
       const normalizedLimit = limit ?? DEFAULT_READ_LIMIT;

@@ -1,7 +1,7 @@
 /* oxlint-disable */
 import { realpathSync } from "node:fs";
 import { open } from "node:fs/promises";
-import { resolve as pathResolve, posix } from "node:path";
+import { isAbsolute, relative, resolve as pathResolve, posix } from "node:path";
 
 import { fileTypeFromBuffer } from "file-type";
 
@@ -32,6 +32,36 @@ export function normalizePath(p: string): string {
   } catch {
     return resolved;
   }
+}
+
+/**
+ * Resolves a path supplied by a tool call against the agent's working
+ * directory.
+ *
+ * Relative paths are resolved rather than rejected: the agent only has one
+ * base to resolve against, so rejecting would cost a round trip without
+ * removing any ambiguity. `title` is workdir-relative for display and is
+ * derived from the same absolute path, so the two cannot drift apart.
+ */
+export function resolveToolPath(
+  filepath: string,
+  workdir: string
+): { absolute: string; title: string } {
+  const absolute = normalizePath(
+    isAbsolute(filepath) ? filepath : pathResolve(workdir, filepath)
+  );
+
+  return { absolute, title: relative(workdir, absolute) };
+}
+
+/**
+ * Describes a `path` parameter for tool input schemas.
+ *
+ * Kept beside {@link resolveToolPath} because the two must agree: this
+ * sentence is the only place the model learns how relative paths are treated.
+ */
+export function toolPathDescription(target: string): string {
+  return `The path to the ${target}. Absolute paths are used as-is; relative paths are resolved against the working directory.`;
 }
 
 const SAMPLE_BYTES = 4096;

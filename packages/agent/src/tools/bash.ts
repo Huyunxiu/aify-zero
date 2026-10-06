@@ -5,6 +5,7 @@ import type { Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import { resolveToolPath } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
 const MAX_OUTPUT_LENGTH = 30_000;
@@ -61,7 +62,10 @@ export const createBashTool = ({
       { abortSignal }
     ) => {
       const context = agentContext;
-      const cwd = workdir ?? context.workdir;
+      const cwd = resolveToolPath(
+        workdir ?? context.workdir,
+        context.workdir
+      ).absolute;
       const resolvedTimeout = timeout ?? DEFAULT_TIMEOUT_MS;
 
       const proc = spawn(command, {

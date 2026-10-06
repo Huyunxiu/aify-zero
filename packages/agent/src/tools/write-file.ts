@@ -1,14 +1,14 @@
 import { access, mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { dirname } from "node:path";
 
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import { resolveToolPath, toolPathDescription } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
 const DESCRIPTION = `Write full content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.
-- path can be absolute or relative to the current working directory.
 - Existing file content will be replaced completely.`;
 
 const fileExists = async (filepath: string): Promise<boolean> => {
@@ -24,11 +24,7 @@ const WRITE_FILE_TOOL_INPUT_SCHEMA = z.object({
   content: z
     .string()
     .describe("The full content to write into the target file"),
-  path: z
-    .string()
-    .describe(
-      "The absolute path to the file to write (must be absolute, not relative)"
-    ),
+  path: z.string().describe(toolPathDescription("file to write")),
 });
 
 type WriteFileToolInput = z.infer<typeof WRITE_FILE_TOOL_INPUT_SCHEMA>;
@@ -44,21 +40,19 @@ const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>
     description: DESCRIPTION,
     inputSchema: WRITE_FILE_TOOL_INPUT_SCHEMA,
     execute: async ({ content, path: filepath }) => {
-      const context = agentContext;
       try {
-        const absolutePath = path.isAbsolute(filepath)
-          ? filepath
-          : path.resolve(context.workdir, filepath);
-        const existed = await fileExists(absolutePath);
+        const { absolute, title } = resolveToolPath(
+          filepath,
+          agentContext.workdir
+        );
+        const existed = await fileExists(absolute);
         if (!existed) {
-          await mkdir(path.dirname(absolutePath), { recursive: true });
+          await mkdir(dirname(absolute), { recursive: true });
         }
-        await writeFile(absolutePath, content, "utf-8");
-
-        const relativePath = path.relative(context.workdir, absolutePath);
+        await writeFile(absolute, content, "utf-8");
 
         return {
-          title: relativePath,
+          title,
           output: "Wrote file successfully.",
           code: "ok",
         };

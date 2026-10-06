@@ -1,6 +1,6 @@
 import { createReadStream } from "node:fs";
 import { stat, readdir, readFile } from "node:fs/promises";
-import { join, isAbsolute, resolve, dirname, basename } from "node:path";
+import { join, dirname, basename } from "node:path";
 import { createInterface } from "node:readline";
 
 import { tool } from "ai";
@@ -10,7 +10,8 @@ import type { AgentContext } from "../agent-context";
 import {
   getFileTypeFromBuffer,
   isBinaryFile,
-  normalizePath,
+  resolveToolPath,
+  toolPathDescription,
 } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
@@ -288,7 +289,7 @@ const LOAD_SKILL_TOOL_INPUT_SCHEMA = z.object({
   path: z
     .string()
     .optional()
-    .describe("The absolute path to the skill file to read"),
+    .describe(toolPathDescription("skill file to read")),
   limit: z.coerce
     .number()
     .int()
@@ -408,10 +409,7 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
         };
       }
 
-      if (!isAbsolute(filepath)) {
-        filepath = resolve(context.workdir, filepath);
-      }
-      filepath = normalizePath(filepath);
+      filepath = resolveToolPath(filepath, context.workdir).absolute;
       const title = skill;
 
       // If skill was resolved by name, return its content directly

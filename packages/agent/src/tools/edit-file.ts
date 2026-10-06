@@ -1,12 +1,16 @@
 import { readFile, writeFile, stat } from "node:fs/promises";
-import path from "node:path";
 
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
-import { isBinaryFile, getFileTypeFromBuffer } from "../utils/fs-util";
+import {
+  isBinaryFile,
+  getFileTypeFromBuffer,
+  resolveToolPath,
+  toolPathDescription,
+} from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
 class StringNotFoundError extends Error {
@@ -152,7 +156,7 @@ Usage:
 `;
 
 const EDIT_FILE_INPUT_SCHEMA = z.object({
-  path: z.string().describe("The absolute path to the file to edit"),
+  path: z.string().describe(toolPathDescription("file to edit")),
   old_string: z
     .string()
     .describe(
@@ -186,12 +190,11 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
       new_string,
       replace_all,
     }) => {
-      const context = agentContext;
       try {
-        const absolutePath = path.isAbsolute(filepath)
-          ? filepath
-          : path.resolve(context.workdir, filepath);
-        const title = path.relative(context.workdir, filepath);
+        const { absolute: absolutePath, title } = resolveToolPath(
+          filepath,
+          agentContext.workdir
+        );
 
         const stats = await stat(absolutePath);
 
