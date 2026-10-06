@@ -445,3 +445,19 @@
 .mention-skill {
   color: var(--color-purple-700);
 }
+
+@keyframes pixel-on {
+  0%,
+  to {
+    opacity: 0.15;
+  }
+
+  18%,
+  42% {
+    opacity: 1;
+  }
+
+  62% {
+    opacity: 0.15;
+  }
+}

@@ -5,7 +5,7 @@ import {
 } from "@workspace/ui/components/collapsible";
 import { cn } from "@workspace/ui/lib/utils";
 import type { LucideIcon } from "lucide-react";
-import { ChevronDownIcon, DotIcon, LoaderIcon } from "lucide-react";
+import { ChevronDownIcon, DotIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import {
   createContext,
@@ -15,6 +15,8 @@ import {
   useMemo,
   useState,
 } from "react";
+
+import { LoaderGrid, PATTERNS } from "./loading-state";
 
 interface ChainOfTurnContext {
   expandedPaths: Set<string>;
@@ -118,13 +120,11 @@ export const ChainOfTurnHeader = memo(
           render={<div />}
           nativeButton={false}
         >
-          {loading ? (
+          {!loading ? (
             <>
-              <LoaderIcon
-                className={cn(
-                  "size-4 animate-spin group-hover/chain-header:hidden"
-                )}
-              />
+              <div className={cn("size-4 group-hover/chain-header:hidden")}>
+                <LoaderGrid {...PATTERNS.Drive} />
+              </div>
               <ChevronDownIcon
                 className={cn(
                   "size-4 transition-transform hidden group-hover/chain-header:block",
