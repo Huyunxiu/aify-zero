@@ -138,6 +138,18 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
+  async markSessionRead(sessionId: string): Promise<number> {
+    // Guarded on `done`: a session that started a newer turn, or that settled
+    // into `canceled`/`error`, must not be walked back to `idle` by a read.
+    const result = await db
+      .update(session_table)
+      .set({ status: "idle" })
+      .where(
+        and(eq(session_table.id, sessionId), eq(session_table.status, "done"))
+      );
+    return result.rowsAffected;
+  }
+
   async existsTurn(id: string): Promise<boolean> {
     const result = await db
       .select({ count: count() })

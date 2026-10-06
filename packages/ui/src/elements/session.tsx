@@ -292,6 +292,29 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     onEvent,
   });
 
+  // Opening a session is reading it. A finished turn leaves the session `done`
+  // — the mark the sidebar draws a check for — and the page showing that
+  // transcript is what retires it: once on arrival, and again whenever a turn
+  // this page watched settles back to `ready`, so a session the user is sitting
+  // in does not report itself as unread.
+  React.useEffect(() => {
+    if (!sessionId || status !== "ready") {
+      return;
+    }
+
+    const id = sessionId;
+
+    void (async () => {
+      try {
+        await client.session.markRead({ sessionId: id });
+        await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+      } catch {
+        // Marking read is bookkeeping, not the page's work: a session opened
+        // over a broken link still shows its transcript, it just stays marked.
+      }
+    })();
+  }, [sessionId, status]);
+
   const finalError =
     error ?? turns.findLast((turn) => turn.status === "error")?.error;
 

@@ -63,8 +63,12 @@ const MODEL_EFFORT_TO_REASONING = {
 // turn's word for a stop, `canceled` is the session's. `streaming` is listed
 // only so this stays exhaustive over `AgentTurnStatus`; a turn is never read
 // here before its finish.
+//
+// The session's `done` is not the turn's `done` flattened out: it also says the
+// user has not looked yet, which is what the sidebar draws. Reading the session
+// is what clears it back to `idle`.
 const TURN_END_TO_SESSION_STATUS = {
-  done: "idle",
+  done: "done",
   aborted: "canceled",
   error: "error",
   streaming: "error",

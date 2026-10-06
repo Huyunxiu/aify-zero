@@ -95,7 +95,15 @@
   },
   "sessions": {
     "untitled": "未命名",
-    "loadingMore": "加载更多..."
+    "loadingMore": "加载更多...",
+    "status": {
+      "idle": "待机",
+      "running": "运行中",
+      "waitReview": "待审核",
+      "done": "已完成",
+      "canceled": "已取消",
+      "error": "出错"
+    }
   },
   "requestFailed": "请求失败"
 }

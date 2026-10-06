@@ -78,6 +78,19 @@ export interface AgentStore {
     status: SessionEndStatus
   ): Promise<number>;
 
+  /**
+   * Retires the unread mark a finished turn left behind, by moving a session
+   * out of `done` and back to `idle`.
+   *
+   * Scoped to `done` so it cannot walk over a live one: a session that is
+   * `running`, or already settled into `canceled`/`error`, is left alone. It
+   * also leaves `activeStreamId` untouched — the stream's marker is not this
+   * call's business.
+   *
+   * @returns rows changed, so a caller can tell a real read from a no-op.
+   */
+  markSessionRead(sessionId: string): Promise<number>;
+
   existsTurn(id: string): Promise<boolean>;
 
   saveTurn(message: TurnInsertModel): Promise<number>;

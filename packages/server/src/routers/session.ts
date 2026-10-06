@@ -197,6 +197,27 @@ export const stopSession = publicProcedure
     return { aborted: true };
   });
 
+/**
+ * Marks the finished turn a session is showing as read.
+ *
+ * A session that ran a turn to completion sits in `done` until someone looks at
+ * it — that is the state the sidebar draws a check for. Opening the session is
+ * the looking, so this is what retires the mark.
+ *
+ * Narrow by design: only `done` moves, so a `running` session is not disturbed
+ * by a page that opened while its turn was still going, and a settled
+ * `canceled`/`error` session stays settled. Answering `updated: 0` is the
+ * ordinary outcome of marking a session that had nothing to mark.
+ */
+const markSessionRead = publicProcedure
+  .route({ method: "POST", path: "/sessions/{sessionId}/read" })
+  .input(z.object({ sessionId: z.string() }))
+  .handler(async ({ input }) => {
+    const store = new SQLiteStore();
+    const updated = await store.markSessionRead(input.sessionId);
+    return { sessionId: input.sessionId, updated };
+  });
+
 const listSessions = publicProcedure
   .route({ method: "GET", path: "/sessions" })
   .input(
@@ -326,6 +347,7 @@ export const session = {
   create: createSession,
   list: listSessions,
   get: getSession,
+  markRead: markSessionRead,
   listSessionTurns,
   listSessionResources,
   fork: forkSession,

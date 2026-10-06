@@ -95,7 +95,15 @@
   },
   "sessions": {
     "untitled": "Untitled",
-    "loadingMore": "Loading more..."
+    "loadingMore": "Loading more...",
+    "status": {
+      "idle": "Idle",
+      "running": "Running",
+      "waitReview": "Awaiting review",
+      "done": "Done",
+      "canceled": "Canceled",
+      "error": "Error"
+    }
   },
   "requestFailed": "Request failed"
 }

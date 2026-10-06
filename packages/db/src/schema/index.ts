@@ -36,7 +36,7 @@ export const session_table = sqliteTable("session", {
   activeHeadId: text("active_head_id"),
   activeStreamId: text("active_stream_id"),
   status: text("status", {
-    enum: ["idle", "running", "wait_review", "canceled", "error"],
+    enum: ["idle", "running", "wait_review", "done", "canceled", "error"],
   })
     .notNull()
     .default("idle"),

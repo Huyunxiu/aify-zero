@@ -12,6 +12,7 @@ import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc"
+import { SessionStatus } from "./session-status"
 
 const SESSION_PAGE_SIZE = 30;
 
@@ -70,7 +71,8 @@ export function NavSessions() {
                     className="cursor-pointer"
                     render={<div />}
                   >
-                    <span>
+                    <span className="inline-flex items-center gap-2">
+                      <SessionStatus status={item.status} />
                       {item.title || t("sessions.untitled")}
                     </span>
                   </SidebarMenuButton>
