@@ -15,6 +15,13 @@
       "when": 1790867419037,
       "tag": "0001_spotty_master_mold",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791262804025,
+      "tag": "0002_wealthy_millenium_guard",
+      "breakpoints": true
     }
   ]
 }

@@ -34,7 +34,7 @@ import { AgentSession } from "./agent-session";
 import { compactMessages, shouldCompact } from "./compaction/compaction";
 import { HooksManager } from "./hooks-manager";
 import type { ExtensionAPI } from "./hooks-manager";
-import type { AgentStore } from "./storage";
+import type { AgentStore, SessionEndStatus } from "./storage";
 import type { AgentToolSet } from "./types";
 import { generateEventId, generateStepId } from "./utils/id-util";
 import { toAgentEvent } from "./utils/to-agent-stream-event";
@@ -58,6 +58,17 @@ const MODEL_EFFORT_TO_REASONING = {
   [ModelEffort.High]: "high",
   [ModelEffort.Ultra]: "xhigh",
 } as const;
+
+// A session row borrows the ending the turn already recorded — `aborted` is the
+// turn's word for a stop, `canceled` is the session's. `streaming` is listed
+// only so this stays exhaustive over `AgentTurnStatus`; a turn is never read
+// here before its finish.
+const TURN_END_TO_SESSION_STATUS = {
+  done: "idle",
+  aborted: "canceled",
+  error: "error",
+  streaming: "error",
+} as const satisfies Record<AgentTurnStatus["status"], SessionEndStatus>;
 
 /**
  * Step budget for one assistant turn. The manual loop issues one `streamText`
@@ -85,7 +96,11 @@ export type AgentOptions = {
 export type AgentStreamOptions = {
   modelId: string;
   turns: AgentTurn<AgentToolSet>[];
-  onFinish: () => Promise<void>;
+  /**
+   * How the turn ended, so the caller can settle the session it belongs to. The
+   * outcome is only known here, once the turn has run.
+   */
+  onFinish: (status: SessionEndStatus) => Promise<void>;
 };
 
 type AgentTurnInput = {
@@ -274,6 +289,10 @@ export class Agent {
     // completion first — the stream's queue never blocks, so every chunk would
     // sit buffered until the last one had already been produced.
     void (async () => {
+      // Anything else that ends the turn — a throw out of `#runTurn`, a turn
+      // that never produced a record — is a failure the session should show.
+      let outcome: SessionEndStatus = "error";
+
       try {
         this.context.controller = {
           write: safeEnqueue,
@@ -294,6 +313,10 @@ export class Agent {
 
         this.session.finishTurn({ turn });
 
+        if (turn) {
+          outcome = TURN_END_TO_SESSION_STATUS[turn.status];
+        }
+
         this.context.controller?.close();
       } catch (error) {
         // A step reports its own ending through the turn's finish event; this
@@ -307,7 +330,7 @@ export class Agent {
           { sessionId: this.sessionId },
           this.extensionApi
         );
-        onFinish();
+        onFinish(outcome);
       }
     })();
 

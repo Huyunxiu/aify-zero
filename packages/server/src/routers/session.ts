@@ -106,9 +106,9 @@ const createSession = publicProcedure
     const stream = await agent.stream({
       turns,
       modelId: aiModel.model,
-      onFinish: async () => {
+      onFinish: async (status) => {
         STREAM_REGISTRY.unregisterStream(activeStreamId);
-        await store.clearActiveStream(sessionId, activeStreamId);
+        await store.clearActiveStream(sessionId, activeStreamId, status);
       },
     });
 
@@ -164,7 +164,11 @@ export const streamSession = publicProcedure
  * cleared, so a reloaded client is not left trying to resume a turn that is
  * gone. That is also why the marker is cleared here rather than left to the
  * turn's own finish: this one runs behind a hook and a store write, and the
- * stop should answer with the session already idle.
+ * stop should answer with the session already settled.
+ *
+ * Both paths settle the session to `canceled`: the turn the caller asked to
+ * stop is one that did not run to completion, whether this call ended it or
+ * found it already gone.
  */
 export const stopSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/stop" })
@@ -177,14 +181,18 @@ export const stopSession = publicProcedure
     if (!streamEntry || streamEntry.isDone()) {
       const session = await store.getSessionById(sessionId);
       if (session?.activeStreamId) {
-        await store.clearActiveStream(sessionId, session.activeStreamId);
+        await store.clearActiveStream(
+          sessionId,
+          session.activeStreamId,
+          "canceled"
+        );
       }
       return { aborted: false };
     }
 
     streamEntry.agent.abort();
     await streamEntry.whenFinished();
-    await store.clearActiveStream(sessionId, streamEntry.streamId);
+    await store.clearActiveStream(sessionId, streamEntry.streamId, "canceled");
 
     return { aborted: true };
   });
@@ -228,8 +236,8 @@ export const listSessionTurns = publicProcedure
       return [];
     }
 
-    const messages = await store.getAllTurnsBySessionId(session.id);
-    const activeBranchTurns = await store.getBranchTurns(session.id, messages);
+    const turns = await store.getAllTurnsBySessionId(session.id);
+    const activeBranchTurns = await store.getBranchTurns(session.id, turns);
 
     return activeBranchTurns.map(
       (message) => message.content as AgentTurn<AgentToolSet>
@@ -253,18 +261,18 @@ export const forkSession = publicProcedure
       throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
     }
 
-    const messages = await store.getAllTurnsBySessionId(sessionId);
-    const branchMessages = await store.getBranchTurns(source.id, messages);
+    const turns = await store.getAllTurnsBySessionId(sessionId);
+    const branchTurns = await store.getBranchTurns(source.id, turns);
     const upToIndex = messageId
-      ? branchMessages.findIndex((message) => message.id === messageId)
-      : branchMessages.length - 1;
+      ? branchTurns.findIndex((turn) => turn.id === messageId)
+      : branchTurns.length - 1;
     if (upToIndex < 0) {
       throw new ApiError("MESSAGE_NOT_FOUND", {
         data: { sessionId, messageId },
       });
     }
 
-    const prefix = branchMessages.slice(0, upToIndex + 1);
+    const prefix = branchTurns.slice(0, upToIndex + 1);
     if (prefix.length === 0) {
       throw new ApiError("NOTHING_TO_FORK");
     }

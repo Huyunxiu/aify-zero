@@ -35,6 +35,11 @@ export const session_table = sqliteTable("session", {
   metadata: text("metadata", { mode: "json" }),
   activeHeadId: text("active_head_id"),
   activeStreamId: text("active_stream_id"),
+  status: text("status", {
+    enum: ["idle", "running", "wait_review", "canceled", "error"],
+  })
+    .notNull()
+    .default("idle"),
   forkedFromSessionId: text("forked_from_session_id"),
   forkedFromMessageId: text("forked_from_message_id"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
@@ -47,6 +52,7 @@ export const session_table = sqliteTable("session", {
 
 export type SessionModel = InferSelectModel<typeof session_table>;
 export type SessionInsertModel = InferInsertModel<typeof session_table>;
+export type SessionStatus = SessionModel["status"];
 
 export const turn_table = sqliteTable(
   "turn",

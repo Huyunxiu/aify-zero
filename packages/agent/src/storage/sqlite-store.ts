@@ -7,7 +7,7 @@ import type {
 } from "@workspace/db";
 import { and, asc, count, desc, eq, gt, lt } from "drizzle-orm";
 
-import type { AgentStore } from ".";
+import type { AgentStore, SessionEndStatus } from ".";
 
 export class SQLiteStore implements AgentStore {
   async listSessions({
@@ -87,8 +87,8 @@ export class SQLiteStore implements AgentStore {
       return [];
     }
 
-    turns ||= await this.getAllTurnsBySessionId(sessionId);
-    const turnsMap = new Map(turns.map((message) => [message.id, message]));
+    const finalTurns = turns || (await this.getAllTurnsBySessionId(sessionId));
+    const turnsMap = new Map(finalTurns.map((turn) => [turn.id, turn]));
 
     const path: TurnModel[] = [];
     let current = turnsMap.get(session.activeHeadId);
@@ -111,26 +111,24 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async setActiveStream(
-    sessionId: string,
-    streamId: string | null
-  ): Promise<number> {
+  async setActiveStream(sessionId: string, streamId: string): Promise<number> {
     const result = await db
       .update(session_table)
-      .set({ activeStreamId: streamId })
+      .set({ activeStreamId: streamId, status: "running" })
       .where(eq(session_table.id, sessionId));
     return result.rowsAffected;
   }
 
   async clearActiveStream(
     sessionId: string,
-    streamId: string
+    streamId: string,
+    status: SessionEndStatus
   ): Promise<number> {
     // Compare-and-clear: a stream that has already been superseded leaves the
     // newer stream's marker alone.
     const result = await db
       .update(session_table)
-      .set({ activeStreamId: null })
+      .set({ activeStreamId: null, status })
       .where(
         and(
           eq(session_table.id, sessionId),
