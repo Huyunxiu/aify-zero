@@ -91,3 +91,6 @@ typings/
 # Electron-Forge
 out/
 .devtools
+
+# Copied from @vscode/ripgrep by the forge preStart/prePackage hooks
+resources/bin/

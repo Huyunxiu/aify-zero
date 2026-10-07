@@ -61,6 +61,7 @@ catalog:
   "@types/node": ^25.5.0
   "@types/turndown": ^5.0.6
   "@typescript/native-preview": 7.0.0-dev.20260328.1
+  "@vscode/ripgrep": ^1.18.0
   ai: ^7.0.42
   bumpp: ^11.0.1
   cmdk: ^1.1.1

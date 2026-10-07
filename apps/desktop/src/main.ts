@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import util from "node:util";
@@ -132,7 +133,26 @@ const setupMacDockIcon = () => {
   app.dock.setIcon(dockIconPath);
 };
 
+// Puts the ripgrep shipped in extraResource ahead of whatever the user has on
+// PATH, so the agent's grep/glob tools behave the same on every machine.
+const setupBundledRipgrep = () => {
+  // oxlint-disable-next-line unicorn/prefer-module
+  const dirname = __dirname;
+
+  const rgDirectory = app.isPackaged
+    ? path.join(process.resourcesPath, "resources", "bin")
+    : path.join(dirname, "../../resources/bin");
+
+  if (!existsSync(rgDirectory)) {
+    logger.warn(`Bundled ripgrep not found at ${rgDirectory}`);
+    return;
+  }
+
+  process.env.PATH = `${rgDirectory}${path.delimiter}${process.env.PATH ?? ""}`;
+};
+
 const onElectronReady = async () => {
+  setupBundledRipgrep();
   setupMacDockIcon();
   createWindow();
   await installExtensions();

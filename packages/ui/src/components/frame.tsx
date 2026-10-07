@@ -125,9 +125,9 @@ export function FrameHeader({
   const { variant } = useFrameContext();
   return (
     <header
-      className={cn("flex flex-col px-5 py-3 pb-2", {
-        "border-b-1": variant === "outline"
-      })}
+      className={cn("flex flex-row items-center justify-between px-5 py-3 pb-2", {
+        "border-b": variant === "outline"
+      }, className)}
       data-slot="frame-panel-header"
       {...props}
     />

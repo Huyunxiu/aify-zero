@@ -1,16 +1,20 @@
 import { spawn } from "node:child_process";
 
+const RG_BINARY = process.platform === "win32" ? "rg.exe" : "rg";
+
 /**
  * Module-level cache: probes once per process lifetime whether `rg` is on PATH.
  * Lazily initialized — no work is done at import time. The first call to
- * {@link getRgAvailable} triggers the probe; subsequent calls return the cached
- * promise, so only one `command -v rg` is ever spawned.
+ * {@link getRipgrepAvailable} triggers the probe; subsequent calls return the
+ * cached promise, so only one `rg --version` is ever spawned.
  */
 let ripgrepAvailable: Promise<boolean> | null = null;
 
 function probeRipgrep(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
-    const proc = spawn("command", ["-v", "rg"], {
+    // `command -v rg` would not work here: `command` is a shell builtin and
+    // only macOS ships a standalone `/usr/bin/command` for it.
+    const proc = spawn(RG_BINARY, ["--version"], {
       stdio: ["ignore", "pipe", "pipe"],
       shell: false,
     });

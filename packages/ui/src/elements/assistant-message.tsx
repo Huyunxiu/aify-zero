@@ -119,7 +119,7 @@ export const AssistantMessage = ({
                   label={getReasonToolLabel(part.text, "Text")}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
-                  <Frame variant="outline" maxHeight={180}>
+                  <Frame variant="default">
                     <FrameHeader>
                       <FrameTitle>Text</FrameTitle>
                     </FrameHeader>
@@ -158,9 +158,20 @@ export const AssistantMessage = ({
                   label={getReasonToolLabel(part.text, "Reasoningt")}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
-                  <Frame variant="default" maxHeight={180}>
+                  <Frame variant="default">
                     <FrameHeader>
-                      <FrameTitle>Reasoning</FrameTitle>
+                      <FrameTitle>
+                        <div>Reasoning</div>
+                      </FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.text}
+                        />
+                      </div>
                     </FrameHeader>
                     <FramePanel>
                       <MessageResponse

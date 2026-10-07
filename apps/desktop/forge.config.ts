@@ -1,4 +1,5 @@
-import { cp, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, cp, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { MakerDeb } from "@electron-forge/maker-deb";
@@ -9,6 +10,38 @@ import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
+import { rgPath } from "@vscode/ripgrep";
+
+// Stages the ripgrep binary into resources/, which packagerConfig.extraResource
+// carries into the app. The binary can neither be inlined into the JS bundle
+// nor be executed from inside app.asar, so it has to be a real file next to the
+// app. Running this before start and before package keeps dev and packaged
+// builds looking for it in the same place.
+const copyRipgrep = async () => {
+  const binaryName = process.platform === "win32" ? "rg.exe" : "rg";
+  const destination = path.resolve(
+    import.meta.dirname,
+    "resources",
+    "bin",
+    binaryName
+  );
+
+  if (!existsSync(rgPath)) {
+    throw new Error(
+      `ripgrep binary missing at ${rgPath}. "@vscode/ripgrep" ships it in the ` +
+        `@vscode/ripgrep-${process.platform}-${process.arch} optional package.`
+    );
+  }
+
+  await mkdir(path.dirname(destination), { recursive: true });
+  await cp(rgPath, destination);
+
+  // A lost executable bit only surfaces much later, as an EACCES on the first
+  // search, so it is re-applied here.
+  if (process.platform !== "win32") {
+    await chmod(destination, 0o755);
+  }
+};
 
 const config: ForgeConfig = {
   makers: [
@@ -60,6 +93,8 @@ const config: ForgeConfig = {
   ],
   rebuildConfig: {},
   hooks: {
+    prePackage: copyRipgrep,
+    preStart: copyRipgrep,
     async packageAfterCopy(_forgeConfig, buildPath) {
       const requiredNativePackages = ["@libsql"];
       const sourceNodeModulesPath = path.resolve(
