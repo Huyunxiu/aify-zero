@@ -39,9 +39,9 @@ export function Frame({
   return (
     <FrameContext.Provider value={{ variant, maxHeight, overflowBehavior }}>
       <div
-        className={cn("relative flex flex-col rounded-xl bg-muted *:[[data-slot=frame-panel]+[data-slot=frame-panel]]:mt-1 overflow-hidden", {
+        className={cn("relative flex flex-col rounded-[calc(var(--radius-xl)-2px)] bg-muted *:[[data-slot=frame-panel]+[data-slot=frame-panel]]:mt-1 overflow-hidden", {
           "border-1 shadow-none": variant === "outline",
-          "border-1 shadow-sm": variant === "default",
+          "shadow-lg": variant === "default",
         }, className)}
         data-slot="frame"
         {...props}
@@ -74,7 +74,7 @@ export function FramePanel({
     >
       <div
         className={cn("relative bg-background bg-clip-padding p-5", {
-            "rounded-[calc(var(--radius-xl)-2px)] border-1 shadow-xs/5": variant === "default",
+            "rounded-[calc(var(--radius-xl)-2px)] shadow-2xs": variant === "default",
             "overflow-hidden": isOverflowing && overflowBehavior === "dialog",
             "overflow-y-scroll": overflowBehavior === "scroll",
           },

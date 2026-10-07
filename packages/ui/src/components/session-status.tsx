@@ -10,13 +10,13 @@ const DoneIcon = (props: ComponentProps<"svg">) => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className="lucide lucide-circle-check preview-icon"
     {...props}
   >
-    <circle cx="12" cy="12" r="10" stroke-width="0" />
+    <circle cx="12" cy="12" r="10" strokeWidth="0" />
     <path d="m16 9-5.5 5.5L8 12"/>
   </svg>
 )
@@ -29,8 +29,8 @@ const IdleIcon = (props: ComponentProps<"svg">) => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2" stroke-linecap="round"
-    stroke-linejoin="round"
+    strokeWidth="2" strokeLinecap="round"
+    strokeLinejoin="round"
     className="lucide lucide-dot preview-icon"
     {...props}
   >
@@ -46,9 +46,9 @@ const RunningIcon = (props: ComponentProps<"svg">) => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className="lucide lucide-loader-circle preview-icon"
     {...props}
   >
@@ -63,9 +63,9 @@ const WaitReviewIcon = (props: ComponentProps<"svg">) => (
     height="24"
     viewBox="0 0 24 24"
     fill="none" stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className="lucide lucide-circle-dot preview-icon"
     {...props}
   >
@@ -82,13 +82,13 @@ const CanceledIcon = (props: ComponentProps<"svg">) => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className="lucide lucide-circle-x preview-icon"
     {...props}
   >
-    <circle cx="12" cy="12" r="10" stroke-width="0" />
+    <circle cx="12" cy="12" r="10" strokeWidth="0" />
     <line x1="9" x2="15" y1="15" y2="9"/>
   </svg>
 )
@@ -101,13 +101,13 @@ const ErrorIcon = (props: ComponentProps<"svg">) => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className="lucide lucide-circle-x preview-icon"
     {...props}
   >
-    <circle cx="12" cy="12" r="10" stroke-width="0" />
+    <circle cx="12" cy="12" r="10" strokeWidth="0" />
     <path d="m15 9-6 6"/>
     <path d="m9 9 6 6"/>
   </svg>

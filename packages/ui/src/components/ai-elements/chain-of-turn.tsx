@@ -1,11 +1,10 @@
 import {
   Collapsible,
   CollapsibleContent,
-  CollapsibleTrigger,
 } from "@workspace/ui/components/collapsible";
 import { cn } from "@workspace/ui/lib/utils";
 import type { LucideIcon } from "lucide-react";
-import { ChevronDownIcon, DotIcon } from "lucide-react";
+import { ArrowUpRightIcon, ChevronDownIcon, DotIcon } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import {
   createContext,
@@ -16,6 +15,7 @@ import {
   useState,
 } from "react";
 
+import { Dialog, DialogContent, DialogTrigger } from "../dialog";
 import { LoaderGrid, PATTERNS } from "./loading-state";
 
 interface ChainOfTurnContext {
@@ -87,9 +87,7 @@ export const ChainOfTurn = memo(
   }
 );
 
-export type ChainOfTurnHeaderProps = ComponentProps<
-  typeof CollapsibleTrigger
-> & {
+export type ChainOfTurnHeaderProps = ComponentProps<"div"> & {
   path: string;
   loading?: boolean;
 };
@@ -110,41 +108,38 @@ export const ChainOfTurnHeader = memo(
     }, [togglePath, path]);
 
     return (
-      <Collapsible onOpenChange={handleOpenChange} open={isExpanded}>
-        <CollapsibleTrigger
-          className={cn(
-            "group/chain-header flex h-7 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground cursor-pointer",
-            className
-          )}
-          {...props}
-          render={<div />}
-          nativeButton={false}
-        >
-          {loading ? (
-            <>
-              <div className={cn("size-4 group-hover/chain-header:hidden")}>
-                <LoaderGrid {...PATTERNS.Drive} />
-              </div>
-              <ChevronDownIcon
-                className={cn(
-                  "size-4 transition-transform hidden group-hover/chain-header:block",
-                  isExpanded ? "rotate-0" : "-rotate-90"
-                )}
-              />
-            </>
-          ) : (
+      <div
+        className={cn(
+          "group/chain-header flex h-7 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground cursor-pointer",
+          className
+        )}
+        onClick={handleOpenChange}
+        {...props}
+      >
+        {loading ? (
+          <>
+            <div className={cn("size-4 group-hover/chain-header:hidden")}>
+              <LoaderGrid {...PATTERNS.Drive} />
+            </div>
             <ChevronDownIcon
               className={cn(
-                "size-4 transition-transform",
+                "size-4 transition-transform hidden group-hover/chain-header:block",
                 isExpanded ? "rotate-0" : "-rotate-90"
               )}
             />
-          )}
-          <span className={cn("text-left", { shimmer: loading })}>
-            {children ?? "Chain of Turn"}
-          </span>
-        </CollapsibleTrigger>
-      </Collapsible>
+          </>
+        ) : (
+          <ChevronDownIcon
+            className={cn(
+              "size-4 transition-transform",
+              isExpanded ? "rotate-0" : "-rotate-90"
+            )}
+          />
+        )}
+        <span className={cn("text-left", { shimmer: loading })}>
+          {children ?? "Chain of Turn"}
+        </span>
+      </div>
     );
   }
 );
@@ -155,11 +150,10 @@ const stepStatusStyles = {
   pending: "text-muted-foreground/50",
 };
 
-export type ChainOfTurnStepProps = ComponentProps<"div"> & {
+export type ChainOfTurnStepProps = ComponentProps<typeof DialogTrigger> & {
   path: string;
   icon?: LucideIcon;
   label: ReactNode;
-  description?: ReactNode;
   status?: "complete" | "active" | "pending";
 };
 
@@ -177,7 +171,6 @@ export const ChainOfTurnStep = memo(
     className,
     icon: Icon = DotIcon,
     label,
-    description,
     status = "complete",
     children,
     ...props
@@ -196,42 +189,37 @@ export const ChainOfTurnStep = memo(
 
     return (
       <ChainOfTurnStepContext.Provider value={stepContextValue}>
-        <Collapsible
-          className={cn(
-            " flex flex-col gap-2 text-sm",
-            stepStatusStyles[status],
-            "fade-in-0 slide-in-from-top-2 animate-in",
-            className
-          )}
-          onOpenChange={handleOpenChange}
-          open={isExpanded}
-          {...props}
-        >
-          <CollapsibleTrigger
+        <Dialog open={isExpanded} onOpenChange={handleOpenChange}>
+          <DialogTrigger
             className={cn(
-              "group/chain-step relative mt-0.5 flex h-7 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
+              "flex flex-col gap-2 text-sm outline-none hover:underline",
+              stepStatusStyles[status],
+              "fade-in-0 slide-in-from-top-2 animate-in",
+              className
             )}
+            {...props}
           >
-            <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
-            <ChevronDownIcon
+            <div
               className={cn(
-                "shrink-0 size-4 transition-transform hidden group-hover/chain-step:block",
-                isExpanded ? "rotate-0" : "-rotate-90"
+                "group/chain-step relative mt-0.5 flex h-7 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
               )}
-            />
-            <span className="text-left truncate">{label}</span>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="flex-1 space-y-2">
-            <div className="ml-2 border-l pl-4">
-              {description && (
-                <div className="text-muted-foreground text-xs">
-                  {description}
-                </div>
-              )}
-              {children}
+            >
+              <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
+              <ArrowUpRightIcon
+                className={cn(
+                  "shrink-0 size-4 transition-transform hidden group-hover/chain-step:block"
+                )}
+              />
+              <span className="text-left truncate">{label}</span>
             </div>
-          </CollapsibleContent>
-        </Collapsible>
+          </DialogTrigger>
+          <DialogContent
+            className="bg-transparent ring-0 px-5 py-[min(10vh,10rem)] min-w-[72vw]"
+            showCloseButton={false}
+          >
+            {children}
+          </DialogContent>
+        </Dialog>
       </ChainOfTurnStepContext.Provider>
     );
   }

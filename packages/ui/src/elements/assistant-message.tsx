@@ -158,7 +158,7 @@ export const AssistantMessage = ({
                   label={getReasonToolLabel(part.text, "Reasoningt")}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
-                  <Frame variant="outline" maxHeight={180}>
+                  <Frame variant="default" maxHeight={180}>
                     <FrameHeader>
                       <FrameTitle>Reasoning</FrameTitle>
                     </FrameHeader>
