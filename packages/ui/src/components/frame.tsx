@@ -13,7 +13,7 @@ type FrameVariant = "default" | "outline";
 
 type FrameContextValue = {
   variant: FrameVariant;
-  maxHeight?: number;
+  maxHeight?: number | string;
   overflowBehavior?: "dialog" | "scroll";
 };
 
@@ -25,7 +25,13 @@ function useFrameContext(): FrameContextValue {
 
 export type FrameProps = React.ComponentProps<"div"> & {
   variant: FrameVariant;
-  maxHeight?: number;
+  /**
+   * Caps the panel's height. A number is px and is measured, so the panel can
+   * fade the overflow and offer its own dialog; any other CSS length (`"60vh"`)
+   * is applied as-is and is not measured — pair it with
+   * `overflowBehavior="scroll"` so the overflow stays reachable.
+   */
+  maxHeight?: number | string;
   overflowBehavior?: "dialog" | "scroll";
 }
 
@@ -63,17 +69,19 @@ export function FramePanel({
 }: FramePanelProps): React.ReactElement {
   const { variant, maxHeight, overflowBehavior } = useFrameContext();
   const [ref, { height }] = useMeasure();
-  const isOverflowing = maxHeight && (height > maxHeight);
+  // A CSS length cannot be compared against a measurement; the panel scrolls
+  // for those instead of masking the overflow.
+  const isOverflowing = typeof maxHeight === "number" && height > maxHeight;
 
   return (
     <div
       className={cn("", {
-        "p-1": variant === "default",
+        "p-1 pt-0": variant === "default",
         "p-0": variant === "outline",
       })}
     >
       <div
-        className={cn("relative bg-background bg-clip-padding p-5", {
+        className={cn("relative bg-background bg-clip-padding p-4", {
             "rounded-[calc(var(--radius-xl)-2px)] shadow-2xs": variant === "default",
             "overflow-hidden": isOverflowing && overflowBehavior === "dialog",
             "overflow-y-scroll": overflowBehavior === "scroll",
@@ -125,7 +133,7 @@ export function FrameHeader({
   const { variant } = useFrameContext();
   return (
     <header
-      className={cn("flex flex-row items-center justify-between px-5 py-3 pb-2", {
+      className={cn("flex flex-row items-center justify-between h-11 px-4", {
         "border-b": variant === "outline"
       }, className)}
       data-slot="frame-panel-header"

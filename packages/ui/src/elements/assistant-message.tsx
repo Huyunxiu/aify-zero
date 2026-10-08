@@ -52,6 +52,13 @@ type AssistantMessageProps = {
 /** Max characters of the first line used as a Frame title. */
 const REASON_TOOL_LABEL_MAX_LENGTH = 180;
 
+/**
+ * Share of the screen one Frame in a step may take. A Frame holds its own
+ * scroll, so a long tool output or a streaming answer fills this much of the
+ * screen and then scrolls inside itself instead of growing the dialog.
+ */
+const STEP_FRAME_MAX_HEIGHT = "60vh";
+
 const getReasonToolLabel = (text: string | undefined, fallback: string) => {
   const firstLine = text
     ?.split("\n")
@@ -119,9 +126,22 @@ export const AssistantMessage = ({
                   label={getReasonToolLabel(part.text, "Text")}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
-                  <Frame variant="default">
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
                     <FrameHeader>
                       <FrameTitle>Text</FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.text}
+                        />
+                      </div>
                     </FrameHeader>
                     <FramePanel>
                       <MessageResponse
@@ -158,7 +178,11 @@ export const AssistantMessage = ({
                   label={getReasonToolLabel(part.text, "Reasoningt")}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
-                  <Frame variant="default">
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
                     <FrameHeader>
                       <FrameTitle>
                         <div>Reasoning</div>
@@ -208,9 +232,31 @@ export const AssistantMessage = ({
                   label={toolStepLabel("Read", part.input?.path)}
                   status="complete"
                 >
-                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
-                    {part.output?.output ?? ""}
-                  </div>
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
+                    <FrameHeader>
+                      <FrameTitle>
+                        <div>Reasoning</div>
+                      </FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </FrameHeader>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             } else if (part.type === "tool-write-file") {
@@ -222,9 +268,31 @@ export const AssistantMessage = ({
                   label={toolStepLabel("Create", part.input?.path)}
                   status="complete"
                 >
-                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
-                    {part.output?.output ?? ""}
-                  </div>
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
+                    <FrameHeader>
+                      <FrameTitle>
+                        <div>Reasoning</div>
+                      </FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </FrameHeader>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             } else if (part.type === "tool-grep") {
@@ -236,9 +304,31 @@ export const AssistantMessage = ({
                   label={toolStepLabel("Grep", part.input?.pattern)}
                   status="complete"
                 >
-                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
-                    {part.output?.output ?? ""}
-                  </div>
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
+                    <FrameHeader>
+                      <FrameTitle>
+                        <div>Reasoning</div>
+                      </FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </FrameHeader>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             } else if (part.type === "tool-glob") {
@@ -250,9 +340,31 @@ export const AssistantMessage = ({
                   label={toolStepLabel("Glob", part.input?.pattern)}
                   status="complete"
                 >
-                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
-                    {part.output?.output ?? ""}
-                  </div>
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
+                    <FrameHeader>
+                      <FrameTitle>
+                        <div>Reasoning</div>
+                      </FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </FrameHeader>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             } else if (part.type === "tool-web-fetch") {
@@ -264,9 +376,31 @@ export const AssistantMessage = ({
                   label={toolStepLabel("Fetch", part.input?.url)}
                   status="complete"
                 >
-                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
-                    {part.output?.output ?? ""}
-                  </div>
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
+                    <FrameHeader>
+                      <FrameTitle>
+                        <div>Reasoning</div>
+                      </FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </FrameHeader>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             } else if (part.type === "tool-load-skill") {
@@ -278,9 +412,22 @@ export const AssistantMessage = ({
                   label={toolStepLabel("Load skill", part.input?.skill)}
                   status="complete"
                 >
-                  <Frame variant="outline" maxHeight={180}>
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
                     <FrameHeader>
                       <FrameTitle>{part.input?.skill}</FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
                     </FrameHeader>
                     <FramePanel>
                       <MessageResponse
@@ -317,16 +464,39 @@ export const AssistantMessage = ({
                   label={toolStepLabel("Bash", part.input?.description)}
                   status="complete"
                 >
-                  <div className="relative rounded-lg bg-muted p-4 whitespace-pre">
-                    {part.input?.command ?? ""}
-                    <br />
-                    <br />
-                    {part.output?.output ?? ""}
-                  </div>
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
+                    <FrameHeader>
+                      <FrameTitle>
+                        {toolStepLabel("Bash", part.input?.description)}
+                      </FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.input?.command ?? ""}
+                        />
+                      </div>
+                    </FrameHeader>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.input?.command ?? ""}
+                      </div>
+                    </FramePanel>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                  </Frame>
                 </ChainOfTurnStep>
               );
             }
-
             return null;
           })}
         </ChainOfTurnContent>

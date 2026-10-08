@@ -214,10 +214,12 @@ export const ChainOfTurnStep = memo(
             </div>
           </DialogTrigger>
           <DialogContent
-            className="bg-transparent ring-0 px-5 py-[min(10vh,10rem)] min-w-[72vw]"
+            className="bg-transparent ring-0 px-0 py-0 min-w-[72vw]"
             showCloseButton={false}
           >
-            {children}
+            <div className="flex max-h-[calc(100dvh-2*min(10vh,10rem))] flex-col gap-4 overflow-y-auto overscroll-contain px-5">
+              {children}
+            </div>
           </DialogContent>
         </Dialog>
       </ChainOfTurnStepContext.Provider>
