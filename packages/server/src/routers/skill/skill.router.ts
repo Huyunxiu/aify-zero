@@ -12,7 +12,7 @@ const list = publicProcedure
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
     await skillManager.loadSkills(workdir);
     return {
-      data: skillManager.listAll(),
+      data: skillManager.listUserAvailableSkills(),
     };
   });
 

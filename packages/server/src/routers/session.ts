@@ -340,7 +340,7 @@ export const listSessionResources = publicProcedure
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
     await skillManager.loadSkills(workdir);
 
-    return { skills: skillManager.listAll() };
+    return { skills: skillManager.listUserAvailableSkills() };
   });
 
 export const session = {

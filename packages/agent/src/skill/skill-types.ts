@@ -11,7 +11,7 @@ export type SkillInfo = {
   location: string;
   dir: string;
   content: string;
-  category: "personal" | "project";
+  category: "global" | "project";
   metadata: SkillMetadata;
 };
 
@@ -19,7 +19,7 @@ export type CreateSkillInput = {
   name: string;
   description: string;
   content: string;
-  category?: "personal" | "project";
+  category?: "global" | "project";
   skillDir?: string;
 };
 

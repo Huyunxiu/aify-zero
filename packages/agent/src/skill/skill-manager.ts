@@ -26,6 +26,34 @@ function getStringField(value: unknown): string | undefined {
     : undefined;
 }
 
+/** A skill paired with the rank that decides where it sits in the lookup order. */
+type RankedSkill = { skill: SkillInfo; rank: [number, number] };
+
+/**
+ * Where a skill sits in the lookup order: project shadows global, and within
+ * one level an earlier directory in `dirs` wins.
+ */
+function skillRank(skill: SkillInfo, dirs: string[]): [number, number] {
+  const level = skill.category === "project" ? 0 : 1;
+  const index = dirs.indexOf(skill.dir);
+  // A dir outside `dirs` can only come from a hand-built fixture; it ranks last.
+  return [level, index === -1 ? dirs.length : index];
+}
+
+/**
+ * Orders two ranked skills strongest-first: by rank, then by location so that
+ * skills of equal rank resolve the same way on every scan.
+ */
+function compareSkills(a: RankedSkill, b: RankedSkill): number {
+  if (a.rank[0] !== b.rank[0]) {
+    return a.rank[0] - b.rank[0];
+  }
+  if (a.rank[1] !== b.rank[1]) {
+    return a.rank[1] - b.rank[1];
+  }
+  return a.skill.location.localeCompare(b.skill.location);
+}
+
 export type SkillManagerOptions = {
   dirs: string[];
 };
@@ -47,7 +75,7 @@ export class SkillManager {
   async scan(workdir: string): Promise<SkillInfo[]> {
     const levels = [
       {
-        category: "personal" as const,
+        category: "global" as const,
         baseDir: homedir(),
       },
       {
@@ -114,7 +142,7 @@ export class SkillManager {
 
   query(filters?: {
     name?: string;
-    category?: "personal" | "project";
+    category?: "global" | "project";
   }): SkillInfo[] {
     let results = [...this.skills];
 
@@ -133,25 +161,54 @@ export class SkillManager {
   }
 
   getByName(name: string): SkillInfo | undefined {
-    return this.skills.find((skill) => skill.name === name);
+    return this.listUserAvailableSkills().find((skill) => skill.name === name);
   }
 
   listAll(): SkillInfo[] {
     return this.skills;
   }
 
+  /**
+   * Every skill the user can reach, one per name. A project skill shadows the
+   * global skill of the same name; within one level an earlier directory
+   * shadows a later one. Names are compared exactly, so case matters. The
+   * result is the strongest-first snapshot of `skills`, not a copy.
+   */
+  listUserAvailableSkills(): SkillInfo[] {
+    const winners = new Map<string, RankedSkill>();
+
+    for (const skill of this.skills) {
+      const entry: RankedSkill = { skill, rank: skillRank(skill, this.dirs) };
+      const held = winners.get(skill.name);
+      if (!held || compareSkills(entry, held) < 0) {
+        winners.set(skill.name, entry);
+      }
+    }
+
+    return [...winners.values()]
+      .toSorted(compareSkills)
+      .map((entry) => entry.skill);
+  }
+
+  /**
+   * The subset the model is offered: the skills a user can reach minus those
+   * that opt out with `disable-model-invocation`.
+   */
+  listModelAvailableSkills(): SkillInfo[] {
+    return this.listUserAvailableSkills().filter(
+      (skill) => !skill.metadata["disable-model-invocation"]
+    );
+  }
+
   appendPrompt(prompt: string): string {
-    const skills = this.listAll();
     const skillPrompt = [
       "",
       "## Available Skills",
-      ...skills
-        .filter((skill) => !skill.metadata["disable-model-invocation"])
-        .map((skill) =>
-          skill.description
-            ? `- **${skill.name}**: ${skill.description}`
-            : `- **${skill.name}**`
-        ),
+      ...this.listModelAvailableSkills().map((skill) =>
+        skill.description
+          ? `- **${skill.name}**: ${skill.description}`
+          : `- **${skill.name}**`
+      ),
     ].join("\n");
     return prompt + skillPrompt;
   }
