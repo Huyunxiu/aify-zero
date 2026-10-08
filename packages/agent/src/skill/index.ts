@@ -1,2 +1,2 @@
 export * from "./skill-manager";
-export * from "./skill-types";
+export type * from "./skill-types";

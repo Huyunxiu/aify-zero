@@ -1,23 +1,19 @@
-import { z } from "zod";
+/**
+ * The raw front matter of a SKILL.md, kept as it was written. Fields beyond
+ * `name` and `description` (allowed-tools, license, metadata, ...) stay here
+ * for callers that know what they are looking for.
+ */
+export type SkillMetadata = Record<string, unknown>;
 
-export const SkillMetadataSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-});
-
-export type SkillMetadata = z.infer<typeof SkillMetadataSchema>;
-
-export const skillInfoSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  location: z.string(),
-  dir: z.string(),
-  content: z.string(),
-  category: z.enum(["personal", "project"]),
-  metadata: SkillMetadataSchema,
-});
-
-export type SkillInfo = z.infer<typeof skillInfoSchema>;
+export type SkillInfo = {
+  name: string;
+  description: string;
+  location: string;
+  dir: string;
+  content: string;
+  category: "personal" | "project";
+  metadata: SkillMetadata;
+};
 
 export type CreateSkillInput = {
   name: string;

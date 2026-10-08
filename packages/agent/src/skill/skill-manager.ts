@@ -5,11 +5,26 @@ import path from "node:path";
 import { glob } from "glob";
 import matter from "gray-matter";
 
-import { SkillMetadataSchema } from "./skill-types";
-import type { SkillInfo } from "./skill-types";
+import type { SkillInfo, SkillMetadata } from "./skill-types";
 
-export const SKILL_DIRS = [".claude", ".agents", ".aify-studio"];
+export const SKILL_DIRS = [".aify-studio", ".agents", ".claude"];
 export const SKILL_PATTERN = "skills/**/SKILL.md";
+
+/** Front matter can parse to anything; only a mapping carries metadata. */
+function toMetadata(data: unknown): SkillMetadata {
+  if (typeof data !== "object" || data === null || Array.isArray(data)) {
+    return {};
+  }
+
+  return data as SkillMetadata;
+}
+
+/** The trimmed value of a front matter field, when it holds a string. */
+function getStringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== ""
+    ? value.trim()
+    : undefined;
+}
 
 export type SkillManagerOptions = {
   dirs: string[];
@@ -75,24 +90,20 @@ export class SkillManager {
             continue;
           }
 
-          const metadataResult = SkillMetadataSchema.safeParse(parsed.data);
-          if (!metadataResult.success) {
-            console.warn(
-              "[skill.scan] Invalid skill metadata:",
-              location,
-              metadataResult.error.issues
-            );
-            continue;
-          }
+          const metadata = toMetadata(parsed.data);
 
           skills.push({
-            name: metadataResult.data.name,
-            description: metadataResult.data.description,
+            // A skill is identified by its front matter name, or by the
+            // directory it lives in when the field is missing.
+            name:
+              getStringField(metadata.name) ??
+              path.basename(path.dirname(location)),
+            description: getStringField(metadata.description) ?? "",
             location,
             dir,
             content: parsed.content,
             category: level.category,
-            metadata: metadataResult.data,
+            metadata,
           });
         }
       }
@@ -134,7 +145,13 @@ export class SkillManager {
     const skillPrompt = [
       "",
       "## Available Skills",
-      ...skills.map((skill) => `- **${skill.name}**: ${skill.description}`),
+      ...skills
+        .filter((skill) => !skill.metadata["disable-model-invocation"])
+        .map((skill) =>
+          skill.description
+            ? `- **${skill.name}**: ${skill.description}`
+            : `- **${skill.name}**`
+        ),
     ].join("\n");
     return prompt + skillPrompt;
   }
