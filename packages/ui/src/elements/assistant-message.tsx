@@ -9,9 +9,14 @@ import {
   EyeIcon,
   SplitIcon,
   GlobeIcon,
-  PenLineIcon,
   SquareTerminalIcon,
   TextIcon,
+  FilePlusIcon,
+  SearchIcon,
+  FolderSearchIcon,
+  SparklesIcon,
+  Trash2Icon,
+  FilePenIcon,
 } from "lucide-react";
 
 import {
@@ -77,6 +82,16 @@ const getReasonToolLabel = (text: string | undefined, fallback: string) => {
 /** Formats a tool step label, omitting the suffix while its detail is unknown. */
 const toolStepLabel = (action: string, detail?: string) =>
   detail ? `${action} ${detail}` : action;
+
+/**
+ * The replaced and replacement text of an edit, as `-`/`+` prefixed lines so
+ * the step reads like a diff. With `replace_all` the same text may have been
+ * replaced several times; the step's output line reports how many.
+ */
+const editDiffLines = (oldString: string, newString: string) => [
+  ...oldString.split("\n").map((text) => ({ sign: "-" as const, text })),
+  ...newString.split("\n").map((text) => ({ sign: "+" as const, text })),
+];
 
 const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
   const parts: AgentPart<AgentToolSet>[] = turn.content.flatMap(
@@ -175,7 +190,7 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={BrainIcon}
-                  label={getReasonToolLabel(part.text, "Reasoningt")}
+                  label={getReasonToolLabel(part.text, "Reasoning")}
                   status={part.state === "streaming" ? "active" : "complete"}
                 >
                   <Frame
@@ -238,9 +253,7 @@ export const AssistantMessage = ({
                     overflowBehavior="scroll"
                   >
                     <FrameHeader>
-                      <FrameTitle>
-                        <div>Reasoning</div>
-                      </FrameTitle>
+                      <FrameTitle>Read</FrameTitle>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -264,7 +277,7 @@ export const AssistantMessage = ({
                 <ChainOfTurnStep
                   key={i}
                   path={`${i}`}
-                  icon={PenLineIcon}
+                  icon={FilePlusIcon}
                   label={toolStepLabel("Create", part.input?.path)}
                   status="complete"
                 >
@@ -274,9 +287,7 @@ export const AssistantMessage = ({
                     overflowBehavior="scroll"
                   >
                     <FrameHeader>
-                      <FrameTitle>
-                        <div>Reasoning</div>
-                      </FrameTitle>
+                      <FrameTitle>Create</FrameTitle>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -295,12 +306,100 @@ export const AssistantMessage = ({
                   </Frame>
                 </ChainOfTurnStep>
               );
+            } else if (part.type === "tool-delete-file") {
+              return (
+                <ChainOfTurnStep
+                  key={i}
+                  path={`${i}`}
+                  icon={Trash2Icon}
+                  label={toolStepLabel("Delete", part.input?.path)}
+                  status="complete"
+                >
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
+                    <FrameHeader>
+                      <FrameTitle>Delete</FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </FrameHeader>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                  </Frame>
+                </ChainOfTurnStep>
+              );
+            } else if (part.type === "tool-edit-file") {
+              return (
+                <ChainOfTurnStep
+                  key={i}
+                  path={`${i}`}
+                  icon={FilePenIcon}
+                  label={toolStepLabel("Edit", part.input?.path)}
+                  status="complete"
+                >
+                  <Frame
+                    variant="default"
+                    maxHeight={STEP_FRAME_MAX_HEIGHT}
+                    overflowBehavior="scroll"
+                  >
+                    <FrameHeader>
+                      <FrameTitle>Edit</FrameTitle>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </FrameHeader>
+                    <FramePanel>
+                      <div className="whitespace-pre-wrap break-words font-mono text-xs">
+                        {editDiffLines(
+                          part.input?.old_string ?? "",
+                          part.input?.new_string ?? ""
+                        ).map((line, j) => (
+                          <div
+                            key={j}
+                            className={
+                              line.sign === "-"
+                                ? "text-destructive"
+                                : "text-green-600"
+                            }
+                          >
+                            {line.sign}
+                            {line.text}
+                          </div>
+                        ))}
+                      </div>
+                    </FramePanel>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                  </Frame>
+                </ChainOfTurnStep>
+              );
             } else if (part.type === "tool-grep") {
               return (
                 <ChainOfTurnStep
                   key={i}
                   path={`${i}`}
-                  icon={PenLineIcon}
+                  icon={SearchIcon}
                   label={toolStepLabel("Grep", part.input?.pattern)}
                   status="complete"
                 >
@@ -310,9 +409,7 @@ export const AssistantMessage = ({
                     overflowBehavior="scroll"
                   >
                     <FrameHeader>
-                      <FrameTitle>
-                        <div>Reasoning</div>
-                      </FrameTitle>
+                      <FrameTitle>Grep</FrameTitle>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -336,7 +433,7 @@ export const AssistantMessage = ({
                 <ChainOfTurnStep
                   key={i}
                   path={`${i}`}
-                  icon={PenLineIcon}
+                  icon={FolderSearchIcon}
                   label={toolStepLabel("Glob", part.input?.pattern)}
                   status="complete"
                 >
@@ -346,9 +443,7 @@ export const AssistantMessage = ({
                     overflowBehavior="scroll"
                   >
                     <FrameHeader>
-                      <FrameTitle>
-                        <div>Reasoning</div>
-                      </FrameTitle>
+                      <FrameTitle>Glob</FrameTitle>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -382,9 +477,7 @@ export const AssistantMessage = ({
                     overflowBehavior="scroll"
                   >
                     <FrameHeader>
-                      <FrameTitle>
-                        <div>Reasoning</div>
-                      </FrameTitle>
+                      <FrameTitle>Fetch</FrameTitle>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -408,7 +501,7 @@ export const AssistantMessage = ({
                 <ChainOfTurnStep
                   key={i}
                   path={`${i}`}
-                  icon={EyeIcon}
+                  icon={SparklesIcon}
                   label={toolStepLabel("Load skill", part.input?.skill)}
                   status="complete"
                 >

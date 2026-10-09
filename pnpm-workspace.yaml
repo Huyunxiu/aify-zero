@@ -38,7 +38,7 @@ catalog:
   "@orpc/server": ^1.14.3
   "@orpc/tanstack-query": ^1.14.3
   "@orpc/zod": ^1.14.3
-  "@pierre/diffs": ^1.2.11
+  "@pierre/diffs": ^1.5.2
   "@radix-ui/react-use-controllable-state": ^1.2.3
   "@shadcn/react": ^0.3.1
   "@streamdown/cjk": ^1.0.3
