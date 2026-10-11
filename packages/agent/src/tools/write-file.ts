@@ -29,7 +29,14 @@ const WRITE_FILE_TOOL_INPUT_SCHEMA = z.object({
 
 type WriteFileToolInput = z.infer<typeof WRITE_FILE_TOOL_INPUT_SCHEMA>;
 
-type WriteFileToolOutput = ToolOutput;
+type WriteFileToolOutputMetadata = {
+  filepath: string;
+  created: boolean;
+  bytes: number;
+  lines: number;
+};
+
+type WriteFileToolOutput = ToolOutput<string, WriteFileToolOutputMetadata>;
 
 type CreateWriteFileToolProps = {
   agentContext: AgentContext;
@@ -51,6 +58,12 @@ const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>
         return {
           output: "Wrote file successfully.",
           code: "ok",
+          metadata: {
+            filepath: absolute,
+            created: !existed,
+            bytes: Buffer.byteLength(content, "utf-8"),
+            lines: content.length > 0 ? content.split("\n").length : 0,
+          },
         };
       } catch {
         return {

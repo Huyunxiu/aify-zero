@@ -38,6 +38,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "../components/tooltip";
+import { useElapsedMs } from "../hooks/use-elapsed-ms";
 import { useTouchPrimary } from "../hooks/use-touch-primary";
 import { cn } from "../lib/utils";
 import {
@@ -47,9 +48,16 @@ import {
   MessageContent,
   MessageResponse,
 } from "./message";
+import {
+  formatDuration,
+  getRowStatus,
+  getRowSummary,
+  getToolDurationMs,
+  summarizeTurnRows,
+} from "./tool-step";
+import type { StepRow } from "./tool-step";
 
 type AssistantMessageProps = {
-  loading?: boolean;
   turn: AgentAssistantTurn<AgentToolSet>;
   onFork?: (messageId: string) => void;
 };
@@ -64,7 +72,29 @@ const REASON_TOOL_LABEL_MAX_LENGTH = 180;
  */
 const STEP_FRAME_MAX_HEIGHT = "60vh";
 
-const getReasonToolLabel = (text: string | undefined, fallback: string) => {
+/**
+ * The copy controls every Frame panel shares. Declared once so the eight tool
+ * branches below state only what differs about them.
+ */
+const FRAME_CONTROLS = {
+  code: {
+    copy: true,
+    download: false,
+  },
+  table: {
+    copy: true,
+    download: false,
+    fullscreen: false,
+  },
+  mermaid: {
+    copy: true,
+    download: false,
+    fullscreen: false,
+    panZoom: true,
+  },
+} as const;
+
+const getPureTextLabel = (text: string | undefined, fallback: string) => {
   const firstLine = text
     ?.split("\n")
     .map((line) => line.trim())
@@ -79,9 +109,18 @@ const getReasonToolLabel = (text: string | undefined, fallback: string) => {
     : firstLine;
 };
 
-/** Formats a tool step label, omitting the suffix while its detail is unknown. */
-const toolStepLabel = (action: string, detail?: string) =>
-  detail ? `${action} ${detail}` : action;
+const getStepLabel = (action: string, detail?: string) => {
+  if (detail) {
+    return (
+      <>
+        <span className="text-foreground font-medium">{action}</span>
+        <span className="ml-1 truncate">{detail}</span>
+      </>
+    );
+  }
+
+  return <span className="text-foreground font-medium">{action}</span>;
+};
 
 /**
  * The replaced and replacement text of an edit, as `-`/`+` prefixed lines so
@@ -93,53 +132,111 @@ const editDiffLines = (oldString: string, newString: string) => [
   ...newString.split("\n").map((text) => ({ sign: "+" as const, text })),
 ];
 
+/**
+ * Splits a turn into the steps that led to its answer and the answer itself.
+ *
+ * Each step's parts are kept paired with the step that holds them: the step is
+ * where the timing lives, so a row flattened away from its owner could not say
+ * how long it took.
+ */
 const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
-  const parts: AgentPart<AgentToolSet>[] = turn.content.flatMap(
-    (e) => e.content as AgentPart<AgentToolSet>[]
+  const stepRows: StepRow[] = turn.content.flatMap((step) =>
+    step.content.map((part) => ({
+      part: part as AgentPart<AgentToolSet>,
+      step,
+    }))
   );
-  const answerPartIndex = parts.findLastIndex((part) => part.type === "text");
 
-  const answerPart: AgentTextPart | undefined =
-    answerPartIndex !== -1
-      ? (parts[answerPartIndex] as AgentTextPart)
-      : undefined;
-  const stepParts: AgentPart<AgentToolSet>[] = parts.slice(0, answerPartIndex);
+  const answerRowIndex = stepRows.findLastIndex(
+    (row) => row.part.type === "text"
+  );
+  const answerPart =
+    answerRowIndex === -1
+      ? undefined
+      : (stepRows[answerRowIndex]?.part as AgentTextPart | undefined);
 
   return {
-    stepParts,
+    // A turn with no text at all — one still running, or one that failed
+    // mid-tool — has no answer to hold back, so every row is a step. Slicing to
+    // a `-1` index would silently drop the last of them.
+    stepRows:
+      answerRowIndex === -1 ? stepRows : stepRows.slice(0, answerRowIndex),
     answerPart,
   };
 };
 
-export const AssistantMessage = ({
-  loading,
-  turn,
-  onFork,
-}: AssistantMessageProps) => {
+/**
+ * The turn's elapsed time, kept in its own component so the once-a-second tick
+ * re-renders this span and nothing else. Holding the clock in `AssistantMessage`
+ * would re-render every step row on every tick, and `ChainOfTurnStep`'s memo
+ * would not stop it — its children are fresh elements each time.
+ */
+const TurnElapsed = ({ turn }: { turn: AgentAssistantTurn<AgentToolSet> }) => {
+  const running = turn.status === "streaming";
+  const elapsedMs = useElapsedMs({
+    startedAt: turn.createdAt,
+    endedAt: turn.completedAt,
+    running,
+  });
+
+  // The tick lands wherever it lands within the second, so floor it: a timer
+  // reading `3.4s` and then `4.4s` looks broken next to one that counts
+  // seconds.
+  return (
+    <span>
+      {formatDuration(
+        running ? Math.floor(elapsedMs / 1000) * 1000 : elapsedMs
+      )}
+    </span>
+  );
+};
+
+const TURN_HEADING = {
+  streaming: "Working",
+  done: "Finished",
+  aborted: "Stopped",
+  error: "Failed",
+} as const;
+
+export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
   if (turn.type !== "assistant") {
     return null;
   }
 
   const isTouch = useTouchPrimary();
+  const isRunning = turn.status === "streaming";
 
-  const { answerPart, stepParts } = splitAssistantMessageSteps(turn);
+  const { answerPart, stepRows } = splitAssistantMessageSteps(turn);
 
   return (
     <div className="flex flex-col gap-4 group">
       <ChainOfTurn defaultExpanded={new Set(["root"])}>
-        <ChainOfTurnHeader path="root" loading={loading}>
-          Working
+        <ChainOfTurnHeader
+          path="root"
+          loading={isRunning}
+          summary={summarizeTurnRows(stepRows)}
+          duration={<TurnElapsed turn={turn} />}
+        >
+          {TURN_HEADING[turn.status]}
         </ChainOfTurnHeader>
         <ChainOfTurnContent path="root">
-          {stepParts.map((part, i) => {
+          {stepRows.map(({ part, step }, i) => {
+            const status = getRowStatus(part);
+            const summary = getRowSummary(part);
+            const durationMs = getToolDurationMs(part, step);
+            const duration =
+              durationMs === undefined ? undefined : formatDuration(durationMs);
+
             if (part.type === "text") {
               return (
                 <ChainOfTurnStep
                   key={i}
                   path={`${i}`}
                   icon={TextIcon}
-                  label={getReasonToolLabel(part.text, "Text")}
-                  status={part.state === "streaming" ? "active" : "complete"}
+                  label={getStepLabel("Note", getPureTextLabel(part.text, ""))}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -147,7 +244,7 @@ export const AssistantMessage = ({
                     overflowBehavior="scroll"
                   >
                     <FrameHeader>
-                      <FrameTitle>Text</FrameTitle>
+                      <FrameTitle>Note</FrameTitle>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -159,25 +256,7 @@ export const AssistantMessage = ({
                       </div>
                     </FrameHeader>
                     <FramePanel>
-                      <MessageResponse
-                        controls={{
-                          code: {
-                            copy: true,
-                            download: false,
-                          },
-                          table: {
-                            copy: true,
-                            download: false,
-                            fullscreen: false,
-                          },
-                          mermaid: {
-                            copy: true,
-                            download: false,
-                            fullscreen: false,
-                            panZoom: true,
-                          },
-                        }}
-                      >
+                      <MessageResponse controls={FRAME_CONTROLS}>
                         {part.text}
                       </MessageResponse>
                     </FramePanel>
@@ -190,8 +269,13 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={BrainIcon}
-                  label={getReasonToolLabel(part.text, "Reasoning")}
-                  status={part.state === "streaming" ? "active" : "complete"}
+                  label={getStepLabel(
+                    "Reasoning",
+                    getPureTextLabel(part.text, "")
+                  )}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -213,25 +297,7 @@ export const AssistantMessage = ({
                       </div>
                     </FrameHeader>
                     <FramePanel>
-                      <MessageResponse
-                        controls={{
-                          code: {
-                            copy: true,
-                            download: false,
-                          },
-                          table: {
-                            copy: true,
-                            download: false,
-                            fullscreen: false,
-                          },
-                          mermaid: {
-                            copy: true,
-                            download: false,
-                            fullscreen: false,
-                            panZoom: true,
-                          },
-                        }}
-                      >
+                      <MessageResponse controls={FRAME_CONTROLS}>
                         {part.text}
                       </MessageResponse>
                     </FramePanel>
@@ -244,8 +310,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={EyeIcon}
-                  label={toolStepLabel("Read", part.input?.path)}
-                  status="complete"
+                  label={getStepLabel("Read", part.input?.path)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -278,8 +346,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={FilePlusIcon}
-                  label={toolStepLabel("Create", part.input?.path)}
-                  status="complete"
+                  label={getStepLabel("Create", part.input?.path)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -294,13 +364,13 @@ export const AssistantMessage = ({
                           size="icon-sm"
                           variant="ghost"
                           label="Copy"
-                          message={part.output?.output ?? ""}
+                          message={part.input?.content ?? ""}
                         />
                       </div>
                     </FrameHeader>
                     <FramePanel>
                       <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
+                        {part.input?.content ?? ""}
                       </div>
                     </FramePanel>
                   </Frame>
@@ -312,8 +382,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={Trash2Icon}
-                  label={toolStepLabel("Delete", part.input?.path)}
-                  status="complete"
+                  label={getStepLabel("Delete", part.input?.path)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -346,8 +418,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={FilePenIcon}
-                  label={toolStepLabel("Edit", part.input?.path)}
-                  status="complete"
+                  label={getStepLabel("Edit", part.input?.path)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -367,7 +441,7 @@ export const AssistantMessage = ({
                       </div>
                     </FrameHeader>
                     <FramePanel>
-                      <div className="whitespace-pre-wrap break-words font-mono text-xs">
+                      <div className="whitespace-pre-wrap wrap-break-word font-mono text-xs">
                         {editDiffLines(
                           part.input?.old_string ?? "",
                           part.input?.new_string ?? ""
@@ -400,8 +474,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={SearchIcon}
-                  label={toolStepLabel("Grep", part.input?.pattern)}
-                  status="complete"
+                  label={getStepLabel("Grep", part.input?.pattern)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -434,8 +510,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={FolderSearchIcon}
-                  label={toolStepLabel("Glob", part.input?.pattern)}
-                  status="complete"
+                  label={getStepLabel("Glob", part.input?.pattern)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -468,8 +546,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={GlobeIcon}
-                  label={toolStepLabel("Fetch", part.input?.url)}
-                  status="complete"
+                  label={getStepLabel("Fetch", part.input?.url)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -502,8 +582,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={SparklesIcon}
-                  label={toolStepLabel("Load skill", part.input?.skill)}
-                  status="complete"
+                  label={getStepLabel("Load skill", part.input?.skill)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -523,25 +605,7 @@ export const AssistantMessage = ({
                       </div>
                     </FrameHeader>
                     <FramePanel>
-                      <MessageResponse
-                        controls={{
-                          code: {
-                            copy: true,
-                            download: false,
-                          },
-                          table: {
-                            copy: true,
-                            download: false,
-                            fullscreen: false,
-                          },
-                          mermaid: {
-                            copy: true,
-                            download: false,
-                            fullscreen: false,
-                            panZoom: true,
-                          },
-                        }}
-                      >
+                      <MessageResponse controls={FRAME_CONTROLS}>
                         {part.output?.output ?? ""}
                       </MessageResponse>
                     </FramePanel>
@@ -554,8 +618,10 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={SquareTerminalIcon}
-                  label={toolStepLabel("Bash", part.input?.description)}
-                  status="complete"
+                  label={getStepLabel("Bash", part.input?.description)}
+                  status={status}
+                  summary={summary}
+                  duration={duration}
                 >
                   <Frame
                     variant="default"
@@ -564,7 +630,7 @@ export const AssistantMessage = ({
                   >
                     <FrameHeader>
                       <FrameTitle>
-                        {toolStepLabel("Bash", part.input?.description)}
+                        {getStepLabel("Bash", part.input?.description)}
                       </FrameTitle>
                       <div>
                         <CopyButton

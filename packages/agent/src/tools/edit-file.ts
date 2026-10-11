@@ -145,6 +145,54 @@ function getEditedLineRanges(
     : ` (lines ${ranges.join(", ")})`;
 }
 
+/**
+ * The changed-line counts of one replacement, as the `+X −Y` pair a diff shows.
+ *
+ * Counted in lines, not characters, so a one-word change inside a five-line
+ * block reads `+1 −1` rather than `+5 −5`. Trimming the lines the two strings
+ * share at either end is what keeps the count near the part that changed; the
+ * shared run is arbitrary, so a change in the middle of two untouched lines
+ * still reads `+3 −3`. It overcounts, never undercounts.
+ *
+ * `replaceAll` applies one replacement several times, hence the multiplier.
+ *
+ * Exported for its own test: the arithmetic is the only part of this tool worth
+ * checking without touching a file.
+ */
+function countLineDelta(
+  oldString: string,
+  newString: string,
+  replacements: number
+): { linesAdded: number; linesRemoved: number } {
+  const oldLines = oldString.length > 0 ? oldString.split("\n") : [];
+  const newLines = newString.length > 0 ? newString.split("\n") : [];
+
+  let start = 0;
+  while (
+    start < oldLines.length &&
+    start < newLines.length &&
+    oldLines[start] === newLines[start]
+  ) {
+    start += 1;
+  }
+
+  let endOld = oldLines.length;
+  let endNew = newLines.length;
+  while (
+    endOld > start &&
+    endNew > start &&
+    oldLines[endOld - 1] === newLines[endNew - 1]
+  ) {
+    endOld -= 1;
+    endNew -= 1;
+  }
+
+  return {
+    linesRemoved: (endOld - start) * replacements,
+    linesAdded: (endNew - start) * replacements,
+  };
+}
+
 const DESCRIPTION = `
 Edit a file by replacing specific text. The old_string must match exactly and be unique in the file.
 
@@ -174,7 +222,14 @@ const EDIT_FILE_INPUT_SCHEMA = z.object({
 
 type EditFileInput = z.infer<typeof EDIT_FILE_INPUT_SCHEMA>;
 
-type EditFileOutput = ToolOutput;
+type EditFileOutputMetadata = {
+  filepath: string;
+  replacements: number;
+  linesAdded: number;
+  linesRemoved: number;
+};
+
+type EditFileOutput = ToolOutput<string, EditFileOutputMetadata>;
 
 type CreateEditFileToolProps = {
   agentContext: AgentContext;
@@ -231,6 +286,11 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
         return {
           output: `Replaced ${result.replacements} occurrence${result.replacements !== 1 ? "s" : ""} in ${absolutePath}${lineRanges}`,
           code: "ok",
+          metadata: {
+            filepath: absolutePath,
+            replacements: result.replacements,
+            ...countLineDelta(old_string, new_string, result.replacements),
+          },
         };
       } catch (error) {
         return {
@@ -255,4 +315,4 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
 
 type EditFileToolType = ReturnType<typeof createEditFileTool>;
 
-export { createEditFileTool, type EditFileToolType };
+export { countLineDelta, createEditFileTool, type EditFileToolType };

@@ -51,7 +51,8 @@ const createSession = publicProcedure
     }
 
     const store = new SQLiteStore();
-    const workdir = homedir();
+    // const workdir = homedir();
+    const workdir = "/Users/huyunxiu/HuYunXiu/aify-zero";
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
     await skillManager.loadSkills(workdir);
 

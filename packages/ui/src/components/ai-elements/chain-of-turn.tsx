@@ -16,6 +16,7 @@ import {
 } from "react";
 
 import { Dialog, DialogContent, DialogTrigger } from "../dialog";
+import { Spinner } from "../spinner";
 import { LoaderGrid, PATTERNS } from "./loading-state";
 
 interface ChainOfTurnContext {
@@ -90,12 +91,18 @@ export const ChainOfTurn = memo(
 export type ChainOfTurnHeaderProps = ComponentProps<"div"> & {
   path: string;
   loading?: boolean;
+  /** A note on what the turn as a whole did, after the title. */
+  summary?: ReactNode;
+  /** How long the turn took, right-aligned and set in tabular figures. */
+  duration?: ReactNode;
 };
 
 export const ChainOfTurnHeader = memo(
   ({
     path,
     loading,
+    summary,
+    duration,
     className,
     children,
     ...props
@@ -139,22 +146,58 @@ export const ChainOfTurnHeader = memo(
         <span className={cn("text-left", { shimmer: loading })}>
           {children ?? "Chain of Turn"}
         </span>
+        {summary && (
+          <span className="min-w-0 truncate text-muted-foreground/70 text-xs">
+            {summary}
+          </span>
+        )}
+        {duration && (
+          <span className="ml-auto shrink-0 font-mono text-muted-foreground/70 text-xs tabular-nums">
+            {duration}
+          </span>
+        )}
       </div>
     );
   }
 );
 
-const stepStatusStyles = {
-  active: "text-foreground",
+/**
+ * The state a step is in. Colours the whole row, so a chain of finished steps
+ * reads as a quiet list and the ones needing attention stand out of it.
+ */
+export type ChainOfTurnStepStatus =
+  | "complete"
+  | "running"
+  | "failed"
+  | "denied";
+
+const stepStatusStyles: Record<ChainOfTurnStepStatus, string> = {
   complete: "text-muted-foreground",
-  pending: "text-muted-foreground/50",
+  running: "text-foreground",
+  failed: "text-destructive",
+  denied: "text-warning",
+};
+
+/**
+ * Only the states worth interrupting for get a word. A finished step is the
+ * norm, and labelling every one of them `Completed` would bury the rows that
+ * actually need reading.
+ */
+const stepStatusLabels: Partial<Record<ChainOfTurnStepStatus, string>> = {
+  running: "Running",
+  failed: "Failed",
+  denied: "Denied",
 };
 
 export type ChainOfTurnStepProps = ComponentProps<typeof DialogTrigger> & {
   path: string;
   icon?: LucideIcon;
   label: ReactNode;
-  status?: "complete" | "active" | "pending";
+  status?: ChainOfTurnStepStatus;
+  /** A short note on what the step achieved, e.g. `650 lines`. */
+  summary?: ReactNode;
+  /** How long the step took, right-aligned and set in tabular figures. */
+  duration?: ReactNode;
 };
 
 interface ChainOfTurnStepContextType {
@@ -172,6 +215,8 @@ export const ChainOfTurnStep = memo(
     icon: Icon = DotIcon,
     label,
     status = "complete",
+    summary,
+    duration,
     children,
     ...props
   }: ChainOfTurnStepProps) => {
@@ -192,8 +237,7 @@ export const ChainOfTurnStep = memo(
         <Dialog open={isExpanded} onOpenChange={handleOpenChange}>
           <DialogTrigger
             className={cn(
-              "flex flex-col gap-2 text-sm outline-none hover:underline",
-              stepStatusStyles[status],
+              "flex flex-col gap-2 w-full text-sm outline-none hover:underline",
               "fade-in-0 slide-in-from-top-2 animate-in",
               className
             )}
@@ -201,16 +245,39 @@ export const ChainOfTurnStep = memo(
           >
             <div
               className={cn(
-                "group/chain-step relative mt-0.5 flex h-7 w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground"
+                "group/chain-step relative flex h-7 w-full items-center justify-between gap-2 text-sm transition-colors hover:text-foreground",
+                stepStatusStyles[status]
               )}
             >
-              <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
-              <ArrowUpRightIcon
-                className={cn(
-                  "shrink-0 size-4 transition-transform hidden group-hover/chain-step:block"
+              <div className="relative flex h-full items-center gap-2 flex-1">
+                <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
+                <ArrowUpRightIcon
+                  className={cn(
+                    "shrink-0 size-4 transition-transform hidden group-hover/chain-step:block"
+                  )}
+                />
+                <span className="min-w-0 text-left">{label}</span>
+                {stepStatusLabels[status] && (
+                  <span className="shrink-0 text-xs">
+                    {stepStatusLabels[status]}
+                  </span>
                 )}
-              />
-              <span className="text-left truncate">{label}</span>
+                {summary && (
+                  <span className="min-w-0 text-muted-foreground/70 text-xs">
+                    {summary}
+                  </span>
+                )}
+                {status === "running" && (
+                  <Spinner className="size-3.5 shrink-0" />
+                )}
+              </div>
+              <div className="relative flex h-full items-center gap-2">
+                {duration && (
+                  <span className="shrink-0 font-mono text-muted-foreground/70 text-xs tabular-nums">
+                    {duration}
+                  </span>
+                )}
+              </div>
             </div>
           </DialogTrigger>
           <DialogContent

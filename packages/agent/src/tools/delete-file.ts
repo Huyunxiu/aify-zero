@@ -28,7 +28,12 @@ const DELETE_FILE_TOOL_INPUT_SCHEMA = z.object({
 
 type DeleteFileToolInput = z.infer<typeof DELETE_FILE_TOOL_INPUT_SCHEMA>;
 
-type DeleteFileToolOutput = ToolOutput;
+type DeleteFileToolOutputMetadata = {
+  filepath: string;
+  kind: "file" | "directory";
+};
+
+type DeleteFileToolOutput = ToolOutput<string, DeleteFileToolOutputMetadata>;
 
 type CreateDeleteFileToolProps = {
   agentContext: AgentContext;
@@ -55,6 +60,10 @@ const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>
         return {
           output: `Deleted ${absolutePath}`,
           code: "ok",
+          metadata: {
+            filepath: absolutePath,
+            kind: stats.isDirectory() ? "directory" : "file",
+          },
         };
       } catch (error) {
         return {
