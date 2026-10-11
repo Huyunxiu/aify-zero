@@ -4,7 +4,13 @@ import {
 } from "@workspace/ui/components/collapsible";
 import { cn } from "@workspace/ui/lib/utils";
 import type { LucideIcon } from "lucide-react";
-import { ArrowUpRightIcon, ChevronDownIcon, DotIcon } from "lucide-react";
+import {
+  ArrowUpRightIcon,
+  ChevronDownIcon,
+  CircleCheckIcon,
+  CircleXIcon,
+  DotIcon,
+} from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import {
   createContext,
@@ -19,7 +25,7 @@ import { Dialog, DialogContent, DialogTrigger } from "../dialog";
 import { Spinner } from "../spinner";
 import { LoaderGrid, PATTERNS } from "./loading-state";
 
-interface ChainOfTurnContext {
+interface AgentActivityContext {
   expandedPaths: Set<string>;
   togglePath: (path: string) => void;
 }
@@ -28,26 +34,28 @@ interface ChainOfTurnContext {
 // oxlint-disable-next-line no-empty-function
 const noop = () => {};
 
-const ChainOfTurnContext = createContext<ChainOfTurnContext | null>({
+const AgentActivityContext = createContext<AgentActivityContext | null>({
   expandedPaths: new Set(),
   togglePath: noop,
 });
 
-const useChainOfTurn = () => {
-  const context = useContext(ChainOfTurnContext);
+const useAgentActivity = () => {
+  const context = useContext(AgentActivityContext);
   if (!context) {
-    throw new Error("ChainOfTurn components must be used within ChainOfTurn");
+    throw new Error(
+      "AgentActivity components must be used within AgentActivity"
+    );
   }
   return context;
 };
 
-export type ChainOfTurnProps = ComponentProps<"div"> & {
+export type AgentActivityProps = ComponentProps<"div"> & {
   expanded?: Set<string>;
   defaultExpanded?: Set<string>;
   onExpandedChange?: (expanded: Set<string>) => void;
 };
 
-export const ChainOfTurn = memo(
+export const AgentActivity = memo(
   ({
     expanded: controlledExpanded,
     defaultExpanded = new Set(),
@@ -55,7 +63,7 @@ export const ChainOfTurn = memo(
     className,
     children,
     ...props
-  }: ChainOfTurnProps) => {
+  }: AgentActivityProps) => {
     const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
     const expandedPaths = controlledExpanded ?? internalExpanded;
 
@@ -79,16 +87,16 @@ export const ChainOfTurn = memo(
     );
 
     return (
-      <ChainOfTurnContext.Provider value={contextValue}>
+      <AgentActivityContext.Provider value={contextValue}>
         <div className={cn("not-prose w-full", className)} {...props}>
           {children}
         </div>
-      </ChainOfTurnContext.Provider>
+      </AgentActivityContext.Provider>
     );
   }
 );
 
-export type ChainOfTurnHeaderProps = ComponentProps<"div"> & {
+export type AgentActivityHeaderProps = ComponentProps<"div"> & {
   path: string;
   loading?: boolean;
   /** A note on what the turn as a whole did, after the title. */
@@ -97,7 +105,7 @@ export type ChainOfTurnHeaderProps = ComponentProps<"div"> & {
   duration?: ReactNode;
 };
 
-export const ChainOfTurnHeader = memo(
+export const AgentActivityHeader = memo(
   ({
     path,
     loading,
@@ -106,8 +114,8 @@ export const ChainOfTurnHeader = memo(
     className,
     children,
     ...props
-  }: ChainOfTurnHeaderProps) => {
-    const { expandedPaths, togglePath } = useChainOfTurn();
+  }: AgentActivityHeaderProps) => {
+    const { expandedPaths, togglePath } = useAgentActivity();
     const isExpanded = expandedPaths.has(path);
 
     const handleOpenChange = useCallback(() => {
@@ -165,50 +173,32 @@ export const ChainOfTurnHeader = memo(
  * The state a step is in. Colours the whole row, so a chain of finished steps
  * reads as a quiet list and the ones needing attention stand out of it.
  */
-export type ChainOfTurnStepStatus =
+export type AgentActivityStepStatus =
   | "complete"
   | "running"
   | "failed"
   | "denied";
 
-const stepStatusStyles: Record<ChainOfTurnStepStatus, string> = {
-  complete: "text-muted-foreground",
-  running: "text-foreground",
-  failed: "text-destructive",
-  denied: "text-warning",
-};
-
-/**
- * Only the states worth interrupting for get a word. A finished step is the
- * norm, and labelling every one of them `Completed` would bury the rows that
- * actually need reading.
- */
-const stepStatusLabels: Partial<Record<ChainOfTurnStepStatus, string>> = {
-  running: "Running",
-  failed: "Failed",
-  denied: "Denied",
-};
-
-export type ChainOfTurnStepProps = ComponentProps<typeof DialogTrigger> & {
+export type AgentActivityStepProps = ComponentProps<typeof DialogTrigger> & {
   path: string;
   icon?: LucideIcon;
   label: ReactNode;
-  status?: ChainOfTurnStepStatus;
+  status?: AgentActivityStepStatus;
   /** A short note on what the step achieved, e.g. `650 lines`. */
   summary?: ReactNode;
   /** How long the step took, right-aligned and set in tabular figures. */
   duration?: ReactNode;
 };
 
-interface ChainOfTurnStepContextType {
+interface AgentActivityStepContextType {
   path: string;
 }
 
-const ChainOfTurnStepContext = createContext<ChainOfTurnStepContextType>({
+const AgentActivityStepContext = createContext<AgentActivityStepContextType>({
   path: "",
 });
 
-export const ChainOfTurnStep = memo(
+export const AgentActivityStep = memo(
   ({
     path,
     className,
@@ -219,8 +209,8 @@ export const ChainOfTurnStep = memo(
     duration,
     children,
     ...props
-  }: ChainOfTurnStepProps) => {
-    const { expandedPaths, togglePath } = useChainOfTurn();
+  }: AgentActivityStepProps) => {
+    const { expandedPaths, togglePath } = useAgentActivity();
     const isExpanded = expandedPaths.has(path);
 
     const handleOpenChange = useCallback(() => {
@@ -233,11 +223,11 @@ export const ChainOfTurnStep = memo(
     );
 
     return (
-      <ChainOfTurnStepContext.Provider value={stepContextValue}>
+      <AgentActivityStepContext.Provider value={stepContextValue}>
         <Dialog open={isExpanded} onOpenChange={handleOpenChange}>
           <DialogTrigger
             className={cn(
-              "flex flex-col gap-2 w-full text-sm outline-none hover:underline",
+              "flex flex-col gap-2 w-full text-sm outline-none",
               "fade-in-0 slide-in-from-top-2 animate-in",
               className
             )}
@@ -245,11 +235,10 @@ export const ChainOfTurnStep = memo(
           >
             <div
               className={cn(
-                "group/chain-step relative flex h-7 w-full items-center justify-between gap-2 text-sm transition-colors hover:text-foreground",
-                stepStatusStyles[status]
+                "group/chain-step relative flex h-7 w-full items-center justify-between gap-2 text-sm transition-colors hover:text-foreground"
               )}
             >
-              <div className="relative flex h-full items-center gap-2 flex-1">
+              <div className="relative flex h-full items-center gap-2 flex-1 group-hover/chain-step:underline">
                 <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
                 <ArrowUpRightIcon
                   className={cn(
@@ -257,18 +246,10 @@ export const ChainOfTurnStep = memo(
                   )}
                 />
                 <span className="min-w-0 text-left">{label}</span>
-                {stepStatusLabels[status] && (
-                  <span className="shrink-0 text-xs">
-                    {stepStatusLabels[status]}
-                  </span>
-                )}
                 {summary && (
                   <span className="min-w-0 text-muted-foreground/70 text-xs">
                     {summary}
                   </span>
-                )}
-                {status === "running" && (
-                  <Spinner className="size-3.5 shrink-0" />
                 )}
               </div>
               <div className="relative flex h-full items-center gap-2 shrink-0">
@@ -276,6 +257,18 @@ export const ChainOfTurnStep = memo(
                   <span className="shrink-0 font-mono text-muted-foreground/70 text-xs tabular-nums">
                     {duration}
                   </span>
+                )}
+                {status === "running" && (
+                  <Spinner className="size-3.5 shrink-0" />
+                )}
+                {status === "denied" && (
+                  <CircleXIcon className="size-3.5 text-warning-foreground" />
+                )}
+                {status === "failed" && (
+                  <CircleXIcon className="size-3.5 text-destructive-foreground" />
+                )}
+                {status === "complete" && (
+                  <CircleCheckIcon className="size-3.5 text-success-foreground" />
                 )}
               </div>
             </div>
@@ -289,20 +282,20 @@ export const ChainOfTurnStep = memo(
             </div>
           </DialogContent>
         </Dialog>
-      </ChainOfTurnStepContext.Provider>
+      </AgentActivityStepContext.Provider>
     );
   }
 );
 
-export type ChainOfTurnContentProps = ComponentProps<
+export type AgentActivityContentProps = ComponentProps<
   typeof CollapsibleContent
 > & {
   path: string;
 };
 
-export const ChainOfTurnContent = memo(
-  ({ path, className, children, ...props }: ChainOfTurnContentProps) => {
-    const { expandedPaths, togglePath } = useChainOfTurn();
+export const AgentActivityContent = memo(
+  ({ path, className, children, ...props }: AgentActivityContentProps) => {
+    const { expandedPaths, togglePath } = useAgentActivity();
     const isExpanded = expandedPaths.has(path);
 
     const handleOpenChange = useCallback(() => {
@@ -326,17 +319,17 @@ export const ChainOfTurnContent = memo(
   }
 );
 
-export type ChainOfTurnActionsProps = ComponentProps<"div">;
+export type AgentActivityActionsProps = ComponentProps<"div">;
 
 const stopPropagation = (e: React.SyntheticEvent) => {
   e.stopPropagation();
 };
 
-export const ChainOfTurnActions = ({
+export const AgentActivityActions = ({
   className,
   children,
   ...props
-}: ChainOfTurnActionsProps) => (
+}: AgentActivityActionsProps) => (
   <div
     className={cn("ml-auto flex items-center gap-1", className)}
     onClick={stopPropagation}
@@ -348,7 +341,7 @@ export const ChainOfTurnActions = ({
   </div>
 );
 
-ChainOfTurn.displayName = "ChainOfTurn";
-ChainOfTurnHeader.displayName = "ChainOfTurnHeader";
-ChainOfTurnStep.displayName = "ChainOfTurnStep";
-ChainOfTurnContent.displayName = "ChainOfTurnContent";
+AgentActivity.displayName = "AgentActivity";
+AgentActivityHeader.displayName = "AgentActivityHeader";
+AgentActivityStep.displayName = "AgentActivityStep";
+AgentActivityContent.displayName = "AgentActivityContent";

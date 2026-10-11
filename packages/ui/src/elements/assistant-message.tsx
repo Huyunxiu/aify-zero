@@ -21,10 +21,10 @@ import {
 } from "lucide-react";
 
 import {
-  ChainOfTurn,
-  ChainOfTurnContent,
-  ChainOfTurnHeader,
-  ChainOfTurnStep,
+  AgentActivity,
+  AgentActivityContent,
+  AgentActivityHeader,
+  AgentActivityStep,
 } from "../components/ai-elements/chain-of-turn";
 import { CopyButton } from "../components/copy-button";
 import {
@@ -169,7 +169,7 @@ const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
 /**
  * The turn's elapsed time, kept in its own component so the once-a-second tick
  * re-renders this span and nothing else. Holding the clock in `AssistantMessage`
- * would re-render every step row on every tick, and `ChainOfTurnStep`'s memo
+ * would re-render every step row on every tick, and `AgentActivityStep`'s memo
  * would not stop it — its children are fresh elements each time.
  */
 const TurnElapsed = ({ turn }: { turn: AgentAssistantTurn<AgentToolSet> }) => {
@@ -240,16 +240,16 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
 
   return (
     <div className="flex flex-col gap-4 group">
-      <ChainOfTurn defaultExpanded={new Set(["root"])}>
-        <ChainOfTurnHeader
+      <AgentActivity defaultExpanded={new Set(["root"])}>
+        <AgentActivityHeader
           path="root"
           loading={isRunning}
           summary={summarizeTurnRows(stepRows)}
           duration={<TurnElapsed turn={turn} />}
         >
           {TURN_HEADING[turn.status]}
-        </ChainOfTurnHeader>
-        <ChainOfTurnContent path="root">
+        </AgentActivityHeader>
+        <AgentActivityContent path="root">
           {stepRows.map(({ part, step }, i) => {
             const status = getRowStatus(part);
             const summary = getRowSummary(part);
@@ -259,7 +259,7 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
 
             if (part.type === "text") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={TextIcon}
@@ -291,11 +291,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                       </MessageResponse>
                     </FramePanel>
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "reasoning") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={BrainIcon}
@@ -332,11 +332,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                       </MessageResponse>
                     </FramePanel>
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-read-file") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={EyeIcon}
@@ -389,11 +389,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-write-file") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={FilePlusIcon}
@@ -446,11 +446,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-delete-file") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={Trash2Icon}
@@ -503,11 +503,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-edit-file") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={FilePenIcon}
@@ -583,11 +583,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-grep") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={SearchIcon}
@@ -640,11 +640,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-glob") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={FolderSearchIcon}
@@ -697,11 +697,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-web-fetch") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={GlobeIcon}
@@ -754,11 +754,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-load-skill") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={SparklesIcon}
@@ -811,11 +811,11 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             } else if (part.type === "tool-bash") {
               return (
-                <ChainOfTurnStep
+                <AgentActivityStep
                   key={i}
                   path={`${i}`}
                   icon={SquareTerminalIcon}
@@ -870,13 +870,13 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     </FramePanel>
                     {renderToolError(part)}
                   </Frame>
-                </ChainOfTurnStep>
+                </AgentActivityStep>
               );
             }
             return null;
           })}
-        </ChainOfTurnContent>
-      </ChainOfTurn>
+        </AgentActivityContent>
+      </AgentActivity>
       {answerPart && (
         <Message from="assistant">
           <MessageContent>
