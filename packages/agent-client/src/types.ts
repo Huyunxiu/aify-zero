@@ -60,6 +60,14 @@ type TextStreamTextEndEvent = TextStreamEventBase & {
   id: string;
   providerMetadata?: ProviderMetadata;
 };
+type TextStreamCustomContentEvent = TextStreamEventBase & {
+  type: "custom";
+  /**
+   * The kind of custom content, in the format `{provider}.{provider-type}`.
+   */
+  kind: `${string}.${string}`;
+  providerMetadata?: ProviderMetadata;
+};
 type TextStreamReasoningStartEvent = TextStreamEventBase & {
   type: "reasoning.start";
   id: string;
@@ -189,6 +197,7 @@ export type AgentStreamEvent<TOOLS extends ToolSet> =
   | TextStreamTextStartEvent
   | TextStreamTextEndEvent
   | TextStreamTextDeltaEvent
+  | TextStreamCustomContentEvent
   | TextStreamReasoningStartEvent
   | TextStreamReasoningEndEvent
   | TextStreamReasoningDeltaEvent
@@ -250,6 +259,26 @@ export function isAgentTextPart<TOOLS extends ToolSet>(
   part: AgentPart<TOOLS>
 ): part is AgentTextPart {
   return part.type === "text";
+}
+
+/**
+ * A text part of a message.
+ */
+export type AgentCustomContentPart = {
+  type: "custom";
+  /**
+   * The kind of custom content, in the format `{provider}.{provider-type}`.
+   */
+  kind: `${string}.${string}`;
+  /**
+   * The provider metadata.
+   */
+  providerMetadata?: ProviderMetadata;
+};
+export function isAgentCustomContentPart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentCustomContentPart {
+  return part.type === "custom";
 }
 
 /**
@@ -516,6 +545,7 @@ export type AgentUserPart = AgentTextPart | AgentFilePart;
  */
 export type AgentAssistantPart<TOOLS extends ToolSet> =
   | AgentTextPart
+  | AgentCustomContentPart
   | AgentReasoningPart
   | AgentToolPart<TOOLS>
   | AgentDynamicToolPart

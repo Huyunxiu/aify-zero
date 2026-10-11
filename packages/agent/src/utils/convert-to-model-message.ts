@@ -8,12 +8,14 @@ import type {
 import {
   getToolName,
   isAgentCompactionPart,
+  isAgentCustomContentPart,
   isAgentFilePart,
   isAgentReasoningPart,
   isAgentTextPart,
   isAgentToolPart,
 } from "@workspace/agent-client";
 import type {
+  AgentCustomContentPart,
   AgentDynamicToolPart,
   AgentPart,
   AgentStep,
@@ -107,9 +109,9 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                     filename: part.filename,
                     data: part.providerReference
                       ? {
-                          type: "reference" as const,
-                          reference: part.providerReference,
-                        }
+                        type: "reference" as const,
+                        reference: part.providerReference,
+                      }
                       : { type: "url" as const, url: new URL(part.url) },
                     ...(part.providerMetadata
                       ? { providerOptions: part.providerMetadata }
@@ -145,6 +147,14 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                     ? { providerOptions: part.providerMetadata }
                     : {}),
                 });
+              } else if (isAgentCustomContentPart(part)) {
+                content.push({
+                  type: 'custom' as const,
+                  kind: part.kind,
+                  ...(part.providerMetadata
+                    ? { providerOptions: part.providerMetadata }
+                    : {}),
+                });
               } else if (isAgentFilePart(part)) {
                 content.push({
                   type: "file" as const,
@@ -152,9 +162,9 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                   filename: part.filename,
                   data: part.providerReference
                     ? {
-                        type: "reference" as const,
-                        reference: part.providerReference,
-                      }
+                      type: "reference" as const,
+                      reference: part.providerReference,
+                    }
                     : { type: "url" as const, url: new URL(part.url) },
                   ...(part.providerMetadata
                     ? { providerOptions: part.providerMetadata }
@@ -312,6 +322,7 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
             for (const part of step.content) {
               if (
                 isAgentTextPart(part) ||
+                isAgentCustomContentPart(part) ||
                 isAgentReasoningPart(part) ||
                 isAgentFilePart(part) ||
                 isAgentToolPart(part)

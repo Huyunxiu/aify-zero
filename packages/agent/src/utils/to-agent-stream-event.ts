@@ -89,7 +89,14 @@ export function toAgentEvent<TOOLS extends ToolSet>(
     }
     // Sources, files, raw provider chunks and tool approvals have no protocol
     // part; dropping them keeps the stream serializable as-is.
-    case "custom":
+    case "custom": {
+      return {
+        ...part,
+        turnId,
+        stepId,
+        createdAt
+      };
+    }
     case "source":
     case "file":
     case "reasoning-file":

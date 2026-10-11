@@ -13,6 +13,7 @@ import type {
   AgentCompactionPart,
   AgentCompactionStep,
   AgentCompactionTurn,
+  AgentCustomContentPart,
   AgentDynamicToolPart,
   AgentPart,
   AgentReasoningPart,
@@ -114,6 +115,18 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
           part.providerMetadata =
             event.providerMetadata ?? part.providerMetadata;
           this.pendingParts.delete(uk);
+        }
+        break;
+      }
+      case "custom": {
+        const part: AgentCustomContentPart = {
+          type: "custom",
+          kind: event.kind,
+          providerMetadata: event.providerMetadata,
+        };
+        const step = this.pendingSteps.get(event.stepId);
+        if (step) {
+          (step.content as AgentPart<TOOLS>[]).push(part);
         }
         break;
       }
