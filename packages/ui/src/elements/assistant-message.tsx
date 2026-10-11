@@ -1,4 +1,5 @@
 import type { AgentToolSet } from "@workspace/agent";
+import { isAgentToolPart } from "@workspace/agent-client";
 import type {
   AgentAssistantTurn,
   AgentPart,
@@ -70,7 +71,7 @@ const REASON_TOOL_LABEL_MAX_LENGTH = 180;
  * scroll, so a long tool output or a streaming answer fills this much of the
  * screen and then scrolls inside itself instead of growing the dialog.
  */
-const STEP_FRAME_MAX_HEIGHT = "60vh";
+const STEP_FRAME_MAX_HEIGHT = "50vh";
 
 /**
  * The copy controls every Frame panel shares. Declared once so the eight tool
@@ -198,6 +199,35 @@ const TURN_HEADING = {
   error: "Failed",
 } as const;
 
+const renderToolError = (part: AgentPart<AgentToolSet>) => {
+  if (!isAgentToolPart(part)) {
+    return;
+  }
+
+  return (
+    part.state === "output-error" &&
+    part.errorText && (
+      <>
+        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+          <div className="text-muted-foreground">ERROR</div>
+          <div>
+            <CopyButton
+              className="text-muted-foreground"
+              size="icon-sm"
+              variant="ghost"
+              label="Copy"
+              message={part.errorText ?? ""}
+            />
+          </div>
+        </div>
+        <FramePanel>
+          <div className="whitespace-pre">{part.errorText ?? ""}</div>
+        </FramePanel>
+      </>
+    )
+  );
+};
+
 export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
   if (turn.type !== "assistant") {
     return null;
@@ -322,6 +352,26 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   >
                     <FrameHeader>
                       <FrameTitle>Read</FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
+                        />
+                      </div>
+                    </div>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      </div>
+                    </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -331,12 +381,13 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                           message={part.output?.output ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
                         {part.output?.output ?? ""}
                       </div>
                     </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );
@@ -358,21 +409,42 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   >
                     <FrameHeader>
                       <FrameTitle>Create</FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
                           size="icon-sm"
                           variant="ghost"
                           label="Copy"
-                          message={part.input?.content ?? ""}
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
-                        {part.input?.content ?? ""}
+                        {JSON.stringify(part.input, null, 2) ?? ""}
                       </div>
                     </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </div>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {part.output?.output ?? ""}
+                      </div>
+                    </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );
@@ -394,6 +466,26 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   >
                     <FrameHeader>
                       <FrameTitle>Delete</FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
+                        />
+                      </div>
+                    </div>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      </div>
+                    </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -403,12 +495,13 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                           message={part.output?.output ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
                         {part.output?.output ?? ""}
                       </div>
                     </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );
@@ -430,16 +523,27 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   >
                     <FrameHeader>
                       <FrameTitle>Edit</FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
                           size="icon-sm"
                           variant="ghost"
                           label="Copy"
-                          message={part.output?.output ?? ""}
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      </div>
+                    </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">DIFF</div>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre-wrap wrap-break-word font-mono text-xs">
                         {editDiffLines(
@@ -460,11 +564,24 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                         ))}
                       </div>
                     </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
                         {part.output?.output ?? ""}
                       </div>
                     </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );
@@ -486,6 +603,26 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   >
                     <FrameHeader>
                       <FrameTitle>Grep</FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
+                        />
+                      </div>
+                    </div>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      </div>
+                    </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -495,12 +632,13 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                           message={part.output?.output ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
                         {part.output?.output ?? ""}
                       </div>
                     </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );
@@ -522,6 +660,26 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   >
                     <FrameHeader>
                       <FrameTitle>Glob</FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
+                        />
+                      </div>
+                    </div>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      </div>
+                    </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -531,12 +689,13 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                           message={part.output?.output ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
                         {part.output?.output ?? ""}
                       </div>
                     </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );
@@ -558,6 +717,26 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   >
                     <FrameHeader>
                       <FrameTitle>Fetch</FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
+                        />
+                      </div>
+                    </div>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      </div>
+                    </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -567,12 +746,13 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                           message={part.output?.output ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
                         {part.output?.output ?? ""}
                       </div>
                     </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );
@@ -593,7 +773,27 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                     overflowBehavior="scroll"
                   >
                     <FrameHeader>
-                      <FrameTitle>{part.input?.skill}</FrameTitle>
+                      <FrameTitle>Load skill {part.input?.skill}</FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
+                        />
+                      </div>
+                    </div>
+                    <FramePanel>
+                      <div className="whitespace-pre">
+                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      </div>
+                    </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
@@ -603,12 +803,13 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                           message={part.output?.output ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
                     <FramePanel>
                       <MessageResponse controls={FRAME_CONTROLS}>
                         {part.output?.output ?? ""}
                       </MessageResponse>
                     </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );
@@ -632,26 +833,42 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                       <FrameTitle>
                         {getStepLabel("Bash", part.input?.description)}
                       </FrameTitle>
+                    </FrameHeader>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">INPUT</div>
                       <div>
                         <CopyButton
                           className="text-muted-foreground"
                           size="icon-sm"
                           variant="ghost"
                           label="Copy"
-                          message={part.input?.command ?? ""}
+                          message={JSON.stringify(part.input, null, 2) ?? ""}
                         />
                       </div>
-                    </FrameHeader>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
-                        {part.input?.command ?? ""}
+                        {JSON.stringify(part.input, null, 2) ?? ""}
                       </div>
                     </FramePanel>
+                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                      <div className="text-muted-foreground">OUTPUT</div>
+                      <div>
+                        <CopyButton
+                          className="text-muted-foreground"
+                          size="icon-sm"
+                          variant="ghost"
+                          label="Copy"
+                          message={part.output?.output ?? ""}
+                        />
+                      </div>
+                    </div>
                     <FramePanel>
                       <div className="whitespace-pre">
                         {part.output?.output ?? ""}
                       </div>
                     </FramePanel>
+                    {renderToolError(part)}
                   </Frame>
                 </ChainOfTurnStep>
               );

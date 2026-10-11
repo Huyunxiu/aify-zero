@@ -1,4 +1,8 @@
 import type { AgentToolSet } from "@workspace/agent";
+import {
+  isAgentStaticToolPart,
+  isAgentToolPart,
+} from "@workspace/agent-client";
 import type {
   AgentAssistantStep,
   AgentCompactionStep,
@@ -33,21 +37,6 @@ export type StepRow = {
 export type StepRowStatus = "running" | "complete" | "failed" | "denied";
 
 /**
- * Mirrors `isAgentToolPart` in `@workspace/agent-client`. Inlined rather than
- * imported so this module pulls in no runtime code.
- */
-const isToolPart = (part: AgentPart<AgentToolSet>): part is ToolPart =>
-  part.type.startsWith("tool-") || part.type === "dynamic-tool";
-
-/**
- * Narrows away the dynamic case, whose `output` is `unknown` and carries no
- * `code`, but which is otherwise a tool call.
- */
-const isStaticToolPart = (
-  part: ToolPart
-): part is AgentToolPart<AgentToolSet> => part.type !== "dynamic-tool";
-
-/**
  * A lookup rather than a switch: the record's key type is the whole union, so
  * a state added to the protocol fails to compile here instead of falling
  * through to a default.
@@ -61,13 +50,13 @@ const TOOL_STATE_STATUS: Record<ToolPart["state"], StepRowStatus> = {
 };
 
 export const getRowStatus = (part: AgentPart<AgentToolSet>): StepRowStatus => {
-  if (isToolPart(part)) {
+  if (isAgentToolPart(part)) {
     // A tool that ran and reported `code: "error"` is still in
     // `output-available` — glob and read-file do this for a bad path. The row
     // has to read the code, or a failure renders as a success.
     if (
       part.state === "output-available" &&
-      isStaticToolPart(part) &&
+      isAgentStaticToolPart(part) &&
       part.output.code === "error"
     ) {
       return "failed";
@@ -186,7 +175,7 @@ const editedPath = (part: AgentToolPart<AgentToolSet>): string | undefined =>
 export const getRowSummary = (
   part: AgentPart<AgentToolSet>
 ): ReactNode | undefined => {
-  if (!isToolPart(part) || !isStaticToolPart(part)) {
+  if (!isAgentToolPart(part) || !isAgentStaticToolPart(part)) {
     return undefined;
   }
   if (part.state !== "output-available" || part.output.code !== "ok") {
@@ -330,7 +319,7 @@ export const getToolDurationMs = (
   part: AgentPart<AgentToolSet>,
   step: StepRow["step"]
 ): number | undefined => {
-  if (!isToolPart(part)) {
+  if (!isAgentToolPart(part)) {
     return undefined;
   }
 
@@ -373,14 +362,14 @@ export const formatDuration = (ms: number): string => {
 export const summarizeTurnRows = (rows: StepRow[]): string | undefined => {
   const toolParts = rows
     .map((row) => row.part)
-    .filter((part) => isToolPart(part));
+    .filter((part) => isAgentToolPart(part));
   if (toolParts.length === 0) {
     return undefined;
   }
 
   const changedFiles = new Set<string>();
   for (const part of toolParts) {
-    if (!isStaticToolPart(part)) {
+    if (!isAgentStaticToolPart(part)) {
       continue;
     }
     const path = editedPath(part);

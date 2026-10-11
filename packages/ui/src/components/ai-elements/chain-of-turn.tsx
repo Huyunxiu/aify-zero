@@ -271,7 +271,7 @@ export const ChainOfTurnStep = memo(
                   <Spinner className="size-3.5 shrink-0" />
                 )}
               </div>
-              <div className="relative flex h-full items-center gap-2">
+              <div className="relative flex h-full items-center gap-2 shrink-0">
                 {duration && (
                   <span className="shrink-0 font-mono text-muted-foreground/70 text-xs tabular-nums">
                     {duration}
