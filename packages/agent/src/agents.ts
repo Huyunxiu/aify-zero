@@ -35,6 +35,7 @@ import { compactMessages, shouldCompact } from "./compaction/compaction";
 import { HooksManager } from "./hooks-manager";
 import type { ExtensionAPI } from "./hooks-manager";
 import type { AgentStore, SessionEndStatus } from "./storage";
+import { executeToolCalls, stripToolExecution } from "./tools/execution";
 import type { AgentToolSet } from "./types";
 import { generateEventId, generateStepId } from "./utils/id-util";
 import { toAgentEvent } from "./utils/to-agent-stream-event";
@@ -592,7 +593,9 @@ export class Agent {
       result = streamText<ToolSet, AgentRuntimeContext>({
         instructions: this.systemPrompt,
         model,
-        tools: this.tools,
+        // The SDK is given tools it can only describe: an `execute` in this set
+        // would have it run the calls itself, out of `tool:before`'s reach.
+        tools: stripToolExecution(this.tools),
         stopWhen: isStepCount(1),
         reasoning: this.context.modelEffort
           ? MODEL_EFFORT_TO_REASONING[this.context.modelEffort]
@@ -665,25 +668,24 @@ export class Agent {
         result.finalStep,
         result.responseMessages,
       ]);
-      const { finishReason, rawFinishReason, usage, toolCalls, toolResults } =
-        step;
+      const { finishReason, rawFinishReason, usage, toolCalls } = step;
 
-      await this.context.controller?.write({
-        id: stepId,
-        turnId,
-        type: "step.finish",
-        createdAt: Date.now(),
-        usage: step.usage,
-        performance: step.performance,
-        finishReason: step.finishReason,
-        rawFinishReason: step.rawFinishReason,
-        providerMetadata: step.providerMetadata,
-        status: "done",
-      });
-
-      // The step did end, hence the event above, but a step the model ended with
-      // `error` cannot be reported as a whole turn.
+      // The step did end, but a step the model ended with `error` has no calls
+      // worth running and cannot be reported as a whole turn either.
       if (finishReason === "error") {
+        await this.context.controller?.write({
+          id: stepId,
+          turnId,
+          type: "step.finish",
+          createdAt: Date.now(),
+          usage: step.usage,
+          performance: step.performance,
+          finishReason: step.finishReason,
+          rawFinishReason: step.rawFinishReason,
+          providerMetadata: step.providerMetadata,
+          status: "done",
+        });
+
         return {
           ok: false,
           reason: "error",
@@ -691,20 +693,71 @@ export class Agent {
         };
       }
 
-      // Exactly the messages the SDK feeds its own next step: the assistant
-      // message for this step plus a tool message for whatever executed.
-      messages.push(...responseMessages);
-
-      // The SDK's own continuation rule: keep going only while every client
-      // tool call came back. A tool without `execute`, or a denied approval,
-      // still finishes with `tool-calls`; continuing there would send an
-      // assistant tool call with no matching tool message.
+      // The calls this loop owns. A provider-executed call arrives with its
+      // result already attached, and one the model got wrong is the SDK's to
+      // report: it emits a `tool.error` of its own for those, but no matching
+      // tool message, which is why they can never count as answered below.
       const clientToolCalls = toolCalls.filter(
         (call) => call.providerExecuted !== true
       );
-      const clientToolResults = toolResults.filter(
-        (toolResult) => toolResult.providerExecuted !== true
-      );
+
+      const execution = await executeToolCalls({
+        tools: this.tools,
+        toolCalls: clientToolCalls.filter((call) => call.invalid !== true),
+        sessionId: this.sessionId,
+        turnId,
+        stepId,
+        messages,
+        context: this.context,
+        hooks: this.hooks,
+        extensionApi: this.extensionApi,
+        abortSignal: this.context.abortSignal,
+        write: (event) =>
+          this.context.controller?.write(event) ?? Promise.resolve(),
+      });
+
+      // A stop during the calls is the turn's ending, not a step's: the run
+      // returns the way the reader loop's abort does, leaving the step pending
+      // for `settle` to close. The events above have already been sent, so the
+      // calls that did finish are on the reader's screen.
+      if (this.context.abortSignal?.aborted) {
+        return { ok: false, reason: "aborted" };
+      }
+
+      await this.context.controller?.write({
+        id: stepId,
+        turnId,
+        type: "step.finish",
+        createdAt: Date.now(),
+        usage: step.usage,
+        // The SDK times only the tools it runs itself, and these are no longer
+        // among them, so the durations come from the loop that ran them.
+        performance: {
+          ...step.performance,
+          toolExecutionMs: {
+            ...step.performance.toolExecutionMs,
+            ...execution.toolExecutionMs,
+          },
+        },
+        finishReason: step.finishReason,
+        rawFinishReason: step.rawFinishReason,
+        providerMetadata: step.providerMetadata,
+        status: "done",
+      });
+
+      // What the SDK feeds its own next step: the assistant message for this
+      // step, then a tool message for whatever the loop executed.
+      messages.push(...responseMessages, ...execution.toolMessages);
+
+      // The continuation rule, read off our own outcomes now that the SDK no
+      // longer reports them: keep going only while every client tool call came
+      // back. A denial is an answer — the model is told the call was refused —
+      // but a call the model got wrong is not, and continuing there would send
+      // an assistant tool call with no matching tool message.
+      const toolCallsResolved =
+        clientToolCalls.length > 0 &&
+        clientToolCalls.every((call) => call.invalid !== true) &&
+        execution.outcomes.length === clientToolCalls.length;
 
       return {
         ok: true,
@@ -713,9 +766,7 @@ export class Agent {
           usage,
           finishReason,
           rawFinishReason,
-          toolCallsResolved:
-            clientToolCalls.length > 0 &&
-            clientToolCalls.length === clientToolResults.length,
+          toolCallsResolved,
         },
       };
     } catch (error) {

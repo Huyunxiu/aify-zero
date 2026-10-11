@@ -22,6 +22,7 @@ import type {
 } from "@workspace/agent-client";
 import { createToolModelOutput } from "ai/internal";
 
+import { TOOL_DENIED_TEXT } from "../hooks-manager";
 import { getOwn } from "./get-own";
 
 export async function convertAgentTurnToModalMessage<TOOLS extends ToolSet>(
@@ -254,7 +255,7 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                       toolName: getToolName(toolPart),
                       output: {
                         type: "error-text" as const,
-                        value: "Tool call execution denied.",
+                        value: TOOL_DENIED_TEXT,
                       },
                       ...(toolPart.callProviderMetadata
                         ? { providerOptions: toolPart.callProviderMetadata }

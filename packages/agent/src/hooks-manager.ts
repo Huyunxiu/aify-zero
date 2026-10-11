@@ -35,6 +35,59 @@ export type CompactionEndEvent = {
 };
 
 /**
+ * One tool call, about to run. Shared by the `tool:before` and `tool:after`
+ * events: the fields describing the call are the same either way, and only the
+ * outcome of having run it differs.
+ */
+export type ToolCallHookEvent = {
+  sessionId: string;
+  turnId: string;
+  stepId: string;
+  toolCallId: string;
+  toolName: string;
+  /**
+   * The input the tool is called with. `tool:after` reports the input that was
+   * actually executed, which a `tool:before` handler may have rewritten.
+   */
+  input: unknown;
+  /**
+   * The messages that prompted the call — the system prompt and this step's own
+   * assistant message are not among them, matching what the tool itself sees.
+   */
+  messages: ModelMessage[];
+};
+
+/**
+ * What a `tool:before` handler may return. Returning `undefined` (or `null`)
+ * abstains, so a handler that only cares about side effects leaves the call as
+ * it is. The run's decision is the last one any handler returned, following
+ * {@link HooksManager.emit}.
+ */
+export type ToolBeforeDecision =
+  | {
+      decision: "allow";
+      /** Replaces the model's input for the execution alone. */
+      input?: unknown;
+    }
+  | { decision: "deny"; reason?: string };
+
+export type ToolAfterEvent = ToolCallHookEvent & {
+  outcome: "result" | "error" | "denied";
+  /** The tool's return value when it produced one. */
+  output?: unknown;
+  /** Why the call failed, when it did. */
+  errorText?: string;
+  durationMs: number;
+};
+
+/**
+ * The text a denied tool call reports to the model. Spelled here rather than
+ * inline because the same wording has to be produced when the turn is rebuilt
+ * from stored parts — see `convert-to-model-message.ts`.
+ */
+export const TOOL_DENIED_TEXT = "Tool call execution denied.";
+
+/**
  * Registry of every hookable event, mapping an event name to the handler that
  * listens for it. Custom events are added by declaration merging, which keeps
  * `on()` fully typed:
@@ -53,6 +106,13 @@ export interface HooksMap {
   title_generated: HookHandler<TitleGeneratedEvent>;
   "compaction:start": HookHandler<CompactionStartEvent>;
   "compaction:end": HookHandler<CompactionEndEvent>;
+  /**
+   * Raised once per client tool call, before it runs. This is the only place a
+   * call can be turned down or its input rewritten: the tools are executed by
+   * the agent loop, not by the SDK, precisely so that this point exists.
+   */
+  "tool:before": HookHandler<ToolCallHookEvent, ToolBeforeDecision>;
+  "tool:after": HookHandler<ToolAfterEvent>;
 }
 
 /**
@@ -191,12 +251,41 @@ export class HooksManager {
     event: HookEventOf<K>,
     api: ExtensionAPI
   ): Promise<HookResultOf<K>> {
+    return (await this.dispatch(name, event, api, "last")) as HookResultOf<K>;
+  }
+
+  /**
+   * Delivers `event` like {@link emit}, but resolves with the *first* value a
+   * handler returned instead of the last.
+   *
+   * This is the order an authorization wants. Handlers run from the highest
+   * priority down, so the first answer is the most authoritative one — a
+   * high-priority denial must not be overridden by a lower-priority allowance,
+   * which is exactly what {@link emit}'s last-wins rule would allow. Handlers
+   * still all run, so one registered for its side effects (logging, auditing)
+   * is unaffected by the answer it gives.
+   */
+  async emitFirst<K extends HookEventName>(
+    name: K,
+    event: HookEventOf<K>,
+    api: ExtensionAPI
+  ): Promise<HookResultOf<K>> {
+    return (await this.dispatch(name, event, api, "first")) as HookResultOf<K>;
+  }
+
+  private async dispatch(
+    name: string,
+    event: HookEventOf<HookEventName>,
+    api: ExtensionAPI,
+    wins: "first" | "last"
+  ): Promise<unknown> {
     const listeners = this.listeners.get(name);
     if (!listeners || listeners.length === 0) {
       return undefined;
     }
 
     let result: unknown;
+    let decided = false;
 
     // Every mutation swaps in a fresh array, so this one stays stable even if
     // a handler subscribes or unsubscribes while we dispatch.
@@ -207,17 +296,20 @@ export class HooksManager {
 
       try {
         const value = await listener.run(event, api);
-        if (value !== undefined && value !== null) {
+        if (
+          value !== undefined &&
+          value !== null &&
+          (wins === "last" || !decided)
+        ) {
           result = value;
+          decided = true;
         }
       } catch (error) {
         console.warn(`[hooks] "${name}" handler failed:`, error);
       }
     }
 
-    // `listener.run` erases the result type along with the payload; `emit` is
-    // the only place that pairs a name with its handlers, so it owns the cast.
-    return result as HookResultOf<K>;
+    return result;
   }
 
   private add<K extends HookEventName>(
