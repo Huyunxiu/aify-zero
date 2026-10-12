@@ -6,6 +6,7 @@ import {
   isAgentReasoningPart,
   isAgentStaticToolPart,
   isAgentTextPart,
+  isAgentToolPart,
 } from "./types";
 import type {
   AgentAssistantStep,
@@ -243,6 +244,60 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.state = "input-available";
             part.callProviderMetadata = event.providerMetadata;
           }
+        }
+        break;
+      }
+      case "tool.approval-request": {
+        const uk = `${event.turnId}-${event.stepId}-${event.id}`;
+        const part = this.pendingParts.get(uk);
+        if (part && isAgentToolPart(part)) {
+          part.state = "approval-requested";
+          part.approval = {
+            id: event.approvalId,
+            ...(event.approvalDescriptor
+              ? { descriptor: event.approvalDescriptor }
+              : {}),
+            ...(Object.hasOwn(event, "inputSchemaInput")
+              ? { inputSchemaInput: event.inputSchemaInput }
+              : {}),
+            ...(event.reason ? { requestReason: event.reason } : {}),
+            ...(event.isAutomatic === true ? { isAutomatic: true } : {}),
+            ...(event.signature ? { signature: event.signature } : {}),
+            createdAt: event.createdAt,
+          };
+        }
+        break;
+      }
+      case "tool.approval-response": {
+        const uk = `${event.turnId}-${event.stepId}-${event.id}`;
+        const pending = this.pendingParts.get(uk);
+        const part =
+          pending && isAgentToolPart(pending)
+            ? pending
+            : this.#findRecentToolPart(event.turnId, event.stepId, event.id);
+        if (!part) {
+          console.warn(
+            `AgentTurnBuilder#push no tool invocation for approval response ${event.approvalId}`
+          );
+          break;
+        }
+
+        part.state = "approval-responded";
+        part.approval = {
+          ...(part.approval ?? {
+            id: event.approvalId,
+            createdAt: event.createdAt,
+          }),
+          id: event.approvalId,
+          approved: event.approved,
+          approvedAt: event.createdAt,
+          ...(event.reason ? { reason: event.reason } : {}),
+        };
+        if (event.providerExecuted) {
+          part.providerExecuted = event.providerExecuted;
+        }
+        if (event.providerMetadata) {
+          part.callProviderMetadata = event.providerMetadata;
         }
         break;
       }
@@ -605,5 +660,38 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     step.providerMetadata = event.providerMetadata;
     step.completedAt = event.createdAt;
     return step;
+  }
+
+  /**
+   * Finds the tool part an approval response answers, newest turn first.
+   *
+   * A decision arrives on a stream of its own: the turn that asked for approval
+   * stopped there, and the stream that carries the answer resumes with a fresh
+   * builder whose pending maps are empty. The part itself survived in `turns`,
+   * so the search falls back to them — `toolCallId` is the one key the part and
+   * the event both carry.
+   *
+   * Parts already past the decision are skipped: their `approval` field records
+   * how it was answered, and revisiting one would drag a finished invocation
+   * back to `approval-responded`.
+   */
+  #findRecentToolPart(
+    turnId: string,
+    stepId: string,
+    toolCallId: string
+  ): AgentToolPart<TOOLS> | AgentDynamicToolPart | undefined {
+    const turn = this.turns.toReversed().find((e) => e.id === turnId);
+    if (!turn) {
+      return;
+    }
+
+    const step = turn.content.toReversed().find((e) => e.id === stepId);
+    if (!step) {
+      return;
+    }
+
+    return step.content.find(
+      (part) => isAgentToolPart(part) && part.toolCallId === toolCallId
+    ) as AgentToolPart<TOOLS> | AgentDynamicToolPart | undefined;
   }
 }

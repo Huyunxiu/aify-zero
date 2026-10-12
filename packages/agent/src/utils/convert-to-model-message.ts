@@ -4,6 +4,7 @@ import type {
   AssistantContent,
   ModelMessage,
   ToolResultPart,
+  ToolApprovalResponse,
 } from "@ai-sdk/provider-utils";
 import {
   getToolName,
@@ -15,7 +16,6 @@ import {
   isAgentToolPart,
 } from "@workspace/agent-client";
 import type {
-  AgentCustomContentPart,
   AgentDynamicToolPart,
   AgentPart,
   AgentStep,
@@ -109,9 +109,9 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                     filename: part.filename,
                     data: part.providerReference
                       ? {
-                        type: "reference" as const,
-                        reference: part.providerReference,
-                      }
+                          type: "reference" as const,
+                          reference: part.providerReference,
+                        }
                       : { type: "url" as const, url: new URL(part.url) },
                     ...(part.providerMetadata
                       ? { providerOptions: part.providerMetadata }
@@ -149,7 +149,7 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                 });
               } else if (isAgentCustomContentPart(part)) {
                 content.push({
-                  type: 'custom' as const,
+                  type: "custom" as const,
                   kind: part.kind,
                   ...(part.providerMetadata
                     ? { providerOptions: part.providerMetadata }
@@ -162,9 +162,9 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                   filename: part.filename,
                   data: part.providerReference
                     ? {
-                      type: "reference" as const,
-                      reference: part.providerReference,
-                    }
+                        type: "reference" as const,
+                        reference: part.providerReference,
+                      }
                     : { type: "url" as const, url: new URL(part.url) },
                   ...(part.providerMetadata
                     ? { providerOptions: part.providerMetadata }
@@ -197,8 +197,29 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                       : {}),
                   });
 
+                  if (part.approval) {
+                    content.push({
+                      type: "tool-approval-request" as const,
+                      approvalId: part.approval.id,
+                      toolCallId: part.toolCallId,
+                      isAutomatic: part.approval.isAutomatic,
+                      ...(part.approval.requestReason
+                        ? { reason: part.approval.requestReason }
+                        : {}),
+                      ...(Object.hasOwn(part.approval, "inputSchemaInput")
+                        ? {
+                            inputSchemaInput: part.approval.inputSchemaInput,
+                          }
+                        : {}),
+                      ...(part.approval.signature
+                        ? { signature: part.approval.signature }
+                        : {}),
+                    });
+                  }
+
                   if (
                     part.providerExecuted === true &&
+                    part.state !== "approval-responded" &&
                     (part.state === "output-available" ||
                       part.state === "output-error")
                   ) {
@@ -243,15 +264,48 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
             // check if there are tool invocations with results in the block
             // Include non-provider-executed tools, OR provider-executed tools with approval responses
             const toolParts = block.filter(
-              (part) => isAgentToolPart(part) && part.providerExecuted !== true
+              (part) =>
+                isAgentToolPart(part) &&
+                (part.providerExecuted !== true || part.approval?.approved)
             ) as (AgentToolPart<TOOLS> | AgentDynamicToolPart)[];
 
             // tool message with tool results
             if (toolParts.length > 0) {
-              const innerContent: ToolResultPart[] = [];
+              const innerContent: (ToolResultPart | ToolApprovalResponse)[] =
+                [];
               for (const toolPart of toolParts) {
+                // add approval response for approved tool calls:
+                if (toolPart.approval?.approved) {
+                  innerContent.push({
+                    type: "tool-approval-response" as const,
+                    approvalId: toolPart.approval.id,
+                    approved: toolPart.approval.approved,
+                    reason: toolPart.approval.reason,
+                    providerExecuted: toolPart.providerExecuted,
+                  });
+                }
+
+                // add synthetic execution-denied result for denied tool approvals
+                if (
+                  toolPart.state === "approval-responded" &&
+                  !toolPart.approval?.approved
+                ) {
+                  content.push({
+                    type: "tool-result",
+                    toolCallId: toolPart.toolCallId,
+                    toolName: getToolName(toolPart),
+                    output: {
+                      type: "execution-denied" as const,
+                      reason: toolPart.approval.reason,
+                    },
+                    ...(toolPart.callProviderMetadata
+                      ? { providerOptions: toolPart.callProviderMetadata }
+                      : {}),
+                  });
+                }
+
                 // For provider-executed tools, the tool result is already in the
-                // assistant innerContent. Skip adding to tool message to avoid duplicates
+                // assistant content. Skip adding to tool message to avoid duplicates
                 // (which would create orphaned function_call_output entries).
                 if (toolPart.providerExecuted === true) {
                   continue;
@@ -265,7 +319,7 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                       toolName: getToolName(toolPart),
                       output: {
                         type: "error-text" as const,
-                        value: TOOL_DENIED_TEXT,
+                        value: toolPart.approval?.reason ?? TOOL_DENIED_TEXT,
                       },
                       ...(toolPart.callProviderMetadata
                         ? { providerOptions: toolPart.callProviderMetadata }
@@ -298,8 +352,18 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                     });
                     break;
                   }
-                  case "input-streaming":
-                  case "input-available":
+                  case "approval-requested": {
+                    break;
+                  }
+                  case "approval-responded": {
+                    break;
+                  }
+                  case "input-available": {
+                    break;
+                  }
+                  case "input-streaming": {
+                    break;
+                  }
                   default: {
                     break;
                   }

@@ -105,6 +105,25 @@ type TextStreamToolInputDeltaEvent = TextStreamEventBase & {
   delta: string;
   providerMetadata?: ProviderMetadata;
 };
+type TextStreamToolApprovalRequestEvent = TextStreamEventBase & {
+  type: "tool.approval-request";
+  id: string;
+  approvalId: string;
+  approvalDescriptor?: unknown;
+  inputSchemaInput?: unknown;
+  reason?: string;
+  isAutomatic?: boolean;
+  signature?: string;
+};
+type TextStreamToolApprovalResponseEvent = TextStreamEventBase & {
+  type: "tool.approval-response";
+  id: string;
+  approvalId: string;
+  approved: boolean;
+  reason?: string;
+  providerExecuted?: boolean;
+  providerMetadata?: ProviderMetadata;
+};
 type TextStreamCompactionStartEvent = TextStreamEventBase & {
   type: "compaction.start";
   id: string;
@@ -136,7 +155,7 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
   RenameEventType<TypedToolError<TOOLS>, "tool.error">;
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
-  RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
+    RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
 export type TextStreamStartStepEvent = {
   id: string;
   turnId: string;
@@ -203,6 +222,8 @@ export type AgentStreamEvent<TOOLS extends ToolSet> =
   | TextStreamReasoningDeltaEvent
   | TextStreamToolInputStartEvent
   | TextStreamToolInputEndEvent
+  | TextStreamToolApprovalRequestEvent
+  | TextStreamToolApprovalResponseEvent
   | TextStreamToolInputDeltaEvent
   | TextStreamToolCallEvent<TOOLS>
   | TextStreamToolResultEvent<TOOLS>
@@ -415,21 +436,63 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
   resultProviderMetadata?: ProviderMetadata;
   preliminary?: boolean;
 } & (
-    | {
+  | {
       state: "input-streaming";
       input?: DeepPartial<INPUT> | undefined;
       output?: never;
       errorText?: never;
       callProviderMetadata?: ProviderMetadata;
+      approval?: never;
     }
-    | {
+  | {
       state: "input-available";
       input: INPUT;
       output?: never;
       errorText?: never;
       callProviderMetadata?: ProviderMetadata;
+      approval?: never;
     }
-    | {
+  | {
+      state: "approval-requested";
+      input: INPUT;
+      output?: never;
+      errorText?: never;
+      callProviderMetadata?: ProviderMetadata;
+      approval: {
+        id: string;
+        approved?: never;
+        descriptor?: unknown;
+        requestReason?: string;
+        reason?: never;
+        isAutomatic?: boolean;
+        signature?: string;
+        inputSchemaInput?: unknown;
+
+        createdAt: number;
+        approvedAt?: number;
+      };
+    }
+  | {
+      state: "approval-responded";
+      input: INPUT;
+      output?: never;
+      errorText?: never;
+      callProviderMetadata?: ProviderMetadata;
+      approval: {
+        id: string;
+        approved: boolean;
+        descriptor?: unknown;
+        requestReason?: string;
+        reason?: string;
+        isAutomatic?: boolean;
+        signature?: string;
+        inputSchemaInput?: unknown;
+
+        createdAt: number;
+        approvedAt: number;
+      };
+    }
+  | {
       state: "output-available";
       input: INPUT;
       output: OUTPUT;
@@ -437,8 +500,21 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       resultProviderMetadata?: ProviderMetadata;
       preliminary?: boolean;
+      approval?: {
+        id: string;
+        approved: true;
+        descriptor?: unknown;
+        requestReason?: string;
+        reason?: string;
+        isAutomatic?: boolean;
+        signature?: string;
+        inputSchemaInput?: unknown;
+
+        createdAt: number;
+        approvedAt?: number;
+      };
     }
-    | {
+  | {
       state: "output-error";
       input: INPUT | undefined;
       rawInput?: unknown;
@@ -446,15 +522,41 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       errorText: string;
       callProviderMetadata?: ProviderMetadata;
       resultProviderMetadata?: ProviderMetadata;
+      approval?: {
+        id: string;
+        approved: true;
+        descriptor?: unknown;
+        requestReason?: string;
+        reason?: string;
+        isAutomatic?: boolean;
+        signature?: string;
+        inputSchemaInput?: unknown;
+
+        createdAt: number;
+        approvedAt?: number;
+      };
     }
-    | {
+  | {
       state: "output-denied";
       input: INPUT;
       output?: never;
       errorText?: never;
       callProviderMetadata?: ProviderMetadata;
+      approval: {
+        id: string;
+        approved: false;
+        descriptor?: unknown;
+        requestReason?: string;
+        reason?: string;
+        isAutomatic?: boolean;
+        signature?: string;
+        inputSchemaInput?: unknown;
+
+        createdAt: number;
+        approvedAt: number;
+      };
     }
-  );
+);
 
 /**
  * An invocation of a known tool. Deriving it from the tool itself is what lets
