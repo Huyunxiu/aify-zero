@@ -19,6 +19,7 @@ import type {
 import { TOOL_DENIED_TEXT } from "../hooks-manager";
 import type { AgentToolSet } from "../types";
 import { getOwn } from "../utils/get-own";
+import { generateEventId } from "../utils/id-util";
 
 /** A tool call the model asked for and the agent — not the provider — runs. */
 export type AgentToolCall = {
@@ -55,8 +56,19 @@ export type ExecuteToolCallsInput = {
   hooks: HooksManager;
   extensionApi: ExtensionAPI;
   abortSignal?: AbortSignal;
+  /**
+   * The calls the user has already approved, on the stream that resumes a turn
+   * this one was held on.
+   *
+   * `tool:before` still runs for them — its side effects and the input it
+   * rewrites are wanted — but an `ask` it returns is read as an allowance: the
+   * question it would put has been put to the user and answered, and asking it
+   * again would hold the same batch forever.
+   */
+  approvedToolCallIds?: ReadonlySet<string>;
   /** Publishes a protocol event onto the turn's stream. */
   write: (event: AgentStreamEvent<AgentToolSet>) => Promise<void>;
+  skipApproval?: boolean;
 };
 
 export type ExecuteToolCallsResult = {
@@ -69,6 +81,15 @@ export type ExecuteToolCallsResult = {
   toolMessages: ModelMessage[];
   /** Per-call wall time, for the step's `performance.toolExecutionMs`. */
   toolExecutionMs: Record<string, number>;
+  /**
+   * Whether the calls were put to the user instead of run.
+   *
+   * A held batch has no results — `outcomes` then reports only the calls a hook
+   * refused outright, which are an answer rather than a run, and the calls
+   * waiting on the user are absent from it. The caller ends the turn on this:
+   * the model has nothing to continue with until the user responds.
+   */
+  awaitingApproval: boolean;
 };
 
 const elapsed = (startedAt: number) =>
@@ -95,25 +116,71 @@ export function stripToolExecution(tools: ToolSet): ToolSet {
 }
 
 /**
- * Runs one step's tool calls, all at once.
+ * Runs one step's tool calls, all at once — or holds every one of them back.
  *
- * Each call goes through `tool:before`, then through the tool's own `execute`,
- * and reports what happened three ways: as a protocol event for the client, as
- * a `tool` message for the model, and as a number for the step's performance.
- * `Promise.all` is what makes the calls concurrent; it also keeps the results
- * in tool-call order no matter which call finishes first.
+ * Each call first goes through `tool:before`. If any of them is answered `ask`,
+ * the whole batch is put to the user and nothing runs: the calls of one step are
+ * one action, and half of it must not happen while the user is deciding. What
+ * comes back then is {@link ExecuteToolCallsResult.awaitingApproval}, holding an
+ * outcome for every call a hook refused outright — a refusal is already an
+ * answer — and nothing for the calls waiting on the user, which is how the
+ * caller can tell which of them are still unanswered.
  *
- * Every call comes back with an outcome — a denial and a failure are as much
- * an outcome as a result — so the caller can tell which calls are still
- * unanswered by comparing the two lists.
+ * Otherwise each call goes through the tool's own `execute` and reports what
+ * happened three ways: as a protocol event for the client, as a `tool` message
+ * for the model, and as a number for the step's performance. `Promise.all` is
+ * what makes the calls concurrent; it also keeps the results in tool-call order
+ * no matter which call finishes first.
  */
 export async function executeToolCalls(
   input: ExecuteToolCallsInput
 ): Promise<ExecuteToolCallsResult> {
-  const runs = await Promise.all(
-    input.toolCalls.map((toolCall) => runToolCall(toolCall, input))
+  if (input.skipApproval) {
+    const plans: ToolCallPlan[] = input.toolCalls.map(toolCall => ({
+      toolCall,
+      decision: { decision: "allow" },
+      startedAt: performance.now(),
+    }))
+    const runs = await Promise.all(plans.map((plan) => runToolCall(plan, input)));
+    return toResult(runs, false);
+  }
+
+  const plans = await Promise.all(
+    input.toolCalls.map((toolCall) => planToolCall(toolCall, input))
   );
 
+  // One call to the user holds the batch, `allow` included: the user is asked
+  // about the step's calls as a whole or not at all. The refusals still go out
+  // — a hook that turned a call down answered it, and that answer is not the
+  // user's to give or take away.
+  if (plans.some((plan) => plan.decision?.decision === "ask")) {
+    const runs = await Promise.all(
+      plans
+        .filter((plan) => plan.decision?.decision === "deny")
+        .map((plan) => runToolCall(plan, input))
+    );
+
+    for (const plan of plans) {
+      if (plan.decision?.decision === "ask") {
+        await writeApprovalRequest(plan, input);
+      } else if (plan.decision?.decision === "allow") {
+        const approvalId = await writeApprovalRequest(plan, input);
+        await writeApprovalResponse(approvalId, plan, input);
+      }
+    }
+
+    return toResult(runs, true);
+  }
+
+  const runs = await Promise.all(plans.map((plan) => runToolCall(plan, input)));
+
+  return toResult(runs, false);
+}
+
+function toResult(
+  runs: ToolRun[],
+  awaitingApproval: boolean
+): ExecuteToolCallsResult {
   const outcomes = runs.map((run) => run.outcome);
   const parts = runs.map((run) => run.part);
 
@@ -123,6 +190,7 @@ export async function executeToolCalls(
     toolExecutionMs: Object.fromEntries(
       outcomes.map((outcome) => [outcome.toolCallId, outcome.durationMs])
     ),
+    awaitingApproval,
   };
 }
 
@@ -131,8 +199,123 @@ type ToolRun = {
   part: ToolResultPart;
 };
 
-async function runToolCall(
+/**
+ * One call together with what `tool:before` said about it.
+ *
+ * The hooks have to be asked before anything runs: whether the batch is held is
+ * known only once every one of them has answered, and a call that runs anyway
+ * cannot be un-run.
+ */
+type ToolCallPlan = {
+  toolCall: AgentToolCall;
+  /** The decision, with an approval the user already gave folded in. */
+  decision: ToolBeforeDecision | undefined;
+  /** When the call was picked up, so its wall time still includes the hook. */
+  startedAt: number;
+};
+
+async function planToolCall(
   toolCall: AgentToolCall,
+  input: ExecuteToolCallsInput
+): Promise<ToolCallPlan> {
+  const { sessionId, turnId, stepId, messages, hooks, extensionApi } = input;
+  const startedAt = performance.now();
+
+  // `emitFirst`, not `emit`: the handler that runs first is the most
+  // authoritative one, so a high-priority denial must not be overridden by a
+  // lower-priority allowance.
+  const decision: ToolBeforeDecision | undefined = await hooks.emitFirst(
+    "tool:before",
+    {
+      sessionId,
+      turnId,
+      stepId,
+      toolCallId: toolCall.toolCallId,
+      toolName: toolCall.toolName,
+      input: toolCall.input,
+      messages,
+    },
+    extensionApi
+  );
+
+  const approvedByUser =
+    decision?.decision === "ask" &&
+    input.approvedToolCallIds?.has(toolCall.toolCallId) === true;
+
+  if (toolCall.toolName === "delete-file" || toolCall.toolName === "edit-file") {
+    return {
+      toolCall,
+      decision: { decision: "ask" },
+      startedAt,
+    };
+  }
+
+  return {
+    toolCall,
+    // The user was asked and said yes, so the `ask` is spent. A denial still
+    // stands: a hook that refuses a call refuses it whether or not the user
+    // agreed to it.
+    decision: approvedByUser ? { decision: "allow" } : decision,
+    startedAt,
+  };
+}
+
+/**
+ * Puts one call to the user.
+ *
+ * The `id` is the call's, so the client and the turn builder address the same
+ * part the `tool.input-start` opened, while the approval id is what the answer
+ * will name — kept apart from the call because the same call may be asked about
+ * again on a later stream.
+ */
+async function writeApprovalRequest(
+  plan: ToolCallPlan,
+  input: ExecuteToolCallsInput
+): Promise<string> {
+  const { turnId, stepId, write } = input;
+
+  const approvalId = generateEventId();
+
+  await write({
+    type: "tool.approval-request",
+    id: plan.toolCall.toolCallId,
+    approvalId,
+    turnId,
+    stepId,
+    createdAt: Date.now(),
+  });
+
+  return approvalId;
+}
+
+/**
+ * Puts one call to the user.
+ *
+ * The `id` is the call's, so the client and the turn builder address the same
+ * part the `tool.input-start` opened, while the approval id is what the answer
+ * will name — kept apart from the call because the same call may be asked about
+ * again on a later stream.
+ */
+async function writeApprovalResponse(
+  approvalId: string,
+  plan: ToolCallPlan,
+  input: ExecuteToolCallsInput
+): Promise<void> {
+  const { turnId, stepId, write } = input;
+
+  await write({
+    type: "tool.approval-response",
+    id: plan.toolCall.toolCallId,
+    approvalId,
+    approved: true,
+    turnId,
+    stepId,
+    createdAt: Date.now(),
+  });
+}
+
+async function runToolCall(
+  plan: ToolCallPlan,
   input: ExecuteToolCallsInput
 ): Promise<ToolRun> {
   const {
@@ -147,9 +330,9 @@ async function runToolCall(
     abortSignal,
     write,
   } = input;
+  const { toolCall, decision, startedAt } = plan;
   const { toolCallId, toolName } = toolCall;
   const tool = getOwn(tools, toolName);
-  const startedAt = performance.now();
 
   const hookEvent = {
     sessionId,
@@ -160,15 +343,6 @@ async function runToolCall(
     input: toolCall.input,
     messages,
   };
-
-  // `emitFirst`, not `emit`: the handler that runs first is the most
-  // authoritative one, so a high-priority denial must not be overridden by a
-  // lower-priority allowance.
-  const decision: ToolBeforeDecision | undefined = await hooks.emitFirst(
-    "tool:before",
-    hookEvent,
-    extensionApi
-  );
 
   if (decision?.decision === "deny") {
     const durationMs = elapsed(startedAt);
@@ -202,10 +376,7 @@ async function runToolCall(
   // A hook may rewrite the input, but only the execution sees the rewrite: the
   // call the model made — and the one the transcript replays — keeps the
   // original, so the assistant message and its tool message still line up.
-  const toolInput =
-    decision?.decision === "allow" && decision.input !== undefined
-      ? decision.input
-      : toolCall.input;
+  const toolInput = toolCall.input;
 
   try {
     const output = await runExecute(tool, toolName, toolInput, {

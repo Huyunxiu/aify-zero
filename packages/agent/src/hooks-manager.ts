@@ -64,12 +64,9 @@ export type ToolCallHookEvent = {
  * {@link HooksManager.emit}.
  */
 export type ToolBeforeDecision =
-  | {
-      decision: "allow";
-      /** Replaces the model's input for the execution alone. */
-      input?: unknown;
-    }
-  | { decision: "deny"; reason?: string };
+  | { decision: "allow" }
+  | { decision: "deny"; reason?: string }
+  | { decision: "ask" };
 
 export type ToolAfterEvent = ToolCallHookEvent & {
   outcome: "result" | "error" | "denied";

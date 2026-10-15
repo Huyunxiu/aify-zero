@@ -34,14 +34,32 @@ export type StepRow = {
  * `state`: `output-available` covers both a success and a tool that reported
  * failure through `output.code`, and the row has to tell those apart.
  */
-export type StepRowStatus = "running" | "complete" | "failed" | "denied";
+export type StepRowStatus =
+  | "running"
+  | "complete"
+  | "failed"
+  | "denied"
+  | "approval";
 
 /**
- * A lookup rather than a switch: the record's key type is the whole union, so
- * a state added to the protocol fails to compile here instead of falling
- * through to a default.
+ * The two states whose row cannot be read off the state name alone: a held call
+ * is `approval` when it is the user's turn, and an answered one is `running` or
+ * `denied` depending on what the user said. Both are resolved in
+ * `getRowStatus`; this is only here so the lookup table stays exhaustive over
+ * the states that are a pure naming of the row.
  */
-const TOOL_STATE_STATUS: Record<ToolPart["state"], StepRowStatus> = {
+type ResolvedToolState = Exclude<
+  ToolPart["state"],
+  "approval-requested" | "approval-responded"
+>;
+
+/**
+ * A lookup rather than a switch: the record's key type is every state it claims,
+ * so a state added to the protocol fails to compile here — either because the
+ * table is missing the new key, or because `getRowStatus` can no longer index
+ * it — instead of falling through to a default.
+ */
+const TOOL_STATE_STATUS: Record<ResolvedToolState, StepRowStatus> = {
   "input-streaming": "running",
   "input-available": "running",
   "output-available": "complete",
@@ -51,6 +69,14 @@ const TOOL_STATE_STATUS: Record<ToolPart["state"], StepRowStatus> = {
 
 export const getRowStatus = (part: AgentPart<AgentToolSet>): StepRowStatus => {
   if (isAgentToolPart(part)) {
+    if (part.state === "approval-requested") {
+      // A call a policy approves on its own is not waiting on the user, so it
+      // reads as the work it is about to be rather than as a question.
+      return part.approval.isAutomatic ? "running" : "approval";
+    }
+    if (part.state === "approval-responded") {
+      return part.approval.approved ? "running" : "denied";
+    }
     // A tool that ran and reported `code: "error"` is still in
     // `output-available` — glob and read-file do this for a bad path. The row
     // has to read the code, or a failure renders as a success.
@@ -175,6 +201,12 @@ const editedPath = (part: AgentToolPart<AgentToolSet>): string | undefined =>
 export const getRowSummary = (
   part: AgentPart<AgentToolSet>
 ): ReactNode | undefined => {
+  if (isAgentToolPart(part) && part.state === "approval-requested") {
+    // The row's own status carries the waiting; the dialog is where the
+    // decision is made, so the row only says that one is owed.
+    return part.approval.isAutomatic ? undefined : "awaiting approval";
+  }
+
   if (!isAgentToolPart(part) || !isAgentStaticToolPart(part)) {
     return undefined;
   }
@@ -301,6 +333,68 @@ export const getRowSummary = (
 };
 
 /**
+ * The approval fields a row can show, whichever state holds them. Restated here
+ * for the same reason as the metadata types above: the protocol keeps the shape
+ * of its own `approval`, and a change to it should fail to compile here rather
+ * than leave a panel blank.
+ */
+export type RowApproval = {
+  id: string;
+  approved?: boolean;
+  descriptor?: unknown;
+  requestReason?: string;
+  isAutomatic?: boolean;
+  signature?: string;
+  inputSchemaInput?: unknown;
+};
+
+/**
+ * The approval a row is showing, or undefined for a row with nothing to answer.
+ *
+ * Only the states that can still be answered, or that record an answer, are
+ * surfaced. A call that has run shows its result instead — an approval badge
+ * beside it would be history nobody asked to see again, and, worse, an open
+ * question mark beside a call that already happened.
+ */
+export const getRowApproval = (
+  part: AgentPart<AgentToolSet>
+): RowApproval | undefined => {
+  if (!isAgentToolPart(part)) {
+    return undefined;
+  }
+
+  switch (part.state) {
+    case "approval-requested":
+    case "approval-responded": {
+      return part.approval;
+    }
+    case "output-denied": {
+      // The refusal lives on the state, not on the approval: a denial comes
+      // back as a result, and the protocol never wrote the decision onto the
+      // request it answers. Filling it in here is what stops the panel offering
+      // the buttons again for a call that has already been turned down.
+      return { ...part.approval, approved: false };
+    }
+    case "output-available":
+    case "output-error": {
+      // A response the stream reported before the result arrived: worth keeping
+      // on screen, but only when it actually named a decision. The protocol
+      // never echoes a decision back for a call that ran, so an approval with
+      // no `approved` here is the open request that the state has already
+      // outgrown.
+      return part.approval?.approved === true ? part.approval : undefined;
+    }
+    case "input-available":
+    case "input-streaming": {
+      return undefined;
+    }
+    default: {
+      return undefined;
+    }
+  }
+};
+
+/**
  * How long a tool call took, in milliseconds, or undefined when that is not
  * known.
  *
@@ -383,6 +477,10 @@ export const summarizeTurnRows = (rows: StepRow[]): string | undefined => {
     return status === "failed" || status === "denied";
   }).length;
 
+  const awaiting = rows.filter(
+    (row) => getRowStatus(row.part) === "approval"
+  ).length;
+
   const summary = [
     `${toolParts.length} ${toolParts.length === 1 ? "tool" : "tools"}`,
   ];
@@ -390,6 +488,9 @@ export const summarizeTurnRows = (rows: StepRow[]): string | undefined => {
     summary.push(
       `${changedFiles.size} ${changedFiles.size === 1 ? "file" : "files"} changed`
     );
+  }
+  if (awaiting > 0) {
+    summary.push(`${awaiting} awaiting approval`);
   }
   if (failed > 0) {
     summary.push(`${failed} failed`);

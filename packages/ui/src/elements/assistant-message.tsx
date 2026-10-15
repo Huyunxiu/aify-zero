@@ -51,6 +51,7 @@ import {
 } from "./message";
 import {
   formatDuration,
+  getRowApproval,
   getRowStatus,
   getRowSummary,
   getToolDurationMs,
@@ -61,6 +62,13 @@ import type { StepRow } from "./tool-step";
 type AssistantMessageProps = {
   turn: AgentAssistantTurn<AgentToolSet>;
   onFork?: (messageId: string) => void;
+  /**
+   * Answers a call the turn was held on. The turn is not re-run here: the caller
+   * resumes it with the answer, and the resumed stream is what moves the step
+   * on. Only the approval id is named — the step and the call it belongs to are
+   * the caller's to look up in the transcript.
+   */
+  onRespondToolApproval?: (approvalId: string, approved: boolean) => void;
 };
 
 /** Max characters of the first line used as a Frame title. */
@@ -148,14 +156,12 @@ const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
     }))
   );
 
-  const answerRowIndex = stepRows.findLastIndex(
-    (row) => row.part.type === "text"
-  );
+  const answerRowIndex =
+    stepRows.at(-1)?.part.type === "text" ? stepRows.length - 1 : -1;
   const answerPart =
     answerRowIndex === -1
       ? undefined
       : (stepRows[answerRowIndex]?.part as AgentTextPart | undefined);
-
   return {
     // A turn with no text at all — one still running, or one that failed
     // mid-tool — has no answer to hold back, so every row is a step. Slicing to
@@ -195,6 +201,9 @@ const TurnElapsed = ({ turn }: { turn: AgentAssistantTurn<AgentToolSet> }) => {
 const TURN_HEADING = {
   streaming: "Working",
   done: "Finished",
+  // A turn whose calls were held for approval: the model is not working, and
+  // it is not finished either — the user is what it is waiting on.
+  wait_review: "Awaiting review",
   aborted: "Stopped",
   error: "Failed",
 } as const;
@@ -228,7 +237,11 @@ const renderToolError = (part: AgentPart<AgentToolSet>) => {
   );
 };
 
-export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
+export const AssistantMessage = ({
+  turn,
+  onFork,
+  onRespondToolApproval,
+}: AssistantMessageProps) => {
   if (turn.type !== "assistant") {
     return null;
   }
@@ -256,6 +269,12 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
             const durationMs = getToolDurationMs(part, step);
             const duration =
               durationMs === undefined ? undefined : formatDuration(durationMs);
+            const approval = getRowApproval(part);
+            const respondApproval =
+              approval && onRespondToolApproval
+                ? (approvalId: string, approved: boolean) =>
+                    onRespondToolApproval(approvalId, approved)
+                : undefined;
 
             if (part.type === "text") {
               return (
@@ -263,6 +282,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={TextIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Note", getPureTextLabel(part.text, ""))}
                   status={status}
                   summary={summary}
@@ -299,6 +320,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={BrainIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel(
                     "Reasoning",
                     getPureTextLabel(part.text, "")
@@ -340,6 +363,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={EyeIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Read", part.input?.path)}
                   status={status}
                   summary={summary}
@@ -397,6 +422,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={FilePlusIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Create", part.input?.path)}
                   status={status}
                   summary={summary}
@@ -454,6 +481,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={Trash2Icon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Delete", part.input?.path)}
                   status={status}
                   summary={summary}
@@ -511,6 +540,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={FilePenIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Edit", part.input?.path)}
                   status={status}
                   summary={summary}
@@ -591,6 +622,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={SearchIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Grep", part.input?.pattern)}
                   status={status}
                   summary={summary}
@@ -648,6 +681,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={FolderSearchIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Glob", part.input?.pattern)}
                   status={status}
                   summary={summary}
@@ -705,6 +740,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={GlobeIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Fetch", part.input?.url)}
                   status={status}
                   summary={summary}
@@ -762,6 +799,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={SparklesIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Load skill", part.input?.skill)}
                   status={status}
                   summary={summary}
@@ -819,6 +858,8 @@ export const AssistantMessage = ({ turn, onFork }: AssistantMessageProps) => {
                   key={i}
                   path={`${i}`}
                   icon={SquareTerminalIcon}
+                  approval={approval}
+                  onRespondApproval={respondApproval}
                   label={getStepLabel("Bash", part.input?.description)}
                   status={status}
                   summary={summary}

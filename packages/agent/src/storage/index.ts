@@ -8,13 +8,14 @@ import type {
 
 /**
  * The states a session settles into once its stream has ended — everything
- * except the two states a live stream owns. A stopped turn is `aborted` in the
- * turn's own vocabulary; the session row says `canceled`.
+ * except `running`, which a live stream owns. A stopped turn is `aborted` in
+ * the turn's own vocabulary; the session row says `canceled`.
+ *
+ * `wait_review` is among them, though it is the one ending that expects to be
+ * followed: a turn whose calls were held for approval stops with it, and the
+ * session stays there until the user answers.
  */
-export type SessionEndStatus = Exclude<
-  SessionStatus,
-  "running" | "wait_review"
->;
+export type SessionEndStatus = Exclude<SessionStatus, "running">;
 
 export interface AgentStore {
   listSessions({
@@ -97,5 +98,5 @@ export interface AgentStore {
 
   saveTurns(messages: TurnInsertModel[]): Promise<number>;
 
-  updateTurn(id: string, parts: unknown, metadata: unknown): Promise<number>;
+  updateTurn(id: string, parts: unknown, metadata?: unknown): Promise<number>;
 }

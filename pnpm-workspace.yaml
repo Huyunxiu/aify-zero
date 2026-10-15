@@ -19,9 +19,9 @@ allowBuilds:
   esbuild: true
   msw: true
 catalog:
-  "@ai-sdk/devtools": 1.0.9
-  "@ai-sdk/openai-compatible": ^3.0.17
-  "@ai-sdk/react": 4.0.45
+  "@ai-sdk/devtools": 1.0.42
+  "@ai-sdk/openai-compatible": ^3.0.68
+  "@ai-sdk/react": 4.0.142
   "@electron-forge/cli": ^7.11.1
   "@electron-forge/maker-deb": ^7.11.1
   "@electron-forge/maker-rpm": ^7.11.1
@@ -62,7 +62,7 @@ catalog:
   "@types/turndown": ^5.0.6
   "@typescript/native-preview": 7.0.0-dev.20260328.1
   "@vscode/ripgrep": ^1.18.0
-  ai: ^7.0.42
+  ai: ^7.0.138
   bumpp: ^11.0.1
   cmdk: ^1.1.1
   cn: ^0.2.4
@@ -101,10 +101,11 @@ catalog:
   zustand: ^5.0.14
 minimumReleaseAgeExclude:
   - "@ai-sdk/devtools@1.0.9"
-  - "@ai-sdk/gateway@4.0.32"
   - "@ai-sdk/mcp@2.0.19"
   - "@ai-sdk/openai-compatible@3.0.17"
-  - "@ai-sdk/provider-utils@5.0.15"
   - "@ai-sdk/react@4.0.45"
-  - ai@7.0.42
   - "@shadcn/react@0.3.1"
+  - "@ai-sdk/gateway@4.0.111"
+  - "@ai-sdk/provider-utils@5.0.59"
+  - "@ai-sdk/provider@4.0.27"
+  - ai@7.0.138

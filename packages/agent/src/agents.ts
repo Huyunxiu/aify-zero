@@ -1,14 +1,7 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
-import type {
-  AgentRuntimeContext,
-  AgentStep,
-  AgentStreamEvent,
-  AgentTurn,
-  AgentTurnStatus,
-  CompactionConfig,
-} from "@workspace/agent-client";
+import type { AgentRuntimeContext, AgentStep, AgentStreamEvent, AgentTurn, AgentTurnStatus, CompactionConfig, TextStreamToolApprovalResponseEvent } from '@workspace/agent-client';
 import type { TurnModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
@@ -26,8 +19,10 @@ import type {
   LanguageModelUsage,
   ModelMessage,
   TextStreamPart,
+  ToolContent,
   ToolSet,
 } from "ai";
+import { collectToolApprovals } from "ai/internal";
 
 import type { AgentContext } from "./agent-context";
 import { AgentSession } from "./agent-session";
@@ -70,6 +65,7 @@ const MODEL_EFFORT_TO_REASONING = {
 // is what clears it back to `idle`.
 const TURN_END_TO_SESSION_STATUS = {
   done: "done",
+  wait_review: "wait_review",
   aborted: "canceled",
   error: "error",
   streaming: "error",
@@ -133,6 +129,12 @@ export type AgentStepResult = {
    * the loop's continuation rule.
    */
   readonly toolCallsResolved: boolean;
+  /**
+   * Whether the step's calls were held for the user to approve. The turn ends
+   * on this rather than continuing: there is nothing for the model to read
+   * until the user answers, and the answers arrive on the next stream.
+   */
+  readonly awaitingApproval: boolean;
 };
 
 /** What one call of {@link Agent.#runSteps} reported back to the turn loop. */
@@ -207,7 +209,6 @@ export class Agent {
     this.session.turns = turns;
 
     const mostRecentTurn = turns.at(-1);
-
     if (!mostRecentTurn) {
       throw new Error("no message.");
     }
@@ -234,11 +235,8 @@ export class Agent {
       });
     }
 
-    const previousMessages = await this.store.getBranchTurns(this.sessionId);
-    const previousTurns = this.toAgentTurns(previousMessages);
-    const originalTurns = [...previousTurns, mostRecentTurn];
-
-    let lastTurnId = previousMessages.at(-1)?.id;
+    const originalTurns = turns;
+    let lastTurnId = turns.at(-2)?.id;
 
     if (mostRecentTurn?.type === "user") {
       await this.store.saveTurn({
@@ -486,6 +484,14 @@ export class Agent {
 
       this.session.finishStep(outcome.result);
 
+      // The step asked the user for something, so the turn stops here rather
+      // than with it: a step is what the loop continues from, and it cannot
+      // continue past a call nobody has answered yet.
+      if (outcome.result.awaitingApproval) {
+        status = { status: "wait_review" };
+        break;
+      }
+
       if (!outcome.result.toolCallsResolved) {
         status = { status: "done" };
         break;
@@ -504,31 +510,40 @@ export class Agent {
     // `step.finish`, so the step and its parts are still pending here; the
     // `turn.finish` above only clears the turn. Settling first keeps the copy
     // persisted below from carrying a `"streaming"` step forever. A `"done"`
-    // turn is skipped so a still-streaming background title is not marked.
-    if (status.status !== "done") {
+    // turn is skipped so a still-streaming background title is not marked —
+    // and so is one held for approval, whose step did reach its own end.
+    if (status.status === "aborted" || status.status === "error") {
       this.session.builder?.settle(status.status);
     }
 
-    const turn = this.session.builder?.completedTurns.at(-1);
+    // Every turn the stream changed is written back, not just the one that
+    // finished: a stream that resumes a held call runs that call and reports
+    // its result against the turn that asked for it — a turn that ended turns
+    // ago — so writing back only the ending would leave the store holding the
+    // unanswered state of a call that has since been answered.
+    const changedTurns = this.session.builder?.changedTurns ?? [];
 
-    if (turn) {
-      if (await this.store.existsTurn(turn.id)) {
-        await this.store.updateTurn(turn.id, turn, {});
+    for (const changed of changedTurns) {
+      if (await this.store.existsTurn(changed.id)) {
+        await this.store.updateTurn(changed.id, changed);
       } else {
         await this.store.saveTurn({
-          id: turn.id,
+          id: changed.id,
           sessionId: this.sessionId,
-          type: turn.type,
+          type: changed.type,
           metadata: {},
-          content: turn,
+          content: changed,
           parentId: input.parentId ?? null,
           createdAt: new Date(),
         });
-        await this.store.setActiveHead(this.sessionId, turn.id);
+        await this.store.setActiveHead(this.sessionId, changed.id);
       }
     }
 
-    return turn;
+    // The turn this run drove, which is the one whose ending the session
+    // reports — not simply the last one changed, because an earlier turn can be
+    // touched after it.
+    return changedTurns.findLast((changed) => changed.id === turnId);
   }
 
   /**
@@ -550,6 +565,7 @@ export class Agent {
     this.context.compactionConfig.lastKnownPromptMessageCount =
       this.session.modelMessages.length;
 
+    // 尝试压缩上下文
     const compactionStepId = generateStepId();
     let messages: ModelMessage[];
     try {
@@ -588,6 +604,115 @@ export class Agent {
       createdAt: Date.now(),
     });
 
+    // 处理工具调用
+    // A stream that carries approvals is a resumption: a previous turn's step
+    // stopped with calls the user has now answered, and those calls run here,
+    // before the model is asked anything, so the history the model is about to
+    // read has their results in it.
+    //
+    // `tool:before` had its say when the calls were held — the answers are what
+    // decides them now, which is why the approved ids are handed over rather
+    // than the hooks being asked the same question twice.
+    const { approvedToolApprovals, deniedToolApprovals } =
+      collectToolApprovals<AgentToolSet>({ messages });
+
+    if (approvedToolApprovals.length > 0 || deniedToolApprovals.length > 0) {
+      const toolCallId = approvedToolApprovals[0]?.toolCall.toolCallId || deniedToolApprovals[0]?.toolCall.toolCallId;
+      const result = this.session.findToolPartByToolCallId(toolCallId);
+      const askedTurnId = result?.turn.id ?? turnId;
+      const askedStepId = result?.step.id ?? stepId;
+
+      const localDeniedToolApprovals = deniedToolApprovals.filter(
+        (toolApproval) => toolApproval.toolCall.providerExecuted !== true
+      );
+      const localDeniedToolApprovalsWithoutResults =
+        localDeniedToolApprovals.filter(
+          (toolApproval) => toolApproval.existingToolResult === undefined
+        );
+      const deniedProviderExecutedToolApprovals = deniedToolApprovals.filter(
+        (toolApproval) => toolApproval.toolCall.providerExecuted === true
+      );
+
+      for (const toolApproval of [
+        ...localDeniedToolApprovals,
+        ...deniedProviderExecutedToolApprovals,
+      ]) {
+        await this.context.controller?.write({
+          type: "tool.output-denied",
+          turnId: askedTurnId,
+          stepId: askedStepId,
+          createdAt: Date.now(),
+          toolCallId: toolApproval.toolCall.toolCallId,
+          toolName: toolApproval.toolCall.toolName,
+          providerExecuted: false,
+        } as AgentStreamEvent<AgentToolSet>);
+      }
+
+      const localApprovedToolApprovals = approvedToolApprovals.filter(
+        (toolApproval) => toolApproval.toolCall.providerExecuted !== true
+      );
+      const localToolContent: ToolContent = [];
+
+      if (localApprovedToolApprovals.length > 0) {
+        const execution = await executeToolCalls({
+          tools: this.tools,
+          toolCalls: localApprovedToolApprovals.map(
+            (toolApproval) => toolApproval.toolCall
+          ),
+          sessionId: this.sessionId,
+          turnId: askedTurnId,
+          stepId: askedStepId,
+          messages,
+          context: this.context,
+          hooks: this.hooks,
+          extensionApi: this.extensionApi,
+          abortSignal: this.context.abortSignal,
+          approvedToolCallIds: new Set(
+            localApprovedToolApprovals.map(
+              (toolApproval) => toolApproval.toolCall.toolCallId
+            )
+          ),
+          write: (event) =>
+            this.context.controller?.write(event) ?? Promise.resolve(),
+          skipApproval: true,
+        });
+
+        for (const message of execution.toolMessages) {
+          if (message.role === "tool") {
+            localToolContent.push(...message.content);
+          }
+        }
+      }
+
+      // A refusal the user gave is reported to the model as an execution that
+      // was turned down, which is what the SDK's own loop would have written.
+      for (const toolApproval of localDeniedToolApprovalsWithoutResults) {
+        localToolContent.push({
+          type: "tool-result",
+          toolCallId: toolApproval.toolCall.toolCallId,
+          toolName: toolApproval.toolCall.toolName,
+          output: {
+            type: "execution-denied",
+            reason: toolApproval.approvalResponse.reason,
+          },
+        });
+      }
+
+      if (localToolContent.length > 0) {
+        messages.push({
+          role: "tool",
+          content: localToolContent,
+        });
+      }
+
+      // 将调用完的工具结果保存
+      const turn = this.session.turns.find(e => e.id === askedTurnId);
+      if (turn) {
+        this.store.updateTurn(turn.id, turn)
+      }
+    }
+
+    // 大模型调用
     let result;
     try {
       result = streamText<ToolSet, AgentRuntimeContext>({
@@ -622,6 +747,7 @@ export class Agent {
     // reason, which is known nowhere else.
     let streamError: unknown;
 
+    // 大模型流处理
     const reader = result.stream.getReader();
     try {
       while (true) {
@@ -749,6 +875,23 @@ export class Agent {
       // step, then a tool message for whatever the loop executed.
       messages.push(...responseMessages, ...execution.toolMessages);
 
+      // The step ends here either way — everything it streamed is on the wire —
+      // but a held step ends the turn with it: the model has no results to read
+      // and the user still has the calls to answer, which is the next stream.
+      if (execution.awaitingApproval) {
+        return {
+          ok: true,
+          result: {
+            messages,
+            usage,
+            finishReason,
+            rawFinishReason,
+            toolCallsResolved: false,
+            awaitingApproval: true,
+          },
+        };
+      }
+
       // The continuation rule, read off our own outcomes now that the SDK no
       // longer reports them: keep going only while every client tool call came
       // back. A denial is an answer — the model is told the call was refused —
@@ -767,6 +910,7 @@ export class Agent {
           finishReason,
           rawFinishReason,
           toolCallsResolved,
+          awaitingApproval: false,
         },
       };
     } catch (error) {

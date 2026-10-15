@@ -184,7 +184,7 @@ export class SQLiteStore implements AgentStore {
   async updateTurn(
     id: string,
     content: unknown,
-    metadata: unknown
+    metadata?: unknown
   ): Promise<number> {
     const result = await db
       .update(turn_table)

@@ -35,52 +35,84 @@ import type {
 
 export class AgentTurnBuilder<TOOLS extends ToolSet> {
   turns: AgentTurn<TOOLS>[];
-  private readonly pendingTurns: Map<string, AgentTurn<TOOLS>>;
-  private readonly pendingSteps: Map<string, AgentStep<TOOLS>>;
+  private readonly turnsMap: Map<string, AgentTurn<TOOLS>>;
+  private readonly stepsMap: Map<string, AgentStep<TOOLS>>;
+  private readonly toolParts: Map<string, AgentToolPart<TOOLS> | AgentDynamicToolPart>;
   private readonly pendingParts: Map<string, AgentPart<TOOLS>>;
-  completedTurns: AgentTurn<TOOLS>[] = [];
+  /**
+   * Every turn the stream has changed, in the order it first touched them.
+   *
+   * A turn that finished is only one of them: an event can land on a turn that
+   * ended long ago — a `tool.result` answering the call it was held on rewrites
+   * that turn — so a caller that has to write the transcript back cannot go by
+   * the ending alone.
+   *
+   * Each turn is held by identity and recorded once, so a reader that arrives
+   * later sees every entry as it stands then rather than as it stood when its
+   * first event arrived.
+   */
+  changedTurns: AgentTurn<TOOLS>[] = [];
+  private readonly changedTurnIds = new Set<string>();
 
   constructor({ turns }: { turns: AgentTurn<TOOLS>[] }) {
     this.turns = turns;
-    this.pendingTurns = new Map<string, AgentTurn<TOOLS>>();
-    this.pendingSteps = new Map<string, AgentStep<TOOLS>>();
     this.pendingParts = new Map<string, AgentPart<TOOLS>>();
+    this.toolParts = new Map<string, AgentToolPart<TOOLS> | AgentDynamicToolPart>();
+    this.turnsMap = new Map<string, AgentTurn<TOOLS>>();
+    this.stepsMap = new Map<string, AgentStep<TOOLS>>();
+    for (const turn of turns) {
+      this.turnsMap.set(turn.id, turn);
+      for (const step of turn.content) {
+        this.stepsMap.set(step.id, step);
+        for (const part of step.content) {
+          if (isAgentToolPart(part)) {
+            const uk = `${turn.id}-${step.id}-${part.toolCallId}`;
+            this.toolParts.set(uk, part);
+          }
+        }
+      }
+    }
   }
 
   async push(event: AgentStreamEvent<TOOLS>): Promise<void> {
     switch (event.type) {
       case "turn.start": {
-        const turn = this.startTurn(event);
+        let turn = this.turnsMap.get(event.id);
+        if (turn) {
+          turn.status = "streaming";
+          break;
+        }
+
+        turn = this.startTurn(event);
         if (turn) {
           this.turns.push(turn);
-          this.pendingTurns.set(turn.id, turn);
+          this.turnsMap.set(turn.id, turn);
         }
         break;
       }
       case "turn.finish": {
-        const turn = this.finishTurn(event);
-        if (turn) {
-          this.pendingTurns.delete(turn.id);
-          this.completedTurns.push(turn);
-        }
+        this.finishTurn(event);
         break;
       }
       case "step.start": {
-        const step = this.startStep(event);
+        let step = this.stepsMap.get(event.id);
         if (step) {
-          const turn = this.pendingTurns.get(event.turnId);
+          step.status = "streaming"
+          break;
+        }
+
+        step = this.startStep(event);
+        if (step) {
+          const turn = this.turnsMap.get(event.turnId);
           if (turn) {
             (turn.content as AgentStep<TOOLS>[]).push(step);
           }
-          this.pendingSteps.set(step.id, step);
+          this.stepsMap.set(step.id, step);
         }
         break;
       }
       case "step.finish": {
-        const step = this.finishStep(event);
-        if (step) {
-          this.pendingSteps.delete(step.id);
-        }
+        this.finishStep(event);
         break;
       }
       case "text.start": {
@@ -92,7 +124,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         };
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
         this.pendingParts.set(uk, part);
-        const step = this.pendingSteps.get(event.stepId);
+        const step = this.stepsMap.get(event.stepId);
         if (step) {
           (step.content as AgentPart<TOOLS>[]).push(part);
         }
@@ -125,7 +157,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
           kind: event.kind,
           providerMetadata: event.providerMetadata,
         };
-        const step = this.pendingSteps.get(event.stepId);
+        const step = this.stepsMap.get(event.stepId);
         if (step) {
           (step.content as AgentPart<TOOLS>[]).push(part);
         }
@@ -140,7 +172,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         };
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
         this.pendingParts.set(uk, part);
-        const step = this.pendingSteps.get(event.stepId);
+        const step = this.stepsMap.get(event.stepId);
         if (step) {
           (step.content as AgentPart<TOOLS>[]).push(part);
         }
@@ -186,8 +218,8 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             title: event.title,
             toolMetadata: event.toolMetadata,
           };
-          this.pendingParts.set(uk, part);
-          const step = this.pendingSteps.get(event.stepId);
+          this.toolParts.set(uk, part);
+          const step = this.stepsMap.get(event.stepId);
           if (step) {
             (step.content as AgentPart<TOOLS>[]).push(part);
           }
@@ -203,8 +235,8 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             title: event.title,
             toolMetadata: event.toolMetadata,
           };
-          this.pendingParts.set(uk, part);
-          const step = this.pendingSteps.get(event.stepId);
+          this.toolParts.set(uk, part);
+          const step = this.stepsMap.get(event.stepId);
           if (step) {
             (step.content as AgentPart<TOOLS>[]).push(part);
           }
@@ -213,7 +245,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       }
       case "tool.input-delta": {
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
-        const part = this.pendingParts.get(uk);
+        const part = this.toolParts.get(uk);
         if (part) {
           if (isAgentDynamicToolPart(part)) {
             part.rawInput += event.delta;
@@ -235,7 +267,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       }
       case "tool.input-end": {
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
-        const part = this.pendingParts.get(uk);
+        const part = this.toolParts.get(uk);
         if (part) {
           if (isAgentDynamicToolPart(part)) {
             part.state = "input-available";
@@ -249,7 +281,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       }
       case "tool.approval-request": {
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
-        const part = this.pendingParts.get(uk);
+        const part = this.toolParts.get(uk);
         if (part && isAgentToolPart(part)) {
           part.state = "approval-requested";
           part.approval = {
@@ -270,11 +302,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       }
       case "tool.approval-response": {
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
-        const pending = this.pendingParts.get(uk);
-        const part =
-          pending && isAgentToolPart(pending)
-            ? pending
-            : this.#findRecentToolPart(event.turnId, event.stepId, event.id);
+        const part = this.toolParts.get(uk);
         if (!part) {
           console.warn(
             `AgentTurnBuilder#push no tool invocation for approval response ${event.approvalId}`
@@ -303,7 +331,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       }
       case "tool.call": {
         const uk = `${event.turnId}-${event.stepId}-${event.toolCallId}`;
-        const part = this.pendingParts.get(uk);
+        const part = this.toolParts.get(uk);
         if (part) {
           if (isAgentDynamicToolPart(part)) {
             if (event.invalid) {
@@ -353,7 +381,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       }
       case "tool.result": {
         const uk = `${event.turnId}-${event.stepId}-${event.toolCallId}`;
-        const part = this.pendingParts.get(uk);
+        const part = this.toolParts.get(uk);
         if (part) {
           if (isAgentDynamicToolPart(part)) {
             part.state = "output-available";
@@ -367,7 +395,6 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.output = event.output;
             part.resultProviderMetadata = event.providerMetadata;
             part.preliminary = event.preliminary;
-            this.pendingParts.delete(uk);
           } else if (isAgentStaticToolPart(part)) {
             part.state = "output-available";
             part.errorText = undefined;
@@ -379,34 +406,31 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.output = event.output;
             part.resultProviderMetadata = event.providerMetadata;
             part.preliminary = event.preliminary;
-            this.pendingParts.delete(uk);
           }
         }
         break;
       }
       case "tool.output-denied": {
         const uk = `${event.turnId}-${event.stepId}-${event.toolCallId}`;
-        const part = this.pendingParts.get(uk);
+        const part = this.toolParts.get(uk);
         if (part) {
           if (isAgentDynamicToolPart(part)) {
             part.state = "output-denied";
             part.toolCallId = event.toolCallId;
             part.toolName = event.toolName;
             part.providerExecuted = event.providerExecuted;
-            this.pendingParts.delete(uk);
           } else if (isAgentStaticToolPart(part)) {
             part.state = "output-denied";
             part.errorText = undefined;
             part.toolCallId = event.toolCallId;
             part.providerExecuted = event.providerExecuted;
-            this.pendingParts.delete(uk);
           }
         }
         break;
       }
       case "tool.error": {
         const uk = `${event.turnId}-${event.stepId}-${event.toolCallId}`;
-        const part = this.pendingParts.get(uk);
+        const part = this.toolParts.get(uk);
         if (part) {
           if (isAgentDynamicToolPart(part)) {
             part.state = "output-error";
@@ -418,7 +442,6 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.toolName = event.toolName;
             part.providerExecuted = event.providerExecuted;
             part.resultProviderMetadata = event.providerMetadata;
-            this.pendingParts.delete(uk);
           } else if (isAgentStaticToolPart(part)) {
             part.state = "output-error";
             part.errorText = event.error ? (event.error as string) : undefined;
@@ -428,7 +451,6 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             part.toolMetadata = event.toolMetadata;
             part.providerExecuted = event.providerExecuted;
             part.resultProviderMetadata = event.providerMetadata;
-            this.pendingParts.delete(uk);
           }
         }
         break;
@@ -441,7 +463,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         };
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
         this.pendingParts.set(uk, part);
-        const step = this.pendingSteps.get(event.stepId);
+        const step = this.stepsMap.get(event.stepId);
         if (step) {
           (step.content as AgentPart<TOOLS>[]).push(part);
         }
@@ -468,7 +490,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         };
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
         this.pendingParts.set(uk, part);
-        const step = this.pendingSteps.get(event.stepId);
+        const step = this.stepsMap.get(event.stepId);
         if (step) {
           (step.content as AgentPart<TOOLS>[]).push(part);
         }
@@ -501,6 +523,13 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         break;
       }
     }
+
+    // The turn an event names is the turn it changed, so it is recorded here
+    // rather than in each branch above. An event naming a part this builder
+    // never opened is the one case where that overstates what happened, and a
+    // caller writing back a turn whose stored state already matches is a price
+    // worth paying to keep the rule in one place.
+    this.markChanged(this.eventTurnId(event));
   }
 
   /**
@@ -519,11 +548,11 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
    * type error. Tool parts run their own state machine and are left alone.
    */
   settle(outcome: "aborted" | "error"): void {
-    for (const turn of this.pendingTurns.values()) {
+    for (const turn of this.turnsMap.values()) {
       turn.status = outcome;
     }
 
-    for (const step of this.pendingSteps.values()) {
+    for (const step of this.stepsMap.values()) {
       step.status = outcome;
     }
 
@@ -534,7 +563,48 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     }
   }
 
-  private startTurn(event: TextStreamStartTurnEvent): AgentTurn<TOOLS> | null {
+  /**
+   * The turn an event belongs to.
+   *
+   * `turn.start` and `turn.finish` name it with `id`, because the event *is*
+   * that turn's own lifecycle and belongs to no other; everything else carries
+   * it in `turnId`. `abort` and `error` carry one too but change nothing in it,
+   * so they are answered with `undefined`.
+   */
+  private eventTurnId(event: AgentStreamEvent<TOOLS>): string | undefined {
+    if (event.type === "turn.start" || event.type === "turn.finish") {
+      return event.id;
+    }
+
+    if (event.type === "abort" || event.type === "error") {
+      return undefined;
+    }
+
+    return event.turnId;
+  }
+
+  /**
+   * Records that a turn changed, the first time it does.
+   *
+   * The turn is looked up rather than built from the event: a stream can name
+   * turns this builder was never seeded with, and one it does not hold is one
+   * it cannot hand back.
+   */
+  private markChanged(turnId: string | undefined): void {
+    if (!turnId || this.changedTurnIds.has(turnId)) {
+      return;
+    }
+
+    const turn = this.turnsMap.get(turnId);
+    if (!turn) {
+      return;
+    }
+
+    this.changedTurnIds.add(turnId);
+    this.changedTurns.push(turn);
+  }
+
+  private startTurn(event: TextStreamStartTurnEvent): AgentTurn<TOOLS> | undefined {
     if (event.turnType === "user") {
       const turn: AgentUserTurn = {
         type: "user",
@@ -567,13 +637,13 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     console.error(
       `AgentTurnBuilder#startTurn unknown event ${JSON.stringify(event)}`
     );
-    return null;
+    return undefined;
   }
 
   private finishTurn(
     event: TextStreamFinishTurnEvent
   ): AgentTurn<TOOLS> | null {
-    const turn = this.pendingTurns.get(event.id);
+    const turn = this.turnsMap.get(event.id);
     if (!turn) {
       return null;
     }
@@ -590,7 +660,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     return turn;
   }
 
-  private startStep(event: TextStreamStartStepEvent): AgentStep<TOOLS> | null {
+  private startStep(event: TextStreamStartStepEvent): AgentStep<TOOLS> | undefined {
     if (event.stepType === "user") {
       const step: AgentUserStep = {
         type: "user",
@@ -635,13 +705,13 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     console.log(
       `AgentTurnBuilder#startStep unknown event ${JSON.stringify(event)}`
     );
-    return null;
+    return undefined;
   }
 
   private finishStep(
     event: TextStreamFinishStepEvent
   ): AgentStep<TOOLS> | null {
-    const step = this.pendingSteps.get(event.id);
+    const step = this.stepsMap.get(event.id);
     if (!step) {
       return null;
     }
@@ -660,38 +730,5 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     step.providerMetadata = event.providerMetadata;
     step.completedAt = event.createdAt;
     return step;
-  }
-
-  /**
-   * Finds the tool part an approval response answers, newest turn first.
-   *
-   * A decision arrives on a stream of its own: the turn that asked for approval
-   * stopped there, and the stream that carries the answer resumes with a fresh
-   * builder whose pending maps are empty. The part itself survived in `turns`,
-   * so the search falls back to them — `toolCallId` is the one key the part and
-   * the event both carry.
-   *
-   * Parts already past the decision are skipped: their `approval` field records
-   * how it was answered, and revisiting one would drag a finished invocation
-   * back to `approval-responded`.
-   */
-  #findRecentToolPart(
-    turnId: string,
-    stepId: string,
-    toolCallId: string
-  ): AgentToolPart<TOOLS> | AgentDynamicToolPart | undefined {
-    const turn = this.turns.toReversed().find((e) => e.id === turnId);
-    if (!turn) {
-      return;
-    }
-
-    const step = turn.content.toReversed().find((e) => e.id === stepId);
-    if (!step) {
-      return;
-    }
-
-    return step.content.find(
-      (part) => isAgentToolPart(part) && part.toolCallId === toolCallId
-    ) as AgentToolPart<TOOLS> | AgentDynamicToolPart | undefined;
   }
 }

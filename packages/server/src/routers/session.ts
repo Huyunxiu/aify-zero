@@ -3,7 +3,10 @@ import { homedir } from "node:os";
 import { streamToEventIterator, type } from "@orpc/server";
 import { Agent, STREAM_REGISTRY } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
-import type { AgentTurn } from "@workspace/agent-client";
+import type {
+  AgentTurn,
+  TextStreamToolApprovalResponseEvent,
+} from "@workspace/agent-client";
 import { AgentContext } from "@workspace/agent/agent-context";
 import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
@@ -30,6 +33,7 @@ import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
 import { forkSessionSchema, listSessionTurnsSchema } from "./session.schema";
 import { findAiModelById } from "./settings/settings.service";
+import { AgentSession } from "@workspace/agent/agent-session";
 
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
@@ -38,29 +42,54 @@ const createSession = publicProcedure
     type<{
       sessionId: string;
       turns: AgentTurn<AgentToolSet>[];
+      approvals?: TextStreamToolApprovalResponseEvent[];
       model: string;
       modelEffort?: string;
     }>()
   )
   .handler(async ({ input }) => {
-    const { sessionId, turns, model, modelEffort } = input;
+    const { sessionId, turns, approvals, model, modelEffort } = input;
 
     const aiModel = await findAiModelById(model);
     if (!aiModel) {
       throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
     }
 
-    const store = new SQLiteStore();
-    // const workdir = homedir();
-    const workdir = "/Users/huyunxiu/HuYunXiu/aify-zero";
-    const skillManager = new SkillManager({ dirs: SKILL_DIRS });
-    await skillManager.loadSkills(workdir);
-
     const effort = Object.values(ModelEffort).includes(
       modelEffort as ModelEffort
     )
       ? (modelEffort as ModelEffort)
       : undefined;
+
+    const mostRecentTurn = turns.at(-1);
+    // mostRecentTurn 和 approvals 至少要有一个
+    if (!mostRecentTurn && !approvals?.length) {
+      throw new Error("no message.");
+    }
+
+    const store = new SQLiteStore();
+    const previousMessages = await store.getBranchTurns(sessionId);
+    const previousTurns = AgentSession.toAgentTurns(previousMessages);
+    const originalTurns = mostRecentTurn ? [...previousTurns, mostRecentTurn] : previousTurns;
+    if (approvals?.length) {
+      const session = new AgentSession({ turns: originalTurns });
+      const changedTurns = session.applyToolApprovals(approvals);
+      for (const turn of changedTurns) {
+        await store.updateTurn(turn.id, turn)
+      }
+      const awaitingToolApprovals = session.findAwaitingToolApprovals();
+      if (awaitingToolApprovals > 0) {
+        return {
+          activeStreamId: null,
+          awaitingToolApprovals,
+        }
+      }
+    }
+
+    // const workdir = homedir();
+    const workdir = "/Users/huyunxiu/HuYunXiu/aify-zero";
+    const skillManager = new SkillManager({ dirs: SKILL_DIRS });
+    await skillManager.loadSkills(workdir);
 
     const agentContext = new AgentContext({
       workdir,
@@ -95,7 +124,7 @@ const createSession = publicProcedure
         "web-fetch": createWebFetchTool({ agentContext }),
         "load-skill": createLoadSkillTool({ agentContext }),
       },
-      store: new SQLiteStore(),
+      store,
       apiKey: aiModel.apiKey,
       apiUrl: aiModel.apiUrl,
       providerId: aiModel.provider,
@@ -105,7 +134,7 @@ const createSession = publicProcedure
     const activeStreamId = generateSessionId();
 
     const stream = await agent.stream({
-      turns,
+      turns: originalTurns,
       modelId: aiModel.model,
       onFinish: async (status) => {
         STREAM_REGISTRY.unregisterStream(activeStreamId);
@@ -118,6 +147,7 @@ const createSession = publicProcedure
 
     return {
       activeStreamId,
+      awaitingToolApprovals: 0,
     };
   });
 

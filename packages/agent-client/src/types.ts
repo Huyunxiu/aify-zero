@@ -20,11 +20,16 @@ import type {
  * A JSON value can be a string, number, boolean, object, array, or null.
  * JSON values can be serialized and deserialized by the JSON.stringify and JSON.parse methods.
  */
-type JSONValue = null | string | number | boolean | JSONObject | JSONArray;
-type JSONObject = {
+export type JSONValue =
+  | null
+  | string
+  | number
+  | boolean
+  | Readonly<JSONObject>
+  | readonly JSONValue[];
+export type JSONObject = {
   [key: string]: JSONValue | undefined;
 };
-type JSONArray = JSONValue[];
 
 /**
  * Compaction configuration stored on the session.
@@ -105,7 +110,7 @@ type TextStreamToolInputDeltaEvent = TextStreamEventBase & {
   delta: string;
   providerMetadata?: ProviderMetadata;
 };
-type TextStreamToolApprovalRequestEvent = TextStreamEventBase & {
+export type TextStreamToolApprovalRequestEvent = TextStreamEventBase & {
   type: "tool.approval-request";
   id: string;
   approvalId: string;
@@ -115,7 +120,7 @@ type TextStreamToolApprovalRequestEvent = TextStreamEventBase & {
   isAutomatic?: boolean;
   signature?: string;
 };
-type TextStreamToolApprovalResponseEvent = TextStreamEventBase & {
+export type TextStreamToolApprovalResponseEvent = TextStreamEventBase & {
   type: "tool.approval-response";
   id: string;
   approvalId: string;
@@ -155,7 +160,7 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
   RenameEventType<TypedToolError<TOOLS>, "tool.error">;
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
-    RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
+  RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
 export type TextStreamStartStepEvent = {
   id: string;
   turnId: string;
@@ -436,7 +441,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
   resultProviderMetadata?: ProviderMetadata;
   preliminary?: boolean;
 } & (
-  | {
+    | {
       state: "input-streaming";
       input?: DeepPartial<INPUT> | undefined;
       output?: never;
@@ -444,7 +449,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       approval?: never;
     }
-  | {
+    | {
       state: "input-available";
       input: INPUT;
       output?: never;
@@ -452,7 +457,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       approval?: never;
     }
-  | {
+    | {
       state: "approval-requested";
       input: INPUT;
       output?: never;
@@ -472,7 +477,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-  | {
+    | {
       state: "approval-responded";
       input: INPUT;
       output?: never;
@@ -492,7 +497,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt: number;
       };
     }
-  | {
+    | {
       state: "output-available";
       input: INPUT;
       output: OUTPUT;
@@ -514,7 +519,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-  | {
+    | {
       state: "output-error";
       input: INPUT | undefined;
       rawInput?: unknown;
@@ -536,7 +541,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-  | {
+    | {
       state: "output-denied";
       input: INPUT;
       output?: never;
@@ -556,7 +561,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt: number;
       };
     }
-);
+  );
 
 /**
  * An invocation of a known tool. Deriving it from the tool itself is what lets
@@ -749,10 +754,15 @@ export type AgentTurnBase = AgentTurnStatus & {
  * The values deliberately reuse the `streaming` / `done` vocabulary of
  * `AgentTextPart["state"]`. Only assistant steps and turns carry a status:
  * user-side content is complete the moment it exists.
+ *
+ * `wait_review` is a turn's word rather than a step's — the step that asked for
+ * something held did stream to its end, and it is the turn that stops there,
+ * with calls the user has yet to answer.
  */
 export type AgentStepStatus =
   | { status: "streaming" }
   | { status: "done" }
+  | { status: "wait_review" }
   | { status: "aborted"; abortReason?: string }
   | { status: "error"; error: unknown };
 export type AgentTurnStatus = AgentStepStatus;

@@ -7,6 +7,7 @@ import type {
   AgentTurn,
   AgentUserPart,
   AgentUserTurn,
+  TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import {
   generateSessionId,
@@ -256,7 +257,15 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     }
   }, []);
 
-  const { sendTurns, turns, error, status, stop, resume } = useAgentSession({
+  const {
+    sendTurns,
+    turns,
+    error,
+    status,
+    stop,
+    resume,
+    addToolApprovalResponse,
+  } = useAgentSession({
     id: sessionKey,
     // Sending and reading are two requests. The POST is accepted and answered
     // at once — the turn runs on in the background — so its body says only that
@@ -269,12 +278,22 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
       const accepted = await client.session.create(
         {
           sessionId: options.sessionId,
-          turns: [options.turns.at(-1)!],
+          turns: options.approvals?.length ? [] : [options.turns.at(-1)!],
           model: options.model as string,
           modelEffort: options.modelEffort as string,
+          // An answer to a held call travels with the turn it answers. Its
+          // presence is what makes the new stream a resumption: the server runs
+          // the calls it names before asking the model anything again.
+          approvals: options.approvals as
+            | TextStreamToolApprovalResponseEvent[]
+            | undefined,
         },
         { signal: options.abortSignal }
       );
+      // 还有未审批的工具，不能继续执行
+      if (accepted.awaitingToolApprovals > 0) {
+        return;
+      }
       // The desktop client reaches the server over oRPC's RPC link, which
       // always answers 200 — the 201 the REST route sends is not visible here,
       // so the accepted `streamId` is what says the turn was taken.
@@ -424,6 +443,27 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     });
   };
 
+  const handleRespondToolApproval = React.useCallback(
+    (approvalId: string, approved: boolean) => {
+      if (!selectedModelId) {
+        return;
+      }
+
+      // The transcript goes back exactly as it stands, with the answer beside
+      // it: no user turn is added, because the held turn is already the last
+      // one and the answer belongs to it.
+      void addToolApprovalResponse({
+        approvalId,
+        approved,
+        payload: {
+          model: selectedModelId,
+          modelEffort: selectedModelEffort,
+        },
+      });
+    },
+    [addToolApprovalResponse, selectedModelId, selectedModelEffort]
+  );
+
   const renderTurn = (turn: AgentTurn<AgentToolSet>) => {
     if (turn.type === "user") {
       return <UserMessage key={turn.id} turn={turn} />;
@@ -434,6 +474,7 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
         <AssistantMessage
           key={turn.id}
           turn={turn}
+          onRespondToolApproval={handleRespondToolApproval}
           onFork={(messageId) => {
             if (sessionId) {
               forkSessionMutation.mutate({ sessionId, messageId });

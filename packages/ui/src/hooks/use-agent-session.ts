@@ -1,6 +1,10 @@
 import type { AgentToolSet } from "@workspace/agent";
-import { AgentTurnBuilder } from "@workspace/agent-client";
-import type { AgentStreamEvent, AgentTurn } from "@workspace/agent-client";
+import { AgentTurnBuilder, isAgentToolPart } from "@workspace/agent-client";
+import type {
+  AgentStreamEvent,
+  AgentTurn,
+  TextStreamToolApprovalResponseEvent,
+} from "@workspace/agent-client";
 import { parseJsonEventStream } from "ai";
 import * as React from "react";
 import throttle from "throttleit";
@@ -57,6 +61,17 @@ export type UseAgentSessionResponse = {
    */
   resume: (options: ResumeOptions) => Promise<void>;
   /**
+   * Answers a call a turn was held on, and resumes the turn with that answer.
+   *
+   * The call is answered on screen at once, and the answer is then sent like
+   * any other turn; the turn, the step and the tool call it belongs to are read
+   * off the transcript from the approval id alone. What a send needs beyond the
+   * transcript — the model, the effort — travels in `payload`.
+   */
+  addToolApprovalResponse: (
+    options: AddToolApprovalResponseOptions
+  ) => Promise<void>;
+  /**
    * Stops the turn the session is running, on both ends: the read this store is
    * doing, and the server's turn, which outlives it.
    */
@@ -87,6 +102,41 @@ type ResumeOptions = {
   abortSignal?: AbortSignal;
 };
 
+type AddToolApprovalResponseOptions = {
+  /**
+   * The id of the `approval` on the part being answered — the approval's own
+   * id, not the tool call's. Both are on the part, and only this one says which
+   * question is being answered.
+   */
+  approvalId: string;
+  /** Whether the call may run. */
+  approved: boolean;
+  /** Why it was answered this way, recorded with the answer. */
+  reason?: string;
+  /**
+   * Extra fields merged into the request body alongside `sessionId` and
+   * `turns`, exactly as {@link SendTurnsOptions.payload}. An answer resumes the
+   * held turn, so it needs what any send needs to start one.
+   */
+  payload?: Record<string, unknown>;
+  /**
+   * Stops the request carrying the answer. Optional because a newer send
+   * cancels the older one on its own, so a throwaway signal is the common
+   * value.
+   */
+  abortSignal?: AbortSignal;
+};
+
+/**
+ * The held call an answer is addressed to: the three ids the request body names
+ * it by, read off the transcript.
+ */
+type ToolApprovalTarget = {
+  turnId: string;
+  stepId: string;
+  toolCallId: string;
+};
+
 type AgentSessionStore = {
   subscribe: (onStoreChange: () => void) => () => void;
   getTurns: () => AgentTurn<AgentToolSet>[];
@@ -94,6 +144,9 @@ type AgentSessionStore = {
   getError: () => Error | undefined;
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
   resume: (options: ResumeOptions) => Promise<void>;
+  addToolApprovalResponse: (
+    options: AddToolApprovalResponseOptions
+  ) => Promise<void>;
   stop: () => Promise<void>;
 };
 
@@ -134,6 +187,49 @@ const readErrorMessage = async (response: Response): Promise<string> => {
   }
 
   return body;
+};
+
+/**
+ * Finds the held call an answer belongs to, addressed the way the request body
+ * addresses it.
+ *
+ * An answer names only the approval — which is what the UI has in hand — while
+ * resuming the held turn needs the three ids the part sits inside: the turn,
+ * the step and the call. Reading them back off the transcript here is what
+ * spares every caller from carrying them through the render tree just to hand
+ * them straight back.
+ *
+ * Only a part still holding the question is a target. One whose call has since
+ * run has been answered already, and answering it again would name a question
+ * the server has moved past.
+ */
+const findToolApprovalTarget = (
+  turns: readonly AgentTurn<AgentToolSet>[],
+  approvalId: string
+): ToolApprovalTarget | undefined => {
+  for (const turn of turns) {
+    if (turn.type !== "assistant") {
+      continue;
+    }
+
+    for (const step of turn.content) {
+      for (const part of step.content) {
+        if (
+          isAgentToolPart(part) &&
+          part.state === "approval-requested" &&
+          part.approval.id === approvalId
+        ) {
+          return {
+            turnId: turn.id,
+            stepId: step.id,
+            toolCallId: part.toolCallId,
+          };
+        }
+      }
+    }
+  }
+
+  return undefined;
 };
 
 /**
@@ -210,10 +306,10 @@ export function createAgentSessionStore({
   ): (() => void) =>
     throttleMs > 0
       ? throttle((): void => {
-          if (active === controller) {
-            commit();
-          }
-        }, throttleMs)
+        if (active === controller) {
+          commit();
+        }
+      }, throttleMs)
       : commit;
 
   /**
@@ -396,8 +492,9 @@ export function createAgentSessionStore({
         });
       }
 
+      // 注意：这里会有工具还未审批完导致 stream 没有的情况
       if (!stream) {
-        throw new Error("streaming is null.");
+        return;
       }
 
       await readInto({ stream, builder, controller, commit, publish });
@@ -464,6 +561,76 @@ export function createAgentSessionStore({
   };
 
   /**
+   * Answers a call the turn was held on.
+   *
+   * The answer lands on screen first. The part is rewritten exactly as a
+   * `tool.approval-response` event would rewrite it — same fields, same state —
+   * so the question gives way to the answer the moment it is given, rather than
+   * when the resumed stream catches up; the stream saying the same thing later
+   * is then a rewrite of what is already there. Nothing else about the part
+   * moves: the call has not run yet, and only the stream can say that it did.
+   *
+   * The answer is then sent as a turn of its own — the transcript goes back as
+   * it stands, with the answer beside it. No user turn is added: the held turn
+   * is already the last one on screen, and the answer belongs to it rather than
+   * to a message of its own.
+   */
+  const addToolApprovalResponse = async ({
+    approvalId,
+    approved,
+    reason,
+    payload,
+    abortSignal,
+  }: AddToolApprovalResponseOptions): Promise<void> => {
+    const target = findToolApprovalTarget(currentTurns, approvalId);
+
+    if (!target) {
+      // Nothing on screen asked this question — a button left over on a turn
+      // that has already moved on lands here, and there is no answer to send.
+      return;
+    }
+
+    const answeredAt = Date.now();
+
+    const answer = {
+      type: "tool.approval-response",
+      id: target.toolCallId,
+      approvalId,
+      approved,
+      ...(reason ? { reason } : {}),
+      turnId: target.turnId,
+      stepId: target.stepId,
+      createdAt: answeredAt,
+    } satisfies TextStreamToolApprovalResponseEvent;
+
+    // The answer is applied to the transcript through the builder, with the
+    // very event the stream would carry. That is what keeps the local answer
+    // and a streamed one the same rewrite of the same fields — the part moves
+    // to `approval-responded` and nothing else about it moves, because the call
+    // has not run and only the stream can say that it did.
+    const builder = new AgentTurnBuilder<AgentToolSet>({ turns: currentTurns });
+    await builder.push(answer);
+
+    // The rewrite was in place, so the snapshot has to take a new identity for
+    // the listeners to see it — the rule every publish here keeps, and the one
+    // `useSyncExternalStore` demands of a snapshot.
+    currentTurns = [...builder.turns];
+    notify();
+
+    await sendTurns({
+      turns: currentTurns,
+      abortSignal: abortSignal ?? new AbortController().signal,
+      payload: {
+        ...payload,
+        // An answer to a held call travels with the turn it answers. Its
+        // presence is what makes the new stream a resumption: the server runs
+        // the calls it names before asking the model anything again.
+        approvals: [answer],
+      },
+    });
+  };
+
+  /**
    * Stops the turn. Two independent things have to stop: the local read, so the
    * transcript settles now, and the server's turn, which by design outlives the
    * request that asked for it.
@@ -491,6 +658,7 @@ export function createAgentSessionStore({
     getError,
     sendTurns,
     resume,
+    addToolApprovalResponse,
     stop,
   };
 }
@@ -551,6 +719,7 @@ export function useAgentSession({
     turns: currentTurns,
     sendTurns: store.sendTurns,
     resume: store.resume,
+    addToolApprovalResponse: store.addToolApprovalResponse,
     stop: store.stop,
     error,
     status,

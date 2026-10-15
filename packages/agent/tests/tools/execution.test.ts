@@ -56,7 +56,8 @@ const slowTool = (name: string, ms: number) =>
 function run(
   tools: ToolSet,
   toolCalls: AgentToolCall[],
-  hooks = new HooksManager()
+  hooks = new HooksManager(),
+  approvedToolCallIds?: ReadonlySet<string>
 ) {
   const events: AgentStreamEvent<AgentToolSet>[] = [];
 
@@ -70,12 +71,20 @@ function run(
     context,
     hooks,
     extensionApi: {},
+    approvedToolCallIds,
     write: (event) => {
       events.push(event);
       return Promise.resolve();
     },
   }).then((result) => ({ result, events }));
 }
+
+/** An echo tool that records every input it is actually run with. */
+const recordingTool = (ran: string[]) =>
+  echoTool(({ value }) => {
+    ran.push(value);
+    return { output: value, code: "ok" as const };
+  });
 
 describe(stripToolExecution, () => {
   test("drops execute and leaves everything else, original included", () => {
@@ -254,7 +263,6 @@ describe(executeToolCalls, () => {
       const hooks = new HooksManager();
       hooks.on("tool:before", () => ({
         decision: "allow",
-        input: { value: "rewritten" },
       }));
 
       const received: string[] = [];
@@ -287,7 +295,7 @@ describe(executeToolCalls, () => {
 
     test("a handler that abstains leaves the call alone", async () => {
       const hooks = new HooksManager();
-      hooks.on("tool:before", () => {});
+      hooks.on("tool:before", () => { });
 
       const { events } = await run(
         {
@@ -347,6 +355,146 @@ describe(executeToolCalls, () => {
         ],
       },
     ]);
+  });
+
+  describe("a call the user has to approve", () => {
+    test("holds the whole batch, the calls a hook allowed included", async () => {
+      const hooks = new HooksManager();
+      hooks.on("tool:before", (event) =>
+        event.toolName === "risky" ? { decision: "ask" } : undefined
+      );
+
+      const ran: string[] = [];
+      const { result, events } = await run(
+        { risky: recordingTool(ran), safe: recordingTool(ran) },
+        [
+          { toolCallId: "call-1", toolName: "risky", input: { value: "a" } },
+          { toolCallId: "call-2", toolName: "safe", input: { value: "b" } },
+        ],
+        hooks
+      );
+
+      // The step's calls are one action: the user is asked about all of them
+      // or none of them, so nothing runs while the answer is outstanding.
+      expect(ran).toStrictEqual([]);
+      expect(result.awaitingApproval).toBeTruthy();
+      expect(result.outcomes).toStrictEqual([]);
+      expect(result.toolMessages).toStrictEqual([]);
+      expect(events).toStrictEqual([
+        {
+          type: "tool.approval-request",
+          id: "call-1",
+          approvalId: expect.any(String),
+          turnId,
+          stepId,
+          createdAt: expect.any(Number),
+        },
+        {
+          type: "tool.approval-request",
+          id: "call-2",
+          approvalId: expect.any(String),
+          turnId,
+          stepId,
+          createdAt: expect.any(Number),
+        },
+      ]);
+    });
+
+    test("answers a refused call without waiting for the user", async () => {
+      const hooks = new HooksManager();
+      hooks.on("tool:before", (event) => {
+        if (event.toolName === "refused") {
+          return { decision: "deny" };
+        }
+        return event.toolName === "risky" ? { decision: "ask" } : undefined;
+      });
+
+      const ran: string[] = [];
+      const { result, events } = await run(
+        { refused: recordingTool(ran), risky: recordingTool(ran) },
+        [
+          { toolCallId: "call-1", toolName: "refused", input: { value: "a" } },
+          { toolCallId: "call-2", toolName: "risky", input: { value: "b" } },
+        ],
+        hooks
+      );
+
+      // A hook's refusal is already an answer, and the user cannot take it
+      // back: it is reported now, while the asking call is left open.
+      expect(ran).toStrictEqual([]);
+      expect(result.awaitingApproval).toBeTruthy();
+      expect(result.outcomes).toStrictEqual([
+        {
+          toolCallId: "call-1",
+          type: "denied",
+          durationMs: expect.any(Number),
+        },
+      ]);
+      expect(events.map((event) => event.type)).toStrictEqual([
+        "tool.output-denied",
+        "tool.approval-request",
+      ]);
+    });
+
+    test("runs the call once the approval comes back", async () => {
+      const hooks = new HooksManager();
+      hooks.on("tool:before", () => ({ decision: "ask" }));
+
+      const ran: string[] = [];
+      const { result, events } = await run(
+        { echo: recordingTool(ran) },
+        [{ toolCallId: "call-1", toolName: "echo", input: { value: "hi" } }],
+        hooks,
+        new Set(["call-1"])
+      );
+
+      // The hook still asks — its side effects and its rewrite are wanted — but
+      // the question has been answered, so asking it again would hold the same
+      // batch a second time.
+      expect(ran).toStrictEqual(["hi"]);
+      expect(result.awaitingApproval).toBeFalsy();
+      expect(result.outcomes).toStrictEqual([
+        {
+          toolCallId: "call-1",
+          type: "result",
+          output: { output: "hi", code: "ok" },
+          durationMs: expect.any(Number),
+        },
+      ]);
+      expect(events.map((event) => event.type)).toStrictEqual(["tool.result"]);
+    });
+
+    test("still refuses a call a hook turns down, approval or not", async () => {
+      const hooks = new HooksManager();
+      hooks.on("tool:before", () => ({ decision: "deny" }));
+
+      const ran: string[] = [];
+      const { result } = await run(
+        { echo: recordingTool(ran) },
+        [{ toolCallId: "call-1", toolName: "echo", input: { value: "hi" } }],
+        hooks,
+        new Set(["call-1"])
+      );
+
+      expect(ran).toStrictEqual([]);
+      expect(result.outcomes).toStrictEqual([
+        {
+          toolCallId: "call-1",
+          type: "denied",
+          durationMs: expect.any(Number),
+        },
+      ]);
+    });
+
+    test("leaves a batch nothing asked about alone", async () => {
+      const ran: string[] = [];
+      const { result } = await run({ echo: recordingTool(ran) }, [
+        { toolCallId: "call-1", toolName: "echo", input: { value: "hi" } },
+      ]);
+
+      expect(ran).toStrictEqual(["hi"]);
+      expect(result.awaitingApproval).toBeFalsy();
+    });
   });
 
   test("a tool the set does not have is an error, not a pass", async () => {
@@ -481,6 +629,19 @@ describe("the synthesized events", () => {
     );
 
     await expect(buildPart(events)).resolves.toBe("output-error");
+  });
+
+  test("land a held call in approval-requested", async () => {
+    const hooks = new HooksManager();
+    hooks.on("tool:before", () => ({ decision: "ask" }));
+
+    const { events } = await run(
+      { echo: echoTool(() => ({ output: "x", code: "ok" as const })) },
+      [{ toolCallId: "call-1", toolName: "echo", input: { value: "hi" } }],
+      hooks
+    );
+
+    await expect(buildPart(events)).resolves.toBe("approval-requested");
   });
 
   test("land a denied call in output-denied", async () => {

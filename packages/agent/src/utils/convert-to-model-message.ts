@@ -109,9 +109,9 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                     filename: part.filename,
                     data: part.providerReference
                       ? {
-                          type: "reference" as const,
-                          reference: part.providerReference,
-                        }
+                        type: "reference" as const,
+                        reference: part.providerReference,
+                      }
                       : { type: "url" as const, url: new URL(part.url) },
                     ...(part.providerMetadata
                       ? { providerOptions: part.providerMetadata }
@@ -162,9 +162,9 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                   filename: part.filename,
                   data: part.providerReference
                     ? {
-                        type: "reference" as const,
-                        reference: part.providerReference,
-                      }
+                      type: "reference" as const,
+                      reference: part.providerReference,
+                    }
                     : { type: "url" as const, url: new URL(part.url) },
                   ...(part.providerMetadata
                     ? { providerOptions: part.providerMetadata }
@@ -208,8 +208,8 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                         : {}),
                       ...(Object.hasOwn(part.approval, "inputSchemaInput")
                         ? {
-                            inputSchemaInput: part.approval.inputSchemaInput,
-                          }
+                          inputSchemaInput: part.approval.inputSchemaInput,
+                        }
                         : {}),
                       ...(part.approval.signature
                         ? { signature: part.approval.signature }
@@ -290,7 +290,7 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                   toolPart.state === "approval-responded" &&
                   !toolPart.approval?.approved
                 ) {
-                  content.push({
+                  innerContent.push({
                     type: "tool-result",
                     toolCallId: toolPart.toolCallId,
                     toolName: getToolName(toolPart),

@@ -5,6 +5,7 @@ import { describe, expect, test } from "vitest";
 import type { StepRow } from "../src/elements/tool-step";
 import {
   formatDuration,
+  getRowApproval,
   getRowStatus,
   getRowSummary,
   getToolDurationMs,
@@ -101,6 +102,53 @@ describe(getRowStatus, () => {
     ).toBe("denied");
   });
 
+  test("should report a call held for the user as awaiting approval", () => {
+    expect(
+      getRowStatus(
+        part({
+          type: "tool-bash",
+          state: "approval-requested",
+          approval: { id: "ap-1", createdAt: 1000 },
+        })
+      )
+    ).toBe("approval");
+  });
+
+  test("should not ask the user about a call a policy already approved", () => {
+    // The auto-approval is not the user's to give, so the row is work under
+    // way rather than a question.
+    expect(
+      getRowStatus(
+        part({
+          type: "tool-bash",
+          state: "approval-requested",
+          approval: { id: "ap-1", isAutomatic: true, createdAt: 1000 },
+        })
+      )
+    ).toBe("running");
+  });
+
+  test("should read an answered approval as the answer", () => {
+    expect(
+      getRowStatus(
+        part({
+          type: "tool-bash",
+          state: "approval-responded",
+          approval: { id: "ap-1", approved: true, createdAt: 1000 },
+        })
+      )
+    ).toBe("running");
+    expect(
+      getRowStatus(
+        part({
+          type: "tool-bash",
+          state: "approval-responded",
+          approval: { id: "ap-1", approved: false, createdAt: 1000 },
+        })
+      )
+    ).toBe("denied");
+  });
+
   test("should take a streaming text part as running and a finished one as complete", () => {
     expect(getRowStatus(part({ type: "text", state: "streaming" }))).toBe(
       "running"
@@ -118,6 +166,30 @@ describe(getRowStatus, () => {
 });
 
 describe(getRowSummary, () => {
+  test("should say a held call is waiting on the user", () => {
+    expect(
+      getRowSummary(
+        part({
+          type: "tool-bash",
+          state: "approval-requested",
+          approval: { id: "ap-1", createdAt: 1000 },
+        })
+      )
+    ).toBe("awaiting approval");
+  });
+
+  test("should say nothing for a call the user is not being asked about", () => {
+    expect(
+      getRowSummary(
+        part({
+          type: "tool-bash",
+          state: "approval-requested",
+          approval: { id: "ap-1", isAutomatic: true, createdAt: 1000 },
+        })
+      )
+    ).toBeUndefined();
+  });
+
   test("should say nothing for a tool that has not finished", () => {
     expect(
       getRowSummary(part({ type: "tool-bash", state: "input-available" }))
@@ -368,6 +440,75 @@ describe(getRowSummary, () => {
   });
 });
 
+describe(getRowApproval, () => {
+  test("should surface an open request so it can be answered", () => {
+    const approval = { id: "ap-1", createdAt: 1000 };
+    expect(
+      getRowApproval(
+        part({ type: "tool-bash", state: "approval-requested", approval })
+      )
+    ).toBe(approval);
+  });
+
+  test("should surface an answered request so the answer stays on screen", () => {
+    const approval = { id: "ap-1", approved: false, createdAt: 1000 };
+    expect(
+      getRowApproval(
+        part({ type: "tool-bash", state: "approval-responded", approval })
+      )
+    ).toBe(approval);
+  });
+
+  test("should surface a denied call's approval as denied", () => {
+    // The denial is the state's: the protocol reports it as a result and never
+    // writes it back onto the request, so the row fills it in — otherwise the
+    // panel would offer the buttons again for a call already turned down.
+    const approval = { id: "ap-1", createdAt: 1000 };
+    expect(
+      getRowApproval(
+        part({ type: "tool-bash", state: "output-denied", approval })
+      )
+    ).toStrictEqual({ id: "ap-1", approved: false, createdAt: 1000 });
+  });
+
+  test("should ask again for nothing once the call has run", () => {
+    // The approval was never echoed back, so only the state says the call is
+    // over — an unanswered-looking panel beside a finished call is the bug this
+    // guards against.
+    expect(
+      getRowApproval(
+        part({
+          type: "tool-bash",
+          state: "output-available",
+          output: { code: "ok", output: "" },
+          approval: { id: "ap-1", createdAt: 1000 },
+        })
+      )
+    ).toBeUndefined();
+  });
+
+  test("should keep a decision the stream did report on a finished call", () => {
+    const approval = { id: "ap-1", approved: true, createdAt: 1000 };
+    expect(
+      getRowApproval(
+        part({
+          type: "tool-bash",
+          state: "output-available",
+          output: { code: "ok", output: "" },
+          approval,
+        })
+      )
+    ).toBe(approval);
+  });
+
+  test("should show nothing for a part with no approval to answer", () => {
+    expect(
+      getRowApproval(part({ type: "tool-bash", state: "input-available" }))
+    ).toBeUndefined();
+    expect(getRowApproval(part({ type: "text", text: "hi" }))).toBeUndefined();
+  });
+});
+
 describe(getToolDurationMs, () => {
   test("should use the runtime's per-call figure when it recorded one", () => {
     const call = part({
@@ -503,5 +644,20 @@ describe(summarizeTurnRows, () => {
       { part: doneTool("tool-read-file", {}), step: step() },
     ];
     expect(summarizeTurnRows(rows)).toBe("3 tools · 2 failed");
+  });
+
+  test("should say how much of the turn is waiting on the user", () => {
+    const rows: StepRow[] = [
+      {
+        part: part({
+          type: "tool-bash",
+          state: "approval-requested",
+          approval: { id: "ap-1", createdAt: 1000 },
+        }),
+        step: step(),
+      },
+      { part: doneTool("tool-read-file", {}), step: step() },
+    ];
+    expect(summarizeTurnRows(rows)).toBe("2 tools · 1 awaiting approval");
   });
 });
