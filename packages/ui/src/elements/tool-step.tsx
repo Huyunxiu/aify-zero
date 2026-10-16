@@ -6,22 +6,11 @@ import {
 import type {
   AgentAssistantStep,
   AgentCompactionStep,
-  AgentDynamicToolPart,
   AgentPart,
+  AgentStaticToolPart,
   AgentToolPart,
 } from "@workspace/agent-client";
 import type { ReactNode } from "react";
-
-/**
- * Display logic for one row of a turn's step chain: what state the row is in,
- * what it achieved, and how long it took.
- *
- * Types are imported, never values, so this module stays a pure function of its
- * input: nothing here reaches for `ai` or the turn builder, and every export can
- * be covered by the Node test runner.
- */
-
-type ToolPart = AgentToolPart<AgentToolSet> | AgentDynamicToolPart;
 
 /** A part as it is rendered, next to the step that owns it. */
 export type StepRow = {
@@ -49,7 +38,7 @@ export type StepRowStatus =
  * the states that are a pure naming of the row.
  */
 type ResolvedToolState = Exclude<
-  ToolPart["state"],
+  AgentToolPart["state"],
   "approval-requested" | "approval-responded"
 >;
 
@@ -171,19 +160,21 @@ const summarizeFileRead = (
 
 /** The three tools whose input names a file they changed. */
 type FileEditingPart = Extract<
-  AgentToolPart<AgentToolSet>,
+  AgentStaticToolPart<AgentToolSet>,
   { type: "tool-edit-file" | "tool-write-file" | "tool-delete-file" }
 >;
 
 const isFileEditingPart = (
-  part: AgentToolPart<AgentToolSet>
+  part: AgentStaticToolPart<AgentToolSet>
 ): part is FileEditingPart =>
   part.type === "tool-edit-file" ||
   part.type === "tool-write-file" ||
   part.type === "tool-delete-file";
 
 /** The path a file-editing tool acted on, or undefined for every other tool. */
-const editedPath = (part: AgentToolPart<AgentToolSet>): string | undefined =>
+const editedPath = (
+  part: AgentStaticToolPart<AgentToolSet>
+): string | undefined =>
   isFileEditingPart(part) ? part.input?.path : undefined;
 
 /**

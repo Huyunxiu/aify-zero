@@ -15,7 +15,7 @@ import type {
   AgentCompactionStep,
   AgentCompactionTurn,
   AgentCustomContentPart,
-  AgentDynamicToolPart,
+  AgentToolPart,
   AgentPart,
   AgentReasoningPart,
   AgentSessionTitlePart,
@@ -23,7 +23,7 @@ import type {
   AgentStep,
   AgentStreamEvent,
   AgentTextPart,
-  AgentToolPart,
+  AgentStaticToolPart,
   AgentTurn,
   AgentUserStep,
   AgentUserTurn,
@@ -31,13 +31,14 @@ import type {
   TextStreamFinishTurnEvent,
   TextStreamStartStepEvent,
   TextStreamStartTurnEvent,
+  AgentDynamicToolPart,
 } from "./types";
 
 export class AgentTurnBuilder<TOOLS extends ToolSet> {
   turns: AgentTurn<TOOLS>[];
   private readonly turnsMap: Map<string, AgentTurn<TOOLS>>;
   private readonly stepsMap: Map<string, AgentStep<TOOLS>>;
-  private readonly toolParts: Map<string, AgentToolPart<TOOLS> | AgentDynamicToolPart>;
+  private readonly toolParts: Map<string, AgentToolPart>;
   private readonly pendingParts: Map<string, AgentPart<TOOLS>>;
   /**
    * Every turn the stream has changed, in the order it first touched them.
@@ -57,7 +58,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
   constructor({ turns }: { turns: AgentTurn<TOOLS>[] }) {
     this.turns = turns;
     this.pendingParts = new Map<string, AgentPart<TOOLS>>();
-    this.toolParts = new Map<string, AgentToolPart<TOOLS> | AgentDynamicToolPart>();
+    this.toolParts = new Map<string, AgentToolPart>();
     this.turnsMap = new Map<string, AgentTurn<TOOLS>>();
     this.stepsMap = new Map<string, AgentStep<TOOLS>>();
     for (const turn of turns) {
@@ -97,7 +98,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       case "step.start": {
         let step = this.stepsMap.get(event.id);
         if (step) {
-          step.status = "streaming"
+          step.status = "streaming";
           break;
         }
 
@@ -224,7 +225,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
             (step.content as AgentPart<TOOLS>[]).push(part);
           }
         } else {
-          const part: AgentToolPart<TOOLS> = {
+          const part: AgentStaticToolPart<TOOLS> = {
             type: `tool-${event.toolName}`,
             state: "input-streaming",
             toolCallId: event.id,
@@ -604,7 +605,9 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     this.changedTurns.push(turn);
   }
 
-  private startTurn(event: TextStreamStartTurnEvent): AgentTurn<TOOLS> | undefined {
+  private startTurn(
+    event: TextStreamStartTurnEvent
+  ): AgentTurn<TOOLS> | undefined {
     if (event.turnType === "user") {
       const turn: AgentUserTurn = {
         type: "user",
@@ -660,7 +663,9 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     return turn;
   }
 
-  private startStep(event: TextStreamStartStepEvent): AgentStep<TOOLS> | undefined {
+  private startStep(
+    event: TextStreamStartStepEvent
+  ): AgentStep<TOOLS> | undefined {
     if (event.stepType === "user") {
       const step: AgentUserStep = {
         type: "user",

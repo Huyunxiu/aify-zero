@@ -160,7 +160,7 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
   RenameEventType<TypedToolError<TOOLS>, "tool.error">;
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
-  RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
+    RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
 export type TextStreamStartStepEvent = {
   id: string;
   turnId: string;
@@ -441,7 +441,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
   resultProviderMetadata?: ProviderMetadata;
   preliminary?: boolean;
 } & (
-    | {
+  | {
       state: "input-streaming";
       input?: DeepPartial<INPUT> | undefined;
       output?: never;
@@ -449,7 +449,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       approval?: never;
     }
-    | {
+  | {
       state: "input-available";
       input: INPUT;
       output?: never;
@@ -457,7 +457,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       approval?: never;
     }
-    | {
+  | {
       state: "approval-requested";
       input: INPUT;
       output?: never;
@@ -477,7 +477,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-    | {
+  | {
       state: "approval-responded";
       input: INPUT;
       output?: never;
@@ -497,7 +497,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt: number;
       };
     }
-    | {
+  | {
       state: "output-available";
       input: INPUT;
       output: OUTPUT;
@@ -519,7 +519,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-    | {
+  | {
       state: "output-error";
       input: INPUT | undefined;
       rawInput?: unknown;
@@ -541,7 +541,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-    | {
+  | {
       state: "output-denied";
       input: INPUT;
       output?: never;
@@ -561,7 +561,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt: number;
       };
     }
-  );
+);
 
 /**
  * An invocation of a known tool. Deriving it from the tool itself is what lets
@@ -571,7 +571,7 @@ type AgentToolInvocation<TOOL extends UITool | Tool> = AgentToolInvocationBase<
   asUITool<TOOL>["input"],
   asUITool<TOOL>["output"]
 >;
-export type AgentToolPart<TOOLS extends ToolSet = ToolSet> = ValueOf<{
+export type AgentStaticToolPart<TOOLS extends ToolSet = ToolSet> = ValueOf<{
   [NAME in keyof TOOLS & string]: {
     type: `tool-${NAME}`;
     rawInput: string;
@@ -579,7 +579,7 @@ export type AgentToolPart<TOOLS extends ToolSet = ToolSet> = ValueOf<{
 }>;
 export function isAgentStaticToolPart<TOOLS extends ToolSet>(
   part: AgentPart<TOOLS>
-): part is AgentToolPart<TOOLS> {
+): part is AgentStaticToolPart<TOOLS> {
   return part.type.startsWith("tool-");
 }
 export type AgentDynamicToolPart = AgentToolInvocationBase<unknown, unknown> & {
@@ -596,9 +596,12 @@ export function isAgentDynamicToolPart<TOOLS extends ToolSet>(
 ): part is AgentDynamicToolPart {
   return part.type === "dynamic-tool";
 }
+export type AgentToolPart<TOOLS extends ToolSet = ToolSet> =
+  | AgentStaticToolPart<TOOLS>
+  | AgentDynamicToolPart;
 export function isAgentToolPart<TOOLS extends ToolSet>(
   part: AgentPart<TOOLS>
-): part is AgentToolPart<TOOLS> | AgentDynamicToolPart {
+): part is AgentToolPart<TOOLS> {
   return isAgentStaticToolPart(part) || isAgentDynamicToolPart(part);
 }
 
@@ -608,7 +611,7 @@ export function isAgentToolPart<TOOLS extends ToolSet>(
  * The possible values are the keys of the tool set.
  */
 export function getStaticToolName<TOOLS extends ToolSet>(
-  part: AgentToolPart<TOOLS>
+  part: AgentStaticToolPart<TOOLS>
 ): keyof TOOLS {
   return part.type.split("-").slice(1).join("-") as keyof TOOLS;
 }
@@ -619,9 +622,7 @@ export function getStaticToolName<TOOLS extends ToolSet>(
  * This function will not restrict the name to the keys of the tool set.
  * If you need to restrict the name to the keys of the tool set, use `getStaticToolName` instead.
  */
-export function getToolName(
-  part: AgentToolPart<any> | AgentDynamicToolPart
-): string {
+export function getToolName(part: AgentToolPart): string {
   return isAgentDynamicToolPart(part) ? part.toolName : getStaticToolName(part);
 }
 
@@ -654,7 +655,7 @@ export type AgentAssistantPart<TOOLS extends ToolSet> =
   | AgentTextPart
   | AgentCustomContentPart
   | AgentReasoningPart
-  | AgentToolPart<TOOLS>
+  | AgentStaticToolPart<TOOLS>
   | AgentDynamicToolPart
   | AgentSessionTitlePart;
 /**

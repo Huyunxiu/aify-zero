@@ -1,5 +1,10 @@
 import { AgentTurnBuilder, isAgentToolPart } from "@workspace/agent-client";
-import type { AgentDynamicToolPart, AgentToolPart, AgentTurn, TextStreamToolApprovalResponseEvent } from "@workspace/agent-client";
+import type {
+  AgentToolPart,
+  AgentTurn,
+  TextStreamToolApprovalResponseEvent,
+} from "@workspace/agent-client";
+import type { TurnModel } from "@workspace/db";
 import type { LanguageModelUsage, ModelMessage } from "ai";
 import { addLanguageModelUsage } from "ai/internal";
 
@@ -7,7 +12,6 @@ import type { AgentStepResult } from "./agents";
 import type { AgentToolSet } from "./types";
 import { convertAgentTurnToModalMessage } from "./utils/convert-to-model-message";
 import { generateTurnId } from "./utils/id-util";
-import type { TurnModel } from "@workspace/db";
 
 export type AgentSessionOptions = {
   turns: AgentTurn<AgentToolSet>[];
@@ -37,7 +41,7 @@ export class AgentSession {
       return [];
     }
 
-    const turn = turns.findLast(e => e.type === "assistant");
+    const turn = turns.findLast((e) => e.type === "assistant");
     if (!turn) {
       return [];
     }
@@ -48,12 +52,17 @@ export class AgentSession {
         continue;
       }
 
-      const step = turn.content.find(e => e.id === approval.stepId);
+      const step = turn.content.find((e) => e.id === approval.stepId);
       if (!step) {
         continue;
       }
 
-      const part = step.content.find(e => isAgentToolPart(e) && e.state === "approval-requested" && e.approval.id === approval.approvalId) as AgentToolPart | AgentDynamicToolPart | undefined;
+      const part = step.content.find(
+        (e) =>
+          isAgentToolPart(e) &&
+          e.state === "approval-requested" &&
+          e.approval.id === approval.approvalId
+      ) as AgentToolPart | undefined;
       if (!part) {
         continue;
       }
@@ -87,7 +96,7 @@ export class AgentSession {
   findAwaitingToolApprovals() {
     const { turns } = this;
 
-    const turn = turns.findLast(e => e.type === "assistant");
+    const turn = turns.findLast((e) => e.type === "assistant");
     if (!turn) {
       return 0;
     }
@@ -112,7 +121,7 @@ export class AgentSession {
 
     const { turns } = this;
 
-    const turn = turns.findLast(e => e.type === "assistant");
+    const turn = turns.findLast((e) => e.type === "assistant");
     if (!turn) {
       return null;
     }
@@ -131,7 +140,7 @@ export class AgentSession {
   findTurnWithoutToolResult() {
     const { turns } = this;
 
-    const turn = turns.findLast(e => e.type === "assistant");
+    const turn = turns.findLast((e) => e.type === "assistant");
     if (!turn) {
       return null;
     }
