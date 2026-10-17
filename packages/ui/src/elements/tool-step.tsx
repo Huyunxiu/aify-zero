@@ -408,7 +408,7 @@ export const getToolDurationMs = (
     return undefined;
   }
 
-  return step.performance?.toolExecutionMs?.[part.toolCallId];
+  return step.metadata?.performance?.toolExecutionMs?.[part.toolCallId];
 };
 
 /** A compact duration: `850ms`, `4.2s`, `42s`, `3m 07s`, `1h 12m`. */

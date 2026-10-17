@@ -116,6 +116,16 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         this.finishStep(event);
         break;
       }
+      case "step.metadata": {
+        // A step held for approval finished before its calls ran, so the
+        // durations arrive later and only the performance is replaced: the
+        // step's status, usage and end time are already what they should be.
+        const step = this.stepsMap.get(event.id);
+        if (step) {
+          step.metadata = { ...step.metadata, ...event.metadata };
+        }
+        break;
+      }
       case "text.start": {
         const part: AgentTextPart = {
           type: "text",
@@ -729,7 +739,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       step.abortReason = event.abortReason;
     }
     step.usage = event.usage;
-    step.performance = event.performance;
+    step.metadata = event.metadata;
     step.finishReason = event.finishReason;
     step.rawFinishReason = event.rawFinishReason;
     step.providerMetadata = event.providerMetadata;

@@ -127,13 +127,13 @@ export async function executeToolCalls(
 ): Promise<ExecuteToolCallsResult> {
   const plans: ToolCallPlan[] = input.skipApproval
     ? input.toolCalls.map((toolCall) => ({
-        toolCall,
-        decision: { decision: "allow" },
-        startedAt: performance.now(),
-      }))
+      toolCall,
+      decision: { decision: "allow" },
+      startedAt: performance.now(),
+    }))
     : await Promise.all(
-        input.toolCalls.map((toolCall) => planToolCall(toolCall, input))
-      );
+      input.toolCalls.map((toolCall) => planToolCall(toolCall, input))
+    );
 
   // One call to the user holds the batch, `allow` included: the user is asked
   // about the step's calls as a whole or not at all. The refusals still go out
@@ -222,8 +222,8 @@ async function planToolCall(
   );
 
   if (
-    toolCall.toolName === "delete-file" ||
-    toolCall.toolName === "edit-file"
+    toolCall.toolName === "write-file" ||
+    toolCall.toolName === "delete-file"
   ) {
     return {
       toolCall,

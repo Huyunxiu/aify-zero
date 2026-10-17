@@ -26,6 +26,7 @@ import type {
   LanguageModel,
   LanguageModelUsage,
   ModelMessage,
+  StepResultPerformance,
   TextStreamPart,
   ToolContent,
   ToolSet,
@@ -139,7 +140,7 @@ export type AgentStepResult = {
   readonly awaitingApproval: boolean;
 };
 
-/** What one call of {@link Agent.#runSteps} reported back to the turn loop. */
+/** What one call of {@link Agent.#runStep} reported back to the turn loop. */
 type StepOutcome =
   | { readonly ok: true; readonly result: AgentStepResult }
   /** The turn was aborted: nothing failed, the caller stopped it. */
@@ -393,11 +394,11 @@ export class Agent {
         type: "step.finish",
         createdAt: Date.now(),
         usage: step.usage,
-        performance: step.finalStep.performance,
         finishReason: step.finalStep.finishReason,
         rawFinishReason: step.finalStep.rawFinishReason,
         providerMetadata: step.finalStep.providerMetadata,
         status: "done",
+        metadata: { performance: step.finalStep.performance },
       });
 
       await this.hooks.emit(
@@ -424,7 +425,7 @@ export class Agent {
   }
 
   /**
-   * Drives one assistant turn: repeated `#runSteps` calls until the model stops
+   * Drives one assistant turn: repeated `#runStep` calls until the model stops
    * asking for tools, the step budget runs out, or a step is aborted or fails.
    *
    * The loop is driven by hand so compaction can run before every model call.
@@ -464,7 +465,7 @@ export class Agent {
       // or the previous step may have replaced.
       const stepId = generateStepId();
 
-      const outcome = await this.#runSteps({
+      const outcome = await this.#runStep({
         ...input,
         stepId,
         stepType: "assistant",
@@ -507,7 +508,7 @@ export class Agent {
       ...status,
     });
 
-    // An aborted or failed step returns from `#runSteps` before its
+    // An aborted or failed step returns from `#runStep` before its
     // `step.finish`, so the step and its parts are still pending here; the
     // `turn.finish` above only clears the turn. Settling first keeps the copy
     // persisted below from carrying a `"streaming"` step forever. A `"done"`
@@ -557,7 +558,7 @@ export class Agent {
    * failed step is an ending the turn has to record, not a reason for the reader
    * to be left without one.
    */
-  async #runSteps(input: AgentStepInput): Promise<StepOutcome> {
+  async #runStep(input: AgentStepInput): Promise<StepOutcome> {
     const { turnId, stepId } = input;
     const model = this.#getModel();
 
@@ -583,7 +584,7 @@ export class Agent {
       ({ messages } = compaction);
     } catch (error) {
       console.error(
-        "agent#runSteps compaction error.",
+        "agent#runStep compaction error.",
         this.context.abortSignal?.aborted,
         error
       );
@@ -680,6 +681,25 @@ export class Agent {
             localToolContent.push(...message.content);
           }
         }
+
+        if (result) {
+          const previousPerformance = result?.step.metadata?.performance;
+          const performance = {
+            ...previousPerformance,
+            toolExecutionMs: {
+              ...previousPerformance?.toolExecutionMs,
+              ...execution.toolExecutionMs,
+            },
+          } as StepResultPerformance;
+
+          await this.context.controller?.write({
+            id: askedStepId,
+            turnId: askedTurnId,
+            type: "step.metadata",
+            createdAt: Date.now(),
+            metadata: { performance },
+          });
+        }
       }
 
       // A refusal the user gave is reported to the model as an execution that
@@ -731,7 +751,7 @@ export class Agent {
       });
     } catch (error) {
       console.error(
-        "agent#runSteps streamText error.",
+        "agent#runStep streamText error.",
         this.context.abortSignal?.aborted,
         error
       );
@@ -756,7 +776,7 @@ export class Agent {
         if (value.type === "error") {
           streamError = value.error;
           console.error(
-            "agent#runSteps stream event error",
+            "agent#runStep stream event error",
             this.context.abortSignal?.aborted,
             value.error
           );
@@ -774,7 +794,7 @@ export class Agent {
       }
     } catch (error) {
       console.error(
-        "agent#runSteps reader error.",
+        "agent#runStep reader error.",
         this.context.abortSignal?.aborted,
         streamError,
         error
@@ -803,11 +823,11 @@ export class Agent {
           type: "step.finish",
           createdAt: Date.now(),
           usage: step.usage,
-          performance: step.performance,
           finishReason: step.finishReason,
           rawFinishReason: step.rawFinishReason,
           providerMetadata: step.providerMetadata,
           status: "done",
+          metadata: { performance: step.performance },
         });
 
         return {
@@ -856,17 +876,19 @@ export class Agent {
         usage: step.usage,
         // The SDK times only the tools it runs itself, and these are no longer
         // among them, so the durations come from the loop that ran them.
-        performance: {
-          ...step.performance,
-          toolExecutionMs: {
-            ...step.performance.toolExecutionMs,
-            ...execution.toolExecutionMs,
-          },
-        },
         finishReason: step.finishReason,
         rawFinishReason: step.rawFinishReason,
         providerMetadata: step.providerMetadata,
         status: "done",
+        metadata: {
+          performance: {
+            ...step.performance,
+            toolExecutionMs: {
+              ...step.performance.toolExecutionMs,
+              ...execution.toolExecutionMs,
+            },
+          }
+        }
       });
 
       // What the SDK feeds its own next step: the assistant message for this
@@ -913,7 +935,7 @@ export class Agent {
       };
     } catch (error) {
       console.error(
-        "agent#runSteps stream final error.",
+        "agent#runStep stream final error.",
         this.context.abortSignal?.aborted,
         streamError,
         error
@@ -997,7 +1019,7 @@ export class Agent {
    * is over the configured threshold. Mutates neither input; returns the new
    * messages array and (possibly updated) session.
    *
-   * Called by `#runSteps` before every model call, so the compacted
+   * Called by `#runStep` before every model call, so the compacted
    * messages become the history the next step — and every step after it —
    * sends to the model. Gating on `shouldCompact` is what keeps that from
    * re-summarizing the same conversation on every step.

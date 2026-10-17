@@ -288,7 +288,11 @@ export const AgentActivityApproval = memo(
         >
           <Icon className={cn("size-4 shrink-0", tone.icon)} />
           <span className={cn("font-medium", tone.icon)}>
-            {autoApproved ? "Approved automatically" : approved ? "Approved" : "Denied"}
+            {autoApproved
+              ? "Approved automatically"
+              : approved
+                ? "Approved"
+                : "Denied"}
           </span>
         </div>
       );
@@ -415,6 +419,33 @@ export const AgentActivityStep = memo(
       [isExpanded, path]
     );
 
+    const getStatusIcon = () => {
+      // flex size-4 shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [[data-slot=trace-title]~&]:-ml-1 transition-transform group-aria-expanded/trace-collapsible-trigger:rotate-90
+      if (status === "running") {
+        return <Spinner className="size-3.5 shrink-0" />;
+      }
+
+      if (status === "denied") {
+        return <CircleXIcon className="size-3.5 text-warning-foreground" />;
+      }
+
+      if (status === "failed") {
+        return <CircleXIcon className="size-3.5 text-destructive-foreground" />;
+      }
+
+      if (status === "complete") {
+        return <CircleCheckIcon className="size-3.5 text-success-foreground" />;
+      }
+
+      if (status === "approval") {
+        return (
+          <ShieldQuestionIcon className="size-3.5 shrink-0 text-warning-foreground" />
+        );
+      }
+
+      return <div className="size-3.5 shrink-0"></div>;
+    };
+
     return (
       <AgentActivityStepContext.Provider value={stepContextValue}>
         <Dialog open={isExpanded} onOpenChange={handleOpenChange}>
@@ -431,16 +462,16 @@ export const AgentActivityStep = memo(
                 "group/chain-step relative flex h-7 w-full items-center justify-between gap-2 text-sm transition-colors hover:text-foreground"
               )}
             >
-              <div className="relative flex h-full items-center gap-2 flex-1 group-hover/chain-step:underline">
+              <div className="flex w-fit max-w-full min-w-0 items-center gap-2 group-hover/chain-step:underline">
                 <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
                 <ArrowUpRightIcon
                   className={cn(
                     "shrink-0 size-4 transition-transform hidden group-hover/chain-step:block"
                   )}
                 />
-                <span className="min-w-0 text-left">{label}</span>
+                <span className="min-w-0 text-left truncate">{label}</span>
                 {summary && (
-                  <span className="min-w-0 text-muted-foreground/70 text-xs">
+                  <span className="min-w-0 text-muted-foreground/70 text-xs truncate">
                     {summary}
                   </span>
                 )}
@@ -451,21 +482,7 @@ export const AgentActivityStep = memo(
                     {duration}
                   </span>
                 )}
-                {status === "running" && (
-                  <Spinner className="size-3.5 shrink-0" />
-                )}
-                {status === "denied" && (
-                  <CircleXIcon className="size-3.5 text-warning-foreground" />
-                )}
-                {status === "failed" && (
-                  <CircleXIcon className="size-3.5 text-destructive-foreground" />
-                )}
-                {status === "complete" && (
-                  <CircleCheckIcon className="size-3.5 text-success-foreground" />
-                )}
-                {status === "approval" && (
-                  <ShieldQuestionIcon className="size-3.5 shrink-0 text-warning-foreground" />
-                )}
+                {getStatusIcon()}
               </div>
             </div>
           </DialogTrigger>

@@ -160,7 +160,7 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
   RenameEventType<TypedToolError<TOOLS>, "tool.error">;
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
-    RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
+  RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
 export type TextStreamStartStepEvent = {
   id: string;
   turnId: string;
@@ -180,10 +180,17 @@ export type TextStreamFinishStepEvent = AgentStepStatus & {
   type: "step.finish";
   createdAt: number;
   usage: LanguageModelUsage;
-  performance: StepResultPerformance;
   finishReason: FinishReason;
   rawFinishReason: string | undefined;
   providerMetadata: ProviderMetadata | undefined;
+  metadata?: StepMetadata;
+};
+export type TextStreamStepMetadataEvent = {
+  id: string;
+  turnId: string;
+  type: "step.metadata";
+  createdAt: number;
+  metadata: StepMetadata;
 };
 export type TextStreamStartTurnEvent = {
   id: string;
@@ -236,6 +243,7 @@ export type AgentStreamEvent<TOOLS extends ToolSet> =
   | TextStreamToolOutputDeniedEvent<TOOLS>
   | TextStreamStartStepEvent
   | TextStreamFinishStepEvent
+  | TextStreamStepMetadataEvent
   | TextStreamStartTurnEvent
   | TextStreamFinishTurnEvent
   | TextStreamTitleStartEvent
@@ -441,7 +449,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
   resultProviderMetadata?: ProviderMetadata;
   preliminary?: boolean;
 } & (
-  | {
+    | {
       state: "input-streaming";
       input?: DeepPartial<INPUT> | undefined;
       output?: never;
@@ -449,7 +457,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       approval?: never;
     }
-  | {
+    | {
       state: "input-available";
       input: INPUT;
       output?: never;
@@ -457,7 +465,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       approval?: never;
     }
-  | {
+    | {
       state: "approval-requested";
       input: INPUT;
       output?: never;
@@ -477,7 +485,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-  | {
+    | {
       state: "approval-responded";
       input: INPUT;
       output?: never;
@@ -497,7 +505,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt: number;
       };
     }
-  | {
+    | {
       state: "output-available";
       input: INPUT;
       output: OUTPUT;
@@ -519,7 +527,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-  | {
+    | {
       state: "output-error";
       input: INPUT | undefined;
       rawInput?: unknown;
@@ -541,7 +549,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-  | {
+    | {
       state: "output-denied";
       input: INPUT;
       output?: never;
@@ -561,7 +569,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt: number;
       };
     }
-);
+  );
 
 /**
  * An invocation of a known tool. Deriving it from the tool itself is what lets
@@ -670,6 +678,13 @@ export type AgentPart<TOOLS extends ToolSet> =
   | AgentAssistantPart<TOOLS>
   | AgentCompactionPart;
 
+export type StepMetadata = Record<string, any> & {
+  /**
+   * Unknown while the step is streaming, for the same reason as `usage`.
+   */
+  performance?: StepResultPerformance;
+};
+
 /**
  * Identity and wall-clock bounds, held by both steps and turns: each level
  * starts at a known time, may still be running, and is addressable by id.
@@ -697,11 +712,6 @@ export type AgentStepBase = AgentStepStatus & {
   usage?: LanguageModelUsage;
 
   /**
-   * Unknown while the step is streaming, for the same reason as `usage`.
-   */
-  performance?: StepResultPerformance;
-
-  /**
    * Unknown while the step is streaming, which is why they are optional: the
    * step object exists — and is rendered — before the model has finished, and
    * `status` says whether they are supposed to be there yet.
@@ -709,6 +719,8 @@ export type AgentStepBase = AgentStepStatus & {
   finishReason?: FinishReason;
   rawFinishReason?: string;
   providerMetadata?: ProviderMetadata;
+
+  metadata?: StepMetadata;
 };
 
 export type AgentTurnBase = AgentTurnStatus & {
