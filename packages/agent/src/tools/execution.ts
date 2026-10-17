@@ -108,13 +108,16 @@ export function stripToolExecution(tools: ToolSet): ToolSet {
 /**
  * Runs one step's tool calls, all at once — or holds every one of them back.
  *
- * Each call first goes through `tool:before`. If any of them is answered `ask`,
- * the whole batch is put to the user and nothing runs: the calls of one step are
- * one action, and half of it must not happen while the user is deciding. What
- * comes back then is {@link ExecuteToolCallsResult.awaitingApproval}, holding an
- * outcome for every call a hook refused outright — a refusal is already an
- * answer — and nothing for the calls waiting on the user, which is how the
- * caller can tell which of them are still unanswered.
+ * Each call first goes through `tool:before`, and every handler of it is heard:
+ * a refusal anywhere in the run is the run's answer, so one hook cannot be
+ * talked out of it by another that allowed the call. If any call is left
+ * answered `ask`, the whole batch is put to the user and nothing runs: the calls
+ * of one step are one action, and half of it must not happen while the user is
+ * deciding. What comes back then is
+ * {@link ExecuteToolCallsResult.awaitingApproval}, holding an outcome for every
+ * call a hook refused outright — a refusal is already an answer — and nothing
+ * for the calls waiting on the user, which is how the caller can tell which of
+ * them are still unanswered.
  *
  * Otherwise each call goes through the tool's own `execute` and reports what
  * happened three ways: as a protocol event for the client, as a `tool` message
@@ -127,13 +130,13 @@ export async function executeToolCalls(
 ): Promise<ExecuteToolCallsResult> {
   const plans: ToolCallPlan[] = input.skipApproval
     ? input.toolCalls.map((toolCall) => ({
-      toolCall,
-      decision: { decision: "allow" },
-      startedAt: performance.now(),
-    }))
+        toolCall,
+        decision: { decision: "allow" },
+        startedAt: performance.now(),
+      }))
     : await Promise.all(
-      input.toolCalls.map((toolCall) => planToolCall(toolCall, input))
-    );
+        input.toolCalls.map((toolCall) => planToolCall(toolCall, input))
+      );
 
   // One call to the user holds the batch, `allow` included: the user is asked
   // about the step's calls as a whole or not at all. The refusals still go out
@@ -200,6 +203,35 @@ type ToolCallPlan = {
   startedAt: number;
 };
 
+/**
+ * Folds what every `tool:before` handler said into the one answer the call gets.
+ *
+ * The handlers do not outrank one another — they each hold a veto: a refusal
+ * anywhere in the run is the run's answer, and no later `allow` talks it out of
+ * one. An `ask` stands the same way, since a user answering over a hook's
+ * objection is exactly what a refusal is meant to prevent. Priority only breaks
+ * ties: the first refusal to have been returned is the one whose reason is
+ * reported, and handlers that abstained contribute nothing.
+ */
+function resolveToolBeforeDecision(
+  decisions: readonly ToolBeforeDecision[]
+): ToolBeforeDecision | undefined {
+  const denial = decisions.find((decision) => decision.decision === "deny");
+  if (denial) {
+    return denial;
+  }
+
+  if (decisions.some((decision) => decision.decision === "ask")) {
+    return { decision: "ask" };
+  }
+
+  if (decisions.some((decision) => decision.decision === "allow")) {
+    return { decision: "allow" };
+  }
+
+  return undefined;
+}
+
 async function planToolCall(
   toolCall: AgentToolCall,
   input: ExecuteToolCallsInput
@@ -207,7 +239,7 @@ async function planToolCall(
   const { sessionId, turnId, stepId, messages, hooks, extensionApi } = input;
   const startedAt = performance.now();
 
-  const decision: ToolBeforeDecision | undefined = await hooks.emit(
+  const decisions = await hooks.emitAsyncHooks(
     "tool:before",
     {
       sessionId,
@@ -220,6 +252,7 @@ async function planToolCall(
     },
     extensionApi
   );
+  const decision = resolveToolBeforeDecision(decisions);
 
   if (
     toolCall.toolName === "write-file" ||

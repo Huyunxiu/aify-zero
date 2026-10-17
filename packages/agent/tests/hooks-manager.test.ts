@@ -404,6 +404,97 @@ describe(HooksManager, () => {
     });
   });
 
+  describe("emitAsyncHooks", () => {
+    test("should resolve with every value the handlers returned, in run order", async () => {
+      const hooks = new HooksManager();
+
+      hooks.on("session_start", () => "first");
+      hooks.on("session_start", async () => {
+        await Promise.resolve();
+        return "second";
+      });
+
+      await expect(
+        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+      ).resolves.toStrictEqual(["first", "second"]);
+    });
+
+    test("should drop the handlers that abstained", async () => {
+      const hooks = new HooksManager();
+
+      hooks.on("session_start", () => "kept");
+      hooks.on("session_start", () => {
+        /* abstains */
+      });
+      hooks.on("session_start", () => null);
+
+      await expect(
+        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+      ).resolves.toStrictEqual(["kept"]);
+    });
+
+    test("should drop the handlers that threw", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {
+        /* keep the test output clean */
+      });
+      const hooks = new HooksManager();
+
+      hooks.on("session_start", () => "before");
+      hooks.on("session_start", () => {
+        throw new Error("boom");
+      });
+      hooks.on("session_start", () => "after");
+
+      await expect(
+        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+      ).resolves.toStrictEqual(["before", "after"]);
+      warn.mockRestore();
+    });
+
+    test("should resolve with an empty array when no handler is registered", async () => {
+      const hooks = new HooksManager();
+
+      await expect(
+        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+      ).resolves.toStrictEqual([]);
+    });
+
+    test("should run the handlers in the same order as emit", async () => {
+      const hooks = new HooksManager();
+      const order: string[] = [];
+
+      hooks.on(
+        "session_start",
+        () => {
+          order.push("high");
+          return "high";
+        },
+        { priority: 10 }
+      );
+      hooks.on("session_start", () => {
+        order.push("low");
+        return "low";
+      });
+
+      await expect(
+        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+      ).resolves.toStrictEqual(["high", "low"]);
+      expect(order).toStrictEqual(["high", "low"]);
+    });
+
+    test("should type the results as the handler's R", () => {
+      const hooks = new HooksManager();
+
+      expectTypeOf(
+        hooks.emitAsyncHooks("custom:result", { payload: "hello" }, api)
+      ).toEqualTypeOf<Promise<string[]>>();
+      // An event whose handlers were registered without an `R` keeps `unknown`.
+      expectTypeOf(
+        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+      ).toEqualTypeOf<Promise<unknown[]>>();
+    });
+  });
+
   describe("custom events", () => {
     test("should emit an event registered by declaration merging", async () => {
       const hooks = new HooksManager();

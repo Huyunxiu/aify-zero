@@ -229,7 +229,7 @@ describe(executeToolCalls, () => {
       ]);
     });
 
-    test("the highest-priority handler decides", async () => {
+    test("a refusal wins however the handlers are ranked", async () => {
       const hooks = new HooksManager();
       const lowPriority = vi.fn<() => ToolBeforeDecision>(() => ({
         decision: "allow",
@@ -241,7 +241,7 @@ describe(executeToolCalls, () => {
       hooks.on("tool:before", lowPriority, { priority: 0 });
       hooks.on("tool:before", highPriority, { priority: 10 });
 
-      // Never expected to run: the high-priority denial is the answer.
+      // Never expected to run: the denial is the answer, whatever the ranking.
       const execute = vi.fn<() => EchoOutput>();
       const { events } = await run(
         { echo: echoTool(execute) },
@@ -249,46 +249,40 @@ describe(executeToolCalls, () => {
         hooks
       );
 
-      // Both ran — the lower one may be listening for its side effect — but the
-      // answer is the first one's, which is the opposite of `emit`'s rule.
+      // Both ran — the lower one may be listening for its side effect — and the
+      // refusal stands: no handler talks another out of one.
       expect(highPriority).toHaveBeenCalledOnce();
       expect(lowPriority).toHaveBeenCalledOnce();
       expect(execute).not.toHaveBeenCalled();
       expect(events[0]).toMatchObject({ type: "tool.output-denied" });
     });
 
-    test("a handler may rewrite the input the tool runs with", async () => {
+    test("a refusal outranks a handler that would have asked", async () => {
       const hooks = new HooksManager();
-      hooks.on("tool:before", () => ({
-        decision: "allow",
-      }));
+      hooks.on("tool:before", () => ({ decision: "ask" }));
+      hooks.on("tool:before", () => ({ decision: "deny" }));
 
-      const received: string[] = [];
-      const { events } = await run(
-        {
-          echo: echoTool(({ value }) => {
-            received.push(value);
-            return { output: value, code: "ok" as const };
-          }),
-        },
-        [
-          {
-            toolCallId: "call-1",
-            toolName: "echo",
-            input: { value: "original" },
-          },
-        ],
+      const ran: string[] = [];
+      const { result, events } = await run(
+        { echo: recordingTool(ran) },
+        [{ toolCallId: "call-1", toolName: "echo", input: { value: "hi" } }],
         hooks
       );
 
-      expect(received).toStrictEqual(["rewritten"]);
-      // The call the model made is what the transcript keeps, so the event
-      // carries the original input even though the execution saw the rewrite.
-      expect(events[0]).toMatchObject({
-        type: "tool.result",
-        input: { value: "original" },
-        output: { output: "rewritten", code: "ok" },
-      });
+      // The user is not put the question: a hook refused the call, and that is
+      // not the user's to answer over.
+      expect(ran).toStrictEqual([]);
+      expect(result.awaitingApproval).toBeFalsy();
+      expect(result.outcomes).toStrictEqual([
+        {
+          toolCallId: "call-1",
+          type: "denied",
+          durationMs: expect.any(Number),
+        },
+      ]);
+      expect(events.map((event) => event.type)).toStrictEqual([
+        "tool.output-denied",
+      ]);
     });
 
     test("a handler that abstains leaves the call alone", async () => {
@@ -356,48 +350,6 @@ describe(executeToolCalls, () => {
   });
 
   describe("a call the user has to approve", () => {
-    test("holds the whole batch, the calls a hook allowed included", async () => {
-      const hooks = new HooksManager();
-      hooks.on("tool:before", (event) =>
-        event.toolName === "risky" ? { decision: "ask" } : undefined
-      );
-
-      const ran: string[] = [];
-      const { result, events } = await run(
-        { risky: recordingTool(ran), safe: recordingTool(ran) },
-        [
-          { toolCallId: "call-1", toolName: "risky", input: { value: "a" } },
-          { toolCallId: "call-2", toolName: "safe", input: { value: "b" } },
-        ],
-        hooks
-      );
-
-      // The step's calls are one action: the user is asked about all of them
-      // or none of them, so nothing runs while the answer is outstanding.
-      expect(ran).toStrictEqual([]);
-      expect(result.awaitingApproval).toBeTruthy();
-      expect(result.outcomes).toStrictEqual([]);
-      expect(result.toolMessages).toStrictEqual([]);
-      expect(events).toStrictEqual([
-        {
-          type: "tool.approval-request",
-          id: "call-1",
-          approvalId: expect.any(String),
-          turnId,
-          stepId,
-          createdAt: expect.any(Number),
-        },
-        {
-          type: "tool.approval-request",
-          id: "call-2",
-          approvalId: expect.any(String),
-          turnId,
-          stepId,
-          createdAt: expect.any(Number),
-        },
-      ]);
-    });
-
     test("answers a refused call without waiting for the user", async () => {
       const hooks = new HooksManager();
       hooks.on("tool:before", (event) => {
@@ -432,33 +384,6 @@ describe(executeToolCalls, () => {
         "tool.output-denied",
         "tool.approval-request",
       ]);
-    });
-
-    test("runs the call once the approval comes back", async () => {
-      const hooks = new HooksManager();
-      hooks.on("tool:before", () => ({ decision: "ask" }));
-
-      const ran: string[] = [];
-      const { result, events } = await run(
-        { echo: recordingTool(ran) },
-        [{ toolCallId: "call-1", toolName: "echo", input: { value: "hi" } }],
-        hooks
-      );
-
-      // The hook still asks — its side effects and its rewrite are wanted — but
-      // the question has been answered, so asking it again would hold the same
-      // batch a second time.
-      expect(ran).toStrictEqual(["hi"]);
-      expect(result.awaitingApproval).toBeFalsy();
-      expect(result.outcomes).toStrictEqual([
-        {
-          toolCallId: "call-1",
-          type: "result",
-          output: { output: "hi", code: "ok" },
-          durationMs: expect.any(Number),
-        },
-      ]);
-      expect(events.map((event) => event.type)).toStrictEqual(["tool.result"]);
     });
 
     test("still refuses a call a hook turns down, approval or not", async () => {

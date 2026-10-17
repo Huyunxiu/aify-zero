@@ -60,8 +60,10 @@ export type ToolCallHookEvent = {
 /**
  * What a `tool:before` handler may return. Returning `undefined` (or `null`)
  * abstains, so a handler that only cares about side effects leaves the call as
- * it is. The run's decision is the last one any handler returned, following
- * {@link HooksManager.emit}.
+ * it is. Every handler has a veto: a refusal anywhere in the run is the run's
+ * answer, an `ask` stands over an `allow` — the user is not asked to overrule a
+ * hook — and only a run in which nobody had an opinion leaves the call alone.
+ * See `resolveToolBeforeDecision`, which does the folding.
  */
 export type ToolBeforeDecision =
   | { decision: "allow" }
@@ -147,6 +149,19 @@ export type HookResultOf<K extends HookEventName> =
   | undefined;
 
 /**
+ * Every value the handlers of `K` produced during one run, in the order they
+ * ran. Nullish returns are dropped, so a handler that only cared about side
+ * effects contributes nothing — see {@link HooksManager.emitAsyncHooks}.
+ *
+ * `Exclude` rather than `NonNullable`: the latter collapses `unknown` — the
+ * return type of a handler registered without an `R` — to `{}`.
+ */
+export type HookResultsOf<K extends HookEventName> = Exclude<
+  HookResultOf<K>,
+  null | undefined
+>[];
+
+/**
  * Stored form of a registration: the event type is erased because listeners of
  * every event share one map, and `source` keeps the original handler so that
  * `off` can match it by identity.
@@ -179,7 +194,8 @@ const DEFAULT_PRIORITY = 0;
  *
  * `emit` resolves with the result of the run: the last value a handler
  * returned, since a handler that returns `undefined` or `null` abstains
- * instead of clearing it.
+ * instead of clearing it. `emitAsyncHooks` runs the same handlers but keeps
+ * every value instead of collapsing them into one.
  */
 export class HooksManager {
   private readonly listeners = new Map<string, Listener[]>();
@@ -248,22 +264,57 @@ export class HooksManager {
     event: HookEventOf<K>,
     api: ExtensionAPI
   ): Promise<HookResultOf<K>> {
-    return (await this.dispatch(name, event, api, "last")) as HookResultOf<K>;
+    const results = await this.dispatch(name, event, api);
+    // Walk backwards so the last handler to have an opinion wins; a nullish
+    // value abstains and is skipped rather than clearing an earlier one.
+    for (let i = results.length - 1; i >= 0; i -= 1) {
+      const value = results[i];
+      if (value !== undefined && value !== null) {
+        return value as HookResultOf<K>;
+      }
+    }
+    return undefined;
   }
 
+  /**
+   * Delivers `event` to every handler registered for `name`, exactly like
+   * {@link emit}, and resolves with all of their return values in the order
+   * the handlers ran.
+   *
+   * Where `emit` keeps only the last opinion, this keeps every one of them, so
+   * a caller that needs to collect or merge contributions — rather than pick a
+   * decision — does not have to smuggle an accumulator into a closure.
+   *
+   * Handlers that abstain (`undefined`/`null`) or throw contribute nothing, so
+   * the array can be shorter than the number of handlers.
+   */
+  async emitAsyncHooks<K extends HookEventName>(
+    name: K,
+    event: HookEventOf<K>,
+    api: ExtensionAPI
+  ): Promise<HookResultsOf<K>> {
+    const results = await this.dispatch(name, event, api);
+    return results.filter(
+      (value) => value !== undefined && value !== null
+    ) as HookResultsOf<K>;
+  }
+
+  /**
+   * Runs the handlers of `name` in priority order and returns what each of
+   * them returned, nullish values included. A handler that throws is reported
+   * and skipped, leaving no entry behind.
+   */
   private async dispatch(
     name: string,
     event: HookEventOf<HookEventName>,
-    api: ExtensionAPI,
-    wins: "first" | "last"
-  ): Promise<unknown> {
+    api: ExtensionAPI
+  ): Promise<unknown[]> {
     const listeners = this.listeners.get(name);
     if (!listeners || listeners.length === 0) {
-      return undefined;
+      return [];
     }
 
-    let result: unknown;
-    let decided = false;
+    const results: unknown[] = [];
 
     // Every mutation swaps in a fresh array, so this one stays stable even if
     // a handler subscribes or unsubscribes while we dispatch.
@@ -273,21 +324,13 @@ export class HooksManager {
       }
 
       try {
-        const value = await listener.run(event, api);
-        if (
-          value !== undefined &&
-          value !== null &&
-          (wins === "last" || !decided)
-        ) {
-          result = value;
-          decided = true;
-        }
+        results.push(await listener.run(event, api));
       } catch (error) {
         console.warn(`[hooks] "${name}" handler failed:`, error);
       }
     }
 
-    return result;
+    return results;
   }
 
   private add<K extends HookEventName>(
