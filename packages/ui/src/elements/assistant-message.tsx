@@ -4,6 +4,7 @@ import type {
   AgentAssistantTurn,
   AgentPart,
   AgentTextPart,
+  AgentToolPart,
 } from "@workspace/agent-client";
 import {
   BrainIcon,
@@ -22,10 +23,12 @@ import {
 
 import {
   AgentActivity,
+  AgentActivityApproval,
   AgentActivityContent,
   AgentActivityHeader,
   AgentActivityStep,
 } from "../components/ai-elements/chain-of-turn";
+import { Button } from "../components/button";
 import { CopyButton } from "../components/copy-button";
 import {
   Frame,
@@ -51,11 +54,10 @@ import {
 } from "./message";
 import {
   formatDuration,
-  getToolApproval,
   getPartDurationMs,
   getPartStatus,
   getPartSummary,
-  summarizeTurnRows,
+  summarizeTurn,
 } from "./tool-step";
 import type { StepRow } from "./tool-step";
 
@@ -250,13 +252,42 @@ export const AssistantMessage = ({
 
   const { answerPart, parts } = splitAssistantMessageSteps(turn);
 
+  const getInlineToolApprovalComponent = (part: AgentToolPart) => {
+    if (!part.approval) {
+      return;
+    }
+
+    return (
+      <FramePanel className="rounded-t-none -mt-1 px-2.5 py-2.5">
+        <div className="flex items-center gap-2">
+          <Button
+            variant={part.approval.approved === true ? "success" : "default"}
+            onClick={() => onRespondToolApproval?.(part.approval!.id, true)}
+            size="sm"
+          >
+            {part.approval.approved ? "Approved" : "Approve"}
+          </Button>
+          {part.approval.approved === undefined && (
+            <Button
+              onClick={() => onRespondToolApproval?.(part.approval!.id, false)}
+              size="sm"
+              variant="outline"
+            >
+              Deny
+            </Button>
+          )}
+        </div>
+      </FramePanel>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4 group">
       <AgentActivity defaultExpanded={new Set(["root"])}>
         <AgentActivityHeader
           path="root"
           loading={isRunning}
-          summary={summarizeTurnRows(parts)}
+          summary={summarizeTurn(parts)}
           duration={<TurnElapsed turn={turn} />}
         >
           {TURN_HEADING[turn.status]}
@@ -268,12 +299,6 @@ export const AssistantMessage = ({
             const durationMs = getPartDurationMs(part, step);
             const duration =
               durationMs === undefined ? undefined : formatDuration(durationMs);
-            const approval = getToolApproval(part);
-            const respondApproval =
-              approval && onRespondToolApproval
-                ? (approvalId: string, approved: boolean) =>
-                    onRespondToolApproval(approvalId, approved)
-                : undefined;
 
             if (part.type === "text") {
               return (
@@ -281,8 +306,6 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={TextIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
                   label={getStepLabel("Note", getPureTextLabel(part.text, ""))}
                   status={status}
                   summary={summary}
@@ -319,8 +342,6 @@ export const AssistantMessage = ({
                   key={i}
                   path={`${i}`}
                   icon={BrainIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
                   label={getStepLabel(
                     "Reasoning",
                     getPureTextLabel(part.text, "")
@@ -358,559 +379,631 @@ export const AssistantMessage = ({
               );
             } else if (part.type === "tool-read-file") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={EyeIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Read", part.input?.path)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={EyeIcon}
+                    label={getStepLabel("Read", part.input?.path)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>Read</FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>Read</FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
-                      </div>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <div className="whitespace-pre">
+                          {part.output?.output ?? ""}
+                        </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             } else if (part.type === "tool-write-file") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={FilePlusIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Create", part.input?.path)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={FilePlusIcon}
+                    label={getStepLabel("Create", part.input?.path)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>Create</FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>Create</FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
-                      </div>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <div className="whitespace-pre">
+                          {part.output?.output ?? ""}
+                        </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             } else if (part.type === "tool-delete-file") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={Trash2Icon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Delete", part.input?.path)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={Trash2Icon}
+                    label={getStepLabel("Delete", part.input?.path)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>Delete</FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>Delete</FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
-                      </div>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <div className="whitespace-pre">
+                          {part.output?.output ?? ""}
+                        </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             } else if (part.type === "tool-edit-file") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={FilePenIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Edit", part.input?.path)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={FilePenIcon}
+                    label={getStepLabel("Edit", part.input?.path)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>Edit</FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>Edit</FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">DIFF</div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">DIFF</div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre-wrap wrap-break-word font-mono text-xs">
-                        {editDiffLines(
-                          part.input?.old_string ?? "",
-                          part.input?.new_string ?? ""
-                        ).map((line, j) => (
-                          <div
-                            key={j}
-                            className={
-                              line.sign === "-"
-                                ? "text-destructive"
-                                : "text-green-600"
-                            }
-                          >
-                            {line.sign}
-                            {line.text}
-                          </div>
-                        ))}
+                      <FramePanel>
+                        <div className="whitespace-pre-wrap wrap-break-word font-mono text-xs">
+                          {editDiffLines(
+                            part.input?.old_string ?? "",
+                            part.input?.new_string ?? ""
+                          ).map((line, j) => (
+                            <div
+                              key={j}
+                              className={
+                                line.sign === "-"
+                                  ? "text-destructive"
+                                  : "text-green-600"
+                              }
+                            >
+                              {line.sign}
+                              {line.text}
+                            </div>
+                          ))}
+                        </div>
+                      </FramePanel>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
-                      </div>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <div className="whitespace-pre">
+                          {part.output?.output ?? ""}
+                        </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             } else if (part.type === "tool-grep") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={SearchIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Grep", part.input?.pattern)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={SearchIcon}
+                    label={getStepLabel("Grep", part.input?.pattern)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>Grep</FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>Grep</FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
-                      </div>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <div className="whitespace-pre">
+                          {part.output?.output ?? ""}
+                        </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             } else if (part.type === "tool-glob") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={FolderSearchIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Glob", part.input?.pattern)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={FolderSearchIcon}
+                    label={getStepLabel("Glob", part.input?.pattern)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>Glob</FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>Glob</FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
-                      </div>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <div className="whitespace-pre">
+                          {part.output?.output ?? ""}
+                        </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             } else if (part.type === "tool-web-fetch") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={GlobeIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Fetch", part.input?.url)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={GlobeIcon}
+                    label={getStepLabel("Fetch", part.input?.url)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>Fetch</FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>Fetch</FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
-                      </div>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <div className="whitespace-pre">
+                          {part.output?.output ?? ""}
+                        </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             } else if (part.type === "tool-load-skill") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={SparklesIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Load skill", part.input?.skill)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={SparklesIcon}
+                    label={getStepLabel("Load skill", part.input?.skill)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>Load skill {part.input?.skill}</FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>Load skill {part.input?.skill}</FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <MessageResponse controls={FRAME_CONTROLS}>
-                        {part.output?.output ?? ""}
-                      </MessageResponse>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <MessageResponse controls={FRAME_CONTROLS}>
+                          {part.output?.output ?? ""}
+                        </MessageResponse>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             } else if (part.type === "tool-bash") {
               return (
-                <AgentActivityStep
-                  key={i}
-                  path={`${i}`}
-                  icon={SquareTerminalIcon}
-                  approval={approval}
-                  onRespondApproval={respondApproval}
-                  label={getStepLabel("Bash", part.input?.description)}
-                  status={status}
-                  summary={summary}
-                  duration={duration}
-                >
-                  <Frame
-                    variant="default"
-                    maxHeight={STEP_FRAME_MAX_HEIGHT}
-                    overflowBehavior="scroll"
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={SquareTerminalIcon}
+                    label={getStepLabel("Bash", part.input?.description)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
                   >
-                    <FrameHeader>
-                      <FrameTitle>
-                        {getStepLabel("Bash", part.input?.description)}
-                      </FrameTitle>
-                    </FrameHeader>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">INPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={JSON.stringify(part.input, null, 2) ?? ""}
-                        />
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>
+                          {getStepLabel("Bash", part.input?.description)}
+                        </FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {JSON.stringify(part.input, null, 2) ?? ""}
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
                       </div>
-                    </FramePanel>
-                    <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                      <div className="text-muted-foreground">OUTPUT</div>
-                      <div>
-                        <CopyButton
-                          className="text-muted-foreground"
-                          size="icon-sm"
-                          variant="ghost"
-                          label="Copy"
-                          message={part.output?.output ?? ""}
-                        />
-                      </div>
-                    </div>
-                    <FramePanel>
-                      <div className="whitespace-pre">
-                        {part.output?.output ?? ""}
-                      </div>
-                    </FramePanel>
-                    {renderToolError(part)}
-                  </Frame>
-                </AgentActivityStep>
+                      <FramePanel>
+                        <div className="whitespace-pre">
+                          {part.output?.output ?? ""}
+                        </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
               );
             }
             return null;

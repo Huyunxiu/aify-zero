@@ -342,52 +342,6 @@ export type RowApproval = {
 };
 
 /**
- * The approval a row is showing, or undefined for a row with nothing to answer.
- *
- * Only the states that can still be answered, or that record an answer, are
- * surfaced. A call that has run shows its result instead — an approval badge
- * beside it would be history nobody asked to see again, and, worse, an open
- * question mark beside a call that already happened.
- */
-export const getToolApproval = (
-  part: AgentPart<AgentToolSet>
-): RowApproval | undefined => {
-  if (!isAgentToolPart(part)) {
-    return undefined;
-  }
-
-  switch (part.state) {
-    case "approval-requested":
-    case "approval-responded": {
-      return part.approval;
-    }
-    case "output-denied": {
-      // The refusal lives on the state, not on the approval: a denial comes
-      // back as a result, and the protocol never wrote the decision onto the
-      // request it answers. Filling it in here is what stops the panel offering
-      // the buttons again for a call that has already been turned down.
-      return { ...part.approval, approved: false };
-    }
-    case "output-available":
-    case "output-error": {
-      // A response the stream reported before the result arrived: worth keeping
-      // on screen, but only when it actually named a decision. The protocol
-      // never echoes a decision back for a call that ran, so an approval with
-      // no `approved` here is the open request that the state has already
-      // outgrown.
-      return part.approval?.approved === true ? part.approval : undefined;
-    }
-    case "input-available":
-    case "input-streaming": {
-      return undefined;
-    }
-    default: {
-      return undefined;
-    }
-  }
-};
-
-/**
  * How long a row took, in milliseconds, or undefined when that is not known.
  *
  * A tool row uses the runtime's own `toolExecutionMs`, keyed by tool call id,
@@ -459,7 +413,7 @@ export const formatDuration = (ms: number): string => {
  * Files are counted by distinct path, so editing one file five times reads as
  * one file changed.
  */
-export const summarizeTurnRows = (rows: StepRow[]): string | undefined => {
+export const summarizeTurn = (rows: StepRow[]): string | undefined => {
   const toolParts = rows
     .map((row) => row.part)
     .filter((part) => isAgentToolPart(part));

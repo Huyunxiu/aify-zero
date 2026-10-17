@@ -8,8 +8,7 @@ import {
   getPartDurationMs,
   getPartStatus,
   getPartSummary,
-  getToolApproval,
-  summarizeTurnRows,
+  summarizeTurn,
 } from "../src/elements/tool-step";
 
 /**
@@ -444,75 +443,6 @@ describe(getPartSummary, () => {
   });
 });
 
-describe(getToolApproval, () => {
-  test("should surface an open request so it can be answered", () => {
-    const approval = { id: "ap-1", createdAt: 1000 };
-    expect(
-      getToolApproval(
-        part({ type: "tool-bash", state: "approval-requested", approval })
-      )
-    ).toBe(approval);
-  });
-
-  test("should surface an answered request so the answer stays on screen", () => {
-    const approval = { id: "ap-1", approved: false, createdAt: 1000 };
-    expect(
-      getToolApproval(
-        part({ type: "tool-bash", state: "approval-responded", approval })
-      )
-    ).toBe(approval);
-  });
-
-  test("should surface a denied call's approval as denied", () => {
-    // The denial is the state's: the protocol reports it as a result and never
-    // writes it back onto the request, so the row fills it in — otherwise the
-    // panel would offer the buttons again for a call already turned down.
-    const approval = { id: "ap-1", createdAt: 1000 };
-    expect(
-      getToolApproval(
-        part({ type: "tool-bash", state: "output-denied", approval })
-      )
-    ).toStrictEqual({ id: "ap-1", approved: false, createdAt: 1000 });
-  });
-
-  test("should ask again for nothing once the call has run", () => {
-    // The approval was never echoed back, so only the state says the call is
-    // over — an unanswered-looking panel beside a finished call is the bug this
-    // guards against.
-    expect(
-      getToolApproval(
-        part({
-          type: "tool-bash",
-          state: "output-available",
-          output: { code: "ok", output: "" },
-          approval: { id: "ap-1", createdAt: 1000 },
-        })
-      )
-    ).toBeUndefined();
-  });
-
-  test("should keep a decision the stream did report on a finished call", () => {
-    const approval = { id: "ap-1", approved: true, createdAt: 1000 };
-    expect(
-      getToolApproval(
-        part({
-          type: "tool-bash",
-          state: "output-available",
-          output: { code: "ok", output: "" },
-          approval,
-        })
-      )
-    ).toBe(approval);
-  });
-
-  test("should show nothing for a part with no approval to answer", () => {
-    expect(
-      getToolApproval(part({ type: "tool-bash", state: "input-available" }))
-    ).toBeUndefined();
-    expect(getToolApproval(part({ type: "text", text: "hi" }))).toBeUndefined();
-  });
-});
-
 describe(getPartDurationMs, () => {
   test("should use the runtime's per-call figure when it recorded one", () => {
     const call = part({
@@ -630,10 +560,10 @@ describe(formatDuration, () => {
   });
 });
 
-describe(summarizeTurnRows, () => {
+describe(summarizeTurn, () => {
   test("should say nothing for a turn that called no tools", () => {
     expect(
-      summarizeTurnRows([
+      summarizeTurn([
         { part: part({ type: "text", text: "hi" }), step: step() },
       ])
     ).toBeUndefined();
@@ -644,7 +574,7 @@ describe(summarizeTurnRows, () => {
       { part: doneTool("tool-read-file", {}), step: step() },
       { part: doneTool("tool-glob", {}), step: step() },
     ];
-    expect(summarizeTurnRows(rows)).toBe("2 tools");
+    expect(summarizeTurn(rows)).toBe("2 tools");
   });
 
   test("should count distinct files, not edit calls", () => {
@@ -662,7 +592,7 @@ describe(summarizeTurnRows, () => {
         step: step(),
       },
     ];
-    expect(summarizeTurnRows(rows)).toBe("3 tools · 2 files changed");
+    expect(summarizeTurn(rows)).toBe("3 tools · 2 files changed");
   });
 
   test("should not count a read as a changed file", () => {
@@ -672,7 +602,7 @@ describe(summarizeTurnRows, () => {
         step: step(),
       },
     ];
-    expect(summarizeTurnRows(rows)).toBe("1 tool");
+    expect(summarizeTurn(rows)).toBe("1 tool");
   });
 
   test("should count failures and denials", () => {
@@ -691,7 +621,7 @@ describe(summarizeTurnRows, () => {
       },
       { part: doneTool("tool-read-file", {}), step: step() },
     ];
-    expect(summarizeTurnRows(rows)).toBe("3 tools · 2 failed");
+    expect(summarizeTurn(rows)).toBe("3 tools · 2 failed");
   });
 
   test("should say how much of the turn is waiting on the user", () => {
@@ -706,6 +636,6 @@ describe(summarizeTurnRows, () => {
       },
       { part: doneTool("tool-read-file", {}), step: step() },
     ];
-    expect(summarizeTurnRows(rows)).toBe("2 tools · 1 awaiting approval");
+    expect(summarizeTurn(rows)).toBe("2 tools · 1 awaiting approval");
   });
 });
