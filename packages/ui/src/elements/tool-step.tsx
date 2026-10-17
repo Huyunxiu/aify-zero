@@ -1,6 +1,8 @@
 import type { AgentToolSet } from "@workspace/agent";
 import {
+  isAgentReasoningPart,
   isAgentStaticToolPart,
+  isAgentTextPart,
   isAgentToolPart,
 } from "@workspace/agent-client";
 import type {
@@ -56,7 +58,7 @@ const TOOL_STATE_STATUS: Record<ResolvedToolState, StepRowStatus> = {
   "output-error": "failed",
 };
 
-export const getRowStatus = (part: AgentPart<AgentToolSet>): StepRowStatus => {
+export const getPartStatus = (part: AgentPart<AgentToolSet>): StepRowStatus => {
   if (isAgentToolPart(part)) {
     if (part.state === "approval-requested") {
       // A call a policy approves on its own is not waiting on the user, so it
@@ -189,7 +191,7 @@ const editedPath = (
  * types, but turns persisted before those tools carried metadata are already in
  * the database without it, and they have to render.
  */
-export const getRowSummary = (
+export const getPartSummary = (
   part: AgentPart<AgentToolSet>
 ): ReactNode | undefined => {
   if (isAgentToolPart(part) && part.state === "approval-requested") {
@@ -347,7 +349,7 @@ export type RowApproval = {
  * beside it would be history nobody asked to see again, and, worse, an open
  * question mark beside a call that already happened.
  */
-export const getRowApproval = (
+export const getToolApproval = (
   part: AgentPart<AgentToolSet>
 ): RowApproval | undefined => {
   if (!isAgentToolPart(part)) {
@@ -386,11 +388,10 @@ export const getRowApproval = (
 };
 
 /**
- * How long a tool call took, in milliseconds, or undefined when that is not
- * known.
+ * How long a row took, in milliseconds, or undefined when that is not known.
  *
- * The only figure used is the runtime's own `toolExecutionMs`, keyed by tool
- * call id, which times the call's execution and nothing else.
+ * A tool row uses the runtime's own `toolExecutionMs`, keyed by tool call id,
+ * which times the call's execution and nothing else.
  *
  * There is deliberately no fallback to the step's `createdAt`/`completedAt`
  * span. That span also covers the model writing the call, so it overstates
@@ -399,16 +400,30 @@ export const getRowApproval = (
  * an entry (an invalid call, and one whose approval was denied, are never
  * executed), and a running one has none because `performance` only lands when
  * the step finishes; both are left blank.
+ *
+ * A text or reasoning row is timed by the part itself, whose span is the whole
+ * of what it measures: it starts with the text and ends with the stream. A part
+ * the stream never ended has no `completedAt` and is left blank, as is one from
+ * a transcript written before the part carried times at all — a `NaN` in the
+ * column is the wrong number this function exists to refuse.
  */
-export const getToolDurationMs = (
+export const getPartDurationMs = (
   part: AgentPart<AgentToolSet>,
   step: StepRow["step"]
 ): number | undefined => {
-  if (!isAgentToolPart(part)) {
-    return undefined;
+  if (isAgentToolPart(part)) {
+    return step.metadata?.performance?.toolExecutionMs?.[part.toolCallId];
   }
 
-  return step.metadata?.performance?.toolExecutionMs?.[part.toolCallId];
+  if (isAgentTextPart(part) || isAgentReasoningPart(part)) {
+    if (part.completedAt === undefined || !Number.isFinite(part.createdAt)) {
+      return undefined;
+    }
+
+    return part.completedAt - part.createdAt;
+  }
+
+  return undefined;
 };
 
 /** A compact duration: `850ms`, `4.2s`, `42s`, `3m 07s`, `1h 12m`. */
@@ -464,12 +479,12 @@ export const summarizeTurnRows = (rows: StepRow[]): string | undefined => {
   }
 
   const failed = rows.filter((row) => {
-    const status = getRowStatus(row.part);
+    const status = getPartStatus(row.part);
     return status === "failed" || status === "denied";
   }).length;
 
   const awaiting = rows.filter(
-    (row) => getRowStatus(row.part) === "approval"
+    (row) => getPartStatus(row.part) === "approval"
   ).length;
 
   const summary = [

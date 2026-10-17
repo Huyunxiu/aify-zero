@@ -76,6 +76,7 @@ export default defineConfig({
       "typescript/no-unsafe-argument": "allow",
       "typescript/no-empty-interface": "allow",
       "unicorn/filename-case": "allow",
+      "unicorn/empty-brace-spaces": "allow",
     },
   },
   run: {

@@ -132,6 +132,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
           text: "",
           providerMetadata: event.providerMetadata,
           state: "streaming",
+          createdAt: event.createdAt,
         };
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
         this.pendingParts.set(uk, part);
@@ -146,6 +147,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         const part = this.pendingParts.get(uk) as AgentTextPart | undefined;
         if (part) {
           part.text += event.text;
+          part.completedAt = event.createdAt;
           part.providerMetadata =
             event.providerMetadata ?? part.providerMetadata;
         }
@@ -156,6 +158,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         const part = this.pendingParts.get(uk) as AgentTextPart | undefined;
         if (part) {
           part.state = "done";
+          part.completedAt = event.createdAt;
           part.providerMetadata =
             event.providerMetadata ?? part.providerMetadata;
           this.pendingParts.delete(uk);
@@ -180,6 +183,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
           text: "",
           providerMetadata: event.providerMetadata,
           state: "streaming",
+          createdAt: event.createdAt,
         };
         const uk = `${event.turnId}-${event.stepId}-${event.id}`;
         this.pendingParts.set(uk, part);
@@ -196,6 +200,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
           | undefined;
         if (part) {
           part.text += event.text;
+          part.completedAt = event.createdAt;
           part.providerMetadata =
             event.providerMetadata ?? part.providerMetadata;
         }
@@ -208,6 +213,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
           | undefined;
         if (part) {
           part.state = "done";
+          part.completedAt = event.createdAt;
           part.providerMetadata =
             event.providerMetadata ?? part.providerMetadata;
           this.pendingParts.delete(uk);
@@ -567,9 +573,15 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       step.status = outcome;
     }
 
+    // These parts are ended here rather than by their own `*`.end event, so
+    // there is no event time to take: the clock is read instead. Leaving
+    // `completedAt` off a part that is already `"done"` would make the two
+    // states indistinguishable to a reader that goes by the time alone.
+    const now = Date.now();
     for (const part of this.pendingParts.values()) {
       if (isAgentTextPart(part) || isAgentReasoningPart(part)) {
         part.state = "done";
+        part.completedAt = now;
       }
     }
   }

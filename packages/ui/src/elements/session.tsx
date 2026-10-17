@@ -209,7 +209,10 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     },
   });
 
-  const models = getSettingsQuery.data?.models ?? [];
+  const models = React.useMemo(
+    () => getSettingsQuery.data?.models ?? [],
+    [getSettingsQuery.data?.models]
+  );
   const [selectedModelId, setSelectedModelId] = React.useState<
     string | undefined
   >(() => localStorage.getItem(LOCAL_STORAGE_KEYS.MODEL_ID) ?? undefined);
@@ -284,9 +287,7 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
           // An answer to a held call travels with the turn it answers. Its
           // presence is what makes the new stream a resumption: the server runs
           // the calls it names before asking the model anything again.
-          approvals: options.approvals as
-            | TextStreamToolApprovalResponseEvent[]
-            | undefined,
+          approvals: options.approvals,
         },
         { signal: options.abortSignal }
       );
@@ -407,6 +408,7 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     parts.push({
       type: "text",
       text: message.text,
+      createdAt: Date.now(),
     });
 
     // A user turn wraps exactly one user step, and the two are separate levels

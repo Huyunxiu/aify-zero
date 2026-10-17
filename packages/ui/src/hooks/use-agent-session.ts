@@ -17,6 +17,7 @@ export type UseAgentSessionOptions = {
       sessionId: string;
       turns: AgentTurn<AgentToolSet>[];
       abortSignal: AbortSignal;
+      approvals?: TextStreamToolApprovalResponseEvent[];
     } & Record<string, unknown>
   ) => Promise<ReadableStream | undefined>;
   /**
@@ -306,10 +307,10 @@ export function createAgentSessionStore({
   ): (() => void) =>
     throttleMs > 0
       ? throttle((): void => {
-        if (active === controller) {
-          commit();
-        }
-      }, throttleMs)
+          if (active === controller) {
+            commit();
+          }
+        }, throttleMs)
       : commit;
 
   /**

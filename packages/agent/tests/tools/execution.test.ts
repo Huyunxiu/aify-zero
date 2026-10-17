@@ -56,8 +56,7 @@ const slowTool = (name: string, ms: number) =>
 function run(
   tools: ToolSet,
   toolCalls: AgentToolCall[],
-  hooks = new HooksManager(),
-  approvedToolCallIds?: ReadonlySet<string>
+  hooks = new HooksManager()
 ) {
   const events: AgentStreamEvent<AgentToolSet>[] = [];
 
@@ -71,7 +70,6 @@ function run(
     context,
     hooks,
     extensionApi: {},
-    approvedToolCallIds,
     write: (event) => {
       events.push(event);
       return Promise.resolve();
@@ -295,7 +293,7 @@ describe(executeToolCalls, () => {
 
     test("a handler that abstains leaves the call alone", async () => {
       const hooks = new HooksManager();
-      hooks.on("tool:before", () => { });
+      hooks.on("tool:before", () => {});
 
       const { events } = await run(
         {
@@ -444,8 +442,7 @@ describe(executeToolCalls, () => {
       const { result, events } = await run(
         { echo: recordingTool(ran) },
         [{ toolCallId: "call-1", toolName: "echo", input: { value: "hi" } }],
-        hooks,
-        new Set(["call-1"])
+        hooks
       );
 
       // The hook still asks — its side effects and its rewrite are wanted — but
@@ -472,8 +469,7 @@ describe(executeToolCalls, () => {
       const { result } = await run(
         { echo: recordingTool(ran) },
         [{ toolCallId: "call-1", toolName: "echo", input: { value: "hi" } }],
-        hooks,
-        new Set(["call-1"])
+        hooks
       );
 
       expect(ran).toStrictEqual([]);
@@ -655,5 +651,153 @@ describe("the synthesized events", () => {
     );
 
     await expect(buildPart(events)).resolves.toBe("output-denied");
+  });
+});
+
+describe("the timing on text and reasoning parts", () => {
+  /** A builder holding one assistant turn with one empty assistant step. */
+  async function buildEmptyStep(): Promise<AgentTurnBuilder<AgentToolSet>> {
+    const builder = new AgentTurnBuilder<AgentToolSet>({ turns: [] });
+
+    await builder.push({
+      type: "turn.start",
+      id: turnId,
+      turnType: "assistant",
+      createdAt: 0,
+    });
+    await builder.push({
+      type: "step.start",
+      id: stepId,
+      stepType: "assistant",
+      model: "test-model",
+      turnId,
+      createdAt: 0,
+    });
+
+    return builder;
+  }
+
+  /** The step's parts, which are what the events above landed on. */
+  // oxlint-disable-next-line unicorn/consistent-function-scoping
+  const stepContent = (builder: AgentTurnBuilder<AgentToolSet>) => {
+    const step = builder.turns[0]?.content[0];
+    return step && "content" in step ? step.content : [];
+  };
+
+  test("stamp a text part with the times it started and ended", async () => {
+    const builder = await buildEmptyStep();
+
+    await builder.push({
+      type: "text.start",
+      id: "text-1",
+      turnId,
+      stepId,
+      createdAt: 100,
+    });
+    await builder.push({
+      type: "text.delta",
+      id: "text-1",
+      turnId,
+      stepId,
+      createdAt: 150,
+      text: "hi",
+    });
+    await builder.push({
+      type: "text.end",
+      id: "text-1",
+      turnId,
+      stepId,
+      createdAt: 200,
+    });
+
+    expect(stepContent(builder)).toStrictEqual([
+      {
+        type: "text",
+        text: "hi",
+        state: "done",
+        createdAt: 100,
+        completedAt: 200,
+        // No event carried any, and the part holds the key either way.
+        providerMetadata: undefined,
+      },
+    ]);
+  });
+
+  test("stamp a reasoning part the same way", async () => {
+    const builder = await buildEmptyStep();
+
+    await builder.push({
+      type: "reasoning.start",
+      id: "reasoning-1",
+      turnId,
+      stepId,
+      createdAt: 100,
+    });
+    await builder.push({
+      type: "reasoning.delta",
+      id: "reasoning-1",
+      turnId,
+      stepId,
+      createdAt: 150,
+      text: "hmm",
+    });
+    await builder.push({
+      type: "reasoning.end",
+      id: "reasoning-1",
+      turnId,
+      stepId,
+      createdAt: 200,
+    });
+
+    expect(stepContent(builder)).toStrictEqual([
+      {
+        type: "reasoning",
+        text: "hmm",
+        state: "done",
+        createdAt: 100,
+        completedAt: 200,
+        providerMetadata: undefined,
+      },
+    ]);
+  });
+
+  test("leave a part still streaming without a completion time", async () => {
+    const builder = await buildEmptyStep();
+
+    await builder.push({
+      type: "text.start",
+      id: "text-1",
+      turnId,
+      stepId,
+      createdAt: 100,
+    });
+
+    const [part] = stepContent(builder);
+    expect(part).toMatchObject({ state: "streaming", createdAt: 100 });
+    expect(part).not.toHaveProperty("completedAt");
+  });
+
+  test("time a part the stream never ended, so a settled one is not read as streaming", async () => {
+    const builder = await buildEmptyStep();
+
+    await builder.push({
+      type: "text.start",
+      id: "text-1",
+      turnId,
+      stepId,
+      createdAt: 100,
+    });
+
+    const before = Date.now();
+    builder.settle("aborted");
+    const after = Date.now();
+
+    const [part] = stepContent(builder);
+    expect(part).toMatchObject({ state: "done", createdAt: 100 });
+
+    const completedAt =
+      part && "completedAt" in part ? part.completedAt : undefined;
+    expect(completedAt).toBeGreaterThanOrEqual(before);
+    expect(completedAt).toBeLessThanOrEqual(after);
   });
 });

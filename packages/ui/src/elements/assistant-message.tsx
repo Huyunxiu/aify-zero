@@ -51,10 +51,10 @@ import {
 } from "./message";
 import {
   formatDuration,
-  getRowApproval,
-  getRowStatus,
-  getRowSummary,
-  getToolDurationMs,
+  getToolApproval,
+  getPartDurationMs,
+  getPartStatus,
+  getPartSummary,
   summarizeTurnRows,
 } from "./tool-step";
 import type { StepRow } from "./tool-step";
@@ -149,25 +149,24 @@ const editDiffLines = (oldString: string, newString: string) => [
  * how long it took.
  */
 const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
-  const stepRows: StepRow[] = turn.content.flatMap((step) =>
+  const parts: StepRow[] = turn.content.flatMap((step) =>
     step.content.map((part) => ({
       part: part as AgentPart<AgentToolSet>,
       step,
     }))
   );
 
-  const answerRowIndex =
-    stepRows.at(-1)?.part.type === "text" ? stepRows.length - 1 : -1;
+  const answerPartIndex =
+    parts.at(-1)?.part.type === "text" ? parts.length - 1 : -1;
   const answerPart =
-    answerRowIndex === -1
+    answerPartIndex === -1
       ? undefined
-      : (stepRows[answerRowIndex]?.part as AgentTextPart | undefined);
+      : (parts[answerPartIndex]?.part as AgentTextPart | undefined);
   return {
     // A turn with no text at all — one still running, or one that failed
     // mid-tool — has no answer to hold back, so every row is a step. Slicing to
     // a `-1` index would silently drop the last of them.
-    stepRows:
-      answerRowIndex === -1 ? stepRows : stepRows.slice(0, answerRowIndex),
+    parts: answerPartIndex === -1 ? parts : parts.slice(0, answerPartIndex),
     answerPart,
   };
 };
@@ -249,7 +248,7 @@ export const AssistantMessage = ({
   const isTouch = useTouchPrimary();
   const isRunning = turn.status === "streaming";
 
-  const { answerPart, stepRows } = splitAssistantMessageSteps(turn);
+  const { answerPart, parts } = splitAssistantMessageSteps(turn);
 
   return (
     <div className="flex flex-col gap-4 group">
@@ -257,19 +256,19 @@ export const AssistantMessage = ({
         <AgentActivityHeader
           path="root"
           loading={isRunning}
-          summary={summarizeTurnRows(stepRows)}
+          summary={summarizeTurnRows(parts)}
           duration={<TurnElapsed turn={turn} />}
         >
           {TURN_HEADING[turn.status]}
         </AgentActivityHeader>
         <AgentActivityContent path="root">
-          {stepRows.map(({ part, step }, i) => {
-            const status = getRowStatus(part);
-            const summary = getRowSummary(part);
-            const durationMs = getToolDurationMs(part, step);
+          {parts.map(({ part, step }, i) => {
+            const status = getPartStatus(part);
+            const summary = getPartSummary(part);
+            const durationMs = getPartDurationMs(part, step);
             const duration =
               durationMs === undefined ? undefined : formatDuration(durationMs);
-            const approval = getRowApproval(part);
+            const approval = getToolApproval(part);
             const respondApproval =
               approval && onRespondToolApproval
                 ? (approvalId: string, approved: boolean) =>

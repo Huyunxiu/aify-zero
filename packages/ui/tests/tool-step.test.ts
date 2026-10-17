@@ -5,10 +5,10 @@ import { describe, expect, test } from "vitest";
 import type { StepRow } from "../src/elements/tool-step";
 import {
   formatDuration,
-  getRowApproval,
-  getRowStatus,
-  getRowSummary,
-  getToolDurationMs,
+  getPartDurationMs,
+  getPartStatus,
+  getPartSummary,
+  getToolApproval,
   summarizeTurnRows,
 } from "../src/elements/tool-step";
 
@@ -49,22 +49,22 @@ const doneTool = (
     ...extra,
   });
 
-describe(getRowStatus, () => {
+describe(getPartStatus, () => {
   test("should report a tool that has not been called yet as running", () => {
     expect(
-      getRowStatus(part({ type: "tool-read-file", state: "input-streaming" }))
+      getPartStatus(part({ type: "tool-read-file", state: "input-streaming" }))
     ).toBe("running");
   });
 
   test("should report a tool that is executing as running", () => {
     expect(
-      getRowStatus(part({ type: "tool-read-file", state: "input-available" }))
+      getPartStatus(part({ type: "tool-read-file", state: "input-available" }))
     ).toBe("running");
   });
 
   test("should report a tool that returned a result as complete", () => {
     expect(
-      getRowStatus(
+      getPartStatus(
         part({
           type: "tool-read-file",
           state: "output-available",
@@ -78,7 +78,7 @@ describe(getRowStatus, () => {
     // Glob and read-file resolve `code: "error"` for a bad path, so the part
     // stays in `output-available` — reading only `state` would call it complete.
     expect(
-      getRowStatus(
+      getPartStatus(
         part({
           type: "tool-glob",
           state: "output-available",
@@ -90,7 +90,7 @@ describe(getRowStatus, () => {
 
   test("should report a tool that threw as failed", () => {
     expect(
-      getRowStatus(
+      getPartStatus(
         part({ type: "tool-bash", state: "output-error", errorText: "boom" })
       )
     ).toBe("failed");
@@ -98,13 +98,13 @@ describe(getRowStatus, () => {
 
   test("should report a tool that was denied as denied", () => {
     expect(
-      getRowStatus(part({ type: "tool-bash", state: "output-denied" }))
+      getPartStatus(part({ type: "tool-bash", state: "output-denied" }))
     ).toBe("denied");
   });
 
   test("should report a call held for the user as awaiting approval", () => {
     expect(
-      getRowStatus(
+      getPartStatus(
         part({
           type: "tool-bash",
           state: "approval-requested",
@@ -118,7 +118,7 @@ describe(getRowStatus, () => {
     // The auto-approval is not the user's to give, so the row is work under
     // way rather than a question.
     expect(
-      getRowStatus(
+      getPartStatus(
         part({
           type: "tool-bash",
           state: "approval-requested",
@@ -130,7 +130,7 @@ describe(getRowStatus, () => {
 
   test("should read an answered approval as the answer", () => {
     expect(
-      getRowStatus(
+      getPartStatus(
         part({
           type: "tool-bash",
           state: "approval-responded",
@@ -139,7 +139,7 @@ describe(getRowStatus, () => {
       )
     ).toBe("running");
     expect(
-      getRowStatus(
+      getPartStatus(
         part({
           type: "tool-bash",
           state: "approval-responded",
@@ -150,25 +150,25 @@ describe(getRowStatus, () => {
   });
 
   test("should take a streaming text part as running and a finished one as complete", () => {
-    expect(getRowStatus(part({ type: "text", state: "streaming" }))).toBe(
+    expect(getPartStatus(part({ type: "text", state: "streaming" }))).toBe(
       "running"
     );
-    expect(getRowStatus(part({ type: "text", state: "done" }))).toBe(
+    expect(getPartStatus(part({ type: "text", state: "done" }))).toBe(
       "complete"
     );
   });
 
   test("should treat a session title part as complete", () => {
-    expect(getRowStatus(part({ type: "session.title", id: "t" }))).toBe(
+    expect(getPartStatus(part({ type: "session.title", id: "t" }))).toBe(
       "complete"
     );
   });
 });
 
-describe(getRowSummary, () => {
+describe(getPartSummary, () => {
   test("should say a held call is waiting on the user", () => {
     expect(
-      getRowSummary(
+      getPartSummary(
         part({
           type: "tool-bash",
           state: "approval-requested",
@@ -180,7 +180,7 @@ describe(getRowSummary, () => {
 
   test("should say nothing for a call the user is not being asked about", () => {
     expect(
-      getRowSummary(
+      getPartSummary(
         part({
           type: "tool-bash",
           state: "approval-requested",
@@ -192,13 +192,13 @@ describe(getRowSummary, () => {
 
   test("should say nothing for a tool that has not finished", () => {
     expect(
-      getRowSummary(part({ type: "tool-bash", state: "input-available" }))
+      getPartSummary(part({ type: "tool-bash", state: "input-available" }))
     ).toBeUndefined();
   });
 
   test("should say nothing for a tool whose output is an error", () => {
     expect(
-      getRowSummary(
+      getPartSummary(
         part({
           type: "tool-bash",
           state: "output-available",
@@ -210,7 +210,7 @@ describe(getRowSummary, () => {
 
   test("should say nothing for a turn persisted before metadata existed", () => {
     expect(
-      getRowSummary(
+      getPartSummary(
         part({
           type: "tool-read-file",
           state: "output-available",
@@ -222,7 +222,7 @@ describe(getRowSummary, () => {
 
   describe("read-file", () => {
     const readFile = (metadata: unknown) =>
-      getRowSummary(doneTool("tool-read-file", metadata));
+      getPartSummary(doneTool("tool-read-file", metadata));
 
     test("should count the lines of a file read whole", () => {
       expect(
@@ -272,7 +272,7 @@ describe(getRowSummary, () => {
 
   describe("load-skill", () => {
     test("should name the skill rather than describe the file it read", () => {
-      const summary = getRowSummary(
+      const summary = getPartSummary(
         doneTool(
           "tool-load-skill",
           { type: "file", truncated: false, totalLines: 240 },
@@ -285,7 +285,7 @@ describe(getRowSummary, () => {
     });
 
     test("should fall back to the read summary for a skill with no name", () => {
-      const summary = getRowSummary(
+      const summary = getPartSummary(
         doneTool("tool-load-skill", {
           type: "file",
           truncated: false,
@@ -298,7 +298,7 @@ describe(getRowSummary, () => {
 
   describe("grep", () => {
     const grep = (metadata: unknown, input: Record<string, unknown> = {}) =>
-      getRowSummary(doneTool("tool-grep", metadata, { input }));
+      getPartSummary(doneTool("tool-grep", metadata, { input }));
 
     test("should say there were no matches", () => {
       expect(grep({ matchCount: 0 })).toBe("no matches");
@@ -323,7 +323,7 @@ describe(getRowSummary, () => {
 
   describe("glob", () => {
     const glob = (metadata: unknown) =>
-      getRowSummary(doneTool("tool-glob", metadata));
+      getPartSummary(doneTool("tool-glob", metadata));
 
     test("should say there were no files", () => {
       expect(glob({ count: 0 })).toBe("no files");
@@ -340,7 +340,7 @@ describe(getRowSummary, () => {
 
   describe("bash", () => {
     const bash = (metadata: unknown) =>
-      getRowSummary(doneTool("tool-bash", metadata));
+      getPartSummary(doneTool("tool-bash", metadata));
 
     test("should report a timeout", () => {
       expect(bash({ timeout: true })).toBe("timed out");
@@ -366,7 +366,7 @@ describe(getRowSummary, () => {
   describe("web-fetch", () => {
     test("should prefer the page title", () => {
       expect(
-        getRowSummary(
+        getPartSummary(
           doneTool("tool-web-fetch", { title: "Example", url: "https://e.com" })
         )
       ).toBe("Example");
@@ -374,7 +374,7 @@ describe(getRowSummary, () => {
 
     test("should fall back to the url and mark a truncated body", () => {
       expect(
-        getRowSummary(
+        getPartSummary(
           doneTool("tool-web-fetch", {
             title: "",
             url: "https://e.com",
@@ -388,7 +388,7 @@ describe(getRowSummary, () => {
   describe("edit-file", () => {
     test("should show the line delta", () => {
       expect(
-        getRowSummary(
+        getPartSummary(
           doneTool("tool-edit-file", {
             replacements: 1,
             linesAdded: 12,
@@ -400,7 +400,7 @@ describe(getRowSummary, () => {
 
     test("should note how many times a replace-all edit landed", () => {
       expect(
-        getRowSummary(
+        getPartSummary(
           doneTool("tool-edit-file", {
             replacements: 2,
             linesAdded: 3,
@@ -414,16 +414,20 @@ describe(getRowSummary, () => {
   describe("write-file", () => {
     test("should distinguish a created file from an updated one", () => {
       expect(
-        getRowSummary(doneTool("tool-write-file", { created: true, lines: 42 }))
+        getPartSummary(
+          doneTool("tool-write-file", { created: true, lines: 42 })
+        )
       ).toBe("created · 42 lines");
       expect(
-        getRowSummary(doneTool("tool-write-file", { created: false, lines: 7 }))
+        getPartSummary(
+          doneTool("tool-write-file", { created: false, lines: 7 })
+        )
       ).toBe("updated · 7 lines");
     });
 
     test("should omit the line count for an empty file", () => {
       expect(
-        getRowSummary(doneTool("tool-write-file", { created: true, lines: 0 }))
+        getPartSummary(doneTool("tool-write-file", { created: true, lines: 0 }))
       ).toBe("created");
     });
   });
@@ -431,20 +435,20 @@ describe(getRowSummary, () => {
   describe("delete-file", () => {
     test("should name what was deleted", () => {
       expect(
-        getRowSummary(doneTool("tool-delete-file", { kind: "directory" }))
+        getPartSummary(doneTool("tool-delete-file", { kind: "directory" }))
       ).toBe("directory deleted");
       expect(
-        getRowSummary(doneTool("tool-delete-file", { kind: "file" }))
+        getPartSummary(doneTool("tool-delete-file", { kind: "file" }))
       ).toBe("file deleted");
     });
   });
 });
 
-describe(getRowApproval, () => {
+describe(getToolApproval, () => {
   test("should surface an open request so it can be answered", () => {
     const approval = { id: "ap-1", createdAt: 1000 };
     expect(
-      getRowApproval(
+      getToolApproval(
         part({ type: "tool-bash", state: "approval-requested", approval })
       )
     ).toBe(approval);
@@ -453,7 +457,7 @@ describe(getRowApproval, () => {
   test("should surface an answered request so the answer stays on screen", () => {
     const approval = { id: "ap-1", approved: false, createdAt: 1000 };
     expect(
-      getRowApproval(
+      getToolApproval(
         part({ type: "tool-bash", state: "approval-responded", approval })
       )
     ).toBe(approval);
@@ -465,7 +469,7 @@ describe(getRowApproval, () => {
     // panel would offer the buttons again for a call already turned down.
     const approval = { id: "ap-1", createdAt: 1000 };
     expect(
-      getRowApproval(
+      getToolApproval(
         part({ type: "tool-bash", state: "output-denied", approval })
       )
     ).toStrictEqual({ id: "ap-1", approved: false, createdAt: 1000 });
@@ -476,7 +480,7 @@ describe(getRowApproval, () => {
     // over — an unanswered-looking panel beside a finished call is the bug this
     // guards against.
     expect(
-      getRowApproval(
+      getToolApproval(
         part({
           type: "tool-bash",
           state: "output-available",
@@ -490,7 +494,7 @@ describe(getRowApproval, () => {
   test("should keep a decision the stream did report on a finished call", () => {
     const approval = { id: "ap-1", approved: true, createdAt: 1000 };
     expect(
-      getRowApproval(
+      getToolApproval(
         part({
           type: "tool-bash",
           state: "output-available",
@@ -503,13 +507,13 @@ describe(getRowApproval, () => {
 
   test("should show nothing for a part with no approval to answer", () => {
     expect(
-      getRowApproval(part({ type: "tool-bash", state: "input-available" }))
+      getToolApproval(part({ type: "tool-bash", state: "input-available" }))
     ).toBeUndefined();
-    expect(getRowApproval(part({ type: "text", text: "hi" }))).toBeUndefined();
+    expect(getToolApproval(part({ type: "text", text: "hi" }))).toBeUndefined();
   });
 });
 
-describe(getToolDurationMs, () => {
+describe(getPartDurationMs, () => {
   test("should use the runtime's per-call figure when it recorded one", () => {
     const call = part({
       type: "tool-bash",
@@ -517,10 +521,11 @@ describe(getToolDurationMs, () => {
       toolCallId: "call-9",
     });
     const owner = step({
-      performance: { toolExecutionMs: { "call-9": 1234 } },
+      // Where the runtime writes it: the step's `metadata`, not the step.
+      metadata: { performance: { toolExecutionMs: { "call-9": 1234 } } },
       completedAt: 9999,
     });
-    expect(getToolDurationMs(call, owner)).toBe(1234);
+    expect(getPartDurationMs(call, owner)).toBe(1234);
   });
 
   test("should report nothing rather than the step's span when the call has no figure of its own", () => {
@@ -531,27 +536,70 @@ describe(getToolDurationMs, () => {
       createdAt: 1000,
       completedAt: 1500,
       content: [call],
-      performance: { toolExecutionMs: {} },
+      metadata: { performance: { toolExecutionMs: {} } },
     });
-    expect(getToolDurationMs(call, owner)).toBeUndefined();
+    expect(getPartDurationMs(call, owner)).toBeUndefined();
   });
 
   test("should report no figure for a step from before timings were recorded", () => {
     const call = doneTool("tool-bash", undefined, { toolCallId: "call-9" });
     const owner = step({ createdAt: 1000, completedAt: 1500, content: [call] });
-    expect(getToolDurationMs(call, owner)).toBeUndefined();
+    expect(getPartDurationMs(call, owner)).toBeUndefined();
   });
 
   test("should report no figure for a tool still running", () => {
     const call = part({ type: "tool-bash", state: "input-available" });
     const owner = step({ createdAt: 1000, content: [call] });
-    expect(getToolDurationMs(call, owner)).toBeUndefined();
+    expect(getPartDurationMs(call, owner)).toBeUndefined();
   });
 
-  test("should report no figure for a part that is not a tool", () => {
-    const text = part({ type: "text", text: "hi", state: "done" });
+  test("should measure a text part by its own span", () => {
+    const text = part({
+      type: "text",
+      text: "hi",
+      state: "done",
+      createdAt: 1000,
+      completedAt: 2500,
+    });
+    expect(getPartDurationMs(text, step())).toBe(1500);
+  });
+
+  test("should measure a reasoning part by its own span", () => {
+    const reasoning = part({
+      type: "reasoning",
+      text: "hmm",
+      state: "done",
+      createdAt: 1000,
+      completedAt: 1400,
+    });
+    expect(getPartDurationMs(reasoning, step())).toBe(400);
+  });
+
+  test("should report no figure for a text part the stream never ended", () => {
+    const text = part({
+      type: "text",
+      text: "hi",
+      state: "streaming",
+      createdAt: 1000,
+    });
+    expect(getPartDurationMs(text, step())).toBeUndefined();
+  });
+
+  test("should report no figure for a text part from before parts carried times", () => {
+    // A `NaN` here would render as a measurement, which is worse than a blank.
+    const text = part({
+      type: "text",
+      text: "hi",
+      state: "done",
+      completedAt: 2500,
+    });
+    expect(getPartDurationMs(text, step())).toBeUndefined();
+  });
+
+  test("should report no figure for a part that carries no times", () => {
+    const title = part({ type: "session.title", id: "t", state: "done" });
     expect(
-      getToolDurationMs(text, step({ completedAt: 1500 }))
+      getPartDurationMs(title, step({ completedAt: 1500 }))
     ).toBeUndefined();
   });
 });

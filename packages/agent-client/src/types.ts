@@ -160,7 +160,7 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
   RenameEventType<TypedToolError<TOOLS>, "tool.error">;
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
-  RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
+    RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
 export type TextStreamStartStepEvent = {
   id: string;
   turnId: string;
@@ -285,6 +285,14 @@ export type AgentTextPart = {
    */
   state?: "streaming" | "done";
   /**
+   * Epoch (ms) the text started streaming.
+   */
+  createdAt: number;
+  /**
+   * Epoch (ms). Absent while the text is still streaming.
+   */
+  completedAt?: number;
+  /**
    * The provider metadata.
    */
   providerMetadata?: ProviderMetadata;
@@ -328,6 +336,14 @@ export type AgentReasoningPart = {
    * The state of the reasoning part.
    */
   state?: "streaming" | "done";
+  /**
+   * Epoch (ms) the reasoning started streaming.
+   */
+  createdAt: number;
+  /**
+   * Epoch (ms). Absent while the reasoning is still streaming.
+   */
+  completedAt?: number;
   /**
    * The provider metadata.
    */
@@ -449,7 +465,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
   resultProviderMetadata?: ProviderMetadata;
   preliminary?: boolean;
 } & (
-    | {
+  | {
       state: "input-streaming";
       input?: DeepPartial<INPUT> | undefined;
       output?: never;
@@ -457,7 +473,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       approval?: never;
     }
-    | {
+  | {
       state: "input-available";
       input: INPUT;
       output?: never;
@@ -465,7 +481,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       callProviderMetadata?: ProviderMetadata;
       approval?: never;
     }
-    | {
+  | {
       state: "approval-requested";
       input: INPUT;
       output?: never;
@@ -485,7 +501,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-    | {
+  | {
       state: "approval-responded";
       input: INPUT;
       output?: never;
@@ -505,7 +521,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt: number;
       };
     }
-    | {
+  | {
       state: "output-available";
       input: INPUT;
       output: OUTPUT;
@@ -527,7 +543,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-    | {
+  | {
       state: "output-error";
       input: INPUT | undefined;
       rawInput?: unknown;
@@ -549,7 +565,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt?: number;
       };
     }
-    | {
+  | {
       state: "output-denied";
       input: INPUT;
       output?: never;
@@ -569,7 +585,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         approvedAt: number;
       };
     }
-  );
+);
 
 /**
  * An invocation of a known tool. Deriving it from the tool itself is what lets
