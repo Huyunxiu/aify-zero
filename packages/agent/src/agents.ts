@@ -1,7 +1,15 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
-import type { AgentRuntimeContext, AgentStep, AgentStreamEvent, AgentTurn, AgentTurnStatus, CompactionConfig, TextStreamToolApprovalResponseEvent } from '@workspace/agent-client';
+import { findToolPartByToolCallId } from "@workspace/agent-client";
+import type {
+  AgentRuntimeContext,
+  AgentStep,
+  AgentStreamEvent,
+  AgentTurn,
+  AgentTurnStatus,
+  CompactionConfig,
+} from "@workspace/agent-client";
 import type { TurnModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
@@ -70,12 +78,6 @@ const TURN_END_TO_SESSION_STATUS = {
   error: "error",
   streaming: "error",
 } as const satisfies Record<AgentTurnStatus["status"], SessionEndStatus>;
-
-/**
- * Step budget for one assistant turn. The manual loop issues one `streamText`
- * call per step, so the budget lives here instead of in the SDK's `stopWhen`.
- */
-const MAX_STEPS = 100;
 
 export type AgentOptions = {
   name: string;
@@ -456,9 +458,8 @@ export class Agent {
       }
     }
 
-    // [TODO] remove hardcode
     let status: AgentTurnStatus = { status: "done" };
-    for (let step = 0; step < MAX_STEPS; step += 1) {
+    while (true) {
       // The step reads the history `messages` currently holds, which compaction
       // or the previous step may have replaced.
       const stepId = generateStepId();
@@ -617,8 +618,10 @@ export class Agent {
       collectToolApprovals<AgentToolSet>({ messages });
 
     if (approvedToolApprovals.length > 0 || deniedToolApprovals.length > 0) {
-      const toolCallId = approvedToolApprovals[0]?.toolCall.toolCallId || deniedToolApprovals[0]?.toolCall.toolCallId;
-      const result = this.session.findToolPartByToolCallId(toolCallId);
+      const toolCallId =
+        approvedToolApprovals[0]?.toolCall.toolCallId ||
+        deniedToolApprovals[0]?.toolCall.toolCallId;
+      const result = findToolPartByToolCallId(this.session.turns, toolCallId);
       const askedTurnId = result?.turn.id ?? turnId;
       const askedStepId = result?.step.id ?? stepId;
 
@@ -667,11 +670,6 @@ export class Agent {
           hooks: this.hooks,
           extensionApi: this.extensionApi,
           abortSignal: this.context.abortSignal,
-          approvedToolCallIds: new Set(
-            localApprovedToolApprovals.map(
-              (toolApproval) => toolApproval.toolCall.toolCallId
-            )
-          ),
           write: (event) =>
             this.context.controller?.write(event) ?? Promise.resolve(),
           skipApproval: true,
@@ -706,9 +704,9 @@ export class Agent {
       }
 
       // 将调用完的工具结果保存
-      const turn = this.session.turns.find(e => e.id === askedTurnId);
+      const turn = this.session.turns.find((e) => e.id === askedTurnId);
       if (turn) {
-        this.store.updateTurn(turn.id, turn)
+        this.store.updateTurn(turn.id, turn);
       }
     }
 

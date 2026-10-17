@@ -3,11 +3,16 @@ import { homedir } from "node:os";
 import { streamToEventIterator, type } from "@orpc/server";
 import { Agent, STREAM_REGISTRY } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
+import {
+  addToolApprovalResponse,
+  findToolApprovalRequests,
+} from "@workspace/agent-client";
 import type {
   AgentTurn,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { AgentContext } from "@workspace/agent/agent-context";
+import { AgentSession } from "@workspace/agent/agent-session";
 import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
 import {
@@ -33,7 +38,6 @@ import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
 import { forkSessionSchema, listSessionTurnsSchema } from "./session.schema";
 import { findAiModelById } from "./settings/settings.service";
-import { AgentSession } from "@workspace/agent/agent-session";
 
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
@@ -70,19 +74,21 @@ const createSession = publicProcedure
     const store = new SQLiteStore();
     const previousMessages = await store.getBranchTurns(sessionId);
     const previousTurns = AgentSession.toAgentTurns(previousMessages);
-    const originalTurns = mostRecentTurn ? [...previousTurns, mostRecentTurn] : previousTurns;
+    const originalTurns = mostRecentTurn
+      ? [...previousTurns, mostRecentTurn]
+      : previousTurns;
     if (approvals?.length) {
       const session = new AgentSession({ turns: originalTurns });
-      const changedTurns = session.applyToolApprovals(approvals);
+      const changedTurns = addToolApprovalResponse(session.turns, approvals);
       for (const turn of changedTurns) {
-        await store.updateTurn(turn.id, turn)
+        await store.updateTurn(turn.id, turn);
       }
-      const awaitingToolApprovals = session.findAwaitingToolApprovals();
-      if (awaitingToolApprovals > 0) {
+      const toolParts = findToolApprovalRequests(session.turns);
+      if (toolParts.length > 0) {
         return {
           activeStreamId: null,
-          awaitingToolApprovals,
-        }
+          awaitingToolApprovals: toolParts.length,
+        };
       }
     }
 

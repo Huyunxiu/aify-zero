@@ -870,7 +870,7 @@ export type AgentCompactionTurn = AgentTurnBase & {
   content: AgentCompactionStep[];
 };
 
-export type AgentTurn<TOOLS extends ToolSet> =
+export type AgentTurn<TOOLS extends ToolSet = ToolSet> =
   | AgentUserTurn
   | AgentAssistantTurn<TOOLS>
   | AgentCompactionTurn;

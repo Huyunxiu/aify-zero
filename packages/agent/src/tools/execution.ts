@@ -56,16 +56,6 @@ export type ExecuteToolCallsInput = {
   hooks: HooksManager;
   extensionApi: ExtensionAPI;
   abortSignal?: AbortSignal;
-  /**
-   * The calls the user has already approved, on the stream that resumes a turn
-   * this one was held on.
-   *
-   * `tool:before` still runs for them — its side effects and the input it
-   * rewrites are wanted — but an `ask` it returns is read as an allowance: the
-   * question it would put has been put to the user and answered, and asking it
-   * again would hold the same batch forever.
-   */
-  approvedToolCallIds?: ReadonlySet<string>;
   /** Publishes a protocol event onto the turn's stream. */
   write: (event: AgentStreamEvent<AgentToolSet>) => Promise<void>;
   skipApproval?: boolean;
@@ -135,19 +125,15 @@ export function stripToolExecution(tools: ToolSet): ToolSet {
 export async function executeToolCalls(
   input: ExecuteToolCallsInput
 ): Promise<ExecuteToolCallsResult> {
-  if (input.skipApproval) {
-    const plans: ToolCallPlan[] = input.toolCalls.map(toolCall => ({
-      toolCall,
-      decision: { decision: "allow" },
-      startedAt: performance.now(),
-    }))
-    const runs = await Promise.all(plans.map((plan) => runToolCall(plan, input)));
-    return toResult(runs, false);
-  }
-
-  const plans = await Promise.all(
-    input.toolCalls.map((toolCall) => planToolCall(toolCall, input))
-  );
+  const plans: ToolCallPlan[] = input.skipApproval
+    ? input.toolCalls.map((toolCall) => ({
+        toolCall,
+        decision: { decision: "allow" },
+        startedAt: performance.now(),
+      }))
+    : await Promise.all(
+        input.toolCalls.map((toolCall) => planToolCall(toolCall, input))
+      );
 
   // One call to the user holds the batch, `allow` included: the user is asked
   // about the step's calls as a whole or not at all. The refusals still go out
@@ -221,10 +207,7 @@ async function planToolCall(
   const { sessionId, turnId, stepId, messages, hooks, extensionApi } = input;
   const startedAt = performance.now();
 
-  // `emitFirst`, not `emit`: the handler that runs first is the most
-  // authoritative one, so a high-priority denial must not be overridden by a
-  // lower-priority allowance.
-  const decision: ToolBeforeDecision | undefined = await hooks.emitFirst(
+  const decision: ToolBeforeDecision | undefined = await hooks.emit(
     "tool:before",
     {
       sessionId,
@@ -238,11 +221,10 @@ async function planToolCall(
     extensionApi
   );
 
-  const approvedByUser =
-    decision?.decision === "ask" &&
-    input.approvedToolCallIds?.has(toolCall.toolCallId) === true;
-
-  if (toolCall.toolName === "delete-file" || toolCall.toolName === "edit-file") {
+  if (
+    toolCall.toolName === "delete-file" ||
+    toolCall.toolName === "edit-file"
+  ) {
     return {
       toolCall,
       decision: { decision: "ask" },
@@ -252,10 +234,7 @@ async function planToolCall(
 
   return {
     toolCall,
-    // The user was asked and said yes, so the `ask` is spent. A denial still
-    // stands: a hook that refuses a call refuses it whether or not the user
-    // agreed to it.
-    decision: approvedByUser ? { decision: "allow" } : decision,
+    decision,
     startedAt,
   };
 }

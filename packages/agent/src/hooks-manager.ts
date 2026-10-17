@@ -251,25 +251,6 @@ export class HooksManager {
     return (await this.dispatch(name, event, api, "last")) as HookResultOf<K>;
   }
 
-  /**
-   * Delivers `event` like {@link emit}, but resolves with the *first* value a
-   * handler returned instead of the last.
-   *
-   * This is the order an authorization wants. Handlers run from the highest
-   * priority down, so the first answer is the most authoritative one — a
-   * high-priority denial must not be overridden by a lower-priority allowance,
-   * which is exactly what {@link emit}'s last-wins rule would allow. Handlers
-   * still all run, so one registered for its side effects (logging, auditing)
-   * is unaffected by the answer it gives.
-   */
-  async emitFirst<K extends HookEventName>(
-    name: K,
-    event: HookEventOf<K>,
-    api: ExtensionAPI
-  ): Promise<HookResultOf<K>> {
-    return (await this.dispatch(name, event, api, "first")) as HookResultOf<K>;
-  }
-
   private async dispatch(
     name: string,
     event: HookEventOf<HookEventName>,
