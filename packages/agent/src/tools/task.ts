@@ -75,7 +75,7 @@ Usage:
     description: z
       .string()
       .describe(
-        "A short (3-5 word) description of the task, shown to the user."
+        "A short (5-10 words) description of the task, shown to the user."
       ),
     prompt: z
       .string()
