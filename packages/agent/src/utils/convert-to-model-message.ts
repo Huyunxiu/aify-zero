@@ -383,6 +383,24 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
 
           for (const step of turn.content) {
             for (const part of step.content) {
+              // A call that reported part-way through — a `task` call does, so
+              // a client can follow the subagent it started — has no result
+              // yet, and a tool call handed to the model without one is a
+              // broken turn. The part is dropped whole, call and result both:
+              // the turn it sits in is still running, and the model reads it
+              // once it has finished.
+              //
+              // Read off the state, the way the SDK reads it: a call that ended
+              // in `output-error` after reporting is finished, and keeps its
+              // flag from the report it made. What it has to say then is the
+              // failure, and the model is told about it.
+              if (
+                isAgentToolPart(part) &&
+                part.state === "output-available" &&
+                part.preliminary
+              ) {
+                continue;
+              }
               if (
                 isAgentTextPart(part) ||
                 isAgentCustomContentPart(part) ||

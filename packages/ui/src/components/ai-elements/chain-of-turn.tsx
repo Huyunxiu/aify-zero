@@ -261,7 +261,14 @@ export type AgentActivityStepStatus =
   | "denied"
   | "approval";
 
-export type AgentActivityStepProps = ComponentProps<typeof DialogTrigger> & {
+/**
+ * A step's row, and what a click on it does.
+ *
+ * The row is a button either way — one opens the step's dialog, one selects the
+ * step for a pane beside the transcript — so what is spread onto it is a
+ * button's props rather than a trigger's.
+ */
+export type AgentActivityStepProps = ComponentProps<"button"> & {
   path: string;
   icon?: LucideIcon;
   label: ReactNode;
@@ -270,6 +277,17 @@ export type AgentActivityStepProps = ComponentProps<typeof DialogTrigger> & {
   summary?: ReactNode;
   /** How long the step took, right-aligned and set in tabular figures. */
   duration?: ReactNode;
+  /**
+   * What a click on the row does, when it is not opening the step's own dialog.
+   *
+   * A `task` call passes this: what it has to show is the subagent's transcript,
+   * which is a transcript — too long to read in a dialog, and the thing the
+   * reader wants beside the session rather than over it. `children` are not
+   * rendered then: there is no dialog left to put them in.
+   */
+  onSelect?: () => void;
+  /** Whether this row is the one the pane is showing. */
+  selected?: boolean;
 };
 
 interface AgentActivityStepContextType {
@@ -289,6 +307,8 @@ export const AgentActivityStep = memo(
     status = "complete",
     summary,
     duration,
+    onSelect,
+    selected,
     children,
     ...props
   }: AgentActivityStepProps) => {
@@ -331,6 +351,63 @@ export const AgentActivityStep = memo(
       return <div className="size-3.5 shrink-0"></div>;
     };
 
+    const row = (
+      <div
+        className={cn(
+          "group/chain-step relative flex h-7 w-full items-center justify-between gap-2 text-sm transition-colors hover:text-foreground"
+        )}
+      >
+        <div className="flex w-fit max-w-full min-w-0 items-center gap-2 group-hover/chain-step:underline">
+          <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
+          <ArrowUpRightIcon
+            className={cn(
+              "shrink-0 size-4 transition-transform hidden group-hover/chain-step:block"
+            )}
+          />
+          <span className="min-w-0 text-left truncate">{label}</span>
+          {summary && (
+            <span className="min-w-0 text-muted-foreground/70 text-xs truncate">
+              {summary}
+            </span>
+          )}
+        </div>
+        <div className="relative flex h-full items-center gap-2 shrink-0">
+          {duration && (
+            <span className="shrink-0 font-mono text-muted-foreground/70 text-xs tabular-nums">
+              {duration}
+            </span>
+          )}
+          {getStatusIcon()}
+        </div>
+      </div>
+    );
+
+    // A row that selects instead of opening: the same row, clickable, with the
+    // step it points at drawn somewhere else. It is a button because that is
+    // what it is — the dialog it replaces was one too.
+    if (onSelect) {
+      return (
+        <AgentActivityStepContext.Provider value={stepContextValue}>
+          <button
+            type="button"
+            aria-current={selected ? "true" : undefined}
+            onClick={onSelect}
+            className={cn(
+              "-mx-1.5 flex w-[calc(100%+0.75rem)] flex-col gap-2 rounded-md px-1.5 text-left text-sm outline-none",
+              "fade-in-0 slide-in-from-top-2 animate-in",
+              selected
+                ? "bg-foreground-5 text-foreground"
+                : "hover:bg-foreground-3",
+              className
+            )}
+            {...props}
+          >
+            {row}
+          </button>
+        </AgentActivityStepContext.Provider>
+      );
+    }
+
     return (
       <AgentActivityStepContext.Provider value={stepContextValue}>
         <Dialog open={isExpanded} onOpenChange={handleOpenChange}>
@@ -342,34 +419,7 @@ export const AgentActivityStep = memo(
             )}
             {...props}
           >
-            <div
-              className={cn(
-                "group/chain-step relative flex h-7 w-full items-center justify-between gap-2 text-sm transition-colors hover:text-foreground"
-              )}
-            >
-              <div className="flex w-fit max-w-full min-w-0 items-center gap-2 group-hover/chain-step:underline">
-                <Icon className="shrink-0 size-4 group-hover/chain-step:hidden" />
-                <ArrowUpRightIcon
-                  className={cn(
-                    "shrink-0 size-4 transition-transform hidden group-hover/chain-step:block"
-                  )}
-                />
-                <span className="min-w-0 text-left truncate">{label}</span>
-                {summary && (
-                  <span className="min-w-0 text-muted-foreground/70 text-xs truncate">
-                    {summary}
-                  </span>
-                )}
-              </div>
-              <div className="relative flex h-full items-center gap-2 shrink-0">
-                {duration && (
-                  <span className="shrink-0 font-mono text-muted-foreground/70 text-xs tabular-nums">
-                    {duration}
-                  </span>
-                )}
-                {getStatusIcon()}
-              </div>
-            </div>
+            {row}
           </DialogTrigger>
           <DialogContent
             className="bg-transparent ring-0 px-0 py-0 min-w-[72vw]"
@@ -432,7 +482,6 @@ export const AgentActivityActions = ({
     className={cn("ml-auto flex items-center gap-1", className)}
     onClick={stopPropagation}
     onKeyDown={stopPropagation}
-    role="details"
     {...props}
   >
     {children}

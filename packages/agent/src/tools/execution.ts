@@ -121,9 +121,11 @@ export function stripToolExecution(tools: ToolSet): ToolSet {
  *
  * Otherwise each call goes through the tool's own `execute` and reports what
  * happened three ways: as a protocol event for the client, as a `tool` message
- * for the model, and as a number for the step's performance. `Promise.all` is
- * what makes the calls concurrent; it also keeps the results in tool-call order
- * no matter which call finishes first.
+ * for the model, and as a number for the step's performance. A tool that
+ * reports part-way through adds events of the first kind only, marked
+ * `preliminary` — nothing about them reaches the model or the step. `Promise.all`
+ * is what makes the calls concurrent; it also keeps the results in tool-call
+ * order no matter which call finishes first.
  */
 export async function executeToolCalls(
   input: ExecuteToolCallsInput
@@ -391,12 +393,37 @@ async function runToolCall(
   const toolInput = toolCall.input;
 
   try {
-    const output = await runExecute(tool, toolName, toolInput, {
-      toolCallId,
-      messages,
-      abortSignal,
-      context,
-    });
+    const output = await runExecute(
+      tool,
+      toolName,
+      toolInput,
+      {
+        toolCallId,
+        messages,
+        abortSignal,
+        context,
+      },
+      // A tool may report before it is done — `task` does, so a client can
+      // follow the subagent it started while the call is still running. Such a
+      // report is published as this call's own result, carrying `preliminary`:
+      // the protocol's mark for a result that is not the outcome, which the
+      // turn builder folds onto the same part the final one lands on and the
+      // model never reads.
+      async (preliminary) => {
+        await write({
+          type: "tool.result",
+          turnId,
+          stepId,
+          createdAt: Date.now(),
+          toolCallId,
+          toolName,
+          input: toolCall.input,
+          output: preliminary,
+          preliminary: true,
+          providerExecuted: false,
+        } as AgentStreamEvent<AgentToolSet>);
+      }
+    );
     const durationMs = elapsed(startedAt);
 
     await write({
@@ -481,7 +508,8 @@ async function runExecute(
   tool: Tool | undefined,
   toolName: string,
   toolInput: unknown,
-  options: ToolExecutionOptions<AgentContext>
+  options: ToolExecutionOptions<AgentContext>,
+  onPreliminary: (output: unknown) => Promise<void>
 ): Promise<unknown> {
   if (!isExecutableTool(tool)) {
     // A name the model invented, or a tool registered without an implementation.
@@ -490,9 +518,15 @@ async function runExecute(
 
   // `executeTool` normalizes the three shapes a tool may return — a value, a
   // promise, or a stream of results — yielding every part but the last as
-  // `preliminary`. The protocol carries no preliminary, so only the final
-  // output is kept; a tool that only ever streams would come back empty, which
-  // none of this package's tools do today.
+  // `preliminary`. The preliminary ones are handed to the caller as they
+  // arrive, so a tool that streams can be followed while it runs; the last is
+  // the call's output, and it is the one the caller reports as the result.
+  //
+  // A streamed value is not held back to see whether it turns out to be the
+  // last: the SDK reads a stream the same way, so the final value is announced
+  // twice, once as a preliminary and once as the result. A tool that reports
+  // nothing until it is done never reaches any of this — one `final` is all it
+  // yields.
   //
   // The SDK types a tool's context as `never` whenever the context type has an
   // index signature — ours does — so the options object it accepts is spelled
@@ -506,6 +540,8 @@ async function runExecute(
   })) {
     if (type === "final") {
       output = value;
+    } else {
+      await onPreliminary(value);
     }
   }
   return output;

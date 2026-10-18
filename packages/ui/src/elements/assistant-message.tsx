@@ -46,6 +46,7 @@ import {
 import { useElapsedMs } from "../hooks/use-elapsed-ms";
 import { useTouchPrimary } from "../hooks/use-touch-primary";
 import { cn } from "../lib/utils";
+import { useSubagentPane } from "../stores/subagent-pane";
 import {
   Message,
   MessageAction,
@@ -250,6 +251,12 @@ export const AssistantMessage = ({
 
   const isTouch = useTouchPrimary();
   const isRunning = turn.status === "streaming";
+
+  // The subagent the pane beside this session is showing, and how to point it
+  // at another. Read here rather than in the row: the rows are drawn in a map,
+  // and this is a component.
+  const selectedSubagentSessionId = useSubagentPane((state) => state.sessionId);
+  const selectSubagent = useSubagentPane((state) => state.select);
 
   const { answerPart, parts } = splitAssistantMessageSteps(turn);
 
@@ -1007,6 +1014,34 @@ export const AssistantMessage = ({
                 </>
               );
             } else if (part.type === "tool-task") {
+              const result = part.output?.output ?? "";
+              const subagentSessionId = part.output?.metadata?.sessionId;
+              // A call that failed before it made a subagent answers with the
+              // reason and nothing else; one that failed outright has no answer
+              // at all, and an empty panel under INPUT is worse than none.
+              const showResult = result.length > 0;
+
+              // A call that started a subagent is read in the pane beside this
+              // session, not in a dialog over it — the transcript is the thing
+              // to see, and it is far too long to sit in a dialog. A call that
+              // never got that far has only its own answer to show, and the
+              // dialog is where that answer is readable.
+              if (subagentSessionId) {
+                return (
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={BotIcon}
+                    label={getStepLabel("Task", part.input?.description)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
+                    selected={selectedSubagentSessionId === subagentSessionId}
+                    onSelect={() => selectSubagent(subagentSessionId)}
+                  />
+                );
+              }
+
               return (
                 <>
                   <AgentActivityStep
@@ -1049,25 +1084,27 @@ export const AssistantMessage = ({
                       </FramePanel>
                       {getInlineToolApprovalComponent(part)}
 
-                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                        <div className="text-muted-foreground">OUTPUT</div>
-                        <div>
-                          <CopyButton
-                            className="text-muted-foreground"
-                            size="icon-sm"
-                            variant="ghost"
-                            label="Copy"
-                            message={part.output?.output ?? ""}
-                          />
-                        </div>
-                      </div>
-                      <FramePanel>
-                        {/* The subagent is told to finish on a report written
-                            for the parent, so what lands here is prose. */}
-                        <MessageResponse controls={FRAME_CONTROLS}>
-                          {part.output?.output ?? ""}
-                        </MessageResponse>
-                      </FramePanel>
+                      {showResult && (
+                        <>
+                          <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                            <div className="text-muted-foreground">OUTPUT</div>
+                            <div>
+                              <CopyButton
+                                className="text-muted-foreground"
+                                size="icon-sm"
+                                variant="ghost"
+                                label="Copy"
+                                message={result}
+                              />
+                            </div>
+                          </div>
+                          <FramePanel>
+                            <MessageResponse controls={FRAME_CONTROLS}>
+                              {result}
+                            </MessageResponse>
+                          </FramePanel>
+                        </>
+                      )}
                       {renderToolError(part)}
                     </Frame>
                   </AgentActivityStep>

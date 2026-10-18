@@ -53,6 +53,18 @@ const slowTool = (name: string, ms: number) =>
     toModelOutput: ({ output }) => ({ type: "text", value: output.output }),
   });
 
+/** A tool that reports twice before it is done, as `task` does. */
+const streamingTool = () =>
+  tool({
+    description: "Reports twice.",
+    inputSchema: z.object({}),
+    async *execute(): AsyncGenerator<EchoOutput> {
+      yield { output: "half", code: "ok" };
+      yield { output: "done", code: "ok" };
+    },
+    toModelOutput: ({ output }) => ({ type: "text", value: output.output }),
+  });
+
 function run(
   tools: ToolSet,
   toolCalls: AgentToolCall[],
@@ -165,6 +177,77 @@ describe(executeToolCalls, () => {
       },
     ]);
     expect(result.toolExecutionMs["call-1"]).toBeGreaterThanOrEqual(0);
+  });
+
+  test("publishes what a streaming tool reports before its result", async () => {
+    const { result, events } = await run({ stream: streamingTool() }, [
+      { toolCallId: "call-1", toolName: "stream", input: {} },
+    ]);
+
+    // Every value a stream yields is a report, the last one included: the SDK
+    // reads a stream that way, so the value that turns out to be the result is
+    // announced as a report before it is announced as the result. Only the
+    // events carry the reports — the model and the step are given the result
+    // alone.
+    expect(events).toStrictEqual([
+      {
+        type: "tool.result",
+        turnId,
+        stepId,
+        createdAt: expect.any(Number),
+        toolCallId: "call-1",
+        toolName: "stream",
+        input: {},
+        output: { output: "half", code: "ok" },
+        preliminary: true,
+        providerExecuted: false,
+      },
+      {
+        type: "tool.result",
+        turnId,
+        stepId,
+        createdAt: expect.any(Number),
+        toolCallId: "call-1",
+        toolName: "stream",
+        input: {},
+        output: { output: "done", code: "ok" },
+        preliminary: true,
+        providerExecuted: false,
+      },
+      {
+        type: "tool.result",
+        turnId,
+        stepId,
+        createdAt: expect.any(Number),
+        toolCallId: "call-1",
+        toolName: "stream",
+        input: {},
+        output: { output: "done", code: "ok" },
+        providerExecuted: false,
+      },
+    ]);
+
+    expect(result.outcomes).toStrictEqual([
+      {
+        toolCallId: "call-1",
+        type: "result",
+        output: { output: "done", code: "ok" },
+        durationMs: expect.any(Number),
+      },
+    ]);
+    expect(result.toolMessages).toStrictEqual([
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-1",
+            toolName: "stream",
+            output: { type: "text", value: "done" },
+          },
+        ],
+      },
+    ]);
   });
 
   test("keeps the results in tool-call order however they finish", async () => {

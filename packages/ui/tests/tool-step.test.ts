@@ -73,6 +73,24 @@ describe(getPartStatus, () => {
     ).toBe("complete");
   });
 
+  test("should report a tool that reported part-way through as running", () => {
+    // A `task` call publishes the subagent it started before it has an answer,
+    // so the part is in `output-available` while the call is still going.
+    // Reading the state alone would call the row finished the moment it first
+    // reported.
+    expect(
+      getPartStatus(
+        part({
+          type: "tool-task",
+          state: "output-available",
+          preliminary: true,
+          input: { subagent_type: "explore" },
+          output: { code: "ok", output: "", metadata: { status: "running" } },
+        })
+      )
+    ).toBe("running");
+  });
+
   test("should report a tool that ran and reported an error as failed", () => {
     // Glob and read-file resolve `code: "error"` for a bad path, so the part
     // stays in `output-available` — reading only `state` would call it complete.
@@ -456,6 +474,24 @@ describe(getPartSummary, () => {
       expect(getPartSummary(task({ state: "input-available" }))).toBe(
         "explore"
       );
+    });
+
+    test("should name the subagent while it is only reporting part-way", () => {
+      // The same call in its next state: the first report is the session it
+      // started, not an answer, and the row still has to say who is at work.
+      expect(
+        getPartSummary(
+          task({
+            state: "output-available",
+            preliminary: true,
+            output: {
+              code: "ok",
+              output: "",
+              metadata: { status: "running" },
+            },
+          })
+        )
+      ).toBe("explore");
     });
 
     test("should name the subagent it delegated to", () => {

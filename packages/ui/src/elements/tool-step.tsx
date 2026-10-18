@@ -68,6 +68,13 @@ export const getPartStatus = (part: AgentPart<AgentToolSet>): StepRowStatus => {
     if (part.state === "approval-responded") {
       return part.approval.approved ? "running" : "denied";
     }
+    // A tool that reports while it is still going — `task` does, so a client
+    // can follow the subagent it started — is in `output-available` with
+    // `preliminary` set. That is not the call's outcome: the row keeps running
+    // until the report that is not preliminary arrives.
+    if (part.state === "output-available" && part.preliminary) {
+      return "running";
+    }
     // A tool that ran and reported `code: "error"` is still in
     // `output-available` — glob and read-file do this for a bad path. The row
     // has to read the code, or a failure renders as a success.
@@ -200,6 +207,13 @@ export const getPartSummary = (
     return part.approval.isAutomatic ? undefined : "awaiting approval";
   }
 
+  // A `task` call is the one row worth reading before it has finished: its
+  // label holds the description the model wrote, which does not say which
+  // subagent is at work. Nothing else is summarized while it runs.
+  if (part.type === "tool-task" && part.state === "input-available") {
+    return part.input?.subagent_type;
+  }
+
   if (!isAgentToolPart(part) || !isAgentStaticToolPart(part)) {
     return undefined;
   }
@@ -317,6 +331,14 @@ export const getPartSummary = (
       return metadata.kind === "directory"
         ? "directory deleted"
         : "file deleted";
+    }
+
+    case "tool-task": {
+      // Which subagent ran, whether the call is done or only reporting from
+      // part-way through. A subagent that ended badly comes back as
+      // `code: "error"`, and the guard above has already left the row to say
+      // that on its own.
+      return part.input?.subagent_type;
     }
 
     default: {

@@ -7,7 +7,6 @@ import type {
   AgentTurn,
   AgentUserPart,
   AgentUserTurn,
-  TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import {
   generateSessionId,
@@ -18,7 +17,7 @@ import type { ForkSessionType } from "@workspace/server/routers/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
 import type { LanguageModelUsage } from "ai";
-import { MessageSquareIcon } from "lucide-react";
+import { MessageSquareIcon, XIcon } from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
 
@@ -40,6 +39,7 @@ import {
   ContextReasoningUsage,
   ContextTrigger,
 } from "../components/ai-elements/token-context";
+import { Button } from "../components/button";
 import {
   Empty,
   EmptyDescription,
@@ -154,6 +154,21 @@ export type AgentCommand = {
 export type SessionProps = React.ComponentProps<"div"> & {
   sessionId: string | undefined;
   initialTurns?: AgentTurn<AgentToolSet>[];
+  /**
+   * Whether the session is being read rather than written to.
+   *
+   * A subagent's is: its turns belong to the `task` call that made it, and
+   * nothing outside that call can answer a call it was held on. The composer,
+   * the approval buttons and the fork action are left out, so the page shows
+   * the transcript and nothing it cannot honour.
+   */
+  readOnly?: boolean;
+  /**
+   * Closes whatever is showing this session. A pane that can be pointed at
+   * another session needs a way back to its own, and the title bar is where a
+   * reader looks for it.
+   */
+  onClose?: () => void;
 };
 
 /**
@@ -175,7 +190,12 @@ async function openStream(
   return eventIteratorToUnproxiedDataStream(stream);
 }
 
-export function Session({ sessionId, initialTurns = [] }: SessionProps) {
+export function Session({
+  sessionId,
+  initialTurns = [],
+  readOnly = false,
+  onClose,
+}: SessionProps) {
   const navigate = useNavigate();
 
   const getSettingsQuery = useQuery({
@@ -199,6 +219,11 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
   });
 
   const activeStreamId = getSessionQuery.data?.session?.activeStreamId ?? null;
+  // A subagent's row is titled with the brief the `task` call handed it, so the
+  // title is what tells one child apart from another in the pane beside the
+  // session. A top-level session's title is its generated one and is shown by
+  // the sidebar instead, so the bar leaves it out.
+  const subagentTitle = getSessionQuery.data?.session?.title;
 
   const forkSessionMutation = useMutation({
     mutationFn: async (options: ForkSessionType) =>
@@ -476,12 +501,21 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
         <AssistantMessage
           key={turn.id}
           turn={turn}
-          onRespondToolApproval={handleRespondToolApproval}
-          onFork={(messageId) => {
-            if (sessionId) {
-              forkSessionMutation.mutate({ sessionId, messageId });
-            }
-          }}
+          // A read-only page answers nothing: a call it was held on has no one
+          // here to decide for it, and the row says so rather than offering
+          // buttons that cannot work.
+          onRespondToolApproval={
+            readOnly ? undefined : handleRespondToolApproval
+          }
+          onFork={
+            readOnly
+              ? undefined
+              : (messageId) => {
+                  if (sessionId) {
+                    forkSessionMutation.mutate({ sessionId, messageId });
+                  }
+                }
+          }
         />
       );
     }
@@ -493,7 +527,26 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
     <div className="flex h-full w-full flex-row overflow-hidden">
       <div className="flex min-w-0 flex-col w-full">
         {/* session header */}
-        <TitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3" />
+        <TitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3">
+          {onClose && (
+            <>
+              <span className="min-w-0 truncate text-muted-foreground text-sm">
+                {subagentTitle ? `Subagent · ${subagentTitle}` : "Subagent"}
+              </span>
+              <Button
+                aria-label="Close"
+                // The bar is the window's drag region; a control in it has to
+                // opt back out of that, or the click drags the window.
+                className="ml-auto [-webkit-app-region:no-drag]"
+                onClick={onClose}
+                size="icon-sm"
+                variant="ghost"
+              >
+                <XIcon className="size-4" />
+              </Button>
+            </>
+          )}
+        </TitleBar>
         {/* session container */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* session content */}
@@ -514,10 +567,16 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
                               <EmptyMedia variant="icon">
                                 <MessageSquareIcon />
                               </EmptyMedia>
-                              <EmptyTitle>Start a session</EmptyTitle>
+                              {/* A read-only page has just been pointed at a
+                                  child that has written nothing yet, which is
+                                  not the same invitation to type. */}
+                              <EmptyTitle>
+                                {readOnly ? "Nothing yet" : "Start a session"}
+                              </EmptyTitle>
                               <EmptyDescription>
-                                Messages will appear here as the session
-                                progresses.
+                                {readOnly
+                                  ? "This subagent has not written anything yet."
+                                  : "Messages will appear here as the session progresses."}
                               </EmptyDescription>
                             </EmptyHeader>
                           </Empty>
@@ -555,80 +614,82 @@ export function Session({ sessionId, initialTurns = [] }: SessionProps) {
           </div>
 
           {/* session input */}
-          <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 px-2 py-3 pt-1 md:px-4 md:pb-4">
-            <PromptInputProvider>
-              <PromptInput
-                multiple
-                maxFileSize={5 * 1024 * 1024}
-                accept="image/png,image/jpeg,image/webp"
-                onSubmit={handleSubmit}
-                onError={console.error}
-              >
-                <PromptInputAttachmentsDisplay />
-                <PromptInputBody>
-                  {/* <PromptInputTextarea /> */}
-                  <PromptInputTiptap
-                    skills={
-                      listSessionResourcesQuery.data?.skills.map((e) => ({
-                        ...e,
-                        type: "skill",
-                      })) || []
-                    }
-                    commands={commands}
-                    onEmptyChange={(isEmpty) => {
-                      if (isEmpty !== isEditorEmpty) {
-                        setIsEditorEmpty(isEmpty);
+          {!readOnly && (
+            <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 px-2 py-3 pt-1 md:px-4 md:pb-4">
+              <PromptInputProvider>
+                <PromptInput
+                  multiple
+                  maxFileSize={5 * 1024 * 1024}
+                  accept="image/png,image/jpeg,image/webp"
+                  onSubmit={handleSubmit}
+                  onError={console.error}
+                >
+                  <PromptInputAttachmentsDisplay />
+                  <PromptInputBody>
+                    {/* <PromptInputTextarea /> */}
+                    <PromptInputTiptap
+                      skills={
+                        listSessionResourcesQuery.data?.skills.map((e) => ({
+                          ...e,
+                          type: "skill",
+                        })) || []
                       }
-                    }}
-                  />
-                </PromptInputBody>
-                <PromptInputFooter>
-                  <PromptInputTools className="gap-0">
-                    <PromptInputActionMenu>
-                      <PromptInputActionMenuTrigger />
-                      <PromptInputActionMenuContent className="min-w-max">
-                        <PromptInputActionAddAttachments />
-                      </PromptInputActionMenuContent>
-                    </PromptInputActionMenu>
-                    <ModelSelect
-                      models={models}
-                      modelId={selectedModelId}
-                      modelEffort={selectedModelEffort}
-                      onModelChange={handleModelChange}
-                      onModelEffortChange={handleModelEffortChange}
+                      commands={commands}
+                      onEmptyChange={(isEmpty) => {
+                        if (isEmpty !== isEditorEmpty) {
+                          setIsEditorEmpty(isEmpty);
+                        }
+                      }}
                     />
-                  </PromptInputTools>
-                  <div className="flex items-center gap-2">
-                    <Context
-                      maxTokens={128_000}
-                      modelId={selectedModelId}
-                      usage={tokenUsage}
-                      usedTokens={tokenUsage.totalTokens || 0}
-                    >
-                      <ContextTrigger />
-                      <ContextContent>
-                        <ContextContentHeader />
-                        <ContextContentBody>
-                          <ContextInputUsage />
-                          <ContextOutputUsage />
-                          <ContextReasoningUsage />
-                          <ContextCacheUsage />
-                        </ContextContentBody>
-                        <ContextContentFooter />
-                      </ContextContent>
-                    </Context>
-                    <PromptInputSubmit
-                      disabled={
-                        !isGenerating && (!selectedModelId || isEditorEmpty)
-                      }
-                      status={status}
-                      onStop={() => void stop()}
-                    />
-                  </div>
-                </PromptInputFooter>
-              </PromptInput>
-            </PromptInputProvider>
-          </div>
+                  </PromptInputBody>
+                  <PromptInputFooter>
+                    <PromptInputTools className="gap-0">
+                      <PromptInputActionMenu>
+                        <PromptInputActionMenuTrigger />
+                        <PromptInputActionMenuContent className="min-w-max">
+                          <PromptInputActionAddAttachments />
+                        </PromptInputActionMenuContent>
+                      </PromptInputActionMenu>
+                      <ModelSelect
+                        models={models}
+                        modelId={selectedModelId}
+                        modelEffort={selectedModelEffort}
+                        onModelChange={handleModelChange}
+                        onModelEffortChange={handleModelEffortChange}
+                      />
+                    </PromptInputTools>
+                    <div className="flex items-center gap-2">
+                      <Context
+                        maxTokens={128_000}
+                        modelId={selectedModelId}
+                        usage={tokenUsage}
+                        usedTokens={tokenUsage.totalTokens || 0}
+                      >
+                        <ContextTrigger />
+                        <ContextContent>
+                          <ContextContentHeader />
+                          <ContextContentBody>
+                            <ContextInputUsage />
+                            <ContextOutputUsage />
+                            <ContextReasoningUsage />
+                            <ContextCacheUsage />
+                          </ContextContentBody>
+                          <ContextContentFooter />
+                        </ContextContent>
+                      </Context>
+                      <PromptInputSubmit
+                        disabled={
+                          !isGenerating && (!selectedModelId || isEditorEmpty)
+                        }
+                        status={status}
+                        onStop={() => void stop()}
+                      />
+                    </div>
+                  </PromptInputFooter>
+                </PromptInput>
+              </PromptInputProvider>
+            </div>
+          )}
         </div>
       </div>
     </div>

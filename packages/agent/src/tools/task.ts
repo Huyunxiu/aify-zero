@@ -28,6 +28,13 @@ type TaskToolInput = {
 
 type TaskToolMetadata = {
   status: string;
+  /**
+   * The session the subagent runs in, so a client holding this call can read
+   * the transcript behind it. It travels on the result rather than being looked
+   * up because the id is generated here and nothing in the parent's transcript
+   * names it.
+   */
+  sessionId?: string;
 };
 
 type TaskToolOutput = ToolOutput<string, TaskToolMetadata>;
@@ -38,6 +45,13 @@ type TaskToolOutput = ToolOutput<string, TaskToolMetadata>;
  * The call is the subagent's home: its transcript is folded into this part, an
  * answer to one of its questions is routed back through this part, and a
  * resumed call reads the transcript off it rather than starting over.
+ *
+ * It is the one tool here that streams: a call takes as long as the subagent
+ * does, so it reports the session it started as soon as there is one to report,
+ * and the answer at the end. The first report carries the child's session id,
+ * which is what lets a client read that session while this call is still
+ * running; the second carries it again, because a transcript keeps only the
+ * final result and a reloaded page still has to find the child.
  */
 export const createTaskTool = ({
   agent,
@@ -73,22 +87,27 @@ Usage:
   return tool<TaskToolInput, TaskToolOutput, AgentContext>({
     description,
     inputSchema,
-    execute: async (
+    // A generator, because the run has two things to say. Only what it yields
+    // is ever seen: the runner takes the last yielded value as the call's
+    // result and drops a generator's return value, so every way out of this
+    // call — including the failures below — has to yield.
+    async *execute(
       { subagent_type, description: label, prompt },
       { toolCallId }
-    ) => {
+    ) {
       const definition =
         getSubagentDefinition(subagent_type) ??
         getSubagentDefinition(DEFAULT_SUBAGENT_NAME);
 
       if (!definition) {
-        return {
+        yield {
           output: `No subagent named "${subagent_type}". Available: ${names}.`,
           code: "error",
           metadata: {
             status: "error",
           },
         };
+        return;
       }
 
       // The part carries whatever an earlier run of this call produced. Absent
@@ -101,13 +120,14 @@ Usage:
         // The call is not in the transcript the parent handed over, so there is
         // nowhere for the subagent's events to go. Answering the model is the
         // only useful thing left to do.
-        return {
+        yield {
           output: `The ${definition.name} subagent could not be started: its call is not in the transcript.`,
           code: "error",
           metadata: {
             status: "error",
           },
         };
+        return;
       }
 
       const { store } = agent;
@@ -161,6 +181,18 @@ Usage:
         stream
       );
 
+      // 到这里子会话才是真的能读：行、activeStream 和流都写好了。id 就是
+      // 在这一刻报出去的，所以客户端拿到它去读时读到的不是空会话，也不必
+      // 反复回来问"建好了没"。
+      yield {
+        output: "",
+        code: "ok",
+        metadata: {
+          status: "running",
+          sessionId: subagent.sessionId,
+        },
+      };
+
       // The call does not return until the subagent has ended, because what the
       // parent's next step does with this answer is read it: handing it a
       // half-written one would be handing it nothing to act on.
@@ -168,13 +200,14 @@ Usage:
 
       const { report, status } = readSubagentResult(subagent.session.turns);
 
-      return {
+      yield {
         output:
           report ||
           `The ${definition.name} subagent finished without a report.`,
         code: status === "done" ? "ok" : "error",
         metadata: {
           status,
+          sessionId: subagent.sessionId,
         },
       };
     },

@@ -5,9 +5,17 @@ import { Session } from "./session";
 
 export type SessionContainerProps = {
   sessionId?: string;
+  /** Whether the session is being read rather than written to. See {@link Session}. */
+  readOnly?: boolean;
+  /** Closes the pane showing this session, when it can be pointed elsewhere. */
+  onClose?: () => void;
 };
 
-export function SessionContainer({ sessionId }: SessionContainerProps) {
+export function SessionContainer({
+  sessionId,
+  readOnly,
+  onClose,
+}: SessionContainerProps) {
   const listSessionTurnsQuery = useQuery({
     queryKey: ["listSessionTurns", sessionId],
     queryFn: async () =>
@@ -25,5 +33,12 @@ export function SessionContainer({ sessionId }: SessionContainerProps) {
     return null;
   }
 
-  return <Session sessionId={sessionId} initialTurns={initialTurns ?? []} />;
+  return (
+    <Session
+      sessionId={sessionId}
+      initialTurns={initialTurns ?? []}
+      readOnly={readOnly}
+      onClose={onClose}
+    />
+  );
 }
