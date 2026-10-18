@@ -552,7 +552,7 @@ export function Session({
           {/* session content */}
           <div className="relative flex-1">
             <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
-              <div className="relative size-full mx-auto flex min-h-full min-w-0 max-w-4xl flex-col">
+              <div className="relative size-full mx-auto flex min-h-full min-w-0 w-full flex-col">
                 <MessageScrollerProvider
                   scrollPreviousItemPeek={64}
                   defaultScrollPosition="start"
@@ -560,7 +560,7 @@ export function Session({
                 >
                   <MessageScroller>
                     <MessageScrollerViewport>
-                      <MessageScrollerContent className="px-3 py-3 md:px-5 md:py-5">
+                      <MessageScrollerContent className="px-3 py-3 md:px-5 md:py-5 max-w-4xl mx-auto">
                         {turns.length === 0 ? (
                           <Empty className="h-full">
                             <EmptyHeader>
