@@ -7,6 +7,7 @@ import type {
   AgentToolPart,
 } from "@workspace/agent-client";
 import {
+  BotIcon,
   BrainIcon,
   EyeIcon,
   SplitIcon,
@@ -995,6 +996,77 @@ export const AssistantMessage = ({
                         <div className="whitespace-pre">
                           {part.output?.output ?? ""}
                         </div>
+                      </FramePanel>
+                      {renderToolError(part)}
+                    </Frame>
+                  </AgentActivityStep>
+                  <AgentActivityApproval
+                    part={part}
+                    onRespondToolApproval={onRespondToolApproval}
+                  />
+                </>
+              );
+            } else if (part.type === "tool-task") {
+              return (
+                <>
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={BotIcon}
+                    label={getStepLabel("Task", part.input?.description)}
+                    status={status}
+                    summary={summary}
+                    duration={duration}
+                  >
+                    <Frame
+                      variant="default"
+                      maxHeight={STEP_FRAME_MAX_HEIGHT}
+                      overflowBehavior="scroll"
+                    >
+                      <FrameHeader>
+                        <FrameTitle>
+                          {getStepLabel("Task", part.input?.description)}
+                        </FrameTitle>
+                      </FrameHeader>
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">INPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={JSON.stringify(part.input, null, 2) ?? ""}
+                          />
+                        </div>
+                      </div>
+                      <FramePanel
+                        className={cn({ "rounded-b-none": part.approval })}
+                      >
+                        <div className="whitespace-pre">
+                          {JSON.stringify(part.input, null, 2) ?? ""}
+                        </div>
+                      </FramePanel>
+                      {getInlineToolApprovalComponent(part)}
+
+                      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                        <div className="text-muted-foreground">OUTPUT</div>
+                        <div>
+                          <CopyButton
+                            className="text-muted-foreground"
+                            size="icon-sm"
+                            variant="ghost"
+                            label="Copy"
+                            message={part.output?.output ?? ""}
+                          />
+                        </div>
+                      </div>
+                      <FramePanel>
+                        {/* The subagent is told to finish on a report written
+                            for the parent, so what lands here is prose. */}
+                        <MessageResponse controls={FRAME_CONTROLS}>
+                          {part.output?.output ?? ""}
+                        </MessageResponse>
                       </FramePanel>
                       {renderToolError(part)}
                     </Frame>

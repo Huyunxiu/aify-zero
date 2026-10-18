@@ -441,6 +441,56 @@ describe(getPartSummary, () => {
       ).toBe("file deleted");
     });
   });
+
+  describe("task", () => {
+    const task = (extra: Record<string, unknown>) =>
+      part({
+        type: "tool-task",
+        input: { subagent_type: "explore", description: "find the parser" },
+        ...extra,
+      });
+
+    test("should name the subagent while it is still running", () => {
+      // The one tool that reports before it finishes: its label holds the
+      // description the model wrote, which does not say which subagent ran.
+      expect(getPartSummary(task({ state: "input-available" }))).toBe(
+        "explore"
+      );
+    });
+
+    test("should name the subagent it delegated to", () => {
+      expect(
+        getPartSummary(
+          doneTool(
+            "tool-task",
+            { status: "done" },
+            {
+              input: { subagent_type: "general" },
+            }
+          )
+        )
+      ).toBe("general");
+    });
+
+    test("should say nothing for a subagent that did not finish", () => {
+      // A subagent held on an approval, or one that failed, comes back as
+      // `code: "error"` — the row's own `Failed` carries that.
+      expect(
+        getPartSummary(
+          part({
+            type: "tool-task",
+            state: "output-available",
+            input: { subagent_type: "general" },
+            output: {
+              code: "error",
+              output: "",
+              metadata: { status: "error" },
+            },
+          })
+        )
+      ).toBeUndefined();
+    });
+  });
 });
 
 describe(getPartDurationMs, () => {
