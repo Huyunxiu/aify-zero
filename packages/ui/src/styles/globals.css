@@ -434,12 +434,18 @@
   }
 
   * {
+    /* 滑块颜色按主题定义；--scrollbar-thumb 是「当前生效」的颜色，
+       局部想改滚动条行为时覆盖它即可（见下方消息滚动区） */
+    --scrollbar-thumb-color: oklch(0 0 0 / 0.12);
+    --scrollbar-thumb-color-hover: oklch(0 0 0 / 0.25);
+    --scrollbar-thumb: var(--scrollbar-thumb-color);
     scrollbar-width: thin;
-    scrollbar-color: oklch(0 0 0 / 0.12) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 
   .dark * {
-    scrollbar-color: oklch(1 0 0 / 0.1) transparent;
+    --scrollbar-thumb-color: oklch(1 0 0 / 0.1);
+    --scrollbar-thumb-color-hover: oklch(1 0 0 / 0.2);
   }
 
   *::-webkit-scrollbar {
@@ -452,24 +458,28 @@
   }
 
   *::-webkit-scrollbar-thumb {
-    background: oklch(0 0 0 / 0.12);
+    background: var(--scrollbar-thumb);
     border-radius: 9999px;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background: oklch(0 0 0 / 0.25);
-  }
-
-  .dark *::-webkit-scrollbar-thumb {
-    background: oklch(1 0 0 / 0.1);
-  }
-
-  .dark *::-webkit-scrollbar-thumb:hover {
-    background: oklch(1 0 0 / 0.2);
+    background: var(--scrollbar-thumb-color-hover);
   }
 
   *::-webkit-scrollbar-corner {
     background: transparent;
+  }
+
+  /* 消息滚动区：滑块只在 hover 时可见，平时靠 scrollbar-gutter-stable 占位避免抖动。
+     触摸设备没有 hover，保持常驻可见 */
+  @media (hover: hover) {
+    [data-slot="message-scroller-viewport"] {
+      --scrollbar-thumb: transparent;
+    }
+
+    [data-slot="message-scroller-viewport"]:hover {
+      --scrollbar-thumb: var(--scrollbar-thumb-color);
+    }
   }
 }
 

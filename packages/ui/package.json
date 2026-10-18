@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@ai-sdk/react": "catalog:",
-    "@base-ui/react": "^1.4.1",
+    "@base-ui/react": "catalog:",
     "@fontsource-variable/geist": "^5.2.8",
     "@oreo-design/avatar": "catalog:",
     "@pierre/diffs": "catalog:",
