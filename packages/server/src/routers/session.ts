@@ -220,6 +220,11 @@ export const streamSession = publicProcedure
  * Both paths settle the session to `canceled`: the turn the caller asked to
  * stop is one that did not run to completion, whether this call ended it or
  * found it already gone.
+ *
+ * 子会话的行也在这里收尾。父一停，子 agent 的 signal 跟着停（见
+ * `createSubagent`），它自己会把行清掉——但那要等它跑完，而进程被杀时根本不会
+ * 发生。所以停完再按库扫一遍父派生出的会话，把还挂着 `activeStreamId` 的行清掉，
+ * 免得刷新后有一个永远"运行中"的子会话。
  */
 export const stopSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/stop" })
@@ -238,15 +243,39 @@ export const stopSession = publicProcedure
           "canceled"
         );
       }
+      await clearChildSessions(store, sessionId);
       return { aborted: false };
     }
 
     streamEntry.agent.abort();
     await streamEntry.whenFinished();
     await store.clearActiveStream(sessionId, streamEntry.streamId, "canceled");
+    await clearChildSessions(store, sessionId);
 
     return { aborted: true };
   });
+
+/**
+ * 把一个会话派生出的、还挂着流的子会话行清掉。
+ *
+ * 只动 `activeStreamId` 非空的行：已经跑完的子会话是 `done`，清它会把它从"没读
+ * 过"抹成 `canceled`，而它并没有被取消。
+ *
+ * 和父会话那边一样用 compare-and-clear，所以重复调用是安全的——子 agent 自己
+ * 先清过了，这里就查不到东西可清。
+ */
+async function clearChildSessions(
+  store: SQLiteStore,
+  parentSessionId: string
+): Promise<void> {
+  const children = await store.listChildSessions(parentSessionId);
+
+  for (const child of children) {
+    if (child.activeStreamId) {
+      await store.clearActiveStream(child.id, child.activeStreamId, "canceled");
+    }
+  }
+}
 
 /**
  * Marks the finished turn a session is showing as read.

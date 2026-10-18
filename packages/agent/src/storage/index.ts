@@ -43,6 +43,15 @@ export interface AgentStore {
     toolCallId: string;
   }): Promise<SessionModel | null>;
 
+  /**
+   * 一个会话派生出的全部子会话，按父会话 id 找。
+   *
+   * 用来收拾父会话停掉之后的残局。子 agent 的流注册在它自己的会话名下，父的
+   * stop 扫不到；进程被杀时子会话那一行会连着 `activeStreamId` 一起留下，只有
+   * 这里能把它们找回来清干净。
+   */
+  listChildSessions(parentSessionId: string): Promise<SessionModel[]>;
+
   saveSession(session: SessionInsertModel): Promise<boolean>;
 
   getSessionById(sessionId: string): Promise<SessionModel | null>;

@@ -64,6 +64,15 @@ export class SQLiteStore implements AgentStore {
     return session ?? null;
   }
 
+  async listChildSessions(parentSessionId: string): Promise<SessionModel[]> {
+    const sessions = await db
+      .select()
+      .from(session_table)
+      .where(eq(session_table.parentSessionId, parentSessionId));
+
+    return sessions;
+  }
+
   async saveSession(session: SessionInsertModel): Promise<boolean> {
     const result = await db.insert(session_table).values(session);
     return result.rowsAffected > 0;
