@@ -10,7 +10,7 @@ import type { ToolSet } from "ai";
 import { AgentContext } from "../agent-context";
 import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
-import { MemoryAgentStore } from "../storage/memory-store";
+import type { AgentStore } from "../storage";
 import type { AgentToolSet } from "../types";
 import {
   generateSessionId,
@@ -26,8 +26,8 @@ const FORBIDDEN_SUBAGENT_TOOLS = new Set(["task"]);
  * The tools a subagent runs with.
  *
  * `task` is dropped whatever the definition asks for: a subagent that could
- * delegate would be able to recurse without bound, and its transcript has
- * nowhere to put a third level.
+ * delegate would be able to recurse without bound, and nothing in the run
+ * counts the depth or stops it.
  */
 export function selectSubagentTools(
   tools: ToolSet,
@@ -74,14 +74,6 @@ export type ProviderCredentials = {
   providerId: string;
 };
 
-/**
- * The parts of a parent agent a subagent inherits.
- *
- * Passed as a small record rather than the parent `Agent` itself. A subagent
- * shares its parent's working directory, skills, model, and credentials, and
- * nothing else — handed the agent, it could reach for the session, store, and
- * transcript it is meant to be sealed off from.
- */
 export type SubagentParent = {
   /** The parent's environment: its working directory, skills, and model. */
   context: AgentContext;
@@ -89,6 +81,10 @@ export type SubagentParent = {
   tools: ToolSet;
   /** The parent's credentials, so the child calls the same provider. */
   credentials: ProviderCredentials;
+  /** 派生它的父会话 id。 */
+  sessionId: string;
+  /** 父会话里这次 `task` 调用的 id。和父会话 id 一起唯一确定一个子会话。 */
+  toolCallId: string;
 };
 
 export type CreateSubagentOptions = {
@@ -106,36 +102,92 @@ export type CreateSubagentOptions = {
    * parent's.
    */
   modelId?: string;
+  store: AgentStore;
+  description: string;
 };
 
-/** A subagent, ready to be streamed. */
+/**
+ * 决定这次 `task` 调用在哪个子会话里跑，并把该会话的行准备好。
+ *
+ * 父 turn 被 resume 时同一个调用会再执行一遍，所以先按 (父会话, 工具调用 id)
+ * 找已经派生过的那次：找到就接着它的 transcript 往下走，找不到才新建。这样
+ * 一次调用始终只对应一个子会话，不会每 resume 一次就多一行、多跑一遍。
+ *
+ * 新建时这一行必须在 `stream` 之前写进去，而且带一个非空 title：运行时读这
+ * 一行来决定要不要生成标题，读不到就为一个没人看的会话白花一次模型调用，
+ * 还会往子流上写 `session.title.*` 事件。
+ */
+export async function resolveSubagentSession(
+  store: AgentStore,
+  {
+    parentSessionId,
+    toolCallId,
+    description,
+    prompt,
+  }: {
+    parentSessionId: string;
+    toolCallId: string;
+    description: string;
+    prompt: string;
+  }
+): Promise<{ sessionId: string; turns: AgentTurn<AgentToolSet>[] }> {
+  const existing = await store.findSessionByParentToolCall({
+    parentSessionId,
+    toolCallId,
+  });
+
+  if (existing) {
+    const turns = AgentSession.toAgentTurns(
+      await store.getBranchTurns(existing.id)
+    );
+
+    // 行写了但一轮都没落下——进程恰好死在两次写之间。这种情况当作没跑过：
+    // 喂一个空 transcript 会让子 agent 连自己的任务书都没有。
+    return {
+      sessionId: existing.id,
+      turns: turns.length > 0 ? turns : [buildPromptTurn(prompt)],
+    };
+  }
+
+  const sessionId = generateSessionId();
+  await store.saveSession({
+    id: sessionId,
+    title: description,
+    metadata: {},
+    kind: "subagent",
+    parentSessionId,
+    parentToolCallId: toolCallId,
+  });
+
+  return { sessionId, turns: [buildPromptTurn(prompt)] };
+}
+
 export type Subagent = {
   agent: Agent;
   /** The turns to hand to {@link Agent.stream} to start it. */
   turns: AgentTurn<AgentToolSet>[];
 };
 
-/**
- * Builds the agent that runs one subagent, wired to its parent.
- *
- * A subagent is a child of its parent rather than a peer: same working
- * directory, same skills, same provider and credentials, and no `task` tool,
- * so it cannot delegate in turn. What it does not share is memory — it starts
- * from the prompt alone, and the transcript it produces stays in its own
- * session rather than becoming part of the parent's conversation.
- *
- * It is not a session in the user's sense either. Its transcript belongs to
- * whichever call asked for it, so it is given a store that remembers nothing;
- * the session id it carries is its own only so its stream and its events can
- * be told apart from the parent's. It also carries its own compaction budget,
- * because the parent's already holds the token counts of a prompt this agent
- * never sent.
- */
-export function createSubagent(
+export async function createSubagent(
   parent: SubagentParent,
-  { definition, prompt, tools, modelId }: CreateSubagentOptions
-): Subagent {
-  const turns = [buildPromptTurn(prompt)];
+  {
+    definition,
+    prompt,
+    tools,
+    modelId,
+    store,
+    description,
+  }: CreateSubagentOptions
+): Promise<Subagent> {
+  const { sessionId: childSessionId, turns } = await resolveSubagentSession(
+    store,
+    {
+      parentSessionId: parent.sessionId,
+      toolCallId: parent.toolCallId,
+      description,
+      prompt,
+    }
+  );
   const session = new AgentSession({ turns });
   const resolvedModelId =
     modelId ?? definition.modelId ?? parent.context.modelId;
@@ -154,7 +206,6 @@ export function createSubagent(
     compactionConfig,
   });
 
-  const childSessionId = generateSessionId();
   const agent = new Agent({
     name: `subagent:${definition.name}`,
     sessionId: childSessionId,
@@ -162,10 +213,7 @@ export function createSubagent(
     context,
     session,
     tools: selectSubagentTools(tools ?? parent.tools, definition),
-    store: new MemoryAgentStore({
-      sessionId: childSessionId,
-      title: `subagent:${definition.name}`,
-    }),
+    store,
     apiKey: parent.credentials.apiKey,
     apiUrl: parent.credentials.apiUrl,
     providerId: parent.credentials.providerId,

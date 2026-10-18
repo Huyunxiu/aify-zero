@@ -281,6 +281,7 @@ const listSessions = publicProcedure
       cursor,
       limit,
       direction,
+      kind: "main",
     });
     return { sessions };
   });

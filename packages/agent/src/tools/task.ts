@@ -86,8 +86,6 @@ Usage:
           output: `No subagent named "${subagent_type}". Available: ${names}.`,
           code: "error",
           metadata: {
-            subagent: subagent_type,
-            description: label,
             status: "error",
           },
         };
@@ -107,17 +105,18 @@ Usage:
           output: `The ${definition.name} subagent could not be started: its call is not in the transcript.`,
           code: "error",
           metadata: {
-            subagent: definition.name,
-            description: label,
             status: "error",
           },
         };
       }
 
-      // What the child inherits: the parent's environment, its tools, and its
-      // credentials. Not the agent itself — the session and transcript the
-      // subagent is meant to be sealed off from live on there.
-      const { agent: subagent, turns } = createSubagent(
+      const { store } = agent;
+
+      // What the child inherits: the parent's environment, its tools, its
+      // credentials, and enough of the parent's identity for its own session
+      // row to point back here. Not the agent itself — the session and
+      // transcript the subagent is meant to be sealed off from live on there.
+      const { agent: subagent, turns } = await createSubagent(
         {
           context: agent.context,
           tools: agent.tools,
@@ -126,8 +125,10 @@ Usage:
             apiUrl: agent.apiUrl,
             providerId: agent.providerId,
           },
+          sessionId: agent.sessionId,
+          toolCallId,
         },
-        { definition, prompt }
+        { definition, prompt, store, description: label }
       );
 
       // Registered under the subagent's own session id rather than the
@@ -136,14 +137,21 @@ Usage:
       // into it.
       const activeStreamId = subagent.sessionId;
 
+      // 子会话的行和父会话一样要维护状态。这一笔写在 stream 之前：子流可能
+      // 在 setActiveStream 落库之前就跑完，那时 onFinish 里的 clearActiveStream
+      // 会认不出自己的 streamId 而直接返回，行就永远卡在 running。
+      await store.setActiveStream(subagent.sessionId, activeStreamId);
+
       const stream = await subagent.stream({
         turns,
         modelId: subagent.context.modelId,
-        onFinish: () => {
-          // The subagent is over, so nothing is left to read from it live; what
-          // the parent needs is already in the turns below.
+        onFinish: async (status) => {
           STREAM_REGISTRY.unregisterStream(activeStreamId);
-          return Promise.resolve();
+          await store.clearActiveStream(
+            subagent.sessionId,
+            activeStreamId,
+            status
+          );
         },
       });
 

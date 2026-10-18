@@ -6,31 +6,44 @@ import type {
   TurnModel,
 } from "@workspace/db";
 
-/**
- * The states a session settles into once its stream has ended — everything
- * except `running`, which a live stream owns. A stopped turn is `aborted` in
- * the turn's own vocabulary; the session row says `canceled`.
- *
- * `wait_review` is among them, though it is the one ending that expects to be
- * followed: a turn whose calls were held for approval stops with it, and the
- * session stays there until the user answers.
- */
 export type SessionEndStatus = Exclude<SessionStatus, "running">;
 
 export interface AgentStore {
+  /**
+   * 按时间列出会话。
+   *
+   * `kind` 是必填的，没有默认值：会话表里同时躺着用户的会话和子 agent 的
+   * transcript，漏掉这个条件不会报错，只会让子 agent 悄悄混进列表——侧边栏
+   * 被填满、分页游标跟着错位。做成必填，漏传就是编译错误。
+   */
   listSessions({
     cursor,
     limit,
     direction,
+    kind,
   }: {
     cursor?: string;
     limit?: number;
     direction?: "asc" | "desc";
+    kind: SessionModel["kind"];
   }): Promise<SessionModel[]>;
 
-  saveSession(session: SessionInsertModel): Promise<boolean>;
+  /**
+   * 找回一次 `task` 调用派生出的子会话。
+   *
+   * 父 turn 被 resume 时同一个调用会再执行一遍，靠这对 (父会话, 工具调用 id)
+   * 认出已经跑过的那次，接着它的 transcript 往下走，而不是新建一行再从头跑。
+   * 没有派生的调用返回 null。
+   */
+  findSessionByParentToolCall({
+    parentSessionId,
+    toolCallId,
+  }: {
+    parentSessionId: string;
+    toolCallId: string;
+  }): Promise<SessionModel | null>;
 
-  updateSession(sessionId: string, title: string): Promise<number>;
+  saveSession(session: SessionInsertModel): Promise<boolean>;
 
   getSessionById(sessionId: string): Promise<SessionModel | null>;
 

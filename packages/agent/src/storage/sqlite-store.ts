@@ -14,20 +14,27 @@ export class SQLiteStore implements AgentStore {
     cursor,
     limit,
     direction,
+    kind,
   }: {
     cursor?: string;
     limit?: number;
     direction?: "asc" | "desc";
+    kind: SessionModel["kind"];
   }): Promise<SessionModel[]> {
     const isDesc = direction === "desc";
-    const whereConditions = cursor
-      ? [isDesc ? lt(session_table.id, cursor) : gt(session_table.id, cursor)]
-      : [];
+    // kind 是常驻条件，游标是附加的：少了 kind，子 agent 的行会挤进分页结果，
+    // 调用方按"返回条数 == pageSize"推下一页时跟着一起错。
+    const conditions = [
+      eq(session_table.kind, kind),
+      ...(cursor
+        ? [isDesc ? lt(session_table.id, cursor) : gt(session_table.id, cursor)]
+        : []),
+    ];
 
     const sessions = await db
       .select()
       .from(session_table)
-      .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
+      .where(and(...conditions))
       .orderBy(
         isDesc ? desc(session_table.createdAt) : asc(session_table.createdAt)
       )
@@ -36,17 +43,30 @@ export class SQLiteStore implements AgentStore {
     return sessions;
   }
 
+  async findSessionByParentToolCall({
+    parentSessionId,
+    toolCallId,
+  }: {
+    parentSessionId: string;
+    toolCallId: string;
+  }): Promise<SessionModel | null> {
+    const [session] = await db
+      .select()
+      .from(session_table)
+      .where(
+        and(
+          eq(session_table.parentSessionId, parentSessionId),
+          eq(session_table.parentToolCallId, toolCallId)
+        )
+      )
+      .limit(1);
+
+    return session ?? null;
+  }
+
   async saveSession(session: SessionInsertModel): Promise<boolean> {
     const result = await db.insert(session_table).values(session);
     return result.rowsAffected > 0;
-  }
-
-  async updateSession(sessionId: string, title: string): Promise<number> {
-    const result = await db
-      .update(session_table)
-      .set({ title })
-      .where(eq(session_table.id, sessionId));
-    return result.rowsAffected;
   }
 
   async getSessionById(sessionId: string): Promise<SessionModel | null> {
