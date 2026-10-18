@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { AgentContext } from "../agent-context";
 import type { Agent } from "../agents";
 import { STREAM_REGISTRY } from "../stream-registry";
-import { readSubagentResult } from "../subagent/create";
+import { createSubagent, readSubagentResult } from "../subagent/create";
 import {
   DEFAULT_SUBAGENT_NAME,
   getSubagentDefinition,
@@ -114,10 +114,21 @@ Usage:
         };
       }
 
-      const { agent: subagent, turns } = agent.createSubagent({
-        definition,
-        prompt,
-      });
+      // What the child inherits: the parent's environment, its tools, and its
+      // credentials. Not the agent itself — the session and transcript the
+      // subagent is meant to be sealed off from live on there.
+      const { agent: subagent, turns } = createSubagent(
+        {
+          context: agent.context,
+          tools: agent.tools,
+          credentials: {
+            apiKey: agent.apiKey,
+            apiUrl: agent.apiUrl,
+            providerId: agent.providerId,
+          },
+        },
+        { definition, prompt }
+      );
 
       // Registered under the subagent's own session id rather than the
       // parent's, so a reader holding the call can follow the transcript it
