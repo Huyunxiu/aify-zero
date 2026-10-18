@@ -1,7 +1,21 @@
 import { homedir } from "node:os";
 
 import { streamToEventIterator, type } from "@orpc/server";
-import { Agent, STREAM_REGISTRY } from "@workspace/agent";
+import {
+  createBashTool,
+  createReadFileTool,
+  createWriteFileTool,
+  createDeleteFileTool,
+  createEditFileTool,
+  createGrepTool,
+  createGlobTool,
+  createWebFetchTool,
+  createTaskTool,
+  Agent,
+  appendSubagentPrompt,
+  STREAM_REGISTRY,
+  SUBAGENT_DEFINITIONS,
+} from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import {
   addToolApprovalResponse,
@@ -15,16 +29,6 @@ import { AgentContext } from "@workspace/agent/agent-context";
 import { AgentSession } from "@workspace/agent/agent-session";
 import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
-import {
-  createBashTool,
-  createReadFileTool,
-  createWriteFileTool,
-  createDeleteFileTool,
-  createEditFileTool,
-  createGrepTool,
-  createGlobTool,
-  createWebFetchTool,
-} from "@workspace/agent/tools/index";
 import { createLoadSkillTool } from "@workspace/agent/tools/load-skill";
 import {
   generateSessionId,
@@ -77,8 +81,8 @@ const createSession = publicProcedure
     const originalTurns = mostRecentTurn
       ? [...previousTurns, mostRecentTurn]
       : previousTurns;
+    const session = new AgentSession({ turns: originalTurns });
     if (approvals?.length) {
-      const session = new AgentSession({ turns: originalTurns });
       const changedTurns = addToolApprovalResponse(session.turns, approvals);
       for (const turn of changedTurns) {
         await store.updateTurn(turn.id, turn);
@@ -111,7 +115,7 @@ const createSession = publicProcedure
       },
     });
 
-    const systemPrompt = skillManager.appendPrompt("");
+    const systemPrompt = appendSubagentPrompt(skillManager.appendPrompt(""));
 
     const agent = new Agent({
       name: "main",
@@ -119,6 +123,7 @@ const createSession = publicProcedure
       systemPrompt,
       modelEffort: effort,
       context: agentContext,
+      session,
       tools: {
         bash: createBashTool({ agentContext }),
         "read-file": createReadFileTool({ agentContext }),
@@ -136,6 +141,15 @@ const createSession = publicProcedure
       providerId: aiModel.provider,
       modelId: aiModel.model,
     });
+
+    agent.registerTool(
+      "task",
+      createTaskTool({
+        agent,
+        agentContext,
+        definitions: SUBAGENT_DEFINITIONS,
+      })
+    );
 
     const activeStreamId = generateSessionId();
 

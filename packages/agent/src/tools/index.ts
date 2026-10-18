@@ -4,5 +4,6 @@ export * from "./edit-file";
 export * from "./glob";
 export * from "./grep";
 export * from "./read-file";
+export * from "./task";
 export * from "./web-fetch";
 export * from "./write-file";

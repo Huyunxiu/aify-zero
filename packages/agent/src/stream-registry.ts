@@ -6,14 +6,22 @@ import type { Agent } from "./agents";
 export class StreamEventRegistry<TOOLS extends ToolSet> {
   readonly #store = new Map<string, StreamEventEntry<TOOLS>>();
 
+  /**
+   * Registers a turn's stream and starts draining it.
+   *
+   * The entry comes back so the caller that started the turn can wait on its
+   * ending — {@link StreamEventEntry.whenFinished} — rather than having to look
+   * it up again by the session it came from.
+   */
   registerStream(
     streamId: string,
     agent: Agent,
     stream: ReadableStream<AgentStreamEvent<TOOLS>>
-  ): void {
+  ): StreamEventEntry<TOOLS> {
     const entry = new StreamEventEntry(streamId, agent, stream);
     this.#store.set(streamId, entry);
     entry.start();
+    return entry;
   }
 
   /**

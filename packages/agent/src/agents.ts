@@ -28,20 +28,32 @@ import type {
   ModelMessage,
   StepResultPerformance,
   TextStreamPart,
+  Tool,
   ToolContent,
   ToolSet,
 } from "ai";
 import { collectToolApprovals } from "ai/internal";
 
-import type { AgentContext } from "./agent-context";
+import { AgentContext } from "./agent-context";
 import { AgentSession } from "./agent-session";
 import { compactMessages, shouldCompact } from "./compaction/compaction";
 import { HooksManager } from "./hooks-manager";
 import type { ExtensionAPI } from "./hooks-manager";
 import type { AgentStore, SessionEndStatus } from "./storage";
+import { MemoryAgentStore } from "./storage/memory-store";
+import {
+  buildPromptTurn,
+  createSubagentCompactionConfig,
+  selectSubagentTools,
+} from "./subagent/create";
+import type { SubagentDefinition } from "./subagent/definitions";
 import { executeToolCalls, stripToolExecution } from "./tools/execution";
 import type { AgentToolSet } from "./types";
-import { generateEventId, generateStepId } from "./utils/id-util";
+import {
+  generateEventId,
+  generateSessionId,
+  generateStepId,
+} from "./utils/id-util";
 import { toAgentEvent } from "./utils/to-agent-stream-event";
 
 registerTelemetry(DevToolsTelemetry());
@@ -83,7 +95,7 @@ const TURN_END_TO_SESSION_STATUS = {
 export type AgentOptions = {
   name: string;
   sessionId: string;
-  session?: AgentSession;
+  session: AgentSession;
   tools?: ToolSet;
   store: AgentStore;
   systemPrompt?: string;
@@ -105,6 +117,30 @@ export type AgentStreamOptions = {
    * outcome is only known here, once the turn has run.
    */
   onFinish: (status: SessionEndStatus) => Promise<void>;
+};
+
+export type CreateSubagentOptions = {
+  /** Which subagent to build: its instructions, tool allow-list, and model. */
+  definition: SubagentDefinition;
+  /** The task brief the subagent starts from — its only user turn. */
+  prompt: string;
+  /**
+   * The tools it may use. Defaults to the parent's, minus `task`: a subagent
+   * that could delegate would be able to recurse without bound.
+   */
+  tools?: ToolSet;
+  /**
+   * The model to run it on. Falls back to the definition's own, then to the
+   * parent's.
+   */
+  modelId?: string;
+};
+
+/** A subagent, ready to be streamed. */
+export type Subagent = {
+  agent: Agent;
+  /** The turns to hand to {@link Agent.stream} to start it. */
+  turns: AgentTurn<AgentToolSet>[];
 };
 
 type AgentTurnInput = {
@@ -186,12 +222,78 @@ export class Agent {
     // The turn's abort scope belongs to the agent running it: `abort()` is the
     // only way in, and every step reads the signal back off the context.
     this.context.abortSignal = this.#abortController.signal;
-    this.session = options.session ?? new AgentSession({ turns: [] });
+    this.session = options.session;
     this.provider = createOpenAICompatible({
       apiKey: this.apiKey,
       baseURL: this.apiUrl,
       name: this.providerId,
     });
+  }
+
+  registerTool(name: string, tool: Tool) {
+    this.tools[name] = tool;
+  }
+
+  unregisterTool(name: string) {
+    // oxlint-disable-next-line typescript/no-dynamic-delete
+    delete this.tools[name];
+  }
+
+  /**
+   * Builds the agent that runs one subagent, wired to this one.
+   *
+   * A subagent is a child of its parent rather than a peer: same working
+   * directory, same skills, same provider and credentials, and no `task` tool,
+   * so it cannot delegate in turn. What it does not share is memory — it starts
+   * from the prompt alone, and the transcript it produces stays in its own
+   * session rather than becoming part of this conversation.
+   *
+   * It is not a session in the user's sense either. Its transcript belongs to
+   * whichever call asked for it, so it is given a store that remembers nothing;
+   * the session id it carries is its own only so its stream and its events can
+   * be told apart from the parent's. It also carries its own compaction budget,
+   * because the parent's already holds the token counts of a prompt this agent
+   * never sent.
+   */
+  createSubagent({
+    definition,
+    prompt,
+    tools,
+    modelId,
+  }: CreateSubagentOptions): Subagent {
+    const turns = [buildPromptTurn(prompt)];
+    const session = new AgentSession({ turns });
+    const resolvedModelId =
+      modelId ?? definition.modelId ?? this.context.modelId;
+
+    const context = new AgentContext({
+      workdir: this.context.workdir,
+      modelId: resolvedModelId,
+      modelEffort: this.context.modelEffort,
+      skills: this.context.skills,
+      compactionConfig: createSubagentCompactionConfig(),
+    });
+
+    const childSessionId = generateSessionId();
+    const agent = new Agent({
+      name: `subagent:${definition.name}`,
+      sessionId: childSessionId,
+      systemPrompt: this.context.skills.appendPrompt(definition.instructions),
+      context,
+      session,
+      tools: selectSubagentTools(tools ?? this.tools, definition),
+      store: new MemoryAgentStore({
+        sessionId: childSessionId,
+        title: `subagent:${definition.name}`,
+      }),
+      apiKey: this.apiKey,
+      apiUrl: this.apiUrl,
+      providerId: this.providerId,
+      modelId: resolvedModelId,
+      modelEffort: this.context.modelEffort,
+    });
+
+    return { agent, turns };
   }
 
   /**
@@ -887,8 +989,8 @@ export class Agent {
               ...step.performance.toolExecutionMs,
               ...execution.toolExecutionMs,
             },
-          }
-        }
+          },
+        },
       });
 
       // What the SDK feeds its own next step: the assistant message for this

@@ -5,6 +5,7 @@ import type {
   GlobToolType,
   GrepToolType,
   ReadFileToolType,
+  TaskToolType,
   WebFetchToolType,
   WriteFileToolType,
 } from "@workspace/agent/tools/index";
@@ -20,4 +21,5 @@ export type AgentToolSet = {
   "web-fetch": WebFetchToolType;
   "load-skill": LoadSkillToolType;
   bash: BashToolType;
+  task: TaskToolType;
 };
