@@ -9,6 +9,7 @@ import {
   ArrowUpRightIcon,
   ChevronDownIcon,
   CircleCheckIcon,
+  CircleStopIcon,
   CircleXIcon,
   DotIcon,
   ShieldQuestionIcon,
@@ -259,6 +260,7 @@ export type AgentActivityStepStatus =
   | "running"
   | "failed"
   | "denied"
+  | "aborted"
   | "approval";
 
 /**
@@ -336,6 +338,13 @@ export const AgentActivityStep = memo(
 
       if (status === "failed") {
         return <CircleXIcon className="size-3.5 text-destructive-foreground" />;
+      }
+
+      // 被停下来的那一步不是错的，所以用静下来的灰，而不是 failed 的红。
+      if (status === "aborted") {
+        return (
+          <CircleStopIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        );
       }
 
       if (status === "complete") {

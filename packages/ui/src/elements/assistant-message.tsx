@@ -302,7 +302,7 @@ export const AssistantMessage = ({
         </AgentActivityHeader>
         <AgentActivityContent path="root">
           {parts.map(({ part, step }, i) => {
-            const status = getPartStatus(part);
+            const status = getPartStatus(part, turn.status);
             const summary = getPartSummary(part);
             const durationMs = getPartDurationMs(part, step);
             const duration =

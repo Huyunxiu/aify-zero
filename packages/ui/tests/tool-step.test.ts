@@ -91,6 +91,47 @@ describe(getPartStatus, () => {
     ).toBe("running");
   });
 
+  test("should report a preliminary report as aborted once the turn has settled", () => {
+    // 进程被杀时落库的就是这个样子：preliminary 那份是最后一份，最终结果再也
+    // 没来。turn 已经落定，行不该继续转圈。
+    const reportingTask = part({
+      type: "tool-task",
+      state: "output-available",
+      preliminary: true,
+      input: { subagent_type: "explore" },
+      output: { code: "ok", output: "", metadata: { status: "running" } },
+    });
+
+    expect(getPartStatus(reportingTask, "aborted")).toBe("aborted");
+    expect(getPartStatus(reportingTask, "error")).toBe("aborted");
+
+    // 还在跑的那一轮不算：后面还有报告要来。
+    expect(getPartStatus(reportingTask, "streaming")).toBe("running");
+    // wait_review 也没落定——那一轮停在等用户回答，答完还有一段流接着跑。
+    expect(getPartStatus(reportingTask, "wait_review")).toBe("running");
+    // 统计用的那些调用点拿不到 turn 状态，保持原样。
+    expect(getPartStatus(reportingTask)).toBe("running");
+  });
+
+  test("should report a task whose subagent was stopped as aborted, not failed", () => {
+    // 父会话一停，signal 传导下去把子 agent 一起停了，`task` 于是拿着一份
+    // "没有报告"回来。`code: "error"` 在这里说的是"没拿到结果"。
+    expect(
+      getPartStatus(
+        part({
+          type: "tool-task",
+          state: "output-available",
+          input: { subagent_type: "explore" },
+          output: {
+            code: "error",
+            output: "The explore subagent finished without a report.",
+            metadata: { status: "aborted", sessionId: "child-1" },
+          },
+        })
+      )
+    ).toBe("aborted");
+  });
+
   test("should report a tool that ran and reported an error as failed", () => {
     // Glob and read-file resolve `code: "error"` for a bad path, so the part
     // stays in `output-available` — reading only `state` would call it complete.

@@ -11,6 +11,7 @@ import type {
   AgentPart,
   AgentStaticToolPart,
   AgentToolPart,
+  AgentTurnStatus,
 } from "@workspace/agent-client";
 import type { ReactNode } from "react";
 
@@ -21,15 +22,20 @@ export type StepRow = {
 };
 
 /**
- * The four states a row can render in. Deliberately not the tool part's own
- * `state`: `output-available` covers both a success and a tool that reported
- * failure through `output.code`, and the row has to tell those apart.
+ * The states a row can render in. Deliberately not the tool part's own `state`:
+ * `output-available` covers both a success and a tool that reported failure
+ * through `output.code`, and the row has to tell those apart.
+ *
+ * `aborted` is the third way a call can end without a result: the turn it
+ * belonged to was stopped. It is not `failed` — nothing went wrong — and it is
+ * certainly not `complete`.
  */
 export type StepRowStatus =
   | "running"
   | "complete"
   | "failed"
   | "denied"
+  | "aborted"
   | "approval";
 
 /**
@@ -58,7 +64,22 @@ const TOOL_STATE_STATUS: Record<ResolvedToolState, StepRowStatus> = {
   "output-error": "failed",
 };
 
-export const getPartStatus = (part: AgentPart<AgentToolSet>): StepRowStatus => {
+/**
+ * turn 已经落定的那几个状态——不会再有事件落到它上面。
+ *
+ * `streaming` 不算；`wait_review` 也不算：那一轮停在等用户回答，答完还有一段流
+ * 接着跑，它手里的 preliminary 仍可能有后续。
+ */
+const TURN_SETTLED = new Set<AgentTurnStatus["status"]>([
+  "done",
+  "aborted",
+  "error",
+]);
+
+export const getPartStatus = (
+  part: AgentPart<AgentToolSet>,
+  turnStatus?: AgentTurnStatus["status"]
+): StepRowStatus => {
   if (isAgentToolPart(part)) {
     if (part.state === "approval-requested") {
       // A call a policy approves on its own is not waiting on the user, so it
@@ -72,8 +93,22 @@ export const getPartStatus = (part: AgentPart<AgentToolSet>): StepRowStatus => {
     // can follow the subagent it started — is in `output-available` with
     // `preliminary` set. That is not the call's outcome: the row keeps running
     // until the report that is not preliminary arrives.
+    //
+    // 除非那个报告永远不会来了。turn 已经落定（被停、出错，或者流就那么断了）
+    // 而 part 还停在 preliminary，说明它手里那份就是最后一份——进程被杀时落库
+    // 的就是这个样子。再转圈就是骗人。
     if (part.state === "output-available" && part.preliminary) {
-      return "running";
+      return turnStatus && TURN_SETTLED.has(turnStatus) ? "aborted" : "running";
+    }
+    // 子 agent 被中断：父会话一停，signal 传导下去把它一起停了，`task` 于是
+    // 拿着一份"没有报告"回来。这不是失败——`code: "error"` 在这里说的是"没拿到
+    // 结果"，不是"子 agent 出错了"。
+    if (
+      part.type === "tool-task" &&
+      part.state === "output-available" &&
+      part.output.metadata?.status === "aborted"
+    ) {
+      return "aborted";
     }
     // A tool that ran and reported `code: "error"` is still in
     // `output-available` — glob and read-file do this for a bad path. The row
