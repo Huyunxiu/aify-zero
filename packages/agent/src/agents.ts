@@ -96,6 +96,11 @@ export type AgentOptions = {
   providerId: string;
   modelId: string;
   modelEffort?: ModelEffort;
+  /**
+   * 这个 agent 所属的外部 abort scope，由派生它的父传进来。父停时它跟着停；和它
+   * 自己的 `abort()` 是并集而不是替代，所以子 agent 仍然能被单独停掉。
+   */
+  abortSignal?: AbortSignal;
 };
 
 export type AgentStreamOptions = {
@@ -184,9 +189,12 @@ export class Agent {
     this.context = options.context;
     this.context.modelId = options.modelId;
     this.context.modelEffort = options.modelEffort;
-    // The turn's abort scope belongs to the agent running it: `abort()` is the
-    // only way in, and every step reads the signal back off the context.
-    this.context.abortSignal = this.#abortController.signal;
+    // 这一轮的 abort scope 属于跑它的 agent：`abort()` 是入口，每一步都从 context
+    // 上把 signal 读回去。子 agent 由父把自己的 signal 传进来，两者取并集——父一停
+    // 它就跟着停，而它自己的 `abort()` 仍然独立生效。
+    this.context.abortSignal = options.abortSignal
+      ? AbortSignal.any([options.abortSignal, this.#abortController.signal])
+      : this.#abortController.signal;
     this.session = options.session;
     this.provider = createOpenAICompatible({
       apiKey: this.apiKey,

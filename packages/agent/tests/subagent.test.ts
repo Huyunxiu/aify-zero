@@ -6,9 +6,14 @@ import type {
 } from "@workspace/db";
 import { describe, expect, test } from "vitest";
 
+import { AgentContext } from "../src/agent-context.js";
+import { AgentSession } from "../src/agent-session.js";
+import { Agent } from "../src/agents.js";
+import { SkillManager } from "../src/skill/index.js";
 import type { AgentStore } from "../src/storage/index.js";
 import {
   buildPromptTurn,
+  createSubagent,
   readSubagentResult,
   resolveSubagentSession,
   selectSubagentTools,
@@ -219,6 +224,90 @@ describe(selectSubagentTools, () => {
   test("drops task even when the allow-list asks for it", () => {
     const narrowed: SubagentDefinition = { ...definition, tools: ["task"] };
     expect(Object.keys(selectSubagentTools(tools, narrowed))).toStrictEqual([]);
+  });
+});
+
+describe("subagent 的 abort scope", () => {
+  /**
+   * 造一个真的父 agent：`context.abortSignal` 由它的构造函数设成自己的
+   * controller，这正是 `createSubagent` 要接过去的东西。
+   */
+  const buildParent = (): Agent =>
+    new Agent({
+      name: "main",
+      sessionId: "parent-session",
+      session: new AgentSession({ turns: [] }),
+      store: asStore(new FakeStore()),
+      context: new AgentContext({
+        workdir: "/tmp",
+        modelId: "test-model",
+        skills: new SkillManager({ dirs: [] }),
+        compactionConfig: {
+          recentWindowSize: 10,
+          threshold: 100_000,
+          thresholdPercent: 0.9,
+          lastKnownInputTokens: 0,
+          lastKnownPromptMessageCount: 0,
+        },
+      }),
+      apiKey: "test-key",
+      apiUrl: "http://localhost",
+      providerId: "test-provider",
+      modelId: "test-model",
+    });
+
+  const spawnChild = (parent: Agent) =>
+    createSubagent(
+      {
+        context: parent.context,
+        tools: {},
+        credentials: {
+          apiKey: parent.apiKey,
+          apiUrl: parent.apiUrl,
+          providerId: parent.providerId,
+        },
+        sessionId: parent.sessionId,
+        toolCallId: "call-1",
+      },
+      {
+        definition,
+        prompt: "Find the thing.",
+        store: asStore(new FakeStore()),
+        description: taskLabel,
+      }
+    );
+
+  test("父被停时子 agent 跟着停", async () => {
+    const parent = buildParent();
+    const { agent: child } = await spawnChild(parent);
+
+    expect(child.context.abortSignal?.aborted).toBeFalsy();
+
+    parent.abort();
+
+    // 这是 stop 能立刻返回的前提：子 agent 一停，它的流就结束，父那个 task
+    // 调用的 `whenFinished()` 才有东西可等。
+    expect(child.context.abortSignal?.aborted).toBeTruthy();
+  });
+
+  test("子 agent 自己停不牵连父", async () => {
+    const parent = buildParent();
+    const { agent: child } = await spawnChild(parent);
+
+    child.abort();
+
+    // 并集而不是替代：子 agent 仍然保有自己的 abort 入口。
+    expect(child.context.abortSignal?.aborted).toBeTruthy();
+    expect(parent.context.abortSignal?.aborted).toBeFalsy();
+  });
+
+  test("父已经停了才派生出来的子 agent 一建出来就是停的", async () => {
+    const parent = buildParent();
+    parent.abort();
+
+    const { agent: child } = await spawnChild(parent);
+
+    expect(child.context.abortSignal?.aborted).toBeTruthy();
   });
 });
 
