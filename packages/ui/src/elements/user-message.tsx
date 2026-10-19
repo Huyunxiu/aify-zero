@@ -9,6 +9,7 @@ import {
   Attachments,
 } from "../components/ai-elements/attachments";
 import { Message, MessageContent } from "./message";
+import { UserAvatar } from "./message-avatar";
 import { renderTextToReactElement } from "./prompt-input-tiptap";
 
 type UserMessageProps = {
@@ -34,7 +35,7 @@ export const UserMessage = ({ turn }: UserMessageProps) => {
     .join("\n\n");
 
   return (
-    <Message from="user">
+    <Message avatar={<UserAvatar />} from="user">
       {files.length > 0 && (
         <Attachments
           className="flex items-start flex-wrap gap-2 ml-auto w-fit"

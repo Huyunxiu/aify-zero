@@ -20,6 +20,7 @@ import type { LanguageModelUsage } from "ai";
 import { MessageSquareIcon, XIcon } from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   Attachment,
@@ -197,6 +198,7 @@ export function Session({
   onClose,
 }: SessionProps) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const getSettingsQuery = useQuery({
     queryKey: ["settings"],
@@ -219,11 +221,9 @@ export function Session({
   });
 
   const activeStreamId = getSessionQuery.data?.session?.activeStreamId ?? null;
-  // A subagent's row is titled with the brief the `task` call handed it, so the
-  // title is what tells one child apart from another in the pane beside the
-  // session. A top-level session's title is its generated one and is shown by
-  // the sidebar instead, so the bar leaves it out.
-  const subagentTitle = getSessionQuery.data?.session?.title;
+  // 会话标题：顶层会话是生成标题，子会话是 `task` 调用交给它的任务简述。
+  // 侧边栏收起后，标题栏是唯一还能看到它的地方。
+  const sessionTitle = getSessionQuery.data?.session?.title;
 
   const forkSessionMutation = useMutation({
     mutationFn: async (options: ForkSessionType) =>
@@ -277,13 +277,21 @@ export function Session({
     [sessionId]
   );
 
-  const onEvent = React.useCallback((event: AgentStreamEvent<AgentToolSet>) => {
-    if (event.type === "session.title.end") {
-      // The generated title replaces the localized placeholder the sidebar
-      // showed until now.
-      void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
-    }
-  }, []);
+  const onEvent = React.useCallback(
+    (event: AgentStreamEvent<AgentToolSet>) => {
+      if (event.type === "session.title.end") {
+        // 生成的标题替换侧边栏里的占位标题；标题栏读的是同一个会话行，
+        // 所以两处一起失效。
+        void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+        if (sessionId) {
+          void queryClient.invalidateQueries({
+            queryKey: ["getSession", sessionId],
+          });
+        }
+      }
+    },
+    [sessionId]
+  );
 
   const {
     sendTurns,
@@ -527,24 +535,28 @@ export function Session({
     <div className="flex h-full w-full flex-row overflow-hidden">
       <div className="flex min-w-0 flex-col w-full">
         {/* session header */}
-        <TitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3">
+        <TitleBar className="sticky top-0 flex h-12 items-center gap-2 px-4">
+          {sessionId && (
+            <div className="min-w-0 truncate text-foreground text-sm max-w-md">
+              {onClose
+                ? sessionTitle
+                  ? `Subagent · ${sessionTitle}`
+                  : "Subagent"
+                : sessionTitle || t("sessions.untitled")}
+            </div>
+          )}
           {onClose && (
-            <>
-              <span className="min-w-0 truncate text-muted-foreground text-sm">
-                {subagentTitle ? `Subagent · ${subagentTitle}` : "Subagent"}
-              </span>
-              <Button
-                aria-label="Close"
-                // The bar is the window's drag region; a control in it has to
-                // opt back out of that, or the click drags the window.
-                className="ml-auto [-webkit-app-region:no-drag]"
-                onClick={onClose}
-                size="icon-sm"
-                variant="ghost"
-              >
-                <XIcon className="size-4" />
-              </Button>
-            </>
+            <Button
+              aria-label="Close"
+              // The bar is the window's drag region; a control in it has to
+              // opt back out of that, or the click drags the window.
+              className="ml-auto [-webkit-app-region:no-drag]"
+              onClick={onClose}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <XIcon className="size-4" />
+            </Button>
           )}
         </TitleBar>
         {/* session container */}
@@ -560,7 +572,7 @@ export function Session({
                 >
                   <MessageScroller>
                     <MessageScrollerViewport>
-                      <MessageScrollerContent className="px-3 py-3 md:px-5 md:py-5 max-w-4xl mx-auto">
+                      <MessageScrollerContent className="px-0 py-4 max-w-[calc(56rem+16px)] mx-auto">
                         {turns.length === 0 ? (
                           <Empty className="h-full">
                             <EmptyHeader>
@@ -615,7 +627,7 @@ export function Session({
 
           {/* session input */}
           {!readOnly && (
-            <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 px-2 py-3 pt-1 md:px-4 md:pb-4">
+            <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 pt-1 px-4 pb-4">
               <PromptInputProvider>
                 <PromptInput
                   multiple

@@ -18,7 +18,12 @@ import {
 import { cn } from "@workspace/ui/lib/utils";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
+import type {
+  ComponentProps,
+  HTMLAttributes,
+  ReactElement,
+  ReactNode,
+} from "react";
 import {
   createContext,
   memo,
@@ -32,18 +37,40 @@ import { Streamdown } from "streamdown";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
+  /** 消息头像：用户消息排在内容右侧，其余排在左侧。 */
+  avatar?: ReactNode;
 };
 
-export const Message = ({ className, from, ...props }: MessageProps) => (
-  <div
-    className={cn(
-      "group flex w-full max-w-[95%] flex-col gap-2",
-      from === "user" ? "is-user ml-auto justify-end" : "is-assistant",
-      className
-    )}
-    {...props}
-  />
-);
+export const Message = ({
+  avatar,
+  children,
+  className,
+  from,
+  ...props
+}: MessageProps) => {
+  const isUser = from === "user";
+
+  return (
+    <div
+      className={cn(
+        "group flex w-full max-w-[95%] gap-3",
+        isUser ? "is-user ml-auto flex-row-reverse" : "is-assistant",
+        className
+      )}
+      {...props}
+    >
+      {avatar && <div className="shrink-0">{avatar}</div>}
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 flex-col gap-2",
+          isUser && "items-end justify-end"
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
 
 export type MessageContentProps = HTMLAttributes<HTMLDivElement>;
 
