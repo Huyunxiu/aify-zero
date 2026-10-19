@@ -8,15 +8,26 @@ import {
   AttachmentRemove,
   Attachments,
 } from "../components/ai-elements/attachments";
-import { Message, MessageContent } from "./message";
+import { CopyButton } from "../components/copy-button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "../components/tooltip";
+import { useTouchPrimary } from "../hooks/use-touch-primary";
+import { cn } from "../lib/utils";
+import { Message, MessageActions, MessageContent } from "./message";
 import { UserAvatar } from "./message-avatar";
 import { renderTextToReactElement } from "./prompt-input-tiptap";
 
 type UserMessageProps = {
   turn: AgentUserTurn;
+  onFork?: (messageId: string) => void;
 };
 
 export const UserMessage = ({ turn }: UserMessageProps) => {
+  const isTouch = useTouchPrimary();
   // A user turn wraps exactly one user step, so flattening gives back the flat
   // part list the rendering below was written against.
   const parts: AgentUserPart[] = turn.content.flatMap((step) => step.content);
@@ -57,6 +68,34 @@ export const UserMessage = ({ turn }: UserMessageProps) => {
           {renderTextToReactElement(text)}
         </div>
       </MessageContent>
+      {text.length > 0 && (
+        <MessageActions
+          className={cn(
+            !isTouch && [
+              "opacity-0 pointer-events-none transition-opacity duration-150",
+              "group-hover:opacity-100 group-hover:pointer-events-auto",
+              "group-focus-within:opacity-100 group-focus-within:pointer-events-auto",
+            ]
+          )}
+        >
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger render={<div />}>
+                <CopyButton
+                  className="text-muted-foreground"
+                  size="icon-sm"
+                  variant="ghost"
+                  label="Copy"
+                  message={text}
+                />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Copy to clipboard</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </MessageActions>
+      )}
     </Message>
   );
 };
