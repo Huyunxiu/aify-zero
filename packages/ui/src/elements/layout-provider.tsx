@@ -27,7 +27,7 @@ const LayoutProviderContext = createContext<LayoutProviderState | undefined>(
 
 export function LayoutProvider({
   children,
-  defaultLayout = "default",
+  defaultLayout = "island",
   storageKey = "layout",
   ...props
 }: LayoutProviderProps) {

@@ -26,7 +26,7 @@ function Island({ className, ...props }: ResizablePrimitive.PanelProps) {
       {...props}
       className={cn(
         "island bg-foreground-0",
-        layout === "default" ? "rounded-none" : "rounded-lg shadow",
+        layout === "default" ? "rounded-none" : "rounded-lg shadow-md",
         className
       )}
     />
