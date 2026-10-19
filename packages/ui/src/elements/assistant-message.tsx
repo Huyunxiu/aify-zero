@@ -80,13 +80,6 @@ type AssistantMessageProps = {
 const REASON_TOOL_LABEL_MAX_LENGTH = 180;
 
 /**
- * Share of the screen one Frame in a step may take. A Frame holds its own
- * scroll, so a long tool output or a streaming answer fills this much of the
- * screen and then scrolls inside itself instead of growing the dialog.
- */
-const STEP_FRAME_MAX_HEIGHT = "50vh";
-
-/**
  * The copy controls every Frame panel shares. Declared once so the eight tool
  * branches below state only what differs about them.
  */
@@ -332,11 +325,7 @@ export const AssistantMessage = ({
                     summary={summary}
                     duration={duration}
                   >
-                    <Frame
-                      variant="default"
-                      maxHeight={STEP_FRAME_MAX_HEIGHT}
-                      overflowBehavior="scroll"
-                    >
+                    <Frame variant="default" overflowBehavior="scroll">
                       <FrameHeader>
                         <FrameTitle>Note</FrameTitle>
                         <div>
@@ -371,11 +360,7 @@ export const AssistantMessage = ({
                     summary={summary}
                     duration={duration}
                   >
-                    <Frame
-                      variant="default"
-                      maxHeight={STEP_FRAME_MAX_HEIGHT}
-                      overflowBehavior="scroll"
-                    >
+                    <Frame variant="default" overflowBehavior="scroll">
                       <FrameHeader>
                         <FrameTitle>
                           <div>Reasoning</div>
@@ -410,11 +395,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>Read</FrameTitle>
                         </FrameHeader>
@@ -479,11 +460,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>Create</FrameTitle>
                         </FrameHeader>
@@ -548,11 +525,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>Delete</FrameTitle>
                         </FrameHeader>
@@ -620,11 +593,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>Edit</FrameTitle>
                         </FrameHeader>
@@ -753,11 +722,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>Grep</FrameTitle>
                         </FrameHeader>
@@ -822,11 +787,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>Glob</FrameTitle>
                         </FrameHeader>
@@ -891,11 +852,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>Fetch</FrameTitle>
                         </FrameHeader>
@@ -960,11 +917,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>
                             Load skill {part.input?.skill}
@@ -1031,11 +984,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>
                             {getStepLabel("Bash", part.input?.description)}
@@ -1130,11 +1079,7 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame
-                        variant="default"
-                        maxHeight={STEP_FRAME_MAX_HEIGHT}
-                        overflowBehavior="scroll"
-                      >
+                      <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>
                             {getStepLabel("Task", part.input?.description)}

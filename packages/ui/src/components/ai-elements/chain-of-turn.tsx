@@ -431,10 +431,17 @@ export const AgentActivityStep = memo(
             {row}
           </DialogTrigger>
           <DialogContent
-            className="bg-transparent ring-0 px-0 py-0 min-w-[72vw]"
+            className="flex flex-col items-center bg-transparent ring-0 p-0 py-12 sm:max-w-none max-w-none h-dvh overflow-y-scroll"
             showCloseButton={false}
+            // 全屏的 popup 盖住了 backdrop，Base UI 的“点击外部关闭”失效了。
+            // 命中 popup 自身的空白区域时，就当作点了遮罩。
+            onClick={(event) => {
+              if (event.target === event.currentTarget) {
+                handleOpenChange();
+              }
+            }}
           >
-            <div className="flex max-h-[calc(100dvh-2*min(10vh,10rem))] flex-col gap-4 overflow-y-auto overscroll-contain px-5">
+            <div className="my-auto flex min-w-[70dvw] flex-col gap-4 px-5">
               {children}
             </div>
           </DialogContent>
