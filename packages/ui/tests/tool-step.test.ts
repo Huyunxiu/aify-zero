@@ -456,7 +456,7 @@ describe(getPartSummary, () => {
       ).toBe("+12 −4");
     });
 
-    test("should note how many times a replace-all edit landed", () => {
+    test("should note how many blocks one call replaced", () => {
       expect(
         getPartSummary(
           doneTool("tool-edit-file", {
@@ -465,7 +465,7 @@ describe(getPartSummary, () => {
             linesRemoved: 1,
           })
         )
-      ).toBe("+3 −1 · 2×");
+      ).toBe("+3 −1 · 2 blocks");
     });
   });
 

@@ -136,15 +136,20 @@ const getStepLabel = (action: string, detail?: string) => {
   return <span className="text-foreground font-medium">{action}</span>;
 };
 
-/**
- * The replaced and replacement text of an edit, as `-`/`+` prefixed lines so
- * the step reads like a diff. With `replace_all` the same text may have been
- * replaced several times; the step's output line reports how many.
- */
+/** 把一个替换块摊平成 `-`/`+` 行，让步骤读起来像 diff。 */
 const editDiffLines = (oldString: string, newString: string) => [
   ...oldString.split("\n").map((text) => ({ sign: "-" as const, text })),
   ...newString.split("\n").map((text) => ({ sign: "+" as const, text })),
 ];
+
+/**
+ * 解析工具返回的展示用 diff 行，格式为 `+ 12 content`。
+ * 首字符是标记，其余部分（行号 + 内容）原样展示。
+ */
+const parseRenderedDiffLine = (line: string) => ({
+  sign: line[0] ?? " ",
+  text: line.slice(1),
+});
 
 /**
  * Splits a turn into the steps that led to its answer and the answer itself.
@@ -601,6 +606,9 @@ export const AssistantMessage = ({
                   </>
                 );
               } else if (part.type === "tool-edit-file") {
+                // 执行完成后展示工具实际写入的 diff；流式输出期间 output 还不存在，
+                // 退回用请求参数拼出的预览。
+                const actualDiff = part.output?.metadata?.diff;
                 return (
                   <>
                     <AgentActivityStep
@@ -648,22 +656,63 @@ export const AssistantMessage = ({
                         </div>
                         <FramePanel>
                           <div className="whitespace-pre-wrap wrap-break-word font-mono text-xs">
-                            {editDiffLines(
-                              part.input?.old_string ?? "",
-                              part.input?.new_string ?? ""
-                            ).map((line, j) => (
-                              <div
-                                key={j}
-                                className={
-                                  line.sign === "-"
-                                    ? "text-destructive"
-                                    : "text-green-600"
-                                }
-                              >
-                                {line.sign}
-                                {line.text}
-                              </div>
-                            ))}
+                            {actualDiff
+                              ? actualDiff.split("\n").map((line, j) => {
+                                  const { sign, text } =
+                                    parseRenderedDiffLine(line);
+                                  return (
+                                    <div
+                                      key={j}
+                                      className={
+                                        sign === "-"
+                                          ? "text-destructive"
+                                          : sign === "+"
+                                            ? "text-green-600"
+                                            : "text-muted-foreground"
+                                      }
+                                    >
+                                      {sign}
+                                      {text}
+                                    </div>
+                                  );
+                                })
+                              : (part.input?.edits ?? []).map(
+                                  (block, blockIndex) => {
+                                    // 流式输出期间 input 是 DeepPartial，
+                                    // 未拼完整的编辑块先不渲染。
+                                    if (
+                                      typeof block?.oldText !== "string" ||
+                                      typeof block?.newText !== "string"
+                                    ) {
+                                      return null;
+                                    }
+                                    return (
+                                      <div
+                                        key={blockIndex}
+                                        className={
+                                          blockIndex > 0 ? "mt-2" : undefined
+                                        }
+                                      >
+                                        {editDiffLines(
+                                          block.oldText,
+                                          block.newText
+                                        ).map((line, j) => (
+                                          <div
+                                            key={j}
+                                            className={
+                                              line.sign === "-"
+                                                ? "text-destructive"
+                                                : "text-green-600"
+                                            }
+                                          >
+                                            {line.sign}
+                                            {line.text}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  }
+                                )}
                           </div>
                         </FramePanel>
                         <div className="flex justify-between items-center pl-4 pr-1 mb-1">

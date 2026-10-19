@@ -150,6 +150,9 @@ catalogs:
     cn:
       specifier: ^0.2.4
       version: 0.2.4
+    diff:
+      specifier: ^8.0.4
+      version: 8.0.4
     dotenv:
       specifier: ^17.4.2
       version: 17.4.2
@@ -407,6 +410,9 @@ importers:
       ai:
         specifier: 'catalog:'
         version: 7.0.138(zod@4.5.4)
+      diff:
+        specifier: 'catalog:'
+        version: 8.0.4
       file-type:
         specifier: 'catalog:'
         version: 22.0.1

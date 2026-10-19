@@ -1,7 +1,9 @@
 /* oxlint-disable */
 import { realpathSync } from "node:fs";
 import { open } from "node:fs/promises";
-import { isAbsolute, resolve as pathResolve, posix } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve as pathResolve, posix } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { fileTypeFromBuffer } from "file-type";
 
@@ -34,6 +36,39 @@ export function normalizePath(p: string): string {
   }
 }
 
+const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+
+/**
+ * 把模型给出的路径归一化成文件系统能直接使用的形式：
+ * - Unicode 空格（不换行空格、全角空格等）换成普通空格
+ * - 去掉 CLI 风格的 `@` 前缀
+ * - 展开开头的 `~`
+ * - 把 `file://` URL 转成本地路径
+ *
+ * 与 `normalizeForFuzzyMatch` 里的空格处理保持一致，否则同一个路径在
+ * “匹配文本”和“定位文件”两条链路上会得到不同结果。
+ */
+export function normalizeToolInputPath(filepath: string): string {
+  let normalized = filepath.replace(UNICODE_SPACES, " ");
+
+  if (normalized.startsWith("@")) {
+    normalized = normalized.slice(1);
+  }
+
+  if (normalized === "~") {
+    return homedir();
+  }
+  if (normalized.startsWith("~/") || normalized.startsWith("~\\")) {
+    return join(homedir(), normalized.slice(2));
+  }
+
+  if (normalized.startsWith("file://")) {
+    return fileURLToPath(normalized);
+  }
+
+  return normalized;
+}
+
 /**
  * Resolves a path supplied by a tool call against the agent's working
  * directory.
@@ -46,8 +81,9 @@ export function resolveToolPath(
   filepath: string,
   workdir: string
 ): { absolute: string } {
+  const input = normalizeToolInputPath(filepath);
   const absolute = normalizePath(
-    isAbsolute(filepath) ? filepath : pathResolve(workdir, filepath)
+    isAbsolute(input) ? input : pathResolve(workdir, input)
   );
 
   return { absolute };
@@ -60,7 +96,7 @@ export function resolveToolPath(
  * sentence is the only place the model learns how relative paths are treated.
  */
 export function toolPathDescription(target: string): string {
-  return `The path to the ${target}. Absolute paths are used as-is; relative paths are resolved against the working directory.`;
+  return `The path to the ${target}. Relative paths are resolved against the working directory; a leading "~", a leading "@", and "file://" URLs are also accepted.`;
 }
 
 const SAMPLE_BYTES = 4096;

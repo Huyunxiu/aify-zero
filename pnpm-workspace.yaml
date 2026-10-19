@@ -67,6 +67,7 @@ catalog:
   bumpp: ^11.0.1
   cmdk: ^1.1.1
   cn: ^0.2.4
+  diff: ^8.0.4
   dotenv: ^17.4.2
   electron: 42.0.1
   electron-devtools-installer: ^4.0.0

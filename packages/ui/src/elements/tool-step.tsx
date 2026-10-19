@@ -342,7 +342,7 @@ export const getPartSummary = (
             {" −"}
             {metadata.linesRemoved}
           </span>
-          {metadata.replacements > 1 && ` · ${metadata.replacements}×`}
+          {metadata.replacements > 1 && ` · ${metadata.replacements} blocks`}
         </>
       );
     }

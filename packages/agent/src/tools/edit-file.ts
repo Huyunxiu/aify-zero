@@ -1,4 +1,5 @@
-import { readFile, writeFile, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, readFile, stat, writeFile } from "node:fs/promises";
 
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
@@ -11,212 +12,46 @@ import {
   resolveToolPath,
   toolPathDescription,
 } from "../utils/fs-util";
+import {
+  applyEditsToNormalizedContent,
+  countLineChanges,
+  detectLineEnding,
+  generateDiffString,
+  normalizeToLF,
+  restoreLineEndings,
+  splitBom,
+} from "./edit-diff";
+import { withFileMutationQueue } from "./file-mutation-queue";
 import type { ToolOutput } from "./types";
 
-class StringNotFoundError extends Error {
-  constructor(oldString: string) {
-    super(
-      `The old_string "${oldString.slice(0, 50)}${oldString.length > 50 ? "..." : ""}" was not found in the file. Ensure you are providing the exact text from the file content.`
-    );
-    this.name = "StringNotFoundError";
-  }
-}
-
-class StringNotUniqueError extends Error {
-  constructor(oldString: string, count: number) {
-    super(
-      `The old_string "${oldString.slice(0, 50)}${oldString.length > 50 ? "..." : ""}" appears ${count} times. Provide more context to make it unique, or set replace_all=true.`
-    );
-    this.name = "StringNotUniqueError";
-  }
-}
-
-function charRangeToLineRange(
-  content: string,
-  charStart: number,
-  charEnd: number
-): { start: number; end: number } | null {
-  if (charStart < 0 || charEnd > content.length || charStart > charEnd) {
-    return null;
-  }
-
-  const lines = content.split("\n");
-  let accumulated = 0;
-  let startLine = -1;
-  let endLine = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    const lineLen = lines[i]?.length ?? 0 + (i < lines.length - 1 ? 1 : 0);
-
-    if (startLine === -1 && accumulated + lineLen > charStart) {
-      startLine = i + 1;
-    }
-    if (accumulated + lineLen > charEnd) {
-      endLine = i + 1;
-      break;
-    }
-
-    accumulated += lineLen;
-  }
-
-  if (startLine === -1) {
-    startLine = lines.length;
-  }
-  if (endLine === -1) {
-    endLine = lines.length;
-  }
-
-  return { start: startLine, end: endLine };
-}
-
-function replaceString(
-  content: string,
-  oldString: string,
-  newString: string,
-  replaceAll: boolean
-): { content: string; replacements: number } {
-  if (replaceAll) {
-    const parts = content.split(oldString);
-    if (parts.length === 1) {
-      throw new StringNotFoundError(oldString);
-    }
-    return {
-      content: parts.join(newString),
-      replacements: parts.length - 1,
-    };
-  }
-
-  const firstIndex = content.indexOf(oldString);
-  if (firstIndex === -1) {
-    throw new StringNotFoundError(oldString);
-  }
-
-  const secondIndex = content.indexOf(oldString, firstIndex + oldString.length);
-  if (secondIndex !== -1) {
-    throw new StringNotUniqueError(oldString, 2);
-  }
-
-  return {
-    content:
-      content.slice(0, firstIndex) +
-      newString +
-      content.slice(firstIndex + oldString.length),
-    replacements: 1,
-  };
-}
-
-function getEditedLineRanges(
-  content: string,
-  oldString: string,
-  newString: string,
-  replaceAll: boolean
-): string {
-  if (!oldString) {
-    return "";
-  }
-  const ranges: string[] = [];
-  let position = 0;
-
-  while ((position = content.indexOf(oldString, position)) !== -1) {
-    const range = charRangeToLineRange(
-      content,
-      position,
-      position + Math.max(oldString.length, 1)
-    );
-    if (range) {
-      const newLineCount = newString.split("\n").length;
-      const end =
-        range.start + Math.max(newLineCount, range.end - range.start + 1) - 1;
-      ranges.push(
-        end === range.start ? String(range.start) : `${range.start}-${end}`
-      );
-    }
-    position += oldString.length;
-    if (!replaceAll) {
-      break;
-    }
-  }
-
-  if (ranges.length === 0) {
-    return "";
-  }
-  return ranges.length === 1
-    ? ` (lines ${ranges[0]})`
-    : ` (lines ${ranges.join(", ")})`;
-}
-
-/**
- * The changed-line counts of one replacement, as the `+X −Y` pair a diff shows.
- *
- * Counted in lines, not characters, so a one-word change inside a five-line
- * block reads `+1 −1` rather than `+5 −5`. Trimming the lines the two strings
- * share at either end is what keeps the count near the part that changed; the
- * shared run is arbitrary, so a change in the middle of two untouched lines
- * still reads `+3 −3`. It overcounts, never undercounts.
- *
- * `replaceAll` applies one replacement several times, hence the multiplier.
- *
- * Exported for its own test: the arithmetic is the only part of this tool worth
- * checking without touching a file.
- */
-function countLineDelta(
-  oldString: string,
-  newString: string,
-  replacements: number
-): { linesAdded: number; linesRemoved: number } {
-  const oldLines = oldString.length > 0 ? oldString.split("\n") : [];
-  const newLines = newString.length > 0 ? newString.split("\n") : [];
-
-  let start = 0;
-  while (
-    start < oldLines.length &&
-    start < newLines.length &&
-    oldLines[start] === newLines[start]
-  ) {
-    start += 1;
-  }
-
-  let endOld = oldLines.length;
-  let endNew = newLines.length;
-  while (
-    endOld > start &&
-    endNew > start &&
-    oldLines[endOld - 1] === newLines[endNew - 1]
-  ) {
-    endOld -= 1;
-    endNew -= 1;
-  }
-
-  return {
-    linesRemoved: (endOld - start) * replacements,
-    linesAdded: (endNew - start) * replacements,
-  };
-}
-
 const DESCRIPTION = `
-Edit a file by replacing specific text. The old_string must match exactly and be unique in the file.
+Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file.
 
 Usage:
 - Read the file first to get the exact text to replace.
-- The file content returned by the read tool includes line number prefixes (e.g., "1: content"). Ensure you preserve the exact indentation as it appears AFTER the arrow. Never include any part of the line number prefix in old_string or new_string.
-- Include enough surrounding context (multiple lines) to make old_string unique. If it still isn't unique, include more lines.
-- Use replace_all only when intentionally replacing all occurrences.
+- The read tool prefixes each line with "<line>: " (for example "1: content"). Never include that prefix in oldText or newText.
+- When changing several separate places in one file, send one edit call with multiple entries in edits[] instead of several calls.
+- Every oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.
+- Keep oldText as small as possible while still being unique; add surrounding lines only when needed to disambiguate.
+- Each oldText must be unique in the file. If a snippet appears more than once, include more context.
 `;
+
+const EDIT_ENTRY_SCHEMA = z.object({
+  oldText: z
+    .string()
+    .describe(
+      "The exact text to find and replace. Must be unique in the original file and must not overlap with any other edits[].oldText in this call."
+    ),
+  newText: z.string().describe("The text to replace this oldText with"),
+});
 
 const EDIT_FILE_INPUT_SCHEMA = z.object({
   path: z.string().describe(toolPathDescription("file to edit")),
-  old_string: z
-    .string()
+  edits: z
+    .array(EDIT_ENTRY_SCHEMA)
+    .min(1)
     .describe(
-      "The exact text to find and replace. Must be unique in the file."
-    ),
-  new_string: z.string().describe("The text to replace old_string with"),
-  replace_all: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      "If true, replace all occurrences. If false (default), old_string must be unique."
+      "One or more targeted replacements, all matched against the original file."
     ),
 });
 
@@ -224,9 +59,14 @@ type EditFileInput = z.infer<typeof EDIT_FILE_INPUT_SCHEMA>;
 
 type EditFileOutputMetadata = {
   filepath: string;
+  /** 本次调用替换的文本块数量 */
   replacements: number;
   linesAdded: number;
   linesRemoved: number;
+  /** 实际写入后的展示用 diff（带行号） */
+  diff: string;
+  /** 新文件中第一处改动的行号，用于编辑器跳转 */
+  firstChangedLine?: number;
 };
 
 type EditFileOutput = ToolOutput<string, EditFileOutputMetadata>;
@@ -239,59 +79,94 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
   tool<EditFileInput, EditFileOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: EDIT_FILE_INPUT_SCHEMA,
-    execute: async ({
-      path: filepath,
-      old_string,
-      new_string,
-      replace_all,
-    }) => {
+    execute: async ({ path: filepath, edits }, { abortSignal }) => {
       try {
         const { absolute: absolutePath } = resolveToolPath(
           filepath,
           agentContext.workdir
         );
 
-        const stats = await stat(absolutePath);
-
-        const [_, ext, sample] = await getFileTypeFromBuffer(
-          absolutePath,
-          stats.size
-        );
-
-        if (isBinaryFile(ext, sample)) {
-          return {
-            output: `Cannot edit binary files. Use the write file tool instead.`,
-            code: "error",
+        return await withFileMutationQueue(absolutePath, async () => {
+          // 每个 await 之后检查一次中断，而不是监听 abort 事件：
+          // 事件里直接 reject 会在文件操作尚未结束时提前释放写队列。
+          const throwIfAborted = (): void => {
+            if (abortSignal?.aborted) {
+              throw new Error("Operation aborted");
+            }
           };
-        }
 
-        const content = await readFile(absolutePath, "utf-8");
+          throwIfAborted();
 
-        const shouldReplaceAll = replace_all ?? false;
+          // 先确认可读可写，让权限问题在真正写入前暴露。
+          try {
+            await access(absolutePath, constants.R_OK | constants.W_OK);
+          } catch (error) {
+            throwIfAborted();
+            const reason =
+              error instanceof Error && "code" in error
+                ? `Error code: ${String(error.code)}`
+                : String(error);
+            throw new Error(`Could not edit file: ${filepath}. ${reason}.`, {
+              cause: error,
+            });
+          }
+          throwIfAborted();
 
-        const lineRanges = getEditedLineRanges(
-          content,
-          old_string,
-          new_string,
-          shouldReplaceAll
-        );
-        const result = replaceString(
-          content,
-          old_string,
-          new_string,
-          shouldReplaceAll
-        );
-        await writeFile(absolutePath, result.content, "utf-8");
+          const stats = await stat(absolutePath);
+          const [, ext, sample] = await getFileTypeFromBuffer(
+            absolutePath,
+            stats.size
+          );
+          if (isBinaryFile(ext, sample)) {
+            throw new Error(
+              "Cannot edit binary files. Use the write file tool instead."
+            );
+          }
+          throwIfAborted();
 
-        return {
-          output: `Replaced ${result.replacements} occurrence${result.replacements !== 1 ? "s" : ""} in ${absolutePath}${lineRanges}`,
-          code: "ok",
-          metadata: {
-            filepath: absolutePath,
-            replacements: result.replacements,
-            ...countLineDelta(old_string, new_string, result.replacements),
-          },
-        };
+          const rawContent = await readFile(absolutePath, "utf-8");
+          throwIfAborted();
+
+          // 匹配前剥掉 BOM、统一成 LF；写回时再还原，避免改动文件原有编码。
+          const { bom, text } = splitBom(rawContent);
+          const originalEnding = detectLineEnding(text);
+          const normalizedContent = normalizeToLF(text);
+          const { baseContent, newContent } = applyEditsToNormalizedContent(
+            normalizedContent,
+            edits,
+            filepath
+          );
+          throwIfAborted();
+
+          const finalContent =
+            bom + restoreLineEndings(newContent, originalEnding);
+          await writeFile(absolutePath, finalContent, "utf-8");
+          throwIfAborted();
+
+          const { linesAdded, linesRemoved } = countLineChanges(
+            baseContent,
+            newContent
+          );
+          // 展示用 diff 基于最终内容计算：模糊匹配改写的字符也会如实反映。
+          const { diff, firstChangedLine } = generateDiffString(
+            baseContent,
+            newContent
+          );
+
+          const output: EditFileOutput = {
+            output: `Successfully replaced ${edits.length} block${edits.length === 1 ? "" : "s"} in ${absolutePath}.`,
+            code: "ok",
+            metadata: {
+              filepath: absolutePath,
+              replacements: edits.length,
+              linesAdded,
+              linesRemoved,
+              diff,
+              firstChangedLine,
+            },
+          };
+          return output;
+        });
       } catch (error) {
         return {
           output: `Edit failed. ${getErrorMessage(error)}`,
@@ -315,4 +190,4 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
 
 type EditFileToolType = ReturnType<typeof createEditFileTool>;
 
-export { countLineDelta, createEditFileTool, type EditFileToolType };
+export { createEditFileTool, type EditFileToolType };
