@@ -215,8 +215,8 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
     inputSchema: GREP_TOOL_INPUT_SCHEMA,
     execute: async (input, { abortSignal }) => {
       const { absolute: normalizedPath } = resolveToolPath(
-        input.path ?? agentContext.workdir,
-        agentContext.workdir
+        input.path ?? agentContext.primaryProjectDir,
+        agentContext.primaryProjectDir
       );
       const effectiveLimit = Math.min(
         Math.max(1, input.limit ?? DEFAULT_LIMIT),
@@ -248,7 +248,7 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
       return await new Promise<GrepToolOutput>((resolve) => {
         const proc = spawn(command, {
           shell: true,
-          cwd: agentContext.workdir,
+          cwd: agentContext.primaryProjectDir,
           env: process.env,
           stdio: ["ignore", "pipe", "pipe"],
         });

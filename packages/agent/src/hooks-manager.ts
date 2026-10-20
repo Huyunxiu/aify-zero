@@ -9,7 +9,9 @@ export type HookContext = {};
 export type SessionStartEvent = {
   sessionId: string;
   name: string;
-  workdir: string;
+  /** 项目目录列表，第一项是主目录。 */
+  projectDirs: readonly string[];
+  sessionDir: string;
 };
 
 export type SessionEndEvent = {

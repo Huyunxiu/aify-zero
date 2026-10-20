@@ -79,11 +79,11 @@ export function normalizeToolInputPath(filepath: string): string {
  */
 export function resolveToolPath(
   filepath: string,
-  workdir: string
+  projectDir: string
 ): { absolute: string } {
   const input = normalizeToolInputPath(filepath);
   const absolute = normalizePath(
-    isAbsolute(input) ? input : pathResolve(workdir, input)
+    isAbsolute(input) ? input : pathResolve(projectDir, input)
   );
 
   return { absolute };

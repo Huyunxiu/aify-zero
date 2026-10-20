@@ -3,8 +3,21 @@ import type { ContextFile } from "../context-files";
 import { loadContextFiles, loadSkills } from "../resources";
 import type { ContextSource, SkillSource } from "../resources/types";
 import { SKILL_DIRS, SkillManager } from "../skill/skill-manager";
-import type { ExtensionAPI, ExtensionOptions } from "./types";
+import type {
+  ExtensionAPI,
+  ExtensionAgentInfo,
+  ExtensionOptions,
+} from "./types";
 import { Extension } from "./types";
+
+/** 资源只从主目录加载，即 `projectDirs` 的第一项。 */
+function primaryProjectDir(agent: Readonly<ExtensionAgentInfo>): string {
+  const [projectDir] = agent.projectDirs;
+  if (!projectDir) {
+    throw new Error("extension requires at least one project directory");
+  }
+  return projectDir;
+}
 
 export interface SkillExtensionOptions extends ExtensionOptions {
   sources: readonly SkillSource[];
@@ -46,7 +59,7 @@ export class SkillExtension extends Extension {
 
   async init(api: ExtensionAPI): Promise<void> {
     const skills = await loadSkills(this.#sources, {
-      workdir: api.agent.workdir,
+      projectDir: primaryProjectDir(api.agent),
     });
     const manager = SkillManager.fromSkills(skills, { dirs: this.#dirs });
     this.#manager = manager;
@@ -61,7 +74,7 @@ export class SkillExtension extends Extension {
 
 export interface ContextExtensionOptions extends ExtensionOptions {
   sources: readonly ContextSource[];
-  /** 提示片段的位置，默认 0（排在最前面）。 */
+  /** 提示片段的位置，默认 0（排在环境信息之后）。 */
   sectionPriority?: number;
 }
 
@@ -81,7 +94,7 @@ export class ContextExtension extends Extension {
 
   async init(api: ExtensionAPI): Promise<void> {
     const files: ContextFile[] = await loadContextFiles(this.#sources, {
-      workdir: api.agent.workdir,
+      projectDir: primaryProjectDir(api.agent),
     });
     const rendered = renderProjectContext(files);
     if (!rendered) {

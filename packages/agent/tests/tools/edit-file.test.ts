@@ -31,7 +31,7 @@ async function createTempDir(): Promise<string> {
   return dir;
 }
 
-let workdir: string;
+let projectDir: string;
 let agentContext: AgentContext;
 let editTool: ReturnType<typeof createEditFileTool>;
 
@@ -49,8 +49,8 @@ function runEdit(
 
 describe("edit-file tool", () => {
   beforeEach(async () => {
-    workdir = await createTempDir();
-    agentContext = { workdir } as AgentContext;
+    projectDir = await createTempDir();
+    agentContext = { primaryProjectDir: projectDir } as AgentContext;
     editTool = createEditFileTool({ agentContext });
   });
 
@@ -61,7 +61,7 @@ describe("edit-file tool", () => {
   });
 
   test("applies several disjoint edits and reports the real diff", async () => {
-    const filePath = join(workdir, "disjoint.txt");
+    const filePath = join(projectDir, "disjoint.txt");
     await writeFile(filePath, "one\ntwo\nthree\n", "utf-8");
 
     const result = await runEdit({
@@ -93,7 +93,7 @@ describe("edit-file tool", () => {
   });
 
   test("matches every edit against the original file", async () => {
-    const filePath = join(workdir, "original.txt");
+    const filePath = join(projectDir, "original.txt");
     await writeFile(filePath, "foo bar", "utf-8");
 
     const result = await runEdit({
@@ -109,7 +109,7 @@ describe("edit-file tool", () => {
   });
 
   test("rejects an oldText that appears more than once", async () => {
-    const filePath = join(workdir, "duplicate.txt");
+    const filePath = join(projectDir, "duplicate.txt");
     await writeFile(filePath, "same\nsame\n", "utf-8");
 
     const result = await runEdit({
@@ -123,7 +123,7 @@ describe("edit-file tool", () => {
   });
 
   test("rejects overlapping edits", async () => {
-    const filePath = join(workdir, "overlap.txt");
+    const filePath = join(projectDir, "overlap.txt");
     await writeFile(filePath, "abcdef", "utf-8");
 
     const result = await runEdit({
@@ -140,7 +140,7 @@ describe("edit-file tool", () => {
   });
 
   test("rejects an empty oldText", async () => {
-    const filePath = join(workdir, "empty.txt");
+    const filePath = join(projectDir, "empty.txt");
     await writeFile(filePath, "content", "utf-8");
 
     const result = await runEdit({
@@ -153,7 +153,7 @@ describe("edit-file tool", () => {
   });
 
   test("rejects an edit that changes nothing", async () => {
-    const filePath = join(workdir, "no-change.txt");
+    const filePath = join(projectDir, "no-change.txt");
     await writeFile(filePath, "content", "utf-8");
 
     const result = await runEdit({
@@ -178,7 +178,7 @@ describe("edit-file tool", () => {
   });
 
   test("refuses to edit a binary file", async () => {
-    const filePath = join(workdir, "binary.bin");
+    const filePath = join(projectDir, "binary.bin");
     const bytes = Buffer.from([0x61, 0x00, 0x62]);
     await writeFile(filePath, bytes);
 
@@ -193,7 +193,7 @@ describe("edit-file tool", () => {
   });
 
   test("preserves a leading BOM and CRLF line endings", async () => {
-    const filePath = join(workdir, "crlf.txt");
+    const filePath = join(projectDir, "crlf.txt");
     const bom = String.fromCodePoint(0xfe_ff);
     await writeFile(filePath, `${bom}alpha\r\nbeta\r\n`, "utf-8");
 
@@ -209,7 +209,7 @@ describe("edit-file tool", () => {
   });
 
   test("fuzzy-matches smart quotes without touching unchanged lines", async () => {
-    const filePath = join(workdir, "fuzzy.txt");
+    const filePath = join(projectDir, "fuzzy.txt");
     await writeFile(filePath, "const x = “hi”;   \nconst y = 1;   \n", "utf-8");
 
     const result = await runEdit({
@@ -228,7 +228,7 @@ describe("edit-file tool", () => {
   });
 
   test("returns an error result when already aborted", async () => {
-    const filePath = join(workdir, "aborted.txt");
+    const filePath = join(projectDir, "aborted.txt");
     await writeFile(filePath, "content\n", "utf-8");
     const controller = new AbortController();
     controller.abort();
@@ -263,7 +263,7 @@ describe("edit-file tool", () => {
       value: failure.output,
     });
 
-    const filePath = join(workdir, "ok.txt");
+    const filePath = join(projectDir, "ok.txt");
     await writeFile(filePath, "a", "utf-8");
     const success = await runEdit({
       path: filePath,

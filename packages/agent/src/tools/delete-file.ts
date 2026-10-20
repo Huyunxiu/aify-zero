@@ -47,7 +47,7 @@ const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>
       try {
         const { absolute: absolutePath } = resolveToolPath(
           filepath,
-          agentContext.workdir
+          agentContext.primaryProjectDir
         );
 
         const stats = await stat(absolutePath);

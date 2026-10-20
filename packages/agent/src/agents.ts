@@ -211,7 +211,8 @@ export class Agent {
       agent: {
         name: this.name,
         sessionId: this.sessionId,
-        workdir: this.context.workdir,
+        projectDirs: this.context.projectDirs,
+        sessionDir: this.context.sessionDir,
       },
       tools: this.tools,
       registerTool: (name, tool) => {
@@ -315,7 +316,8 @@ export class Agent {
       {
         sessionId: this.sessionId,
         name: this.name,
-        workdir: this.context.workdir,
+        projectDirs: this.context.projectDirs,
+        sessionDir: this.context.sessionDir,
       },
       this.extensionApi
     );

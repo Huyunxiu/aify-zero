@@ -7,7 +7,7 @@ import type { ContextSource, SkillSource } from "../src/resources/types.js";
 import { SkillManager } from "../src/skill/skill-manager.js";
 import type { SkillInfo, SkillSourceKind } from "../src/skill/skill-types.js";
 
-const context = { workdir: "/repo" };
+const context = { projectDir: "/repo" };
 
 const makeSkill = (
   name: string,

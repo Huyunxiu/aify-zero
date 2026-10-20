@@ -24,7 +24,18 @@ export interface AgentStreamEventController {
 }
 
 export type AgentContextOptions = AgentStateOptions & {
-  workdir: string;
+  /**
+   * agent 可以读写代码的项目目录，至少一项。
+   *
+   * 第一项是主目录（primary）：工具的相对路径和资源加载都以它为基准。其余
+   * 目录只是额外可访问的根，模型访问它们时必须用绝对路径。
+   */
+  projectDirs: readonly string[];
+  /**
+   * agent 自己的会话目录，存临时文件和 artifacts。和项目目录的区别是
+   * 生命周期：它属于当前 session，会话结束即可清理，不会被用户提交。
+   */
+  sessionDir: string;
   /**
    * 技能按名字查询用（`load-skill` 工具）：插件加载完由宿主写入，省略时
    * 是一份空表。系统提示里的技能列表不从这里来。
@@ -39,7 +50,10 @@ export type AgentContextOptions = AgentStateOptions & {
   controller?: AgentStreamEventController;
 };
 export class AgentContext extends AgentState {
-  workdir: string;
+  projectDirs: readonly string[];
+  /** 主目录，即 `projectDirs[0]`。构造时保证存在。 */
+  readonly primaryProjectDir: string;
+  sessionDir: string;
   skills: SkillManager;
   systemPromptSections: readonly SystemPromptSection[];
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
@@ -49,7 +63,15 @@ export class AgentContext extends AgentState {
 
   constructor(options: AgentContextOptions) {
     super(options);
-    this.workdir = options.workdir;
+    // 主目录是数组的约定，不是独立字段：这里拆出来让类型收窄，避免每个
+    // 消费点都对 `projectDirs[0]` 做一次 undefined 判断。
+    const [primaryProjectDir, ...otherProjectDirs] = options.projectDirs;
+    if (!primaryProjectDir) {
+      throw new Error("AgentContext requires at least one project directory");
+    }
+    this.projectDirs = [primaryProjectDir, ...otherProjectDirs];
+    this.primaryProjectDir = primaryProjectDir;
+    this.sessionDir = options.sessionDir;
     this.skills = options.skills ?? new SkillManager({ dirs: [] });
     this.systemPromptSections = options.systemPromptSections ?? [];
     this.compactionConfig = options.compactionConfig;

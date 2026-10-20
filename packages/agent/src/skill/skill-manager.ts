@@ -91,11 +91,11 @@ export class SkillManager {
     return manager;
   }
 
-  async loadSkills(workdir: string) {
-    this.skills = await this.scan(workdir);
+  async loadSkills(projectDir: string) {
+    this.skills = await this.scan(projectDir);
   }
 
-  async scan(workdir: string): Promise<SkillInfo[]> {
+  async scan(projectDir: string): Promise<SkillInfo[]> {
     const levels = [
       {
         category: "global" as const,
@@ -103,7 +103,7 @@ export class SkillManager {
       },
       {
         category: "project" as const,
-        roots: getProjectResourceRoots(workdir, this.dirs),
+        roots: getProjectResourceRoots(projectDir, this.dirs),
       },
     ];
 

@@ -23,10 +23,10 @@ export function getGlobalResourceRoots(
   return dirs.map((dir) => ({ dir, root: join(home, dir) }));
 }
 
-/** 项目级资源目录：`<workdir>/<dir>`，顺序与传入的 `dirs` 一致。 */
+/** 项目级资源目录：`<projectDir>/<dir>`，顺序与传入的 `dirs` 一致。 */
 export function getProjectResourceRoots(
-  workdir: string,
+  projectDir: string,
   dirs: readonly string[]
 ): ResourceRoot[] {
-  return dirs.map((dir) => ({ dir, root: join(workdir, dir) }));
+  return dirs.map((dir) => ({ dir, root: join(projectDir, dir) }));
 }

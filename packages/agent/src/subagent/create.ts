@@ -75,7 +75,7 @@ export type ProviderCredentials = {
 };
 
 export type SubagentParent = {
-  /** The parent's environment: its working directory, skills, and model. */
+  /** The parent's environment: its project/session directories, skills, and model. */
   context: AgentContext;
   /** The pool the subagent's own tool set is drawn from. */
   tools: ToolSet;
@@ -199,7 +199,9 @@ export async function createSubagent(
   };
 
   const context = new AgentContext({
-    workdir: parent.context.workdir,
+    projectDirs: parent.context.projectDirs,
+    // 子 agent 共享父会话的目录：它产出的临时文件属于同一个会话。
+    sessionDir: parent.context.sessionDir,
     modelId: resolvedModelId,
     modelEffort: parent.context.modelEffort,
     skills: parent.context.skills,

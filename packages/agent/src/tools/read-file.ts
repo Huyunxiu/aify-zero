@@ -353,7 +353,7 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
       const { offset, limit } = input;
       const { absolute: filepath } = resolveToolPath(
         input.path,
-        agentContext.workdir
+        agentContext.primaryProjectDir
       );
 
       const normalizedOffset = offset ?? 1;

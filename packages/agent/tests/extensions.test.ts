@@ -62,7 +62,12 @@ const makeDeps = () => {
   const tools: ToolSet = {};
   const hooks = new HooksManager();
   const deps: ExtensionManagerDeps = {
-    agent: { name: "main", sessionId: "session-1", workdir: "/repo" },
+    agent: {
+      name: "main",
+      sessionId: "session-1",
+      projectDirs: ["/repo"],
+      sessionDir: "/sessions/session-1",
+    },
     tools,
     registerTool: (name, tool) => {
       tools[name] = tool;
@@ -79,7 +84,12 @@ const makeDeps = () => {
 const emitSessionStart = (hooks: HooksManager) =>
   hooks.emit(
     "session_start",
-    { sessionId: "session-1", name: "main", workdir: "/repo" },
+    {
+      sessionId: "session-1",
+      name: "main",
+      projectDirs: ["/repo"],
+      sessionDir: "/sessions/session-1",
+    },
     {}
   );
 
@@ -329,10 +339,10 @@ describe(SkillExtension, () => {
     );
   });
 
-  test("loads with the agent's workdir", async () => {
+  test("loads with the agent's primary project directory", async () => {
     const { deps } = makeDeps();
     const manager = new ExtensionManager(deps);
-    const workdirs: string[] = [];
+    const projectDirs: string[] = [];
 
     await manager.add(
       new SkillExtension({
@@ -340,7 +350,7 @@ describe(SkillExtension, () => {
         sources: [
           {
             load: (context) => {
-              workdirs.push(context.workdir);
+              projectDirs.push(context.projectDir);
               return Promise.resolve([]);
             },
           },
@@ -348,7 +358,7 @@ describe(SkillExtension, () => {
       })
     );
 
-    expect(workdirs).toStrictEqual(["/repo"]);
+    expect(projectDirs).toStrictEqual(["/repo"]);
   });
 });
 

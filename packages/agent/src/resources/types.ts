@@ -4,11 +4,11 @@ import type { SkillInfo } from "../skill/skill-types";
 /**
  * 加载资源时能拿到的环境。
  *
- * `workdir` 给文件系统源用；`userId` / `projectId` 留给以后接入数据库时
+ * `projectDir` 给文件系统源用；`userId` / `projectId` 留给以后接入数据库时
  * 做租户过滤，文件系统源会忽略它们。
  */
 export type ResourceLoadContext = {
-  workdir: string;
+  projectDir: string;
   userId?: string;
   projectId?: string;
 };

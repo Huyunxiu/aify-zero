@@ -390,7 +390,7 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
         };
       }
 
-      filepath = resolveToolPath(filepath, context.workdir).absolute;
+      filepath = resolveToolPath(filepath, context.primaryProjectDir).absolute;
 
       // If skill was resolved by name, return its content directly
       if (skillContent) {

@@ -83,7 +83,7 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
       try {
         const { absolute: absolutePath } = resolveToolPath(
           filepath,
-          agentContext.workdir
+          agentContext.primaryProjectDir
         );
 
         return await withFileMutationQueue(absolutePath, async () => {

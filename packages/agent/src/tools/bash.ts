@@ -14,7 +14,7 @@ const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000;
 const DESCRIPTION = `Execute a shell command in the working directory.
 - Output exceeding ${MAX_OUTPUT_LENGTH} characters will be truncated.
 - Commands that run longer than the timeout will be terminated.
-- Prefer using the workdir parameter over 'cd' commands.`;
+- Prefer using the workdir parameter over 'cd' commands. The default is the project directory, given in the environment section of the system prompt.`;
 
 const createBashToolSchema = (agentContext: AgentContext) =>
   z.object({
@@ -28,7 +28,7 @@ const createBashToolSchema = (agentContext: AgentContext) =>
       .string()
       .optional()
       .describe(
-        `The working directory to run the command in. Defaults to ${agentContext.workdir}. Use this instead of 'cd' commands.`
+        `The working directory to run the command in. Defaults to ${agentContext.primaryProjectDir}. Use this instead of 'cd' commands.`
       ),
     description: z
       .string()
@@ -60,8 +60,8 @@ export const createBashTool = ({
     execute: async ({ command, timeout, workdir }, { abortSignal }) => {
       const context = agentContext;
       const cwd = resolveToolPath(
-        workdir ?? context.workdir,
-        context.workdir
+        workdir ?? context.primaryProjectDir,
+        context.primaryProjectDir
       ).absolute;
       const resolvedTimeout = timeout ?? DEFAULT_TIMEOUT_MS;
 

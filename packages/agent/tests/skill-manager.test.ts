@@ -9,14 +9,14 @@ import type { SkillInfo } from "../src/skill/skill-types.js";
 
 const DIRS = [".agents"];
 
-/** Writes a SKILL.md into `.agents/skills/<skillDir>/` of the workdir. */
+/** Writes a SKILL.md into `.agents/skills/<skillDir>/` of the projectDir. */
 const writeSkill = async (
-  workdir: string,
+  projectDir: string,
   skillDir: string,
   source: string
 ) => {
   const location = path.join(
-    workdir,
+    projectDir,
     ".agents",
     "skills",
     skillDir,
@@ -27,13 +27,13 @@ const writeSkill = async (
 };
 
 /**
- * Scans the workdir only: `scan` walks the real home directory too, and the
+ * Scans the projectDir only: `scan` walks the real home directory too, and the
  * skills living there are none of this test's business.
  */
-const scanWorkdir = async (workdir: string): Promise<SkillInfo[]> => {
+const scanProjectDir = async (projectDir: string): Promise<SkillInfo[]> => {
   const manager = new SkillManager({ dirs: DIRS });
-  const skills = await manager.scan(workdir);
-  return skills.filter((skill) => skill.location.startsWith(workdir));
+  const skills = await manager.scan(projectDir);
+  return skills.filter((skill) => skill.location.startsWith(projectDir));
 };
 
 /** The directories that decide precedence, in the order they are searched. */
@@ -42,7 +42,7 @@ const ALL_DIRS = [".aify-studio", ".agents"];
 /**
  * A skill shaped the way `scan` hands it over, for the tests that build their
  * own set instead of scanning one: the global level is pinned to `homedir()`,
- * so a project-over-global shadowing cannot be set up on a temp workdir.
+ * so a project-over-global shadowing cannot be set up on a temp projectDir.
  */
 const makeSkill = (
   name: string,
@@ -68,20 +68,20 @@ const managerWith = (...skills: SkillInfo[]): SkillManager => {
 };
 
 describe(SkillManager, () => {
-  let workdir = "";
+  let projectDir = "";
 
   beforeEach(async () => {
-    workdir = await mkdtemp(path.join(tmpdir(), "skill-manager-"));
+    projectDir = await mkdtemp(path.join(tmpdir(), "skill-manager-"));
   });
 
   afterEach(async () => {
-    await rm(workdir, { recursive: true, force: true });
+    await rm(projectDir, { recursive: true, force: true });
   });
 
   describe("scan", () => {
     test("should keep every front matter field as metadata", async () => {
       await writeSkill(
-        workdir,
+        projectDir,
         "vercel-react-best-practices",
         [
           "---",
@@ -100,7 +100,7 @@ describe(SkillManager, () => {
         ].join("\n")
       );
 
-      const [skill] = await scanWorkdir(workdir);
+      const [skill] = await scanProjectDir(projectDir);
 
       expect(skill).toMatchObject({
         name: "vercel-react-best-practices",
@@ -121,21 +121,21 @@ describe(SkillManager, () => {
 
     test("should fall back to the skill directory name", async () => {
       await writeSkill(
-        workdir,
+        projectDir,
         "plain",
         "---\ndescription: No name here.\n---\nBody\n"
       );
 
-      const [skill] = await scanWorkdir(workdir);
+      const [skill] = await scanProjectDir(projectDir);
 
       expect(skill?.name).toBe("plain");
       expect(skill?.description).toBe("No name here.");
     });
 
     test("should load a skill without front matter", async () => {
-      await writeSkill(workdir, "bare", "# Just a body\n");
+      await writeSkill(projectDir, "bare", "# Just a body\n");
 
-      const [skill] = await scanWorkdir(workdir);
+      const [skill] = await scanProjectDir(projectDir);
 
       expect(skill).toMatchObject({
         name: "bare",
@@ -145,9 +145,9 @@ describe(SkillManager, () => {
     });
 
     test("should ignore front matter that is not a mapping", async () => {
-      await writeSkill(workdir, "scalar", "---\n42\n---\nBody\n");
+      await writeSkill(projectDir, "scalar", "---\n42\n---\nBody\n");
 
-      const [skill] = await scanWorkdir(workdir);
+      const [skill] = await scanProjectDir(projectDir);
 
       expect(skill?.name).toBe("scalar");
       expect(skill?.metadata).toStrictEqual({});
@@ -156,7 +156,13 @@ describe(SkillManager, () => {
     test("should collapse one name found in two directories to the earlier one", async () => {
       const dirs = [".aify-studio", ".agents"];
       const write = async (dir: string, description: string) => {
-        const location = path.join(workdir, dir, "skills", "dup", "SKILL.md");
+        const location = path.join(
+          projectDir,
+          dir,
+          "skills",
+          "dup",
+          "SKILL.md"
+        );
         await mkdir(path.dirname(location), { recursive: true });
         await writeFile(
           location,
@@ -167,10 +173,10 @@ describe(SkillManager, () => {
       await write(".agents", "From .agents.");
 
       const manager = new SkillManager({ dirs });
-      await manager.loadSkills(workdir);
+      await manager.loadSkills(projectDir);
       const skills = manager
         .listUserAvailableSkills()
-        .filter((skill) => skill.location.startsWith(workdir));
+        .filter((skill) => skill.location.startsWith(projectDir));
 
       expect(skills).toHaveLength(1);
       expect(skills[0]?.dir).toBe(".aify-studio");
@@ -180,9 +186,9 @@ describe(SkillManager, () => {
 
   describe("appendPrompt", () => {
     test("should list a skill without a description by name only", async () => {
-      await writeSkill(workdir, "plain", "# Just a body\n");
+      await writeSkill(projectDir, "plain", "# Just a body\n");
       const manager = new SkillManager({ dirs: DIRS });
-      await manager.loadSkills(workdir);
+      await manager.loadSkills(projectDir);
 
       const lines = manager.appendPrompt("base").split("\n");
 

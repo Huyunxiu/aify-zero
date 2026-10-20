@@ -241,7 +241,8 @@ describe("subagent 的 abort scope", () => {
       session: new AgentSession({ turns: [] }),
       store: asStore(new FakeStore()),
       context: new AgentContext({
-        workdir: "/tmp",
+        projectDirs: ["/tmp"],
+        sessionDir: "/tmp/sessions/parent-session",
         modelId: "test-model",
         skills: new SkillManager({ dirs: [] }),
         compactionConfig: {
@@ -330,7 +331,8 @@ describe("subagent 继承项目说明", () => {
       session: new AgentSession({ turns: [] }),
       store: asStore(new FakeStore()),
       context: new AgentContext({
-        workdir: "/tmp",
+        projectDirs: ["/tmp"],
+        sessionDir: "/tmp/sessions/parent-session",
         modelId: "test-model",
         skills: new SkillManager({ dirs: [] }),
         systemPromptSections: [projectSection],

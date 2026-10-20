@@ -46,6 +46,6 @@ export class FileSystemSkillSource implements SkillSource {
 
   load(context: ResourceLoadContext): Promise<SkillInfo[]> {
     const manager = new SkillManager({ dirs: this.#dirs });
-    return manager.scan(context.workdir);
+    return manager.scan(context.projectDir);
   }
 }

@@ -19,9 +19,9 @@ const turnId = "turn-1";
 const stepId = "step-1";
 const sessionId = "session-1";
 
-// The executor only reads `workdir` off the context; the class it is cast from
-// is built by the host, not by the loop under test.
-const context = { workdir: "/tmp" } as unknown as AgentContext;
+// The executor only reads `primaryProjectDir` off the context; the class it is
+// cast from is built by the host, not by the loop under test.
+const context = { primaryProjectDir: "/tmp" } as unknown as AgentContext;
 
 const sleep = (ms: number) =>
   new Promise((resolve) => {

@@ -5,7 +5,10 @@ import type { HookEventName, HookOptions, HooksMap } from "../hooks-manager";
 export interface ExtensionAgentInfo {
   name: string;
   sessionId: string;
-  workdir: string;
+  /** 项目目录列表，第一项是主目录：资源加载和工具都以它为基准。 */
+  projectDirs: readonly string[];
+  /** 当前会话的私有目录，存临时文件和 artifacts。 */
+  sessionDir: string;
 }
 
 /**

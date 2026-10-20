@@ -19,7 +19,7 @@ describe(getGlobalResourceRoots, () => {
 });
 
 describe(getProjectResourceRoots, () => {
-  test("joins every dir under the workdir in the given order", () => {
+  test("joins every dir under the projectDir in the given order", () => {
     expect(
       getProjectResourceRoots("/repo", [".aify-studio", ".agents"])
     ).toStrictEqual([

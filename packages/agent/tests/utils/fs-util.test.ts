@@ -43,7 +43,7 @@ describe(normalizeToolInputPath, () => {
 });
 
 describe(resolveToolPath, () => {
-  test("should resolve a relative path against the workdir", () => {
+  test("should resolve a relative path against the projectDir", () => {
     expect(resolveToolPath("src/a.ts", "/work").absolute).toBe(
       "/work/src/a.ts"
     );

@@ -47,7 +47,7 @@ export class FileSystemContextSource implements ContextSource {
   load(context: ResourceLoadContext): Promise<ContextFile[]> {
     return Promise.resolve(
       loadProjectContextFiles({
-        cwd: context.workdir,
+        cwd: context.projectDir,
         globalDirs: this.#globalDirs,
       })
     );

@@ -162,8 +162,8 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
     inputSchema: GLOB_TOOL_INPUT_SCHEMA,
     execute: async (input, { abortSignal }) => {
       const { absolute: normalizedPath } = resolveToolPath(
-        input.path ?? agentContext.workdir,
-        agentContext.workdir
+        input.path ?? agentContext.primaryProjectDir,
+        agentContext.primaryProjectDir
       );
       const effectiveLimit = Math.min(
         Math.max(1, input.limit ?? DEFAULT_LIMIT),
@@ -178,7 +178,7 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
       return await new Promise<GlobToolOutput>((resolve) => {
         const proc = spawn(command, {
           shell: true,
-          cwd: agentContext.workdir,
+          cwd: agentContext.primaryProjectDir,
           env: process.env,
           stdio: ["ignore", "pipe", "pipe"],
         });

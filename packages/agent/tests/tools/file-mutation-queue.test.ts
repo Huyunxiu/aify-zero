@@ -186,7 +186,7 @@ describe(withFileMutationQueue, () => {
     const filePath = join(dir, "parallel.txt");
     await writeFile(filePath, "alpha\nbeta\n", "utf-8");
 
-    const agentContext = { workdir: dir } as AgentContext;
+    const agentContext = { primaryProjectDir: dir } as AgentContext;
     const editTool = createEditFileTool({ agentContext });
     const runEdit = (oldText: string, newText: string) =>
       editTool.execute(

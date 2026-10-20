@@ -15,12 +15,13 @@ declare module "../src/hooks-manager.js" {
   }
 }
 
-const api: HookContext = { workdir: "/tmp/test-hooks" };
+const api: HookContext = { projectDir: "/tmp/test-hooks" };
 
 const sessionStart = (sessionId: string): SessionStartEvent => ({
   sessionId,
   name: "main",
-  workdir: "/tmp/test-hooks",
+  projectDirs: ["/tmp/test-hooks"],
+  sessionDir: "/tmp/test-hooks-sessions",
 });
 
 // One mock shape covers every event: the handlers here only record calls, and

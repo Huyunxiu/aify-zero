@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 
 import { streamToEventIterator, type } from "@orpc/server";
 import {
@@ -14,6 +14,7 @@ import {
   Agent,
   appendSubagentPrompt,
   ContextExtension,
+  EnvironmentExtension,
   FileSystemContextSource,
   FileSystemSkillSource,
   loadContextFiles,
@@ -43,6 +44,7 @@ import type { TurnInsertModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import z from "zod";
 
+import { PRIMARY_PROJECT_DIR, PROJECT_DIRS, getSessionDir } from "../config";
 import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
 import { forkSessionSchema, listSessionTurnsSchema } from "./session.schema";
@@ -101,12 +103,16 @@ const createSession = publicProcedure
       }
     }
 
-    // const workdir = homedir();
-    const workdir = "/Users/huyunxiu/HuYunXiu/aify-zero";
+    // 会话目录先建出来：Environment 提示会把路径告诉模型，模型可能直接往里
+    // 写文件，不该让它先自己 mkdir。
+    const sessionDir = getSessionDir(sessionId);
+    mkdirSync(sessionDir, { recursive: true });
+
     // 技能和上下文由扩展加载并持有；提示词由扩展注册的片段在 turn 开始时
     // 统一拼接，宿主只负责把资源注册进去。
     const agentContext = new AgentContext({
-      workdir,
+      projectDirs: PROJECT_DIRS,
+      sessionDir,
       modelId: aiModel.model,
       modelEffort: effort,
       compactionConfig: {
@@ -141,6 +147,12 @@ const createSession = publicProcedure
       providerId: aiModel.provider,
       modelId: aiModel.model,
     });
+
+    // 环境信息排在最前：模型先知道自己在哪个项目、哪个会话目录里工作，
+    // 再读项目说明和技能列表。
+    await agent.registerExtension(
+      new EnvironmentExtension({ id: "environment" })
+    );
 
     const skillsExtension = new SkillExtension({
       id: "filesystem-skills",
@@ -434,14 +446,15 @@ export const listSessionResources = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/resources" })
   .input(z.object({ sessionId: z.string() }))
   .handler(async () => {
-    const workdir = homedir();
+    // 资源只从主目录加载，与建会话时的扩展一致。
+    const projectDir = PRIMARY_PROJECT_DIR;
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
-    await skillManager.loadSkills(workdir);
+    await skillManager.loadSkills(projectDir);
 
     // 与技能一样，上下文文件每次请求都从源重新读取，保证界面看到的是磁盘
     // 当前内容（AGENTS.md / CLAUDE.md 可能在会话期间被编辑）。
     const context = await loadContextFiles([new FileSystemContextSource()], {
-      workdir,
+      projectDir,
     });
 
     return { skills: skillManager.listUserAvailableSkills(), context };
