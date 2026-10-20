@@ -31,20 +31,23 @@ function getStringField(value: unknown): string | undefined {
 }
 
 /** A skill paired with the rank that decides where it sits in the lookup order. */
-type RankedSkill = { skill: SkillInfo; rank: [number, number] };
+type RankedSkill = { skill: SkillInfo; rank: [number, number, number] };
 
 /**
- * Where a skill sits in the lookup order: project shadows global, and within
- * one level an earlier directory in `dirs` wins.
+ * Where a skill sits in the lookup order，依次比较：
+ * 1. scope：project 压过 global
+ * 2. source 优先级：数值越小越强，用来决定数据库和文件系统谁覆盖谁
+ * 3. 目录：同一个 source 内，`dirs` 里靠前的目录赢
  */
 function skillRank(
   skill: SkillInfo,
   dirs: readonly string[]
-): [number, number] {
+): [number, number, number] {
   const level = skill.category === "project" ? 0 : 1;
+  const source = skill.priority ?? 0;
   const index = dirs.indexOf(skill.dir);
   // A dir outside `dirs` can only come from a hand-built fixture; it ranks last.
-  return [level, index === -1 ? dirs.length : index];
+  return [level, source, index === -1 ? dirs.length : index];
 }
 
 /**
@@ -57,6 +60,9 @@ function compareSkills(a: RankedSkill, b: RankedSkill): number {
   }
   if (a.rank[1] !== b.rank[1]) {
     return a.rank[1] - b.rank[1];
+  }
+  if (a.rank[2] !== b.rank[2]) {
+    return a.rank[2] - b.rank[2];
   }
   return a.skill.location.localeCompare(b.skill.location);
 }
@@ -73,6 +79,16 @@ export class SkillManager {
   constructor(options: SkillManagerOptions) {
     this.dirs = options.dirs;
     this.skills = [];
+  }
+
+  /** 用已经加载好的技能构造 manager，避免再扫一遍文件系统。 */
+  static fromSkills(
+    skills: readonly SkillInfo[],
+    options: SkillManagerOptions
+  ): SkillManager {
+    const manager = new SkillManager(options);
+    manager.skills = [...skills];
+    return manager;
   }
 
   async loadSkills(workdir: string) {
@@ -137,6 +153,7 @@ export class SkillManager {
             content: parsed.content,
             category: level.category,
             metadata,
+            source: "filesystem",
           });
         }
       }

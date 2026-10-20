@@ -57,6 +57,7 @@ const makeSkill = (
   content: "",
   category,
   metadata,
+  source: "filesystem",
 });
 
 /** A manager holding the given skills, as if they had just been scanned. */

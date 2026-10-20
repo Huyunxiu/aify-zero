@@ -5,6 +5,9 @@
  */
 export type SkillMetadata = Record<string, unknown>;
 
+/** 技能从哪里加载。以后接数据库时用 `database`，不影响排序语义。 */
+export type SkillSourceKind = "filesystem" | "database";
+
 export type SkillInfo = {
   name: string;
   description: string;
@@ -13,6 +16,12 @@ export type SkillInfo = {
   content: string;
   category: "global" | "project";
   metadata: SkillMetadata;
+  source: SkillSourceKind;
+  /**
+   * 来源优先级，数字越小越优先。加载器按 source 顺序写入；数据源可以显式
+   * 覆盖，让数据库记录排到文件系统前面。
+   */
+  priority?: number;
 };
 
 export type CreateSkillInput = {

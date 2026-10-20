@@ -13,7 +13,10 @@ import {
   createTaskTool,
   Agent,
   appendSubagentPrompt,
-  loadProjectContextFiles,
+  FileSystemContextSource,
+  FileSystemSkillSource,
+  loadContextFiles,
+  loadSkills,
   renderProjectContext,
   STREAM_REGISTRY,
   SUBAGENT_DEFINITIONS,
@@ -100,11 +103,21 @@ const createSession = publicProcedure
 
     // const workdir = homedir();
     const workdir = "/Users/huyunxiu/HuYunXiu/aify-zero";
-    const skillManager = new SkillManager({ dirs: SKILL_DIRS });
-    await skillManager.loadSkills(workdir);
+    // 资源从 source 加载：现在只有文件系统，以后加数据库源只需要往数组里
+    // 追加一项，排序和去重仍由这一层统一处理。
+    const loadContext = { workdir };
+    const skillManager = SkillManager.fromSkills(
+      await loadSkills(
+        [new FileSystemSkillSource({ dirs: SKILL_DIRS })],
+        loadContext
+      ),
+      { dirs: SKILL_DIRS }
+    );
 
-    // 全局目录默认是 ~/.agents、~/.aify-studio；项目说明沿 workdir 祖先链查找。
-    const contextFiles = loadProjectContextFiles({ cwd: workdir });
+    const contextFiles = await loadContextFiles(
+      [new FileSystemContextSource()],
+      loadContext
+    );
 
     const agentContext = new AgentContext({
       workdir,
