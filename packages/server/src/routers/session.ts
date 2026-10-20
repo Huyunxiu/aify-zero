@@ -13,6 +13,8 @@ import {
   createTaskTool,
   Agent,
   appendSubagentPrompt,
+  loadProjectContextFiles,
+  renderProjectContext,
   STREAM_REGISTRY,
   SUBAGENT_DEFINITIONS,
 } from "@workspace/agent";
@@ -101,11 +103,15 @@ const createSession = publicProcedure
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
     await skillManager.loadSkills(workdir);
 
+    // 全局目录默认是 ~/.agents、~/.aify-studio；项目说明沿 workdir 祖先链查找。
+    const contextFiles = loadProjectContextFiles({ cwd: workdir });
+
     const agentContext = new AgentContext({
       workdir,
       modelId: aiModel.model,
       modelEffort: effort,
       skills: skillManager,
+      contextFiles,
       compactionConfig: {
         recentWindowSize: 10,
         threshold: 100_000,
@@ -115,7 +121,9 @@ const createSession = publicProcedure
       },
     });
 
-    const systemPrompt = appendSubagentPrompt(skillManager.appendPrompt(""));
+    const systemPrompt = appendSubagentPrompt(
+      skillManager.appendPrompt(renderProjectContext(contextFiles))
+    );
 
     const agent = new Agent({
       name: "main",

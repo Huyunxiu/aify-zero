@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 import { AgentContext } from "../src/agent-context.js";
 import { AgentSession } from "../src/agent-session.js";
 import { Agent } from "../src/agents.js";
+import type { ContextFile } from "../src/context-files.js";
 import { SkillManager } from "../src/skill/index.js";
 import type { AgentStore } from "../src/storage/index.js";
 import {
@@ -232,7 +233,7 @@ describe("subagent 的 abort scope", () => {
    * 造一个真的父 agent：`context.abortSignal` 由它的构造函数设成自己的
    * controller，这正是 `createSubagent` 要接过去的东西。
    */
-  const buildParent = (): Agent =>
+  const buildParent = (contextFiles: ContextFile[] = []): Agent =>
     new Agent({
       name: "main",
       sessionId: "parent-session",
@@ -242,6 +243,7 @@ describe("subagent 的 abort scope", () => {
         workdir: "/tmp",
         modelId: "test-model",
         skills: new SkillManager({ dirs: [] }),
+        contextFiles,
         compactionConfig: {
           recentWindowSize: 10,
           threshold: 100_000,
@@ -308,6 +310,67 @@ describe("subagent 的 abort scope", () => {
     const { agent: child } = await spawnChild(parent);
 
     expect(child.context.abortSignal?.aborted).toBeTruthy();
+  });
+});
+
+describe("subagent 继承项目说明", () => {
+  const parentContextFiles: ContextFile[] = [
+    { path: "/repo/AGENTS.md", content: "Always run the tests." },
+  ];
+
+  const buildParent = (): Agent =>
+    new Agent({
+      name: "main",
+      sessionId: "parent-session",
+      session: new AgentSession({ turns: [] }),
+      store: asStore(new FakeStore()),
+      context: new AgentContext({
+        workdir: "/tmp",
+        modelId: "test-model",
+        skills: new SkillManager({ dirs: [] }),
+        contextFiles: parentContextFiles,
+        compactionConfig: {
+          recentWindowSize: 10,
+          threshold: 100_000,
+          thresholdPercent: 0.9,
+          lastKnownInputTokens: 0,
+          lastKnownPromptMessageCount: 0,
+        },
+      }),
+      apiKey: "test-key",
+      apiUrl: "http://localhost",
+      providerId: "test-provider",
+      modelId: "test-model",
+    });
+
+  test("子 agent 拿到父加载的那份文件，并且写进了 system prompt", async () => {
+    const parent = buildParent();
+    const { agent: child } = await createSubagent(
+      {
+        context: parent.context,
+        tools: {},
+        credentials: {
+          apiKey: parent.apiKey,
+          apiUrl: parent.apiUrl,
+          providerId: parent.providerId,
+        },
+        sessionId: parent.sessionId,
+        toolCallId: "call-1",
+      },
+      {
+        definition,
+        prompt: "Find the thing.",
+        store: asStore(new FakeStore()),
+        description: taskLabel,
+      }
+    );
+
+    expect(child.context.contextFiles).toStrictEqual(parentContextFiles);
+    expect(child.systemPrompt).toContain(
+      '<project_instructions path="/repo/AGENTS.md">'
+    );
+    expect(child.systemPrompt).toContain("Always run the tests.");
+    expect(child.systemPrompt).toContain(definition.instructions);
   });
 });
 

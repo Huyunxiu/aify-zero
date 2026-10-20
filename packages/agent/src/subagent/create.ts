@@ -10,6 +10,7 @@ import type { ToolSet } from "ai";
 import { AgentContext } from "../agent-context";
 import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
+import { renderProjectContext } from "../context-files";
 import type { AgentStore } from "../storage";
 import type { AgentToolSet } from "../types";
 import {
@@ -203,13 +204,20 @@ export async function createSubagent(
     modelId: resolvedModelId,
     modelEffort: parent.context.modelEffort,
     skills: parent.context.skills,
+    // 项目说明跟着父上下文走：子 agent 不重新读盘，看到的就是父加载的那份。
+    contextFiles: parent.context.contextFiles,
     compactionConfig,
   });
+
+  const projectContext = renderProjectContext(parent.context.contextFiles);
+  const instructions = projectContext
+    ? `${projectContext}\n\n${definition.instructions}`
+    : definition.instructions;
 
   const agent = new Agent({
     name: `subagent:${definition.name}`,
     sessionId: childSessionId,
-    systemPrompt: parent.context.skills.appendPrompt(definition.instructions),
+    systemPrompt: parent.context.skills.appendPrompt(instructions),
     context,
     session,
     tools: selectSubagentTools(tools ?? parent.tools, definition),

@@ -1,13 +1,17 @@
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import path from "node:path";
 
 import { glob } from "glob";
 import matter from "gray-matter";
 
+import {
+  getGlobalResourceRoots,
+  getProjectResourceRoots,
+} from "../resource-dirs";
 import type { SkillInfo, SkillMetadata } from "./skill-types";
 
-export const SKILL_DIRS = [".aify-studio", ".agents", ".claude"];
+/** 技能目录，按优先级排列：越靠前优先级越高。 */
+export const SKILL_DIRS = [".aify-studio", ".agents"];
 export const SKILL_PATTERN = "skills/**/SKILL.md";
 
 /** Front matter can parse to anything; only a mapping carries metadata. */
@@ -33,7 +37,10 @@ type RankedSkill = { skill: SkillInfo; rank: [number, number] };
  * Where a skill sits in the lookup order: project shadows global, and within
  * one level an earlier directory in `dirs` wins.
  */
-function skillRank(skill: SkillInfo, dirs: string[]): [number, number] {
+function skillRank(
+  skill: SkillInfo,
+  dirs: readonly string[]
+): [number, number] {
   const level = skill.category === "project" ? 0 : 1;
   const index = dirs.indexOf(skill.dir);
   // A dir outside `dirs` can only come from a hand-built fixture; it ranks last.
@@ -55,11 +62,11 @@ function compareSkills(a: RankedSkill, b: RankedSkill): number {
 }
 
 export type SkillManagerOptions = {
-  dirs: string[];
+  dirs: readonly string[];
 };
 
 export class SkillManager {
-  dirs: string[];
+  dirs: readonly string[];
 
   skills: SkillInfo[];
 
@@ -76,20 +83,18 @@ export class SkillManager {
     const levels = [
       {
         category: "global" as const,
-        baseDir: homedir(),
+        roots: getGlobalResourceRoots(this.dirs),
       },
       {
         category: "project" as const,
-        baseDir: workdir,
+        roots: getProjectResourceRoots(workdir, this.dirs),
       },
     ];
 
     const skills: SkillInfo[] = [];
 
     for (const level of levels) {
-      for (const dir of this.dirs) {
-        const root = path.join(level.baseDir, dir);
-
+      for (const { dir, root } of level.roots) {
         let matches: string[] = [];
         try {
           matches = await glob(SKILL_PATTERN, {

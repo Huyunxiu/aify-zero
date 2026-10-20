@@ -37,7 +37,7 @@ const scanWorkdir = async (workdir: string): Promise<SkillInfo[]> => {
 };
 
 /** The directories that decide precedence, in the order they are searched. */
-const ALL_DIRS = [".aify-studio", ".agents", ".claude"];
+const ALL_DIRS = [".aify-studio", ".agents"];
 
 /**
  * A skill shaped the way `scan` hands it over, for the tests that build their
@@ -227,7 +227,7 @@ describe(SkillManager, () => {
   describe("listUserAvailableSkills", () => {
     test("should let a project skill shadow the global one of the same name", () => {
       const globalSkill = makeSkill("dup", "global", ".aify-studio");
-      const projectSkill = makeSkill("dup", "project", ".claude");
+      const projectSkill = makeSkill("dup", "project", ".agents");
 
       // The project copy wins even from the last directory in the search order.
       expect(
@@ -237,7 +237,7 @@ describe(SkillManager, () => {
 
     test("should let an earlier directory shadow a later one of the same level", () => {
       const earlier = makeSkill("dup", "global", ".aify-studio");
-      const later = makeSkill("dup", "global", ".claude");
+      const later = makeSkill("dup", "global", ".agents");
 
       expect(
         managerWith(later, earlier).listUserAvailableSkills()
@@ -246,7 +246,7 @@ describe(SkillManager, () => {
 
     test("should let an earlier directory shadow a later one of a project", () => {
       const earlier = makeSkill("dup", "project", ".aify-studio");
-      const later = makeSkill("dup", "project", ".claude");
+      const later = makeSkill("dup", "project", ".agents");
 
       expect(
         managerWith(later, earlier).listUserAvailableSkills()
@@ -265,7 +265,7 @@ describe(SkillManager, () => {
 
     test("should keep every unique name, strongest first", () => {
       const globalSkill = makeSkill("alpha", "global", ".aify-studio");
-      const projectSkill = makeSkill("beta", "project", ".claude");
+      const projectSkill = makeSkill("beta", "project", ".agents");
 
       expect(
         managerWith(globalSkill, projectSkill).listUserAvailableSkills()
