@@ -16,6 +16,7 @@ import {
   ContextExtension,
   FileSystemContextSource,
   FileSystemSkillSource,
+  loadContextFiles,
   SkillExtension,
   STREAM_REGISTRY,
   SUBAGENT_DEFINITIONS,
@@ -437,7 +438,13 @@ export const listSessionResources = publicProcedure
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
     await skillManager.loadSkills(workdir);
 
-    return { skills: skillManager.listUserAvailableSkills() };
+    // 与技能一样，上下文文件每次请求都从源重新读取，保证界面看到的是磁盘
+    // 当前内容（AGENTS.md / CLAUDE.md 可能在会话期间被编辑）。
+    const context = await loadContextFiles([new FileSystemContextSource()], {
+      workdir,
+    });
+
+    return { skills: skillManager.listUserAvailableSkills(), context };
   });
 
 export const session = {
