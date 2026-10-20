@@ -5,8 +5,8 @@ import type {
 
 import { AgentState } from "./agent-state";
 import type { AgentStateOptions } from "./agent-state";
-import type { ContextFile } from "./context-files";
-import type { SkillManager } from "./skill";
+import type { SystemPromptSection } from "./extensions/types";
+import { SkillManager } from "./skill";
 import type { AgentToolSet } from "./types";
 
 export interface AgentStreamEventController {
@@ -25,19 +25,23 @@ export interface AgentStreamEventController {
 
 export type AgentContextOptions = AgentStateOptions & {
   workdir: string;
-  skills: SkillManager;
   /**
-   * 启动时加载的 AGENTS.md / CLAUDE.md。子 agent 从这里继承，保证主会话和
-   * 子会话看到同一套项目说明。
+   * 技能按名字查询用（`load-skill` 工具）：插件加载完由宿主写入，省略时
+   * 是一份空表。系统提示里的技能列表不从这里来。
    */
-  contextFiles?: ContextFile[];
+  skills?: SkillManager;
+  /**
+   * 启动时注册的系统提示片段。子 agent 从这里继承，保证主会话和子会话
+   * 看到同一套说明。
+   */
+  systemPromptSections?: readonly SystemPromptSection[];
   compactionConfig: CompactionConfig;
   controller?: AgentStreamEventController;
 };
 export class AgentContext extends AgentState {
   workdir: string;
   skills: SkillManager;
-  contextFiles: ContextFile[];
+  systemPromptSections: readonly SystemPromptSection[];
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
   abortSignal?: AbortSignal;
   compactionConfig: CompactionConfig;
@@ -46,8 +50,8 @@ export class AgentContext extends AgentState {
   constructor(options: AgentContextOptions) {
     super(options);
     this.workdir = options.workdir;
-    this.skills = options.skills;
-    this.contextFiles = options.contextFiles ?? [];
+    this.skills = options.skills ?? new SkillManager({ dirs: [] });
+    this.systemPromptSections = options.systemPromptSections ?? [];
     this.compactionConfig = options.compactionConfig;
     this.controller = options.controller;
   }

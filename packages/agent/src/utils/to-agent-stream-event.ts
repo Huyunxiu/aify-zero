@@ -94,7 +94,7 @@ export function toAgentEvent<TOOLS extends ToolSet>(
         ...part,
         turnId,
         stepId,
-        createdAt
+        createdAt,
       };
     }
     case "source":

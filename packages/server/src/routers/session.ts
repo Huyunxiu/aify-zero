@@ -13,11 +13,10 @@ import {
   createTaskTool,
   Agent,
   appendSubagentPrompt,
+  ContextExtension,
   FileSystemContextSource,
   FileSystemSkillSource,
-  loadContextFiles,
-  loadSkills,
-  renderProjectContext,
+  SkillExtension,
   STREAM_REGISTRY,
   SUBAGENT_DEFINITIONS,
 } from "@workspace/agent";
@@ -103,28 +102,12 @@ const createSession = publicProcedure
 
     // const workdir = homedir();
     const workdir = "/Users/huyunxiu/HuYunXiu/aify-zero";
-    // 资源从 source 加载：现在只有文件系统，以后加数据库源只需要往数组里
-    // 追加一项，排序和去重仍由这一层统一处理。
-    const loadContext = { workdir };
-    const skillManager = SkillManager.fromSkills(
-      await loadSkills(
-        [new FileSystemSkillSource({ dirs: SKILL_DIRS })],
-        loadContext
-      ),
-      { dirs: SKILL_DIRS }
-    );
-
-    const contextFiles = await loadContextFiles(
-      [new FileSystemContextSource()],
-      loadContext
-    );
-
+    // 技能和上下文由扩展加载并持有；提示词由扩展注册的片段在 turn 开始时
+    // 统一拼接，宿主只负责把资源注册进去。
     const agentContext = new AgentContext({
       workdir,
       modelId: aiModel.model,
       modelEffort: effort,
-      skills: skillManager,
-      contextFiles,
       compactionConfig: {
         recentWindowSize: 10,
         threshold: 100_000,
@@ -134,14 +117,9 @@ const createSession = publicProcedure
       },
     });
 
-    const systemPrompt = appendSubagentPrompt(
-      skillManager.appendPrompt(renderProjectContext(contextFiles))
-    );
-
     const agent = new Agent({
       name: "main",
       sessionId,
-      systemPrompt,
       modelEffort: effort,
       context: agentContext,
       session,
@@ -162,6 +140,23 @@ const createSession = publicProcedure
       providerId: aiModel.provider,
       modelId: aiModel.model,
     });
+
+    const skillsExtension = new SkillExtension({
+      id: "filesystem-skills",
+      sources: [new FileSystemSkillSource()],
+    });
+    await agent.registerExtension(skillsExtension);
+    await agent.registerExtension(
+      new ContextExtension({
+        id: "filesystem-context",
+        sources: [new FileSystemContextSource()],
+      })
+    );
+
+    // 系统提示由扩展注册的片段生成；`load-skill` 工具需要按名字查技能，
+    // 所以这里把扩展持有的 manager 交给上下文。
+    agentContext.skills = skillsExtension.manager;
+    agent.systemPrompt = appendSubagentPrompt("");
 
     agent.registerTool(
       "task",

@@ -1,11 +1,10 @@
 import type { ModelMessage } from "ai";
 
 /**
- * The API surface handed to a hook as its second argument. It belongs to the
- * plugin system, not to the agent: it is deliberately its own type — never
- * `AgentContext` — and the host that owns the hooks passes it on emit.
+ * 传给 hook 处理器的第二个参数。它属于插件系统而不是 Agent：故意保持独立
+ * 类型（永远不是 `AgentContext`），由拥有 hooks 的宿主在 emit 时传入。
  */
-export type ExtensionAPI = {};
+export type HookContext = {};
 
 export type SessionStartEvent = {
   sessionId: string;
@@ -122,7 +121,7 @@ export interface HooksMap {
  */
 export type HookHandler<T, R = unknown> = (
   event: T,
-  api: ExtensionAPI
+  api: HookContext
 ) => Promise<R> | R | undefined;
 
 export type HookOptions = {
@@ -167,7 +166,7 @@ export type HookResultsOf<K extends HookEventName> = Exclude<
  * `off` can match it by identity.
  */
 type Listener = {
-  run: (event: unknown, api: ExtensionAPI) => unknown;
+  run: (event: unknown, api: HookContext) => unknown;
   once: boolean;
   priority: number;
   source: unknown;
@@ -262,7 +261,7 @@ export class HooksManager {
   async emit<K extends HookEventName>(
     name: K,
     event: HookEventOf<K>,
-    api: ExtensionAPI
+    api: HookContext
   ): Promise<HookResultOf<K>> {
     const results = await this.dispatch(name, event, api);
     // Walk backwards so the last handler to have an opinion wins; a nullish
@@ -291,7 +290,7 @@ export class HooksManager {
   async emitAsyncHooks<K extends HookEventName>(
     name: K,
     event: HookEventOf<K>,
-    api: ExtensionAPI
+    api: HookContext
   ): Promise<HookResultsOf<K>> {
     const results = await this.dispatch(name, event, api);
     return results.filter(
@@ -307,7 +306,7 @@ export class HooksManager {
   private async dispatch(
     name: string,
     event: HookEventOf<HookEventName>,
-    api: ExtensionAPI
+    api: HookContext
   ): Promise<unknown[]> {
     const listeners = this.listeners.get(name);
     if (!listeners || listeners.length === 0) {

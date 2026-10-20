@@ -1,5 +1,6 @@
 export * from "./agents";
 export * from "./context-files";
+export * from "./extensions";
 export * from "./resource-dirs";
 export * from "./resources";
 export * from "./tools";

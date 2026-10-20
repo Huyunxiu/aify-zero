@@ -10,6 +10,7 @@ import { AgentContext } from "../src/agent-context.js";
 import { AgentSession } from "../src/agent-session.js";
 import { Agent } from "../src/agents.js";
 import type { ContextFile } from "../src/context-files.js";
+import { renderProjectContext } from "../src/context-files.js";
 import { SkillManager } from "../src/skill/index.js";
 import type { AgentStore } from "../src/storage/index.js";
 import {
@@ -233,7 +234,7 @@ describe("subagent 的 abort scope", () => {
    * 造一个真的父 agent：`context.abortSignal` 由它的构造函数设成自己的
    * controller，这正是 `createSubagent` 要接过去的东西。
    */
-  const buildParent = (contextFiles: ContextFile[] = []): Agent =>
+  const buildParent = (): Agent =>
     new Agent({
       name: "main",
       sessionId: "parent-session",
@@ -243,7 +244,6 @@ describe("subagent 的 abort scope", () => {
         workdir: "/tmp",
         modelId: "test-model",
         skills: new SkillManager({ dirs: [] }),
-        contextFiles,
         compactionConfig: {
           recentWindowSize: 10,
           threshold: 100_000,
@@ -317,6 +317,11 @@ describe("subagent 继承项目说明", () => {
   const parentContextFiles: ContextFile[] = [
     { path: "/repo/AGENTS.md", content: "Always run the tests." },
   ];
+  const projectSection = {
+    id: "project",
+    render: (prompt: string): string =>
+      `${prompt}\n\n${renderProjectContext(parentContextFiles)}`,
+  };
 
   const buildParent = (): Agent =>
     new Agent({
@@ -328,7 +333,7 @@ describe("subagent 继承项目说明", () => {
         workdir: "/tmp",
         modelId: "test-model",
         skills: new SkillManager({ dirs: [] }),
-        contextFiles: parentContextFiles,
+        systemPromptSections: [projectSection],
         compactionConfig: {
           recentWindowSize: 10,
           threshold: 100_000,
@@ -365,7 +370,7 @@ describe("subagent 继承项目说明", () => {
       }
     );
 
-    expect(child.context.contextFiles).toStrictEqual(parentContextFiles);
+    expect(child.context.systemPromptSections).toStrictEqual([projectSection]);
     expect(child.systemPrompt).toContain(
       '<project_instructions path="/repo/AGENTS.md">'
     );

@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import { HooksManager } from "../src/hooks-manager.js";
 import type {
-  ExtensionAPI,
+  HookContext,
   HookHandler,
   SessionStartEvent,
 } from "../src/hooks-manager.js";
@@ -15,7 +15,7 @@ declare module "../src/hooks-manager.js" {
   }
 }
 
-const api: ExtensionAPI = { workdir: "/tmp/test-hooks" };
+const api: HookContext = { workdir: "/tmp/test-hooks" };
 
 const sessionStart = (sessionId: string): SessionStartEvent => ({
   sessionId,
@@ -25,7 +25,7 @@ const sessionStart = (sessionId: string): SessionStartEvent => ({
 
 // One mock shape covers every event: the handlers here only record calls, and
 // the per-event payload types are checked by the `expectTypeOf` cases below.
-const mockHook = () => vi.fn<(event: any, api: ExtensionAPI) => void>();
+const mockHook = () => vi.fn<(event: any, api: HookContext) => void>();
 
 describe(HooksManager, () => {
   describe("on", () => {
@@ -45,7 +45,7 @@ describe(HooksManager, () => {
       hooks.on("session_start", (event, apiParam) => {
         expectTypeOf(event).toEqualTypeOf<SessionStartEvent>();
         expectTypeOf(event.sessionId).toEqualTypeOf<string>();
-        expectTypeOf(apiParam).toEqualTypeOf<ExtensionAPI>();
+        expectTypeOf(apiParam).toEqualTypeOf<HookContext>();
       });
     });
 

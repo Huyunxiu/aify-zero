@@ -37,8 +37,10 @@ import { collectToolApprovals } from "ai/internal";
 import type { AgentContext } from "./agent-context";
 import type { AgentSession } from "./agent-session";
 import { compactMessages, shouldCompact } from "./compaction/compaction";
+import { ExtensionManager } from "./extensions/manager";
+import type { Extension } from "./extensions/types";
 import { HooksManager } from "./hooks-manager";
-import type { ExtensionAPI } from "./hooks-manager";
+import type { HookContext } from "./hooks-manager";
 import type { AgentStore, SessionEndStatus } from "./storage";
 import { executeToolCalls, stripToolExecution } from "./tools/execution";
 import type { AgentToolSet } from "./types";
@@ -90,7 +92,7 @@ export type AgentOptions = {
   systemPrompt?: string;
   context: AgentContext;
   hooks?: HooksManager;
-  extensionApi?: ExtensionAPI;
+  extensionApi?: HookContext;
   apiKey: string;
   apiUrl: string;
   providerId: string;
@@ -162,7 +164,7 @@ export class Agent {
 
   store: AgentStore;
   hooks: HooksManager;
-  extensionApi: ExtensionAPI;
+  extensionApi: HookContext;
 
   apiKey: string;
   apiUrl: string;
@@ -173,6 +175,15 @@ export class Agent {
   session: AgentSession;
 
   readonly #abortController = new AbortController();
+  /**
+   * 扩展管理器。工具、hook 和系统提示片段在注册时立即生效；扩展自己的
+   * 资源由扩展持有，Agent 不关心。
+   */
+  readonly extensions: ExtensionManager;
+  /** 同一个 agent 同时只跑一个 turn。 */
+  #running = false;
+  /** 本 turn 拼接好的系统提示；turn 开始前算一次，turn 内保持稳定。 */
+  #instructions?: string;
 
   constructor(options: AgentOptions) {
     this.name = options.name;
@@ -196,6 +207,21 @@ export class Agent {
       ? AbortSignal.any([options.abortSignal, this.#abortController.signal])
       : this.#abortController.signal;
     this.session = options.session;
+    this.extensions = new ExtensionManager({
+      agent: {
+        name: this.name,
+        sessionId: this.sessionId,
+        workdir: this.context.workdir,
+      },
+      tools: this.tools,
+      registerTool: (name, tool) => {
+        this.registerTool(name, tool);
+      },
+      unregisterTool: (name) => {
+        this.unregisterTool(name);
+      },
+      hooks: this.hooks,
+    });
     this.provider = createOpenAICompatible({
       apiKey: this.apiKey,
       baseURL: this.apiUrl,
@@ -213,6 +239,37 @@ export class Agent {
   }
 
   /**
+   * 注册一个扩展。工具、hook 和系统提示片段在 `init` 期间立即生效；扩展
+   * 自己加载的资源保存在扩展实例上。
+   */
+  async registerExtension(extension: Extension): Promise<void> {
+    await this.extensions.add(extension);
+    this.#syncPromptSections();
+  }
+
+  /** 卸载一个扩展；返回它是否存在。 */
+  async disposeExtension(id: string): Promise<boolean> {
+    const disposed = await this.extensions.dispose(id);
+    this.#syncPromptSections();
+    return disposed;
+  }
+
+  /** 按注册的逆序卸载全部扩展。 */
+  async dispose(): Promise<void> {
+    await this.extensions.disposeAll();
+    this.#syncPromptSections();
+  }
+
+  /**
+   * 把当前的提示片段快照写进上下文，子 agent 派生时从这里继承。主 agent
+   * 自己每次 `stream()` 都从管理器重新拼接，所以这里只是为了让子 agent
+   * 拿到和父一致的片段。
+   */
+  #syncPromptSections(): void {
+    this.context.systemPromptSections = this.extensions.listSections();
+  }
+
+  /**
    * Stops the turn this agent is running: the model call in flight, the tool
    * calls it has open, and the step loop all watch this signal. The turn still
    * finishes — with `status: "aborted"` — so the reader sees an ending.
@@ -225,9 +282,28 @@ export class Agent {
     return this.provider.chatModel(this.context.modelId);
   }
 
-  async stream({ turns, modelId, onFinish }: AgentStreamOptions) {
+  async stream(options: AgentStreamOptions) {
+    if (this.#running) {
+      throw new Error("agent is already running");
+    }
+    this.#running = true;
+    try {
+      return await this.#startStream(options);
+    } catch (error) {
+      // turn 还没交给后台任务就失败了，把锁还回去。
+      this.#running = false;
+      throw error;
+    }
+  }
+
+  async #startStream({ turns, modelId, onFinish }: AgentStreamOptions) {
     this.context.modelId = modelId;
     this.session.turns = turns;
+    // 提示片段在 turn 开始时拼一次：同一 turn 的每一步看到同一份提示词，
+    // 扩展在 turn 中途改数据也不会让后续步骤的缓存失效。
+    this.#instructions = this.extensions.renderSystemPrompt(
+      this.systemPrompt ?? ""
+    );
 
     const mostRecentTurn = turns.at(-1);
     if (!mostRecentTurn) {
@@ -349,6 +425,7 @@ export class Agent {
         // reader waiting for a stream that never ends.
         safeError(error);
       } finally {
+        this.#running = false;
         await this.hooks.emit(
           "session_end",
           { sessionId: this.sessionId },
@@ -752,7 +829,7 @@ export class Agent {
     let result;
     try {
       result = streamText<ToolSet, AgentRuntimeContext>({
-        instructions: this.systemPrompt,
+        instructions: this.#instructions,
         model,
         // The SDK is given tools it can only describe: an `execute` in this set
         // would have it run the calls itself, out of `tool:before`'s reach.

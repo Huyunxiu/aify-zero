@@ -12,7 +12,7 @@ import { createToolModelOutput } from "ai/internal";
 
 import type { AgentContext } from "../agent-context";
 import type {
-  ExtensionAPI,
+  HookContext,
   HooksManager,
   ToolBeforeDecision,
 } from "../hooks-manager";
@@ -54,7 +54,7 @@ export type ExecuteToolCallsInput = {
   messages: ModelMessage[];
   context: AgentContext;
   hooks: HooksManager;
-  extensionApi: ExtensionAPI;
+  extensionApi: HookContext;
   abortSignal?: AbortSignal;
   /** Publishes a protocol event onto the turn's stream. */
   write: (event: AgentStreamEvent<AgentToolSet>) => Promise<void>;
