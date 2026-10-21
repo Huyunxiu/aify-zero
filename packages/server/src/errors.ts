@@ -39,6 +39,11 @@ export const ErrorMap = {
     message: "The requested chat was not found.",
     data: z.object({ sessionId: z.string() }),
   },
+  PROJECT_NOT_FOUND: {
+    status: 404,
+    message: "The requested project was not found.",
+    data: z.object({ projectId: z.string() }),
+  },
   NOTHING_TO_FORK: {
     status: 400,
     message: "This chat has nothing to fork.",

@@ -44,15 +44,22 @@ import type { TurnInsertModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import z from "zod";
 
-import { PRIMARY_PROJECT_DIR, PROJECT_DIRS, getSessionDir } from "../config";
+import { getSessionDir } from "../config";
 import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
+import {
+  getPrimaryProjectDir,
+  getProjectDirs,
+} from "./project/project.service";
 import { forkSessionSchema, listSessionTurnsSchema } from "./session.schema";
 import { findAiModelById } from "./settings/settings.service";
 
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
-  .errors({ MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND })
+  .errors({
+    MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+    PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
+  })
   .input(
     type<{
       sessionId: string;
@@ -111,10 +118,13 @@ const createSession = publicProcedure
     const sessionDir = getSessionDir(sessionId);
     mkdirSync(sessionDir, { recursive: true });
 
+    // 目录来自 project 表：会话指定了项目就用那个项目，否则用默认项目。
+    const projectDirs = await getProjectDirs(projectId);
+
     // 技能和上下文由扩展加载并持有；提示词由扩展注册的片段在 turn 开始时
     // 统一拼接，宿主只负责把资源注册进去。
     const agentContext = new AgentContext({
-      projectDirs: PROJECT_DIRS,
+      projectDirs,
       sessionDir,
       projectId,
       modelId: aiModel.model,
@@ -458,9 +468,13 @@ export const forkSession = publicProcedure
 export const listSessionResources = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/resources" })
   .input(z.object({ sessionId: z.string() }))
-  .handler(async () => {
-    // 资源只从主目录加载，与建会话时的扩展一致。
-    const projectDir = PRIMARY_PROJECT_DIR;
+  .handler(async ({ input }) => {
+    // 资源与建会话时用的项目保持一致；会话还没落库时退回到默认项目。
+    const store = new SQLiteStore();
+    const session = await store.getSessionById(input.sessionId);
+    const projectDir = await getPrimaryProjectDir(
+      session?.projectId ?? undefined
+    );
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
     await skillManager.loadSkills(projectDir);
 
