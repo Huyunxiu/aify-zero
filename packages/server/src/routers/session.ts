@@ -60,10 +60,13 @@ const createSession = publicProcedure
       approvals?: TextStreamToolApprovalResponseEvent[];
       model: string;
       modelEffort?: string;
+      /** 会话归属的项目；省略时落一条没有项目归属的会话。 */
+      projectId?: string;
     }>()
   )
   .handler(async ({ input }) => {
-    const { sessionId, turns, approvals, model, modelEffort } = input;
+    const { sessionId, turns, approvals, model, modelEffort, projectId } =
+      input;
 
     const aiModel = await findAiModelById(model);
     if (!aiModel) {
@@ -113,6 +116,7 @@ const createSession = publicProcedure
     const agentContext = new AgentContext({
       projectDirs: PROJECT_DIRS,
       sessionDir,
+      projectId,
       modelId: aiModel.model,
       modelEffort: effort,
       compactionConfig: {
@@ -330,16 +334,23 @@ const markSessionRead = publicProcedure
 const listSessions = publicProcedure
   .route({ method: "GET", path: "/sessions" })
   .input(
-    type<{ cursor?: string; limit?: number; direction?: "asc" | "desc" }>()
+    type<{
+      cursor?: string;
+      limit?: number;
+      direction?: "asc" | "desc";
+      /** 只列这个项目的会话；省略时跨项目列出。 */
+      projectId?: string;
+    }>()
   )
   .handler(async ({ input }) => {
-    const { cursor, limit, direction } = input;
+    const { cursor, limit, direction, projectId } = input;
     const store = new SQLiteStore();
     const sessions = await store.listSessions({
       cursor,
       limit,
       direction,
       kind: "main",
+      projectId,
     });
     return { sessions };
   });
@@ -436,6 +447,8 @@ export const forkSession = publicProcedure
       activeHeadId: copies.at(-1)?.id ?? null,
       forkedFromSessionId: source.id,
       forkedFromMessageId: messageId ?? prefix.at(-1)?.id,
+      // fork 出来的会话留在源会话的项目里，否则按项目列表时会凭空少一条。
+      projectId: source.projectId,
     });
     await store.saveTurns(copies);
 

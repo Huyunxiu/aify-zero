@@ -37,6 +37,11 @@ export type AgentContextOptions = AgentStateOptions & {
    */
   sessionDir: string;
   /**
+   * 当前会话所属的项目 id。宿主从请求里拿到后传进来，写会话行时用它归类；
+   * 没有项目归属的调用方可以省略。
+   */
+  projectId?: string;
+  /**
    * 技能按名字查询用（`load-skill` 工具）：插件加载完由宿主写入，省略时
    * 是一份空表。系统提示里的技能列表不从这里来。
    */
@@ -54,6 +59,7 @@ export class AgentContext extends AgentState {
   /** 主目录，即 `projectDirs[0]`。构造时保证存在。 */
   readonly primaryProjectDir: string;
   sessionDir: string;
+  projectId?: string;
   skills: SkillManager;
   systemPromptSections: readonly SystemPromptSection[];
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
@@ -72,6 +78,7 @@ export class AgentContext extends AgentState {
     this.projectDirs = [primaryProjectDir, ...otherProjectDirs];
     this.primaryProjectDir = primaryProjectDir;
     this.sessionDir = options.sessionDir;
+    this.projectId = options.projectId;
     this.skills = options.skills ?? new SkillManager({ dirs: [] });
     this.systemPromptSections = options.systemPromptSections ?? [];
     this.compactionConfig = options.compactionConfig;

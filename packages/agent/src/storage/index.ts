@@ -21,11 +21,14 @@ export interface AgentStore {
     limit,
     direction,
     kind,
+    projectId,
   }: {
     cursor?: string;
     limit?: number;
     direction?: "asc" | "desc";
     kind: SessionModel["kind"];
+    /** 按项目收窄；省略时列出所有项目的会话。 */
+    projectId?: string;
   }): Promise<SessionModel[]>;
 
   /**

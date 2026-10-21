@@ -124,11 +124,14 @@ export async function resolveSubagentSession(
     toolCallId,
     description,
     prompt,
+    projectId,
   }: {
     parentSessionId: string;
     toolCallId: string;
     description: string;
     prompt: string;
+    /** 父会话的项目归属；子会话跟着父走，列表按项目过滤时才不会漏掉它。 */
+    projectId?: string;
   }
 ): Promise<{ sessionId: string; turns: AgentTurn<AgentToolSet>[] }> {
   const existing = await store.findSessionByParentToolCall({
@@ -157,6 +160,7 @@ export async function resolveSubagentSession(
     kind: "subagent",
     parentSessionId,
     parentToolCallId: toolCallId,
+    projectId,
   });
 
   return { sessionId, turns: [buildPromptTurn(prompt)] };
@@ -186,6 +190,7 @@ export async function createSubagent(
       toolCallId: parent.toolCallId,
       description,
       prompt,
+      projectId: parent.context.projectId,
     }
   );
   const session = new AgentSession({ turns });
@@ -202,6 +207,7 @@ export async function createSubagent(
     projectDirs: parent.context.projectDirs,
     // 子 agent 共享父会话的目录：它产出的临时文件属于同一个会话。
     sessionDir: parent.context.sessionDir,
+    projectId: parent.context.projectId,
     modelId: resolvedModelId,
     modelEffort: parent.context.modelEffort,
     skills: parent.context.skills,

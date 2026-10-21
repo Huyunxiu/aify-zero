@@ -331,6 +331,7 @@ export class Agent {
         id: this.sessionId,
         title: "",
         metadata: {},
+        projectId: this.context.projectId,
       });
     }
 

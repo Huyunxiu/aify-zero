@@ -15,17 +15,20 @@ export class SQLiteStore implements AgentStore {
     limit,
     direction,
     kind,
+    projectId,
   }: {
     cursor?: string;
     limit?: number;
     direction?: "asc" | "desc";
     kind: SessionModel["kind"];
+    projectId?: string;
   }): Promise<SessionModel[]> {
     const isDesc = direction === "desc";
     // kind 是常驻条件，游标是附加的：少了 kind，子 agent 的行会挤进分页结果，
     // 调用方按"返回条数 == pageSize"推下一页时跟着一起错。
     const conditions = [
       eq(session_table.kind, kind),
+      ...(projectId ? [eq(session_table.projectId, projectId)] : []),
       ...(cursor
         ? [isDesc ? lt(session_table.id, cursor) : gt(session_table.id, cursor)]
         : []),

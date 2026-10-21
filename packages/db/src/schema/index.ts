@@ -33,6 +33,48 @@ export const agent_table = sqliteTable("agent", {
 export type AgentModel = InferSelectModel<typeof agent_table>;
 export type AgentInsertModel = InferInsertModel<typeof agent_table>;
 
+export const project_table = sqliteTable(
+  "project",
+  {
+    id: text("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    name: text("name").notNull(),
+    description: text("description"),
+    /**
+     * 主目录的绝对路径。
+     *
+     * 工具的相对路径、skill 和 context 文件的加载都以它为基准，对应
+     * `AgentContext.projectDirs` 的第一项。
+     */
+    primaryDir: text("primary_dir").notNull(),
+    /**
+     * 主目录之外额外可访问的根，绝对路径。
+     *
+     * 模型访问它们时必须用绝对路径，彼此之间没有顺序语义。约定不包含
+     * `primaryDir`，由写入方在创建/更新项目时校验。
+     *
+     * 读取端的映射：`projectDirs = [primaryDir, ...additionalDirs]`。
+     */
+    additionalDirs: text("additional_dirs", { mode: "json" })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    config: text("config", { mode: "json" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  // 一个目录只能是一个项目的主目录，否则资源加载会出现两份来源。
+  (table) => [uniqueIndex("idx_project_primary_dir").on(table.primaryDir)]
+);
+
+export type ProjectModel = InferSelectModel<typeof project_table>;
+export type ProjectInsertModel = InferInsertModel<typeof project_table>;
+
 export const session_table = sqliteTable(
   "session",
   {
@@ -41,6 +83,13 @@ export const session_table = sqliteTable(
       .$defaultFn(() => randomUUID()),
     title: text("title").notNull(),
     metadata: text("metadata", { mode: "json" }),
+    /**
+     * 会话所属的项目。
+     *
+     * 可空是为了兼容这张表加列之前建立的会话：它们没有项目归属，按项目过滤
+     * 时不会出现在任何项目里。子会话与 fork 出来的会话继承源会话的值。
+     */
+    projectId: text("project_id"),
     /**
      * 这行是谁的会话。
      *
@@ -77,6 +126,12 @@ export const session_table = sqliteTable(
   },
   (table) => [
     index("idx_session_kind_created").on(table.kind, table.createdAt),
+    // 按项目列会话的热路径：先按项目收窄，再按 kind 排除子 agent，最后排序。
+    index("idx_session_project_kind_created").on(
+      table.projectId,
+      table.kind,
+      table.createdAt
+    ),
     uniqueIndex("idx_session_parent_tool_call").on(
       table.parentSessionId,
       table.parentToolCallId
