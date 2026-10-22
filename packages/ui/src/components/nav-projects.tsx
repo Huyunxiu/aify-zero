@@ -5,10 +5,11 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
-import { ChevronDownIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,6 +21,45 @@ import {
 } from "./collapsible";
 import { FolderIcon } from "./folder-icon";
 import { ProjectDialog, type ProjectSummary } from "./project-dialog";
+import { ProjectSessions } from "./project-sessions";
+
+type ProjectItemProps = {
+  project: ProjectSummary;
+  onEdit: () => void;
+};
+
+/** 一个项目行：点它展开项目内的会话，铅笔按钮进编辑。 */
+function ProjectItem({ project, onEdit }: ProjectItemProps) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      render={<SidebarMenuItem />}
+    >
+      <CollapsibleTrigger
+        render={
+          <SidebarMenuButton className="group/folder-row cursor-pointer pr-8" />
+        }
+      >
+        <FolderIcon open={open} size={18} />
+        <span className="truncate">{project.name}</span>
+      </CollapsibleTrigger>
+      <SidebarMenuAction
+        aria-label={t("projects.edit")}
+        showOnHover
+        onClick={onEdit}
+      >
+        <PencilIcon />
+      </SidebarMenuAction>
+      <CollapsibleContent>
+        <ProjectSessions projectId={project.id} />
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
 
 export function NavProjects() {
   const { t } = useTranslation();
@@ -78,16 +118,11 @@ export function NavProjects() {
         <SidebarGroupContent className="scroll-fade scrollbar-none max-h-[40vh] overflow-y-auto">
           <SidebarMenu>
             {data?.projects.map((item) => (
-              <SidebarMenuItem key={item.id}>
-                {/* group/folder-row 让整行 hover 都触发 folder icon 的动画。 */}
-                <SidebarMenuButton
-                  className="group/folder-row cursor-pointer"
-                  onClick={() => openEditDialog(item)}
-                >
-                  <FolderIcon size={18} />
-                  <span>{item.name}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <ProjectItem
+                key={item.id}
+                project={item}
+                onEdit={() => openEditDialog(item)}
+              />
             ))}
           </SidebarMenu>
           {data?.projects.length === 0 ? (

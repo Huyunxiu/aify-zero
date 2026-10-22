@@ -20,25 +20,41 @@ const BACK_FILTER_CLASS =
 const DOC_CLASS =
   "[transform-box:fill-box] origin-center [filter:drop-shadow(0_3px_4px_rgba(0,30,60,0.18))] transition-transform duration-[550ms] ease-[cubic-bezier(0.2,0.85,0.25,1)] motion-reduce:transition-none dark:[filter:drop-shadow(0_3px_4px_rgba(0,0,0,0.45))]";
 
-const DOC_POSITION_CLASS = {
-  left: "[transform:translate(40px,80px)_rotate(6deg)] group-hover/folder:[transform:translate(32px,70px)_rotate(9deg)] group-hover/folder-row:[transform:translate(32px,70px)_rotate(9deg)]",
-  middle:
-    "[transform:translate(160px,66px)_rotate(-4deg)] group-hover/folder:[transform:translate(166px,52px)_rotate(-7deg)] group-hover/folder-row:[transform:translate(166px,52px)_rotate(-7deg)]",
-  right:
-    "[transform:translate(280px,80px)_rotate(6deg)] group-hover/folder:[transform:translate(286px,76px)_rotate(5deg)] group-hover/folder-row:[transform:translate(286px,76px)_rotate(5deg)]",
+const DOC_REST_CLASS = {
+  left: "[transform:translate(40px,80px)_rotate(6deg)]",
+  middle: "[transform:translate(160px,66px)_rotate(-4deg)]",
+  right: "[transform:translate(280px,80px)_rotate(6deg)]",
 } as const;
 
-const FRONT_CLASS = [
+const DOC_HOVER_CLASS = {
+  left: "group-hover/folder:[transform:translate(32px,70px)_rotate(9deg)] group-hover/folder-row:[transform:translate(32px,70px)_rotate(9deg)]",
+  middle:
+    "group-hover/folder:[transform:translate(166px,52px)_rotate(-7deg)] group-hover/folder-row:[transform:translate(166px,52px)_rotate(-7deg)]",
+  right:
+    "group-hover/folder:[transform:translate(286px,76px)_rotate(5deg)] group-hover/folder-row:[transform:translate(286px,76px)_rotate(5deg)]",
+} as const;
+
+const DOC_OPEN_CLASS = {
+  left: "[transform:translate(30px,54px)_rotate(11deg)]",
+  middle: "[transform:translate(162px,36px)_rotate(-10deg)]",
+  right: "[transform:translate(294px,60px)_rotate(3deg)]",
+} as const;
+
+const FRONT_BASE_CLASS = [
   "absolute inset-x-0 top-[21.6%] bottom-0 origin-bottom rounded-[6.333cqw]",
   "bg-[linear-gradient(180deg,rgba(0,40,75,0)_74%,rgba(0,40,75,0.28)_100%),linear-gradient(180deg,rgba(132,214,248,0.45)_0%,rgba(69,170,220,0.45)_100%)]",
   "[box-shadow:inset_0_0_0_0.67cqw_rgba(255,255,255,0.3),inset_0_0.25cqw_0_rgba(255,255,255,0.55)]",
   "backdrop-blur-[3.3cqw] backdrop-saturate-[1.1]",
   "transition-[top,border-radius,transform] duration-[600ms] ease-[cubic-bezier(0.2,0.85,0.25,1)] motion-reduce:transition-none",
-  "group-hover/folder:top-[24.8%] group-hover/folder:rounded-[3cqw_3cqw_6.333cqw_6.333cqw] group-hover/folder:[transform:translateZ(2.33cqw)_rotateX(-9deg)]",
-  "group-hover/folder-row:top-[24.8%] group-hover/folder-row:rounded-[3cqw_3cqw_6.333cqw_6.333cqw] group-hover/folder-row:[transform:translateZ(2.33cqw)_rotateX(-9deg)]",
   "dark:bg-[linear-gradient(180deg,rgba(0,20,40,0)_70%,rgba(0,20,40,0.4)_100%),linear-gradient(180deg,rgba(100,190,235,0.42)_0%,rgba(45,130,190,0.5)_100%)]",
   "dark:[box-shadow:inset_0_0_0_0.67cqw_rgba(255,255,255,0.14),inset_0_0.25cqw_0_rgba(255,255,255,0.3)]",
 ].join(" ");
+
+const FRONT_HOVER_CLASS =
+  "group-hover/folder:top-[24.8%] group-hover/folder:rounded-[3cqw_3cqw_6.333cqw_6.333cqw] group-hover/folder:[transform:translateZ(2.33cqw)_rotateX(-9deg)] group-hover/folder-row:top-[24.8%] group-hover/folder-row:rounded-[3cqw_3cqw_6.333cqw_6.333cqw] group-hover/folder-row:[transform:translateZ(2.33cqw)_rotateX(-9deg)]";
+
+const FRONT_OPEN_CLASS =
+  "top-[29%] rounded-[2.5cqw_2.5cqw_6.333cqw_6.333cqw] [transform:translateZ(3cqw)_rotateX(-13deg)]";
 
 type FolderIconStyle = CSSProperties & {
   "--ui-fd-size"?: string;
@@ -55,17 +71,23 @@ export type FolderIconProps = Omit<ComponentProps<"span">, "children"> & {
    * next to a visible label — it is then hidden from assistive technology.
    */
   label?: string;
+  /**
+   * Pins the folder open: the papers stay fanned and the front pocket stays
+   * lowered, independently of hover. Hover still adds the subtle scale.
+   */
+  open?: boolean;
 };
 
 /**
  * Glass folder icon with the layered-document hover animation from affectUI.
  * Hovering the icon fans out the papers and tilts the frosted pocket. Add
  * `group/folder-row` to an ancestor (such as a list row) to trigger the same
- * animation from the whole row.
+ * animation from the whole row. Pass `open` to keep the folder open.
  */
 export function FolderIcon({
   className,
   label,
+  open = false,
   size = 24,
   style,
   ...props
@@ -75,6 +97,7 @@ export function FolderIcon({
   const docId = `${uid}-doc`;
   const highlightId = `${uid}-hl`;
   const decorative = label === undefined || label.length === 0;
+  const stateClass = open ? DOC_OPEN_CLASS : DOC_HOVER_CLASS;
 
   return (
     <span
@@ -85,6 +108,7 @@ export function FolderIcon({
         "group/folder relative inline-block size-[var(--ui-fd-size)] flex-none overflow-visible align-middle leading-none @container",
         className
       )}
+      data-open={open || undefined}
       data-slot="folder-icon"
       role={decorative ? undefined : "img"}
       style={
@@ -171,20 +195,25 @@ export function FolderIcon({
             </symbol>
           </defs>
           <use
-            className={cn(DOC_CLASS, DOC_POSITION_CLASS.left)}
+            className={cn(DOC_CLASS, DOC_REST_CLASS.left, stateClass.left)}
             href={`#${docId}`}
           />
           <use
-            className={cn(DOC_CLASS, DOC_POSITION_CLASS.right)}
+            className={cn(DOC_CLASS, DOC_REST_CLASS.right, stateClass.right)}
             href={`#${docId}`}
           />
           <use
-            className={cn(DOC_CLASS, DOC_POSITION_CLASS.middle)}
+            className={cn(DOC_CLASS, DOC_REST_CLASS.middle, stateClass.middle)}
             href={`#${docId}`}
           />
         </svg>
 
-        <span className={FRONT_CLASS} />
+        <span
+          className={cn(
+            FRONT_BASE_CLASS,
+            open ? FRONT_OPEN_CLASS : FRONT_HOVER_CLASS
+          )}
+        />
       </span>
     </span>
   );

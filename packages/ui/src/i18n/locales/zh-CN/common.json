@@ -109,6 +109,8 @@
     "title": "项目",
     "empty": "暂无项目",
     "create": "新建项目",
+    "edit": "编辑项目",
+    "noSessions": "暂无会话",
     "dialog": {
       "title": "新建项目",
       "editTitle": "编辑项目",

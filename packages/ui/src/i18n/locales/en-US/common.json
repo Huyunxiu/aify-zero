@@ -109,6 +109,8 @@
     "title": "Projects",
     "empty": "No projects",
     "create": "New project",
+    "edit": "Edit project",
+    "noSessions": "No sessions",
     "dialog": {
       "title": "New project",
       "editTitle": "Edit project",
