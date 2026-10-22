@@ -96,6 +96,12 @@
   "sessions": {
     "untitled": "未命名",
     "loadingMore": "加载更多...",
+    "actions": "会话操作",
+    "rename": "重命名",
+    "renameTitle": "重命名会话",
+    "renamePlaceholder": "会话名称",
+    "renameSave": "保存",
+    "renameCancel": "取消",
     "status": {
       "idle": "待机",
       "running": "运行中",
@@ -110,6 +116,7 @@
     "empty": "暂无项目",
     "create": "新建项目",
     "edit": "编辑项目",
+    "actions": "项目操作",
     "noSessions": "暂无会话",
     "none": "不使用项目",
     "search": "搜索项目...",

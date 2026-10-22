@@ -5,11 +5,18 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@workspace/ui/components/sidebar";
-import { useEffect, useRef } from "react";
+import { PencilIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc";
+import { DropdownMenuItem } from "./dropdown-menu";
+import {
+  SessionRenameDialog,
+  type RenamableSession,
+} from "./session-rename-dialog";
 import { SessionStatus } from "./session-status";
+import { SidebarRowMenu } from "./sidebar-row-menu";
 
 const SESSION_PAGE_SIZE = 30;
 
@@ -21,6 +28,7 @@ const SESSION_PAGE_SIZE = 30;
 export function ProjectSessions({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [renaming, setRenaming] = useState<RenamableSession | null>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
     useInfiniteQuery({
@@ -57,32 +65,48 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
   const sessions = data?.pages.flatMap((page) => page.sessions) ?? [];
 
   return (
-    <SidebarMenuSub>
-      {sessions.map((session) => (
-        <SidebarMenuSubItem key={session.id}>
-          <SidebarMenuSubButton
-            className="w-full cursor-pointer"
-            onClick={() => navigate({ to: `/sessions/${session.id}` })}
-            render={<button type="button" />}
-          >
-            <SessionStatus status={session.status} />
-            <span className="truncate">
-              {session.title || t("sessions.untitled")}
-            </span>
-          </SidebarMenuSubButton>
-        </SidebarMenuSubItem>
-      ))}
-      {!isFetching && sessions.length === 0 ? (
-        <li className="px-2 py-1 text-xs text-sidebar-foreground/50">
-          {t("projects.noSessions")}
-        </li>
-      ) : null}
-      {isFetchingNextPage ? (
-        <li className="px-2 py-1 text-xs text-sidebar-foreground/50">
-          {t("sessions.loadingMore")}
-        </li>
-      ) : null}
-      <li ref={sentinelRef} aria-hidden="true" className="h-px" />
-    </SidebarMenuSub>
+    <>
+      <SidebarMenuSub>
+        {sessions.map((session) => (
+          <SidebarMenuSubItem key={session.id} className="group/item">
+            <SidebarMenuSubButton
+              className="w-full cursor-pointer pr-8"
+              onClick={() => navigate({ to: `/sessions/${session.id}` })}
+              render={<button type="button" />}
+            >
+              <SessionStatus status={session.status} />
+              <span className="truncate">
+                {session.title || t("sessions.untitled")}
+              </span>
+            </SidebarMenuSubButton>
+            <SidebarRowMenu
+              label={t("sessions.actions")}
+              className="top-1/2 -translate-y-1/2"
+            >
+              <DropdownMenuItem
+                onClick={() => {
+                  setRenaming({ id: session.id, title: session.title });
+                }}
+              >
+                <PencilIcon />
+                {t("sessions.rename")}
+              </DropdownMenuItem>
+            </SidebarRowMenu>
+          </SidebarMenuSubItem>
+        ))}
+        {!isFetching && sessions.length === 0 ? (
+          <li className="px-2 py-1 text-xs text-sidebar-foreground/50">
+            {t("projects.noSessions")}
+          </li>
+        ) : null}
+        {isFetchingNextPage ? (
+          <li className="px-2 py-1 text-xs text-sidebar-foreground/50">
+            {t("sessions.loadingMore")}
+          </li>
+        ) : null}
+        <li ref={sentinelRef} aria-hidden="true" className="h-px" />
+      </SidebarMenuSub>
+      <SessionRenameDialog session={renaming} onOpenChange={setRenaming} />
+    </>
   );
 }

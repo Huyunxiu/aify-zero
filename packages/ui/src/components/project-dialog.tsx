@@ -37,6 +37,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc";
+import { FolderIcon } from "./folder-icon";
 
 type DirRow = {
   id: string;
@@ -286,7 +287,8 @@ export function ProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <FolderIcon open={Boolean(project)} size={20} />
             {project
               ? t("projects.dialog.editTitle")
               : t("projects.dialog.title")}
@@ -368,7 +370,7 @@ export function ProjectDialog({
                             align="end"
                             alignOffset={-4}
                             sideOffset={8}
-                            className="w-auto min-w-40"
+                            className="w-auto min-w-50"
                           >
                             <DropdownMenuItem
                               disabled={index === 0}

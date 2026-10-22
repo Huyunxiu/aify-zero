@@ -375,6 +375,28 @@ const getSession = publicProcedure
     return { session };
   });
 
+// PUT /sessions/{sessionId} — rename a session
+const updateSession = publicProcedure
+  .route({ method: "PUT", path: "/sessions/{sessionId}" })
+  .input(
+    z.object({
+      sessionId: z.string(),
+      title: z.string().trim().min(1).max(200),
+    })
+  )
+  .handler(async ({ input }) => {
+    const { sessionId, title } = input;
+    const store = new SQLiteStore();
+
+    const existing = await store.getSessionById(sessionId);
+    if (!existing) {
+      throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
+    }
+
+    const updated = await store.updateSessionById(sessionId, title);
+    return { sessionId, title, updated };
+  });
+
 export const listSessionTurns = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/turns" })
   .input(listSessionTurnsSchema)
@@ -491,6 +513,7 @@ export const session = {
   create: createSession,
   list: listSessions,
   get: getSession,
+  update: updateSession,
   markRead: markSessionRead,
   listSessionTurns,
   listSessionResources,

@@ -5,11 +5,10 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
-import { ChevronDownIcon, PencilIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, FolderPlusIcon, PencilIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -19,16 +18,18 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./collapsible";
+import { DropdownMenuItem } from "./dropdown-menu";
 import { FolderIcon } from "./folder-icon";
 import { ProjectDialog, type ProjectSummary } from "./project-dialog";
 import { ProjectSessions } from "./project-sessions";
+import { SidebarRowMenu } from "./sidebar-row-menu";
 
 type ProjectItemProps = {
   project: ProjectSummary;
   onEdit: () => void;
 };
 
-/** 一个项目行：点它展开项目内的会话，铅笔按钮进编辑。 */
+/** 一个项目行：点它展开项目内的会话，右侧设置菜单里进编辑。 */
 function ProjectItem({ project, onEdit }: ProjectItemProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -37,7 +38,7 @@ function ProjectItem({ project, onEdit }: ProjectItemProps) {
     <Collapsible
       open={open}
       onOpenChange={setOpen}
-      render={<SidebarMenuItem />}
+      render={<SidebarMenuItem className="group/item" />}
     >
       <CollapsibleTrigger
         render={
@@ -47,13 +48,16 @@ function ProjectItem({ project, onEdit }: ProjectItemProps) {
         <FolderIcon open={open} size={18} />
         <span className="truncate">{project.name}</span>
       </CollapsibleTrigger>
-      <SidebarMenuAction
-        aria-label={t("projects.edit")}
-        showOnHover
-        onClick={onEdit}
-      >
-        <PencilIcon />
-      </SidebarMenuAction>
+      <SidebarRowMenu label={t("projects.actions")}>
+        <DropdownMenuItem
+          onClick={() => {
+            onEdit();
+          }}
+        >
+          <PencilIcon />
+          {t("projects.edit")}
+        </DropdownMenuItem>
+      </SidebarRowMenu>
       <CollapsibleContent>
         <ProjectSessions projectId={project.id} />
       </CollapsibleContent>
@@ -110,8 +114,9 @@ export function NavProjects() {
           onClick={openCreateDialog}
           size="icon-sm"
           variant="ghost"
+          className="hover:bg-foreground-8"
         >
-          <PlusIcon />
+          <FolderPlusIcon />
         </Button>
       </div>
       <CollapsibleContent>

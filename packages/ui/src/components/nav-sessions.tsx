@@ -8,8 +8,8 @@ import {
 } from "@workspace/ui/components/sidebar"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDownIcon } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { ChevronDownIcon, PencilIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc"
@@ -18,7 +18,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./collapsible"
+import { DropdownMenuItem } from "./dropdown-menu"
+import {
+  SessionRenameDialog,
+  type RenamableSession,
+} from "./session-rename-dialog"
 import { SessionStatus } from "./session-status"
+import { SidebarRowMenu } from "./sidebar-row-menu"
 
 const SESSION_PAGE_SIZE = 30;
 
@@ -26,6 +32,7 @@ export function NavSessions() {
 
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [renaming, setRenaming] = useState<RenamableSession | null>(null);
 
   const {
     data,
@@ -65,45 +72,58 @@ export function NavSessions() {
   }, [hasNextPage, isFetching, fetchNextPage]);
 
   return (
-    <Collapsible
-      defaultOpen
-      render={
-        <SidebarGroup className="group/sessions group-data-[collapsible=icon]:hidden data-open:flex-1 data-open:min-h-0" />
-      }
-    >
-      <CollapsibleTrigger
+    <>
+      <Collapsible
+        defaultOpen
         render={
-          <SidebarGroupLabel className="cursor-pointer items-center [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/sessions:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100" />
+          <SidebarGroup className="group/sessions group-data-[collapsible=icon]:hidden data-open:flex-1 data-open:min-h-0" />
         }
       >
-        <span>Sessions</span>
-        <ChevronDownIcon className="ml-1" />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="min-h-0 data-open:flex data-open:flex-1 data-open:flex-col">
-        <SidebarGroupContent className="scroll-fade scrollbar-none min-h-0 flex-1 overflow-y-auto">
-          <SidebarMenu>
-            {data?.pages.map((page) =>
-              page.sessions.map((item) => (
-                <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    onClick={() => navigate({ to: `/sessions/${item.id}` })}
-                    className="cursor-pointer"
-                    render={<div />}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <SessionStatus status={item.status} />
-                      {item.title || t("sessions.untitled")}
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )),
-            )}
-          </SidebarMenu>
-          <div ref={sentinelRef}>
-            {isFetchingNextPage ? t("sessions.loadingMore") : null}
-          </div>
-        </SidebarGroupContent>
-      </CollapsibleContent>
-    </Collapsible>
+        <CollapsibleTrigger
+          render={
+            <SidebarGroupLabel className="cursor-pointer items-center [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/sessions:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100" />
+          }
+        >
+          <span>Sessions</span>
+          <ChevronDownIcon className="ml-1" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="min-h-0 data-open:flex data-open:flex-1 data-open:flex-col">
+          <SidebarGroupContent className="scroll-fade scrollbar-none min-h-0 flex-1 overflow-y-auto">
+            <SidebarMenu>
+              {data?.pages.map((page) =>
+                page.sessions.map((item) => (
+                  <SidebarMenuItem key={item.id} className="group/item">
+                    <SidebarMenuButton
+                      onClick={() => navigate({ to: `/sessions/${item.id}` })}
+                      className="cursor-pointer"
+                      render={<div />}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <SessionStatus status={item.status} />
+                        {item.title || t("sessions.untitled")}
+                      </span>
+                    </SidebarMenuButton>
+                    <SidebarRowMenu label={t("sessions.actions")}>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setRenaming({ id: item.id, title: item.title });
+                        }}
+                      >
+                        <PencilIcon />
+                        {t("sessions.rename")}
+                      </DropdownMenuItem>
+                    </SidebarRowMenu>
+                  </SidebarMenuItem>
+                )),
+              )}
+            </SidebarMenu>
+            <div ref={sentinelRef}>
+              {isFetchingNextPage ? t("sessions.loadingMore") : null}
+            </div>
+          </SidebarGroupContent>
+        </CollapsibleContent>
+      </Collapsible>
+      <SessionRenameDialog session={renaming} onOpenChange={setRenaming} />
+    </>
   )
 }

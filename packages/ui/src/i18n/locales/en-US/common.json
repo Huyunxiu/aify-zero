@@ -96,6 +96,12 @@
   "sessions": {
     "untitled": "Untitled",
     "loadingMore": "Loading more...",
+    "actions": "Session actions",
+    "rename": "Rename",
+    "renameTitle": "Rename session",
+    "renamePlaceholder": "Session name",
+    "renameSave": "Save",
+    "renameCancel": "Cancel",
     "status": {
       "idle": "Idle",
       "running": "Running",
@@ -110,6 +116,7 @@
     "empty": "No projects",
     "create": "New project",
     "edit": "Edit project",
+    "actions": "Project actions",
     "noSessions": "No sessions",
     "none": "No project",
     "search": "Search projects...",
