@@ -107,7 +107,30 @@
   },
   "projects": {
     "title": "Projects",
-    "empty": "No projects"
+    "empty": "No projects",
+    "create": "New project",
+    "dialog": {
+      "title": "New project",
+      "editTitle": "Edit project",
+      "description": "A project decides which directories the agent works in; the top one is the primary directory.",
+      "name": "Name",
+      "namePlaceholder": "My project",
+      "nameRequired": "Project name is required.",
+      "directory": "Directory",
+      "primaryBadge": "Primary",
+      "setPrimaryDir": "Make primary",
+      "directoryActions": "Directory actions",
+      "directoryPlaceholder": "/Users/me/code/my-project",
+      "directoryRequired": "A directory is required.",
+      "directoryAbsolute": "Use an absolute path, e.g. /Users/me/code/my-project.",
+      "directorySameAsPrimary": "Must be different from the main directory.",
+      "directoryDuplicate": "This directory is already listed.",
+      "addDirectory": "Add directory",
+      "removeDirectory": "Delete",
+      "cancel": "Cancel",
+      "submit": "Create project",
+      "update": "Save"
+    }
   },
   "requestFailed": "Request failed"
 }

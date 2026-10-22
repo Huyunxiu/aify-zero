@@ -107,7 +107,30 @@
   },
   "projects": {
     "title": "项目",
-    "empty": "暂无项目"
+    "empty": "暂无项目",
+    "create": "新建项目",
+    "dialog": {
+      "title": "新建项目",
+      "editTitle": "编辑项目",
+      "description": "项目决定 agent 在哪些目录里工作，排在最前面的是主目录。",
+      "name": "名称",
+      "namePlaceholder": "我的项目",
+      "nameRequired": "请填写项目名称。",
+      "directory": "工作目录",
+      "primaryBadge": "主目录",
+      "setPrimaryDir": "设为主目录",
+      "directoryActions": "目录操作",
+      "directoryPlaceholder": "/Users/me/code/my-project",
+      "directoryRequired": "请填写工作目录。",
+      "directoryAbsolute": "请填写绝对路径，例如 /Users/me/code/my-project。",
+      "directorySameAsPrimary": "不能与工作目录相同。",
+      "directoryDuplicate": "该目录已添加过。",
+      "addDirectory": "添加目录",
+      "removeDirectory": "删除",
+      "cancel": "取消",
+      "submit": "创建项目",
+      "update": "保存"
+    }
   },
   "requestFailed": "请求失败"
 }
