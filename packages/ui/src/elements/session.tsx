@@ -61,6 +61,7 @@ import { client, queryClient } from "../lib/orpc";
 import { AssistantMessage } from "./assistant-message";
 import { Message, MessageContent, MessageResponse } from "./message";
 import { ModelSelect } from "./model-select";
+import { ProjectSelect } from "./project-select";
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -220,6 +221,13 @@ export function Session({
     enabled: Boolean(sessionId),
   });
 
+  // Same query key as the sidebar, so creating a project there makes it
+  // selectable here without another round trip.
+  const listProjectsQuery = useQuery({
+    queryKey: ["list_projects"],
+    queryFn: () => client.project.list(),
+  });
+
   const activeStreamId = getSessionQuery.data?.session?.activeStreamId ?? null;
   // 会话标题：顶层会话是生成标题，子会话是 `task` 调用交给它的任务简述。
   // 侧边栏收起后，标题栏是唯一还能看到它的地方。
@@ -266,6 +274,27 @@ export function Session({
     localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_EFFORT, effort);
     setSelectedModelEffort(effort);
   };
+
+  const projects = React.useMemo(
+    () => listProjectsQuery.data?.projects ?? [],
+    [listProjectsQuery.data?.projects]
+  );
+
+  const [selectedProjectId, setSelectedProjectId] = React.useState<
+    string | undefined
+  >();
+
+  // An existing session's row is the source of truth: `session.create` writes
+  // the project on insert only, so a reloaded page has to read it back from
+  // there to keep showing the directories the session runs in.
+  const sessionProjectId =
+    getSessionQuery.data?.session?.projectId ?? undefined;
+
+  React.useEffect(() => {
+    if (getSessionQuery.data?.session) {
+      setSelectedProjectId(sessionProjectId);
+    }
+  }, [getSessionQuery.data?.session, sessionProjectId]);
 
   const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
@@ -412,6 +441,11 @@ export function Session({
   // is exactly what submitting leaves behind — must not disable it mid-turn.
   const isGenerating = status === "submitted" || status === "streaming";
 
+  // A project is fixed once the session exists: later turns have to keep
+  // running in the directories its first turn was started with.
+  const isProjectLocked =
+    Boolean(getSessionQuery.data?.session) || turns.length > 0;
+
   const commands: AgentCommand[] = [
     {
       id: "compact",
@@ -474,7 +508,11 @@ export function Session({
       // A newer send cancels the older request on its own, so nothing aborts
       // this one.
       abortSignal: new AbortController().signal,
-      payload: { model: modelId, modelEffort: selectedModelEffort },
+      payload: {
+        model: modelId,
+        modelEffort: selectedModelEffort,
+        projectId: selectedProjectId,
+      },
     });
   };
 
@@ -493,10 +531,16 @@ export function Session({
         payload: {
           model: selectedModelId,
           modelEffort: selectedModelEffort,
+          projectId: selectedProjectId,
         },
       });
     },
-    [addToolApprovalResponse, selectedModelId, selectedModelEffort]
+    [
+      addToolApprovalResponse,
+      selectedModelId,
+      selectedModelEffort,
+      selectedProjectId,
+    ]
   );
 
   const renderTurn = (turn: AgentTurn<AgentToolSet>) => {
@@ -662,6 +706,12 @@ export function Session({
                           <PromptInputActionAddAttachments />
                         </PromptInputActionMenuContent>
                       </PromptInputActionMenu>
+                      <ProjectSelect
+                        locked={isProjectLocked}
+                        onProjectChange={setSelectedProjectId}
+                        projectId={selectedProjectId}
+                        projects={projects}
+                      />
                       <ModelSelect
                         models={models}
                         modelId={selectedModelId}

@@ -111,6 +111,10 @@
     "create": "New project",
     "edit": "Edit project",
     "noSessions": "No sessions",
+    "none": "No project",
+    "search": "Search projects...",
+    "noResults": "No projects found.",
+    "locked": "A session keeps the project it was started in.",
     "dialog": {
       "title": "New project",
       "editTitle": "Edit project",

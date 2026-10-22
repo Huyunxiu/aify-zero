@@ -111,6 +111,10 @@
     "create": "新建项目",
     "edit": "编辑项目",
     "noSessions": "暂无会话",
+    "none": "不使用项目",
+    "search": "搜索项目...",
+    "noResults": "没有找到项目。",
+    "locked": "会话开始后不能更换项目。",
     "dialog": {
       "title": "新建项目",
       "editTitle": "编辑项目",

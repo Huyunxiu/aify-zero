@@ -115,7 +115,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const navigate = useNavigate();
   return (
     <Sidebar variant="sidebar" {...props}>
-      <SidebarHeader className="py-0">
+      <SidebarHeader className="select-none py-0">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={() => navigate({ to: `/sessions/${generateSessionId()}` })}>
@@ -125,12 +125,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="select-none">
          {/*<NavAgents />*/}
         <NavProjects />
         <NavSessions />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="select-none">
         <NavBottom />
       </SidebarFooter>
     </Sidebar>
