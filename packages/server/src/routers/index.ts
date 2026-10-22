@@ -3,12 +3,14 @@ import type { RouterClient } from "@orpc/server";
 import { t } from "../i18n";
 import { publicProcedure } from "../index";
 import { agent } from "./agent/agent.router";
+import { project } from "./project/project.router";
 import { session } from "./session";
 import { setting } from "./settings/settings.router";
 import { skill } from "./skill/skill.router";
 
 export const appRouter = {
   agent,
+  project,
   skill,
   session,
   setting,

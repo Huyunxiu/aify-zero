@@ -8,10 +8,16 @@ import {
 } from "@workspace/ui/components/sidebar"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router";
+import { ChevronDownIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./collapsible"
 import { SessionStatus } from "./session-status"
 
 const SESSION_PAGE_SIZE = 30;
@@ -59,9 +65,22 @@ export function NavSessions() {
   }, [hasNextPage, isFetching, fetchNextPage]);
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden h-[calc(100vh-136px)]">
-      <SidebarGroupLabel>Sessions</SidebarGroupLabel>
-        <SidebarGroupContent className="scroll-fade scrollbar-none overflow-y-auto">
+    <Collapsible
+      defaultOpen
+      render={
+        <SidebarGroup className="group/sessions group-data-[collapsible=icon]:hidden data-open:flex-1 data-open:min-h-0" />
+      }
+    >
+      <CollapsibleTrigger
+        render={
+          <SidebarGroupLabel className="cursor-pointer items-center [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/sessions:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100" />
+        }
+      >
+        <span>Sessions</span>
+        <ChevronDownIcon className="ml-1" />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="min-h-0 data-open:flex data-open:flex-1 data-open:flex-col">
+        <SidebarGroupContent className="scroll-fade scrollbar-none min-h-0 flex-1 overflow-y-auto">
           <SidebarMenu>
             {data?.pages.map((page) =>
               page.sessions.map((item) => (
@@ -84,6 +103,7 @@ export function NavSessions() {
             {isFetchingNextPage ? t("sessions.loadingMore") : null}
           </div>
         </SidebarGroupContent>
-    </SidebarGroup>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }

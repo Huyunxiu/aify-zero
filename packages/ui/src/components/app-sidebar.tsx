@@ -1,4 +1,5 @@
 import { NavSessions } from "@workspace/ui/components/nav-sessions";
+import { NavProjects } from "@workspace/ui/components/nav-projects";
 import { NavBottom } from "@workspace/ui/components/nav-bottom";
 import {
   Sidebar,
@@ -126,6 +127,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
          {/*<NavAgents />*/}
+        <NavProjects />
         <NavSessions />
       </SidebarContent>
       <SidebarFooter>

@@ -105,5 +105,9 @@
       "error": "出错"
     }
   },
+  "projects": {
+    "title": "项目",
+    "empty": "暂无项目"
+  },
   "requestFailed": "请求失败"
 }

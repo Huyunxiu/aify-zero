@@ -105,5 +105,9 @@
       "error": "Error"
     }
   },
+  "projects": {
+    "title": "Projects",
+    "empty": "No projects"
+  },
   "requestFailed": "Request failed"
 }
