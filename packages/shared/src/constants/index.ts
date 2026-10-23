@@ -70,3 +70,12 @@ export const IPC_CHANNELS = {
 };
 
 export const inDevelopment = process.env.NODE_ENV === "development";
+
+/**
+ * 独立 API 进程和桌面逃生模式的默认端口。桌面主进程、`server#dev` 和
+ * Vite 的 `/rpc` 代理都从这里取，避免三处各写一个 `18086`。
+ */
+export const DEFAULT_API_PORT = 18_086;
+
+/** apps/web 的开发服务器端口；桌面反代也用同一个值。 */
+export const DEFAULT_WEB_PORT = 3000;

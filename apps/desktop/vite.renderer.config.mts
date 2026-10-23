@@ -1,33 +1,20 @@
 // oxlint-disable unicorn/prefer-module
 import path from "node:path";
 
-import tailwindcss from "@tailwindcss/vite";
-import { tanstackRouter } from "@tanstack/router-plugin/vite";
-import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// https://vite.dev/config/
+import { createWebViteConfig } from "../web/vite.shared";
+
+const desktopRoot = __dirname;
+
+// 桌面壳的 renderer 直接构建 apps/web，产物落在 Forge 约定的
+// `.vite/renderer/main_window`，打包后由 aify-app:// 协议 handler 读取。
 export default defineConfig({
-  optimizeDeps: {
-    exclude: ["@workspace/ui", "@workspace/shared", "@workspace/server", "@workspace/agent-client"],
-  },
-  plugins: [
-    tanstackRouter({
-      autoCodeSplitting: false,
-      generatedRouteTree: "../../packages/ui/src/routeTree.gen.ts",
-      quoteStyle: "double",
-      routesDirectory: "../../packages/ui/src/routes",
-      target: "react",
-    }),
-    react(),
-    tailwindcss(),
-  ],
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-      "@workspace/ui": path.resolve(__dirname, "../../packages/ui/src"),
-      "@workspace/shared": path.resolve(__dirname, "../../packages/shared/src"),
-      "@workspace/agent-client": path.resolve(__dirname, "../../packages/agent-client/src"),
-    },
+  ...createWebViteConfig({ desktop: true }),
+  root: path.resolve(desktopRoot, "../web"),
+  build: {
+    emptyOutDir: true,
+    // 相对 outDir 会以 root（apps/web）为基准，这里必须用绝对路径。
+    outDir: path.resolve(desktopRoot, ".vite/renderer/main_window"),
   },
 });

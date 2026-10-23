@@ -52,7 +52,9 @@ const config: ForgeConfig = {
   ],
   packagerConfig: {
     asar: true,
-    extraResource: ["./resources"],
+    // `../../packages/db/src/migrations` is copied to Resources/migrations
+    // and applied by the packaged main process on startup.
+    extraResource: ["./resources", "../../packages/db/src/migrations"],
     icon: "resources/icons",
   },
   plugins: [

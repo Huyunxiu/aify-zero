@@ -2,11 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      文档基准固定为源根：浏览器是站点根，桌面是 aify-app://app/。
+      没有它，SPA 深链下的 document.baseURI 会跑到子路径，相对 API
+      地址（rpc）就会解析错。
+    -->
+    <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>tanstack-router-starter</title>
+    <title>Aify Zero</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

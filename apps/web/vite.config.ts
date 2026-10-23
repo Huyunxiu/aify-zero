@@ -1,17 +1,6 @@
-import tailwindcss from "@tailwindcss/vite";
-import { devtools } from "@tanstack/devtools-vite";
-import { tanstackRouter } from "@tanstack/router-plugin/vite";
-import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const config = defineConfig({
-  resolve: { tsconfigPaths: true },
-  plugins: [
-    devtools(),
-    tailwindcss(),
-    tanstackRouter({ target: "react", autoCodeSplitting: true }),
-    viteReact(),
-  ],
-});
+import { createWebViteConfig } from "./vite.shared";
 
-export default config;
+// 独立浏览器构建：`vite dev` / `vite build` 都走这一份。
+export default defineConfig(createWebViteConfig());

@@ -5,10 +5,15 @@
     "jsx": "react-jsx",
     "module": "ESNext",
     "paths": {
-      "@workspace/ui/*": ["../../packages/ui/*"],
-      "@workspace/shared/*": ["../../packages/shared/*"]
+      "@workspace/agent": ["../../packages/agent/src/index.ts"],
+      "@workspace/agent/*": ["../../packages/agent/src/*"],
+      "@workspace/agent-client": ["../../packages/agent-client/src/index.ts"],
+      "@workspace/agent-client/*": ["../../packages/agent-client/src/*"],
+      "@workspace/server/*": ["../../packages/server/src/*"],
+      "@workspace/shared/*": ["../../packages/shared/src/*"],
+      "@workspace/ui/*": ["../../packages/ui/src/*"]
     },
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["vite/client"],
 
     /* Bundler mode */

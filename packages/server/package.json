@@ -9,7 +9,10 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "dev": "tsx watch src/standalone.ts",
+    "start": "tsx src/standalone.ts"
+  },
   "dependencies": {
     "@ai-sdk/openai-compatible": "catalog:",
     "@hono/structured-logger": "catalog:",
@@ -27,6 +30,7 @@
   "devDependencies": {
     "@workspace/config": "workspace:*",
     "hono": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:"
   }
 }

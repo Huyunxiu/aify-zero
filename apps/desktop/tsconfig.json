@@ -40,5 +40,11 @@
       "@workspace/shared/*": ["../../packages/shared/*"]
     }
   },
-  "include": ["src/**/*", "./package.json", "./forge.config.ts", "*.mts"]
+  "include": [
+    "src/**/*",
+    "tests/**/*",
+    "./package.json",
+    "./forge.config.ts",
+    "*.mts"
+  ]
 }

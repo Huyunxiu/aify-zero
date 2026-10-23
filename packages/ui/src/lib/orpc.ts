@@ -33,7 +33,9 @@ export const queryClient = new QueryClient({
 });
 
 export const link = new RPCLink({
-  url: `http://localhost:18086/rpc`,
+  // 文档相对地址：浏览器打到同源 /rpc，桌面打到 aify-app://app/rpc，
+  // 由各自的文档所有者转发，渲染端不需要知道自己在哪。
+  url: new URL("rpc", document.baseURI).href,
 });
 
 export const client: AppRouterClient = createORPCClient(link);

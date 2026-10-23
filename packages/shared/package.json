@@ -21,6 +21,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./app-url": "./src/app-url.ts",
     "./constants": "./src/constants/index.ts",
     "./errors": "./src/errors.ts",
     "./logger": "./src/logger/index.ts"

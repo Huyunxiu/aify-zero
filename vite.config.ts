@@ -11,7 +11,6 @@ export default defineConfig({
     ignorePatterns: [
       ".claude/**",
       ".agents/**",
-      "apps/desktop/vite.renderer.config.mts",
       "packages/ui/src/routeTree.gen.ts",
       "packages/db/src/migrations",
       "packages/ui/src/components/**.tsx",
@@ -25,8 +24,10 @@ export default defineConfig({
     ignorePatterns: [
       ".claude/**",
       ".agents/**",
+      // 这份配置故意跨 app 引用 apps/web/vite.shared.ts，落在 desktop 的
+      // tsconfig 项目边界之外（TS6059/TS6307），类型感知 lint 无法把它
+      // 归属到任何项目；格式化仍然覆盖它。
       "apps/desktop/vite.renderer.config.mts",
-      "apps/desktop/src/routeTree.gen.ts",
       "packages/db/src/migrations",
       "packages/ui/src/components/**.tsx",
       "packages/ui/src/elements/prompt-input.tsx",
