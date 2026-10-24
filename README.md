@@ -1,5 +1,7 @@
 # Vite+ Monorepo Starter
 
+English | [简体中文](README.zh.md)
+
 A starter for creating a Vite+ monorepo.
 
 ## Development
