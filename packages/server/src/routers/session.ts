@@ -11,6 +11,7 @@ import {
   createGlobTool,
   createWebFetchTool,
   createTaskTool,
+  createQuestionnaireTool,
   Agent,
   appendSubagentPrompt,
   ContextExtension,
@@ -193,6 +194,8 @@ const createSession = publicProcedure
         definitions: SUBAGENT_DEFINITIONS,
       })
     );
+
+    agent.registerTool("questionnaire", createQuestionnaireTool({ agent }));
 
     const activeStreamId = generateSessionId();
 

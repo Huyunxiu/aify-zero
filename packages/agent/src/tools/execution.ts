@@ -258,7 +258,8 @@ async function planToolCall(
 
   if (
     toolCall.toolName === "write-file" ||
-    toolCall.toolName === "delete-file"
+    toolCall.toolName === "delete-file" ||
+    toolCall.toolName === "questionnaire"
   ) {
     return {
       toolCall,

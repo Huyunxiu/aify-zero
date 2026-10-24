@@ -28,6 +28,7 @@ import {
   AttachmentRemove,
   Attachments,
 } from "../components/ai-elements/attachments";
+import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
 import {
   Context,
   ContextCacheUsage,
@@ -255,7 +256,7 @@ export function Session({
     const stored = localStorage.getItem(LOCAL_STORAGE_KEYS.MODEL_EFFORT);
     return stored && Object.values(ModelEffort).includes(stored as ModelEffort)
       ? (stored as ModelEffort)
-      : undefined;
+      : "default";
   });
 
   // Restore the last used model, falling back to the first one.
@@ -336,6 +337,7 @@ export function Session({
     // at once — the turn runs on in the background — so its body says only that
     // it was accepted, and the events come from the GET below.
     apiStream: async (options) => {
+      console.log(111, options);
       if (!options.model || !options.modelEffort || !options.turns.length) {
         return;
       }
@@ -503,6 +505,7 @@ export function Session({
       void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
     }
 
+    console.log(666, selectedModelEffort);
     void sendTurns({
       turns: [...turns, turn],
       // A newer send cancels the older request on its own, so nothing aborts
@@ -517,7 +520,7 @@ export function Session({
   };
 
   const handleRespondToolApproval = React.useCallback(
-    (approvalId: string, approved: boolean) => {
+    (approvalId: string, approved: boolean, answer?: ToolApprovalAnswer) => {
       if (!selectedModelId) {
         return;
       }
@@ -528,6 +531,8 @@ export function Session({
       void addToolApprovalResponse({
         approvalId,
         approved,
+        reason: answer?.reason,
+        data: answer?.data,
         payload: {
           model: selectedModelId,
           modelEffort: selectedModelEffort,

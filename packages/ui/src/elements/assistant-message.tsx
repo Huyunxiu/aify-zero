@@ -20,6 +20,7 @@ import {
   SparklesIcon,
   Trash2Icon,
   FilePenIcon,
+  ListChecksIcon,
 } from "lucide-react";
 
 import {
@@ -29,6 +30,7 @@ import {
   AgentActivityHeader,
   AgentActivityStep,
 } from "../components/ai-elements/chain-of-turn";
+import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
 import { Button } from "../components/button";
 import { CopyButton } from "../components/copy-button";
 import {
@@ -55,6 +57,7 @@ import {
   MessageResponse,
 } from "./message";
 import { AssistantAvatar } from "./message-avatar";
+import { QuestionnaireCard, QuestionnaireSummary } from "./questionnaire";
 import {
   formatDuration,
   getPartDurationMs,
@@ -73,7 +76,11 @@ type AssistantMessageProps = {
    * on. Only the approval id is named — the step and the call it belongs to are
    * the caller's to look up in the transcript.
    */
-  onRespondToolApproval?: (approvalId: string, approved: boolean) => void;
+  onRespondToolApproval?: (
+    approvalId: string,
+    approved: boolean,
+    answer?: ToolApprovalAnswer
+  ) => void;
 };
 
 /** Max characters of the first line used as a Frame title. */
@@ -1137,6 +1144,30 @@ export const AssistantMessage = ({
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
+                    />
+                  </>
+                );
+              } else if (part.type === "tool-questionnaire") {
+                return (
+                  <>
+                    <AgentActivityStep
+                      key={i}
+                      path={`${i}`}
+                      icon={ListChecksIcon}
+                      label={getStepLabel(
+                        "Questionnaire",
+                        part.input?.title ?? part.input?.questions?.[0]?.prompt
+                      )}
+                      status={status}
+                      summary={summary}
+                      duration={duration}
+                    >
+                      <QuestionnaireSummary part={part} />
+                      {renderToolError(part)}
+                    </AgentActivityStep>
+                    <QuestionnaireCard
+                      part={part}
+                      onRespond={onRespondToolApproval}
                     />
                   </>
                 );

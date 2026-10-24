@@ -206,10 +206,11 @@ describe(selectSubagentTools, () => {
   const tools = {
     bash: {},
     grep: {},
+    questionnaire: {},
     task: {},
   } as unknown as Parameters<typeof selectSubagentTools>[0];
 
-  test("always drops task, so a subagent cannot delegate again", () => {
+  test("always drops task and questionnaire", () => {
     expect(Object.keys(selectSubagentTools(tools, definition))).toStrictEqual([
       "bash",
       "grep",

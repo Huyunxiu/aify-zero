@@ -4,6 +4,7 @@ import type {
   EditFileToolType,
   GlobToolType,
   GrepToolType,
+  QuestionnaireToolType,
   ReadFileToolType,
   TaskToolType,
   WebFetchToolType,
@@ -20,6 +21,7 @@ export type AgentToolSet = {
   "write-file": WriteFileToolType;
   "web-fetch": WebFetchToolType;
   "load-skill": LoadSkillToolType;
+  questionnaire: QuestionnaireToolType;
   bash: BashToolType;
   task: TaskToolType;
 };

@@ -19,15 +19,20 @@ import {
 } from "../utils/id-util";
 import type { SubagentDefinition } from "./definitions";
 
-/** A subagent may not delegate again, so the tool that would let it is barred. */
-const FORBIDDEN_SUBAGENT_TOOLS = new Set(["task"]);
+/**
+ * A subagent may not delegate again, and it has no user to answer a
+ * questionnaire: both are barred whatever the definition asks for.
+ */
+const FORBIDDEN_SUBAGENT_TOOLS = new Set(["task", "questionnaire"]);
 
 /**
  * The tools a subagent runs with.
  *
- * `task` is dropped whatever the definition asks for: a subagent that could
- * delegate would be able to recurse without bound, and nothing in the run
- * counts the depth or stops it.
+ * `task` is dropped because a subagent that could delegate would be able to
+ * recurse without bound, and nothing in the run counts the depth or stops it.
+ * `questionnaire` is dropped because the subagent prompt already tells it the
+ * user cannot be asked anything; offering the tool would only produce a form
+ * nobody is there to fill in.
  */
 export function selectSubagentTools(
   tools: ToolSet,

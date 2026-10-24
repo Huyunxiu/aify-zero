@@ -1,4 +1,4 @@
-import type { AgentToolPart } from "@workspace/agent-client";
+import type { AgentToolPart, JSONObject } from "@workspace/agent-client";
 import {
   Collapsible,
   CollapsibleContent,
@@ -176,9 +176,26 @@ export const AgentActivityHeader = memo(
 export type AgentActivityApprovalProps = {
   className?: string;
   part: AgentToolPart;
-  onRespondToolApproval?: (approvalId: string, approved: boolean) => void;
+  onRespondToolApproval?: (
+    approvalId: string,
+    approved: boolean,
+    answer?: ToolApprovalAnswer
+  ) => void;
   title?: ReactNode;
   description?: ReactNode;
+};
+
+/**
+ * What an answer carries besides the decision.
+ *
+ * `reason` is the human-readable note stored with the approval; `data` is the
+ * application's own JSON, kept on the approval rather than sent to the model.
+ * A questionnaire puts its submitted answers in `data`; the generic approve and
+ * deny buttons pass neither.
+ */
+export type ToolApprovalAnswer = {
+  reason?: string;
+  data?: JSONObject;
 };
 
 /**

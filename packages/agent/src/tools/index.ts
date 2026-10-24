@@ -3,6 +3,7 @@ export * from "./delete-file";
 export * from "./edit-file";
 export * from "./glob";
 export * from "./grep";
+export * from "./questionnaire";
 export * from "./read-file";
 export * from "./task";
 export * from "./web-fetch";

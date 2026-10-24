@@ -1,5 +1,8 @@
 import type { AgentToolSet } from "@workspace/agent";
 import type { AgentAssistantStep, AgentPart } from "@workspace/agent-client";
+import { createElement, Fragment } from "react";
+import type { ReactNode } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
 import type { StepRow } from "../src/elements/tool-step";
@@ -10,6 +13,16 @@ import {
   getPartSummary,
   summarizeTurn,
 } from "../src/elements/tool-step";
+
+/**
+ * The visible text of a summary. The edit summary is JSX so its delta can be
+ * coloured; comparing the element itself would test the markup, not the words.
+ */
+const summaryText = (summary: ReactNode): string =>
+  renderToStaticMarkup(createElement(Fragment, null, summary)).replace(
+    /<[^>]+>/gu,
+    ""
+  );
 
 /**
  * Builds a part from the fields a case cares about. Cast through the real union
@@ -446,24 +459,28 @@ describe(getPartSummary, () => {
   describe("edit-file", () => {
     test("should show the line delta", () => {
       expect(
-        getPartSummary(
-          doneTool("tool-edit-file", {
-            replacements: 1,
-            linesAdded: 12,
-            linesRemoved: 4,
-          })
+        summaryText(
+          getPartSummary(
+            doneTool("tool-edit-file", {
+              replacements: 1,
+              linesAdded: 12,
+              linesRemoved: 4,
+            })
+          )
         )
       ).toBe("+12 −4");
     });
 
     test("should note how many blocks one call replaced", () => {
       expect(
-        getPartSummary(
-          doneTool("tool-edit-file", {
-            replacements: 2,
-            linesAdded: 3,
-            linesRemoved: 1,
-          })
+        summaryText(
+          getPartSummary(
+            doneTool("tool-edit-file", {
+              replacements: 2,
+              linesAdded: 3,
+              linesRemoved: 1,
+            })
+          )
         )
       ).toBe("+3 −1 · 2 blocks");
     });
@@ -684,6 +701,60 @@ describe(formatDuration, () => {
 
   test("should switch to hours past an hour", () => {
     expect(formatDuration(4_320_000)).toBe("1h 12m");
+  });
+});
+
+describe("questionnaire", () => {
+  test("should say a held questionnaire is waiting for answers", () => {
+    expect(
+      getPartSummary(
+        part({
+          type: "tool-questionnaire",
+          state: "approval-requested",
+          input: { questions: [] },
+          approval: { id: "ap-1", createdAt: 1000 },
+        })
+      )
+    ).toBe("awaiting answers");
+  });
+
+  test("should say the answers were submitted before the stream catches up", () => {
+    expect(
+      getPartSummary(
+        part({
+          type: "tool-questionnaire",
+          state: "approval-responded",
+          input: { questions: [] },
+          approval: { id: "ap-1", approved: true, createdAt: 1000 },
+        })
+      )
+    ).toBe("answers submitted");
+  });
+
+  test("should say how many questions were answered", () => {
+    expect(
+      getPartSummary(
+        doneTool("tool-questionnaire", {
+          status: "submitted",
+          total: 3,
+          answered: 2,
+          answers: {},
+        })
+      )
+    ).toBe("2/3 answered");
+  });
+
+  test("should say a questionnaire was declined", () => {
+    expect(
+      getPartSummary(
+        part({
+          type: "tool-questionnaire",
+          state: "output-denied",
+          input: { questions: [] },
+          approval: { id: "ap-1", approved: false, createdAt: 1000 },
+        })
+      )
+    ).toBe("declined");
   });
 });
 

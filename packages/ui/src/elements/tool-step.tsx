@@ -239,7 +239,21 @@ export const getPartSummary = (
   if (isAgentToolPart(part) && part.state === "approval-requested") {
     // The row's own status carries the waiting; the dialog is where the
     // decision is made, so the row only says that one is owed.
-    return part.approval.isAutomatic ? undefined : "awaiting approval";
+    if (part.approval.isAutomatic) {
+      return undefined;
+    }
+    return part.type === "tool-questionnaire"
+      ? "awaiting answers"
+      : "awaiting approval";
+  }
+
+  if (part.type === "tool-questionnaire") {
+    if (part.state === "approval-responded") {
+      return part.approval.approved ? "answers submitted" : "declined";
+    }
+    if (part.state === "output-denied") {
+      return "declined";
+    }
   }
 
   // A `task` call is the one row worth reading before it has finished: its
@@ -374,6 +388,14 @@ export const getPartSummary = (
       // `code: "error"`, and the guard above has already left the row to say
       // that on its own.
       return part.input?.subagent_type;
+    }
+
+    case "tool-questionnaire": {
+      const { metadata } = part.output;
+      if (!metadata || metadata.status !== "submitted") {
+        return undefined;
+      }
+      return `${metadata.answered}/${metadata.total} answered`;
     }
 
     default: {
