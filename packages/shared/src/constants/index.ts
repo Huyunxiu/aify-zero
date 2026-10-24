@@ -73,6 +73,16 @@ export const IPC_CHANNELS = {
   USE_SERVER: "use-server",
 };
 
+/**
+ * Absolute path to a staged ripgrep binary.
+ *
+ * Packaging cannot put an executable inside a JS bundle or an asar archive, so
+ * `apps/desktop` and `apps/server` copy the binary next to the app and point
+ * this variable at it. The agent's grep/glob tools prefer this path over `rg`
+ * from `PATH`, which keeps them on the shipped version everywhere.
+ */
+export const RIPGREP_PATH_ENV = "AIFY_RIPGREP_PATH";
+
 export const inDevelopment = process.env.NODE_ENV === "development";
 
 /**

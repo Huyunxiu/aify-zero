@@ -5,16 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "build": "vp build && tsx ../../scripts/stage-server-dist.ts dist",
+    "package": "vp run build"
   },
   "dependencies": {
     "@workspace/db": "workspace:*",
     "@workspace/server": "workspace:*",
+    "@workspace/shared": "workspace:*",
     "dotenv": "catalog:"
   },
   "devDependencies": {
+    "@vscode/ripgrep": "catalog:",
     "@workspace/config": "workspace:*",
     "tsx": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vite": "catalog:"
   }
 }

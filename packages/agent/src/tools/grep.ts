@@ -10,7 +10,7 @@ import {
   shellQuote,
   toolPathDescription,
 } from "../utils/fs-util";
-import { getRipgrepAvailable } from "../utils/ripgrep";
+import { getRipgrepAvailable, getRipgrepPath } from "../utils/ripgrep";
 import { truncateContent } from "../utils/truncate";
 import type { ToolOutput } from "./types";
 
@@ -132,7 +132,7 @@ interface BuildCommandInput {
  */
 function buildRipgrepCommand(input: BuildCommandInput): string {
   const parts: string[] = [
-    "rg",
+    shellQuote(getRipgrepPath()),
     "--line-number",
     "--color=never",
     "--hidden",

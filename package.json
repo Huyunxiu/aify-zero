@@ -15,6 +15,7 @@
     "db:migrate": "vp run db#db:migrate",
     "db:local": "vp run db#db:local",
     "package:desktop": "vp run desktop#package",
+    "package:server": "vp run @workspace/server-app#package",
     "prepare": "vp config"
   },
   "dependencies": {

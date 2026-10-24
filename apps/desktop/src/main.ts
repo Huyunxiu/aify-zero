@@ -6,7 +6,11 @@ import { resolveApiEndpoint } from "@workspace/shared/api-endpoint";
 import type { ApiServerStatus } from "@workspace/shared/api-status";
 import { resolveApiToken } from "@workspace/shared/api-token";
 import { APP_SCHEME, APP_URL, isAppUrl } from "@workspace/shared/app-url";
-import { IPC_CHANNELS, inDevelopment } from "@workspace/shared/constants";
+import {
+  IPC_CHANNELS,
+  inDevelopment,
+  RIPGREP_PATH_ENV,
+} from "@workspace/shared/constants";
 import { logger as Logger } from "@workspace/shared/logger";
 import { app, BrowserWindow, dialog, protocol, shell } from "electron";
 import {
@@ -315,7 +319,9 @@ const setupMacDockIcon = () => {
 };
 
 // Puts the ripgrep shipped in extraResource ahead of whatever the user has on
-// PATH, so the agent's grep/glob tools behave the same on every machine.
+// PATH, and tells the bundled server where it is. The env var is what the
+// agent's grep/glob tools actually resolve; PATH stays as a fallback for child
+// processes that shell out to `rg` directly.
 const setupBundledRipgrep = () => {
   // oxlint-disable-next-line unicorn/prefer-module
   const dirname = __dirname;
@@ -323,12 +329,20 @@ const setupBundledRipgrep = () => {
   const rgDirectory = app.isPackaged
     ? path.join(process.resourcesPath, "resources", "bin")
     : path.join(dirname, "../../resources/bin");
+  const rgBinary = path.join(
+    rgDirectory,
+    process.platform === "win32" ? "rg.exe" : "rg"
+  );
 
-  if (!existsSync(rgDirectory)) {
-    logger.warn(`Bundled ripgrep not found at ${rgDirectory}`);
+  if (!existsSync(rgBinary)) {
+    logger.warn(`Bundled ripgrep not found at ${rgBinary}`);
     return;
   }
 
+  // Keep an explicit override; otherwise advertise the bundled binary. A
+  // stale value that no longer exists falls through to PATH, where the bundled
+  // directory now comes first.
+  process.env[RIPGREP_PATH_ENV] ??= rgBinary;
   process.env.PATH = `${rgDirectory}${path.delimiter}${process.env.PATH ?? ""}`;
 };
 

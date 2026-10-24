@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { RIPGREP_PATH_ENV } from "@workspace/shared/constants";
 import dotenv from "dotenv";
 
 const sourceDirectory = import.meta.dirname;
@@ -23,6 +24,23 @@ dotenv.config({
   path: [resolve(appDirectory, ".env"), resolve(workspaceRoot, ".env")],
   quiet: true,
 });
+
+// 打包产物把 rg 放在与 `dist/index.js` 同级的 `dist/bin/` 里。显式告诉
+// agent 的 grep/glob 工具用这一份，避免打包后依赖目标机器的 PATH。开发期
+// (`src/index.ts`) 没有这个文件，保持原来的 PATH 探测。
+const bundledRipgrep = resolve(
+  sourceDirectory,
+  "bin",
+  process.platform === "win32" ? "rg.exe" : "rg"
+);
+
+if (
+  existsSync(bundledRipgrep) &&
+  (process.env[RIPGREP_PATH_ENV] === undefined ||
+    process.env[RIPGREP_PATH_ENV] === "")
+) {
+  process.env[RIPGREP_PATH_ENV] = bundledRipgrep;
+}
 
 if (process.env.DATABASE_URL === undefined || process.env.DATABASE_URL === "") {
   const localDatabase = resolve(workspaceRoot, "local.db");

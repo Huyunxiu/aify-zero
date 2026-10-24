@@ -11,7 +11,7 @@ import {
   shellQuote,
   toolPathDescription,
 } from "../utils/fs-util";
-import { getRipgrepAvailable } from "../utils/ripgrep";
+import { getRipgrepAvailable, getRipgrepPath } from "../utils/ripgrep";
 import { truncateContent } from "../utils/truncate";
 import type { ToolOutput } from "./types";
 
@@ -94,7 +94,7 @@ interface BuildCommandInput {
  */
 function buildRipgrepCommand(input: BuildCommandInput): string {
   return [
-    "rg --files --hidden",
+    `${shellQuote(getRipgrepPath())} --files --hidden`,
     "--glob '!.git/*'",
     `--glob ${shellQuote(input.pattern)}`,
     `-- ${shellQuote(input.normalizedPath)}`,

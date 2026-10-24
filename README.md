@@ -115,6 +115,27 @@ desktop passes its own environment to the bundled child. A relative
 `DATABASE_URL` in a `.env` therefore resolves against the process working
 directory — prefer an absolute path or the default.
 
+## Packaging
+
+Both apps ship their own ripgrep binary: the agent's `glob`/`grep` tools execute
+it, and an executable can neither be inlined into a JS bundle nor run from
+inside an asar archive. `scripts/stage-ripgrep.ts` copies the binary that
+`@vscode/ripgrep` provides for the current platform and restores its executable
+bit.
+
+- Desktop: `vp run package:desktop` stages `apps/desktop/resources/bin/rg`
+  before packaging, `packagerConfig.extraResource` carries it into
+  `Resources/resources/bin`, and the main process points `AIFY_RIPGREP_PATH` at
+  it (and prepends the directory to `PATH`) before forking the bundled server.
+- Server: `vp run package:server` builds `apps/server/dist` with Vite, then runs
+  `scripts/stage-server-dist.ts` to add `node_modules/@libsql/` (the native
+  binding), `bin/rg`, and an ESM `package.json`. The result is self-contained;
+  run it with `node apps/server/dist/index.js` (the entry sets
+  `AIFY_RIPGREP_PATH` when `bin/rg` exists).
+
+The agent resolves `AIFY_RIPGREP_PATH` first, then a staged `bin/rg`, and only
+then `rg` from `PATH`, so development keeps working without a packaged binary.
+
 ## Adding components
 
 To add components to your app, run the following command at the root of your `web` app:

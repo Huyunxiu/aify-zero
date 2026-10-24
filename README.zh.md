@@ -68,6 +68,15 @@ API 的每个请求都必须带 `Authorization: Bearer <token>`。桌面主进�
 
 环境变量由进程入口加载，而不是由库模块加载：`apps/server` 依次读取 `apps/server/.env` 和仓库根目录的 `.env`，桌面端则把自己的环境变量传给内置子进程。因此 `.env` 中的相对路径 `DATABASE_URL` 会相对于进程的工作目录解析——建议使用绝对路径或默认值。
 
+## 打包
+
+两个应用都会携带自己的 ripgrep 可执行文件：agent 的 `glob`/`grep` 工具要执行它，而可执行文件既不能内联进 JS bundle，也不能从 asar 归档里运行。`scripts/stage-ripgrep.ts` 会把 `@vscode/ripgrep` 为当前平台提供的二进制复制过去，并补回可执行权限。
+
+- 桌面端：`vp run package:desktop` 打包前先把二进制放到 `apps/desktop/resources/bin/rg`，`packagerConfig.extraResource` 会把它带进 `Resources/resources/bin`；主进程在 fork 内置 server 之前把 `AIFY_RIPGREP_PATH` 指向它（并把它所在目录加到 `PATH` 前面）。
+- Server：`vp run package:server` 先用 Vite 构建 `apps/server/dist`，再执行 `scripts/stage-server-dist.ts` 补上 `node_modules/@libsql/`（原生绑定）、`bin/rg` 和标记 ESM 的 `package.json`。产物是自包含的，用 `node apps/server/dist/index.js` 启动；只要 `bin/rg` 存在，入口就会自动设置 `AIFY_RIPGREP_PATH`。
+
+agent 的解析顺序是 `AIFY_RIPGREP_PATH` → 随包的 `bin/rg` → `PATH` 上的 `rg`，因此开发期不需要打包二进制也能正常工作。
+
 ## 添加组件
 
 要为自己的应用添加组件，请在 `web` 应用根目录执行以下命令：
