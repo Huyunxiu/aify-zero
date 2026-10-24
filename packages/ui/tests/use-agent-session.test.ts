@@ -84,6 +84,7 @@ describe("addToolApprovalResponse", () => {
       approvalId: "ap-1",
       approved: true,
       reason: "looks safe",
+      data: { scope: "session", remember: true },
       payload: { model: "test-model" },
     });
 
@@ -98,6 +99,7 @@ describe("addToolApprovalResponse", () => {
         approvalId: "ap-1",
         approved: true,
         reason: "looks safe",
+        data: { scope: "session", remember: true },
         turnId: "turn-1",
         stepId: "step-1",
         createdAt: expect.any(Number),
@@ -109,7 +111,10 @@ describe("addToolApprovalResponse", () => {
     // stream's own: the same fields a `tool.approval-response` event writes.
     const part = heldPart(store.getTurns());
     expect(part.state).toBe("approval-responded");
-    expect(part.approval?.approved).toBeTruthy();
+    expect(part.approval).toMatchObject({
+      approved: true,
+      data: { scope: "session", remember: true },
+    });
   });
 
   test("sends nothing for a question the transcript no longer holds", async () => {

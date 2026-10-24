@@ -126,6 +126,14 @@ export type TextStreamToolApprovalResponseEvent = TextStreamEventBase & {
   approvalId: string;
   approved: boolean;
   reason?: string;
+  /**
+   * Opaque, JSON-serializable payload for the application.
+   *
+   * It rides along with the answer and is kept on the approval, so a feature
+   * can attach what it needs to a decision without a protocol change. The agent
+   * never reads it, and it is not sent to the model.
+   */
+  data?: JSONObject;
   providerExecuted?: boolean;
   providerMetadata?: ProviderMetadata;
 };
@@ -493,6 +501,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         descriptor?: unknown;
         requestReason?: string;
         reason?: never;
+        data?: never;
         isAutomatic?: boolean;
         signature?: string;
         inputSchemaInput?: unknown;
@@ -513,6 +522,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         descriptor?: unknown;
         requestReason?: string;
         reason?: string;
+        data?: JSONObject;
         isAutomatic?: boolean;
         signature?: string;
         inputSchemaInput?: unknown;
@@ -535,6 +545,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         descriptor?: unknown;
         requestReason?: string;
         reason?: string;
+        data?: JSONObject;
         isAutomatic?: boolean;
         signature?: string;
         inputSchemaInput?: unknown;
@@ -557,6 +568,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         descriptor?: unknown;
         requestReason?: string;
         reason?: string;
+        data?: JSONObject;
         isAutomatic?: boolean;
         signature?: string;
         inputSchemaInput?: unknown;
@@ -577,6 +589,7 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
         descriptor?: unknown;
         requestReason?: string;
         reason?: string;
+        data?: JSONObject;
         isAutomatic?: boolean;
         signature?: string;
         inputSchemaInput?: unknown;

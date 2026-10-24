@@ -337,6 +337,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
           approved: event.approved,
           approvedAt: event.createdAt,
           ...(event.reason ? { reason: event.reason } : {}),
+          ...(event.data ? { data: event.data } : {}),
         };
         if (event.providerExecuted) {
           part.providerExecuted = event.providerExecuted;

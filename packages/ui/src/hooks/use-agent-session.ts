@@ -3,6 +3,7 @@ import { AgentTurnBuilder, isAgentToolPart } from "@workspace/agent-client";
 import type {
   AgentStreamEvent,
   AgentTurn,
+  JSONObject,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { parseJsonEventStream } from "ai";
@@ -114,6 +115,14 @@ type AddToolApprovalResponseOptions = {
   approved: boolean;
   /** Why it was answered this way, recorded with the answer. */
   reason?: string;
+  /**
+   * Opaque, JSON-serializable data to keep with the answer.
+   *
+   * It is stored on the approval and travels back with the resumed turn, so a
+   * caller can attach what it needs to a decision without changing the
+   * protocol. The agent never reads it, and it is not sent to the model.
+   */
+  data?: JSONObject;
   /**
    * Extra fields merged into the request body alongside `sessionId` and
    * `turns`, exactly as {@link SendTurnsOptions.payload}. An answer resumes the
@@ -580,6 +589,7 @@ export function createAgentSessionStore({
     approvalId,
     approved,
     reason,
+    data,
     payload,
     abortSignal,
   }: AddToolApprovalResponseOptions): Promise<void> => {
@@ -599,6 +609,7 @@ export function createAgentSessionStore({
       approvalId,
       approved,
       ...(reason ? { reason } : {}),
+      ...(data ? { data } : {}),
       turnId: target.turnId,
       stepId: target.stepId,
       createdAt: answeredAt,

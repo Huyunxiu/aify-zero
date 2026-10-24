@@ -99,6 +99,7 @@ export function addToolApprovalResponse(
       approved: approval.approved,
       approvedAt: approval.createdAt,
       ...(approval.reason ? { reason: approval.reason } : {}),
+      ...(approval.data ? { data: approval.data } : {}),
     };
     if (approval.providerExecuted) {
       part.providerExecuted = approval.providerExecuted;
