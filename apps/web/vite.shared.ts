@@ -132,6 +132,15 @@ export const createWebViteConfig = ({
       // port；port 与 HTTP 端口一致时 HMR 复用同一个 server。
       hmr: { host: "127.0.0.1", port: devPort, protocol: "ws" },
       proxy: apiProxy,
+      // 桌面窗口启动时第一件事就是拉 index + 入口模块；提前预热，避免
+      // Electron 先到、Vite 才开始 transform 的首屏空白。
+      warmup: {
+        clientFiles: [
+          path.resolve(webRoot, "src/main.tsx"),
+          path.resolve(workspaceRoot, "packages/ui/src/app.tsx"),
+          path.resolve(workspaceRoot, "packages/ui/src/routes/**/*.tsx"),
+        ],
+      },
     },
     preview: {
       host: "127.0.0.1",

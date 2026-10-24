@@ -181,11 +181,15 @@ const isTrustedDocument = (url: string | undefined): boolean => {
 };
 
 const installExtensions = async () => {
+  const startedAt = Date.now();
+
   try {
     const result = await installExtension(REACT_DEVELOPER_TOOLS);
-    console.log(`Extensions installed successfully: ${result.name}`);
+    logger.info(
+      `[startup] extensions ready in ${Date.now() - startedAt}ms (${result.name})`
+    );
   } catch {
-    console.error("Failed to install extensions");
+    logger.warn("[startup] failed to install extensions");
   }
 };
 
@@ -260,14 +264,11 @@ const showWindow = (mainWindow: BrowserWindow): void => {
       "Renderer URL is unavailable: start the app through electron-forge start, or set AIFY_WEB_DEV_URL."
     );
   }
+  const loadStartedAt = Date.now();
+  mainWindow.webContents.once("did-finish-load", () => {
+    logger.info(`[startup] renderer loaded in ${Date.now() - loadStartedAt}ms`);
+  });
   void mainWindow.loadURL(url);
-
-  // 开发期默认打开 DevTools；`AIFY_OPEN_DEVTOOLS=0` 关掉。打包后一律不开：
-  // webPreferences.devTools 已经随 inDevelopment 关闭，这里只是别让代码
-  // 在打包环境里仍表达“要打开”的意图。
-  if (isDev && process.env.AIFY_OPEN_DEVTOOLS !== "0") {
-    mainWindow.webContents.openDevTools();
-  }
 };
 
 const createWindow = (): BrowserWindow => {
@@ -377,6 +378,8 @@ const onElectronReady = async () => {
     return;
   }
 
+  const readyStartedAt = Date.now();
+
   setupBundledRipgrep();
   setupMacDockIcon();
 
@@ -456,16 +459,29 @@ const onElectronReady = async () => {
     logger.debug("API server did not start before the window opened", error);
   });
 
-  await installExtensions();
+  // 扩展安装不能挡住窗口：首次安装 React DevTools 需要下载，可能要几秒。
+  // 窗口先出来，DevTools 等安装完成后再打开。
+  const extensionsReady = isDev ? installExtensions() : Promise.resolve();
 
   // 先建窗口再注册 IPC：ipc handler 的模块求值依赖 ipcContext.mainWindow。
   const mainWindow = buildWindow();
   await setupIpcServer();
   installServerSelectionIpc();
   showWindow(mainWindow);
+  logger.info(`[startup] window shown in ${Date.now() - readyStartedAt}ms`);
+
+  if (isDev && process.env.AIFY_OPEN_DEVTOOLS !== "0") {
+    void extensionsReady.finally(() => {
+      if (!mainWindow.isDestroyed()) {
+        mainWindow.webContents.openDevTools();
+      }
+    });
+  }
 
   const origin = await start;
-  logger.info(`API server: ${origin}`);
+  logger.info(
+    `API server: ${origin} (ready in ${Date.now() - readyStartedAt}ms)`
+  );
 };
 
 /** 第二个实例启动时，把已有窗口拉到前台，而不是再起一套 server。 */
