@@ -58,6 +58,7 @@ import {
 } from "./message";
 import { AssistantAvatar } from "./message-avatar";
 import { QuestionnaireCard, QuestionnaireSummary } from "./questionnaire";
+import type { QuestionnairePlacement } from "./questionnaire";
 import {
   formatDuration,
   getPartDurationMs,
@@ -81,6 +82,13 @@ type AssistantMessageProps = {
     approved: boolean,
     answer?: ToolApprovalAnswer
   ) => void;
+  /**
+   * Where a held questionnaire draws its form. `"inline"` — the default for a
+   * transcript rendered on its own — keeps it beside the call that asked;
+   * `"composer"` leaves it to the page, which draws it in the prompt input's
+   * place and passes this back as something other than `"inline"`.
+   */
+  questionnairePlacement?: QuestionnairePlacement;
 };
 
 /** Max characters of the first line used as a Frame title. */
@@ -250,6 +258,7 @@ export const AssistantMessage = ({
   turn,
   onFork,
   onRespondToolApproval,
+  questionnairePlacement = "inline",
 }: AssistantMessageProps) => {
   if (turn.type !== "assistant") {
     return null;
@@ -1165,10 +1174,12 @@ export const AssistantMessage = ({
                       <QuestionnaireSummary part={part} />
                       {renderToolError(part)}
                     </AgentActivityStep>
-                    <QuestionnaireCard
-                      part={part}
-                      onRespond={onRespondToolApproval}
-                    />
+                    {questionnairePlacement === "inline" && (
+                      <QuestionnaireCard
+                        part={part}
+                        onRespond={onRespondToolApproval}
+                      />
+                    )}
                   </>
                 );
               }

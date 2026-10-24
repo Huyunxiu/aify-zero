@@ -1,12 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { client } from "../lib/orpc";
+import type { QuestionnairePlacement } from "./questionnaire";
 import { Session } from "./session";
 
 export type SessionContainerProps = {
   sessionId?: string;
   /** Whether the session is being read rather than written to. See {@link Session}. */
   readOnly?: boolean;
+  /** Where a held questionnaire draws its form. See {@link Session}. */
+  questionnairePlacement?: QuestionnairePlacement;
   /** Closes the pane showing this session, when it can be pointed elsewhere. */
   onClose?: () => void;
 };
@@ -14,6 +17,7 @@ export type SessionContainerProps = {
 export function SessionContainer({
   sessionId,
   readOnly,
+  questionnairePlacement,
   onClose,
 }: SessionContainerProps) {
   const listSessionTurnsQuery = useQuery({
@@ -38,6 +42,7 @@ export function SessionContainer({
       sessionId={sessionId}
       initialTurns={initialTurns ?? []}
       readOnly={readOnly}
+      questionnairePlacement={questionnairePlacement}
       onClose={onClose}
     />
   );

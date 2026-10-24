@@ -78,6 +78,11 @@ import {
 } from "./prompt-input";
 import type { PromptInputMessage } from "./prompt-input";
 import { PromptInputTiptap } from "./prompt-input-tiptap";
+import {
+  findPendingQuestionnaire,
+  QuestionnaireComposer,
+} from "./questionnaire";
+import type { QuestionnairePlacement } from "./questionnaire";
 import { TitleBar } from "./title-bar";
 import { UserMessage } from "./user-message";
 
@@ -167,6 +172,15 @@ export type SessionProps = React.ComponentProps<"div"> & {
    */
   readOnly?: boolean;
   /**
+   * Where a held questionnaire draws its form.
+   *
+   * `"composer"` — the default — puts it where the prompt input stands, and the
+   * prompt input comes back once the questionnaire has been answered or
+   * declined. `"inline"` leaves it in the transcript, beside the call that
+   * asked. Either one can be chosen per surface without changing the form.
+   */
+  questionnairePlacement?: QuestionnairePlacement;
+  /**
    * Closes whatever is showing this session. A pane that can be pointed at
    * another session needs a way back to its own, and the title bar is where a
    * reader looks for it.
@@ -197,6 +211,7 @@ export function Session({
   sessionId,
   initialTurns = [],
   readOnly = false,
+  questionnairePlacement = "composer",
   onClose,
 }: SessionProps) {
   const navigate = useNavigate();
@@ -375,6 +390,19 @@ export function Session({
     turns: initialTurns,
     onEvent,
   });
+
+  // The held questionnaire whose form belongs in the composer's slot. Reading
+  // it from the transcript rather than from the last event keeps the placement
+  // honest across reloads and resumptions: a page that attaches to a held turn
+  // still offers the form, and one that attaches after it was answered does
+  // not. Inline placement leaves the form to the transcript.
+  const pendingQuestionnaire = React.useMemo(
+    () =>
+      readOnly || questionnairePlacement !== "composer"
+        ? undefined
+        : findPendingQuestionnaire(turns),
+    [turns, readOnly, questionnairePlacement]
+  );
 
   // Opening a session is reading it. A finished turn leaves the session `done`
   // — the mark the sidebar draws a check for — and the page showing that
@@ -564,6 +592,7 @@ export function Session({
           onRespondToolApproval={
             readOnly ? undefined : handleRespondToolApproval
           }
+          questionnairePlacement={questionnairePlacement}
           onFork={
             readOnly
               ? undefined
@@ -678,82 +707,89 @@ export function Session({
           {!readOnly && (
             <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 pt-1 px-4 pb-4">
               <PromptInputProvider>
-                <PromptInput
-                  multiple
-                  maxFileSize={5 * 1024 * 1024}
-                  accept="image/png,image/jpeg,image/webp"
-                  onSubmit={handleSubmit}
-                  onError={console.error}
-                >
-                  <PromptInputAttachmentsDisplay />
-                  <PromptInputBody>
-                    {/* <PromptInputTextarea /> */}
-                    <PromptInputTiptap
-                      skills={
-                        listSessionResourcesQuery.data?.skills.map((e) => ({
-                          ...e,
-                          type: "skill",
-                        })) || []
-                      }
-                      commands={commands}
-                      onEmptyChange={(isEmpty) => {
-                        if (isEmpty !== isEditorEmpty) {
-                          setIsEditorEmpty(isEmpty);
+                {pendingQuestionnaire ? (
+                  <QuestionnaireComposer
+                    part={pendingQuestionnaire}
+                    onRespond={handleRespondToolApproval}
+                  />
+                ) : (
+                  <PromptInput
+                    multiple
+                    maxFileSize={5 * 1024 * 1024}
+                    accept="image/png,image/jpeg,image/webp"
+                    onSubmit={handleSubmit}
+                    onError={console.error}
+                  >
+                    <PromptInputAttachmentsDisplay />
+                    <PromptInputBody>
+                      {/* <PromptInputTextarea /> */}
+                      <PromptInputTiptap
+                        skills={
+                          listSessionResourcesQuery.data?.skills.map((e) => ({
+                            ...e,
+                            type: "skill",
+                          })) || []
                         }
-                      }}
-                    />
-                  </PromptInputBody>
-                  <PromptInputFooter>
-                    <PromptInputTools className="gap-0">
-                      <PromptInputActionMenu>
-                        <PromptInputActionMenuTrigger />
-                        <PromptInputActionMenuContent className="min-w-max">
-                          <PromptInputActionAddAttachments />
-                        </PromptInputActionMenuContent>
-                      </PromptInputActionMenu>
-                      <ProjectSelect
-                        locked={isProjectLocked}
-                        onProjectChange={setSelectedProjectId}
-                        projectId={selectedProjectId}
-                        projects={projects}
+                        commands={commands}
+                        onEmptyChange={(isEmpty) => {
+                          if (isEmpty !== isEditorEmpty) {
+                            setIsEditorEmpty(isEmpty);
+                          }
+                        }}
                       />
-                      <ModelSelect
-                        models={models}
-                        modelId={selectedModelId}
-                        modelEffort={selectedModelEffort}
-                        onModelChange={handleModelChange}
-                        onModelEffortChange={handleModelEffortChange}
-                      />
-                    </PromptInputTools>
-                    <div className="flex items-center gap-2">
-                      <Context
-                        maxTokens={128_000}
-                        modelId={selectedModelId}
-                        usage={tokenUsage}
-                        usedTokens={tokenUsage.totalTokens || 0}
-                      >
-                        <ContextTrigger />
-                        <ContextContent>
-                          <ContextContentHeader />
-                          <ContextContentBody>
-                            <ContextInputUsage />
-                            <ContextOutputUsage />
-                            <ContextReasoningUsage />
-                            <ContextCacheUsage />
-                          </ContextContentBody>
-                          <ContextContentFooter />
-                        </ContextContent>
-                      </Context>
-                      <PromptInputSubmit
-                        disabled={
-                          !isGenerating && (!selectedModelId || isEditorEmpty)
-                        }
-                        status={status}
-                        onStop={() => void stop()}
-                      />
-                    </div>
-                  </PromptInputFooter>
-                </PromptInput>
+                    </PromptInputBody>
+                    <PromptInputFooter>
+                      <PromptInputTools className="gap-0">
+                        <PromptInputActionMenu>
+                          <PromptInputActionMenuTrigger />
+                          <PromptInputActionMenuContent className="min-w-max">
+                            <PromptInputActionAddAttachments />
+                          </PromptInputActionMenuContent>
+                        </PromptInputActionMenu>
+                        <ProjectSelect
+                          locked={isProjectLocked}
+                          onProjectChange={setSelectedProjectId}
+                          projectId={selectedProjectId}
+                          projects={projects}
+                        />
+                        <ModelSelect
+                          models={models}
+                          modelId={selectedModelId}
+                          modelEffort={selectedModelEffort}
+                          onModelChange={handleModelChange}
+                          onModelEffortChange={handleModelEffortChange}
+                        />
+                      </PromptInputTools>
+                      <div className="flex items-center gap-2">
+                        <Context
+                          maxTokens={128_000}
+                          modelId={selectedModelId}
+                          usage={tokenUsage}
+                          usedTokens={tokenUsage.totalTokens || 0}
+                        >
+                          <ContextTrigger />
+                          <ContextContent>
+                            <ContextContentHeader />
+                            <ContextContentBody>
+                              <ContextInputUsage />
+                              <ContextOutputUsage />
+                              <ContextReasoningUsage />
+                              <ContextCacheUsage />
+                            </ContextContentBody>
+                            <ContextContentFooter />
+                          </ContextContent>
+                        </Context>
+                        <PromptInputSubmit
+                          disabled={
+                            !isGenerating && (!selectedModelId || isEditorEmpty)
+                          }
+                          status={status}
+                          onStop={() => void stop()}
+                        />
+                      </div>
+                    </PromptInputFooter>
+                  </PromptInput>
+                )}
               </PromptInputProvider>
             </div>
           )}
