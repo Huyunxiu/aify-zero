@@ -52,16 +52,23 @@ export interface AppProtocolOptions {
   readonly webRoot?: string;
   /** 开发：把文档和静态资源请求转发给 Vite dev server。 */
   readonly devServerUrl?: string;
-  /** 同进程 Hono，直接调用，不经过端口。 */
-  readonly api: { fetch: (request: Request) => Promise<Response> | Response };
+  /**
+   * API 转发目标。`origin` 用函数而不是字符串：桌面端可以在运行时从内置
+   * server 切换到独立 server，协议 handler 只注册一次。
+   */
+  readonly api: {
+    readonly origin: () => string | undefined;
+    /** 测试注入点；默认用全局 `fetch`。 */
+    readonly fetch?: typeof fetch;
+  };
 }
 
 /**
  * 创建 `aify-app://` 的请求处理器。
  *
- * 分流顺序：API 前缀 -> 同进程 Hono；开发期 -> Vite；生产 -> 磁盘产物。
+ * 分流顺序：API 前缀 -> API server；开发期 -> Vite；生产 -> 磁盘产物。
  *
- * @param options - 文档根目录、开发服务器和 API 入口。
+ * @param options - 文档根目录、开发服务器和 API 目标。
  * @returns 满足 Electron `protocol.handle` 签名的处理函数。
  */
 export const createAppProtocolHandler =
@@ -105,8 +112,11 @@ const handleAppRequest = async (
 };
 
 /**
- * 把应用来源的 API 请求交给同进程 Hono。同源、无端口、无 CORS，
- * 也不需要像跨进程 Host 那样交换 cookie。
+ * 把应用来源的 API 请求转发给独立的 API server。
+ *
+ * 同源校验留在这一层：页面只能从 `aify-app://app` 借道，别的文档的请求
+ * 直接 403。通过校验后删掉 `origin` / `cookie` / Fetch-Metadata，让上游
+ * 看到的是一个普通的本机请求，而不是一个自定义 scheme 的来源。
  */
 const forwardToApi = async (
   request: Request,
@@ -120,13 +130,28 @@ const forwardToApi = async (
     return new Response(null, { status: 403 });
   }
 
-  // 自定义 scheme 不能直接改写成 http:（非 special -> special 不允许），
-  // 这里重建一个普通的 http URL 交给 Hono，它只关心 pathname。
+  const target = api.origin();
+  if (target === undefined) {
+    return new Response(null, { status: 503 });
+  }
+
   const source = new URL(request.url);
-  const target = `http://localhost${source.pathname}${source.search}`;
+  // 自定义 scheme 不能直接改写成 http:（非 special -> special 不允许），
+  // 这里以 API origin 为基准逐段重建 URL，避免 `//host` 被当成 authority。
+  const url = new URL(target);
+  url.pathname = source.pathname;
+  url.search = source.search;
 
   const headers = new Headers(request.headers);
-  headers.delete("host");
+  for (const name of [
+    "host",
+    "origin",
+    "cookie",
+    "sec-fetch-site",
+    "sec-fetch-mode",
+  ]) {
+    headers.delete(name);
+  }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const init: RequestInit & { duplex: "half" } = {
@@ -134,10 +159,21 @@ const forwardToApi = async (
     duplex: "half",
     headers,
     method: request.method,
+    redirect: "manual",
     signal: request.signal,
   };
 
-  return await api.fetch(new Request(target, init));
+  const upstream = await (api.fetch ?? fetch)(url, init);
+  const responseHeaders = new Headers(upstream.headers);
+  for (const name of WITHHELD_RESPONSE_HEADERS) {
+    responseHeaders.delete(name);
+  }
+
+  return new Response(request.method === "HEAD" ? null : upstream.body, {
+    headers: responseHeaders,
+    status: upstream.status,
+    statusText: upstream.statusText,
+  });
 };
 
 /**

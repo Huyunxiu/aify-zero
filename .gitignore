@@ -31,3 +31,5 @@ local.db
 .workbuddy
 .devtools
 .delta
+# pnpm local store (created by lockfile-only installs)
+.pnpm-store

@@ -9,12 +9,9 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {
-    "dev": "tsx watch src/standalone.ts",
-    "start": "tsx src/standalone.ts"
-  },
   "dependencies": {
     "@ai-sdk/openai-compatible": "catalog:",
+    "@hono/node-server": "catalog:",
     "@hono/structured-logger": "catalog:",
     "@orpc/client": "catalog:",
     "@orpc/openapi": "catalog:",
@@ -24,13 +21,12 @@
     "@workspace/agent-client": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/shared": "workspace:*",
+    "hono": "catalog:",
     "nanoid": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@workspace/config": "workspace:*",
-    "hono": "catalog:",
-    "tsx": "catalog:",
     "typescript": "catalog:"
   }
 }

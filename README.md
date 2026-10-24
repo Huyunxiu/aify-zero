@@ -25,14 +25,18 @@ vp run -r build
 - Run the development servers (each in its own terminal):
 
 ```bash
-vp run dev:api      # Hono API on 127.0.0.1:18086
-vp run dev:web      # browser UI on 127.0.0.1:3000, proxies /rpc to dev:api
+vp run dev:server   # standalone Hono API on 127.0.0.1:18086 (apps/server)
+vp run dev:web      # browser UI on 127.0.0.1:3000, proxies /rpc to the API
 vp run dev:desktop  # Electron shell; loads the UI through aify-app://
 ```
 
 `dev:web` and `dev:desktop` both bind `127.0.0.1:3000` (strictPort), so run one
-of them at a time. Ports can be overridden with `AIFY_API_PORT`, `AIFY_WEB_PORT`
-and `AIFY_API_ORIGIN`.
+of them at a time. `dev:desktop` does not require `dev:server`: when nothing is
+listening on the API port it starts the bundled server itself (see below).
+Ports can be overridden with `AIFY_API_PORT`, `AIFY_WEB_PORT` and
+`AIFY_API_ORIGIN`.
+
+`dev:api` remains as an alias for `dev:server`.
 
 - Add dependency
 
@@ -44,15 +48,41 @@ vp i xxx --filter ./packages/ui
 
 The packaged app loads `aify-app://app/`. An Electron `protocol.handle` handler
 serves the built renderer from disk and forwards `/rpc` and `/api-reference` to
-the in-process Hono app; in development it proxies the same requests to Vite so
-HMR keeps working. `AIFY_APP_PROTOCOL=0` loads the Vite URL directly instead
-(escape hatch for debugging).
+the API server (a real HTTP origin, see below); in development it proxies the
+document requests to Vite so HMR keeps working. `AIFY_APP_PROTOCOL=0` loads the
+Vite URL directly instead (escape hatch for debugging).
 
-The packaged app creates/migrates `~/.aify-zero/aify-zero.db` on startup from the
-migrations bundled at `Resources/migrations` (see `packagerConfig.extraResource`).
-If that database was created by `db:push` it has no migration history: point
-`DATABASE_URL` at it and run `vp run db#db:migrate` first, otherwise the packaged
-app shows a migration error on launch.
+### API server modes
+
+The API lives in `apps/server` (`@workspace/server-app`) and is the only
+listener. The desktop chooses one of three modes with `AIFY_SERVER_MODE`:
+
+| Mode             | Behavior                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auto` (default) | Use `AIFY_API_ORIGIN` when set; otherwise probe `AIFY_API_HOST:AIFY_API_PORT` (default `127.0.0.1:18086`) and attach if a server answers `GET /health`; otherwise start the bundled server. |
+| `owned`          | Always start the bundled server in a `utilityProcess` (`.vite/build/server-entry.js`).                                                                                                      |
+| `attach`         | Never start the bundled server; require an external one at `AIFY_API_ORIGIN` or the default origin.                                                                                         |
+
+So the packaged app ships and owns its server by default, while `dev:server` +
+`dev:desktop` share one process. To move a running desktop off the bundled
+server, call `aifyDesktop.useServer("http://127.0.0.1:18086")` from the renderer
+or DevTools: the main process verifies `/health`, stops the owned child,
+switches the `aify-app://` forwarder, and reloads the page.
+
+The packaged app creates/migrates `~/.aify-zero/aify-zero.db` from the
+migrations bundled at `Resources/migrations` (see
+`packagerConfig.extraResource`); the bundled server process runs the migration
+on startup. Development uses the repository `local.db` and never auto-migrates
+(`db:push` owns the dev schema). If a packaged database was created by
+`db:push` it has no migration history: point `DATABASE_URL` at it and run
+`vp run db#db:migrate` first, otherwise the packaged app shows a migration error
+on launch.
+
+Environment variables are loaded by the process entry, not by library modules:
+`apps/server` reads `apps/server/.env` then the repository root `.env`, and the
+desktop passes its own environment to the bundled child. A relative
+`DATABASE_URL` in a `.env` therefore resolves against the process working
+directory — prefer an absolute path or the default.
 
 ## Adding components
 

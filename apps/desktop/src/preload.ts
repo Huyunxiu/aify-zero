@@ -8,6 +8,10 @@ import { contextBridge, ipcRenderer } from "electron";
 // 真正的原生能力仍然走下面的 message-port IPC。
 contextBridge.exposeInMainWorld("aifyDesktop", {
   platform: process.platform,
+  // 蓝色按钮之外的第一块“服务器”能力：把内置 server 换成外部 origin。
+  // 主进程会先做 /health 检查，再停掉内置子进程并重载文档。
+  useServer: (origin: string): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.USE_SERVER, origin) as Promise<string>,
 });
 
 window.addEventListener("message", (event) => {

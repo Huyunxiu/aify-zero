@@ -45,6 +45,9 @@ catalogs:
     '@electron/fuses':
       specifier: ^1.8.0
       version: 1.8.0
+    '@hono/node-server':
+      specifier: ^1.19.17
+      version: 1.19.17
     '@hono/structured-logger':
       specifier: ^1.0.0
       version: 1.0.0
@@ -387,6 +390,28 @@ importers:
         specifier: npm:@voidzero-dev/vite-plus-core@latest
         version: '@voidzero-dev/vite-plus-core@1.3.0(@types/node@26.1.2)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1)(typescript@6.0.3)(yaml@2.9.0)'
 
+  apps/server:
+    dependencies:
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@workspace/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+      dotenv:
+        specifier: 'catalog:'
+        version: 17.4.2
+    devDependencies:
+      '@workspace/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.1
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
   apps/web:
     dependencies:
       '@tailwindcss/vite':
@@ -542,6 +567,9 @@ importers:
       '@ai-sdk/openai-compatible':
         specifier: 'catalog:'
         version: 3.0.68(zod@4.5.4)
+      '@hono/node-server':
+        specifier: 'catalog:'
+        version: 1.19.17(hono@4.12.32)
       '@hono/structured-logger':
         specifier: 'catalog:'
         version: 1.0.0(hono@4.12.32)
@@ -569,6 +597,9 @@ importers:
       '@workspace/shared':
         specifier: workspace:*
         version: link:../shared
+      hono:
+        specifier: 'catalog:'
+        version: 4.12.32
       nanoid:
         specifier: 'catalog:'
         version: 5.1.16
@@ -579,12 +610,6 @@ importers:
       '@workspace/config':
         specifier: workspace:*
         version: link:../config
-      hono:
-        specifier: 'catalog:'
-        version: 4.12.32
-      tsx:
-        specifier: 'catalog:'
-        version: 4.23.1
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

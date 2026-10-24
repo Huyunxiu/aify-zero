@@ -1,16 +1,9 @@
 import { existsSync } from "node:fs";
-import type { AddressInfo } from "node:net";
 import path from "node:path";
 import util from "node:util";
 
-import { serve } from "@hono/node-server";
-import { app as server } from "@workspace/server/app";
 import { APP_SCHEME, APP_URL, isAppUrl } from "@workspace/shared/app-url";
-import {
-  DEFAULT_API_PORT,
-  IPC_CHANNELS,
-  inDevelopment,
-} from "@workspace/shared/constants";
+import { IPC_CHANNELS, inDevelopment } from "@workspace/shared/constants";
 import { logger as Logger } from "@workspace/shared/logger";
 import { app, BrowserWindow, dialog, protocol, shell } from "electron";
 import {
@@ -24,6 +17,7 @@ import { ipcMain } from "electron/main";
 import { ipcContext } from "@/ipc/context";
 
 import { createAppProtocolHandler, registerAppScheme } from "./protocol";
+import { DesktopServer } from "./server-manager";
 
 log.initialize();
 log.scope.labelPadding = false;
@@ -77,7 +71,34 @@ const useProtocol = !isDev || process.env.AIFY_APP_PROTOCOL !== "0";
 const migrationsDirectory = app.isPackaged
   ? path.join(process.resourcesPath, "migrations")
   : path.resolve(app.getAppPath(), "../../packages/db/src/migrations");
-process.env.AIFY_MIGRATIONS_DIR = migrationsDirectory;
+
+/**
+ * API server 的生命周期。默认自启内置 server；`AIFY_API_ORIGIN` 或
+ * `AIFY_SERVER_MODE` 可以让它改成一个已经在跑的独立 server。
+ */
+const server = new DesktopServer((message) => {
+  logger.info(message);
+});
+
+/**
+ * 内置 server 子进程的环境。
+ *
+ * 开发期显式给 `DATABASE_URL`，否则子进程会落到 `~/.aify-zero`，和
+ * `dev:server` / `db:push` 使用的仓库 `local.db` 不是同一个库。迁移目录
+ * 只在打包后提供：开发库由 `db:push` 维护，重放迁移会和已有表冲突。
+ */
+const serverEnvironment = (): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+
+  if (app.isPackaged) {
+    env.AIFY_MIGRATIONS_DIR = migrationsDirectory;
+  } else if (env.DATABASE_URL === undefined || env.DATABASE_URL === "") {
+    // 开发期的内置 server 必须和 `dev:server` / `db:push` 用同一个库。
+    env.DATABASE_URL = `file:${path.resolve(app.getAppPath(), "../../local.db")}`;
+  }
+
+  return env;
+};
 
 /** 开发期的前端 dev server 地址；生产为 undefined。 */
 const rendererDevUrl = (): string | undefined => {
@@ -130,20 +151,6 @@ const isTrustedDocument = (url: string | undefined): boolean => {
     return false;
   }
 };
-
-const createServer = async () =>
-  await new Promise<AddressInfo>((resolve) => {
-    serve(
-      {
-        fetch: server.fetch,
-        port: DEFAULT_API_PORT,
-      },
-      (info) => {
-        logger.log(`Server is running on http://localhost:${info.port}`);
-        resolve(info);
-      }
-    );
-  });
 
 const installExtensions = async () => {
   try {
@@ -288,24 +295,48 @@ const setupBundledRipgrep = () => {
   process.env.PATH = `${rgDirectory}${path.delimiter}${process.env.PATH ?? ""}`;
 };
 
-const onElectronReady = async () => {
-  if (!isDev) {
-    const { migrateDb } = await import("@workspace/db");
-    await migrateDb().catch((error: unknown) => {
-      // 用 `db:push` 建过表的库没有迁移记录，drizzle 会重放 0000 的
-      // CREATE TABLE 并失败；把下一步该做什么直接写进错误里。
-      throw new Error(
-        `Database migration failed in ${migrationsDirectory}. ` +
-          "A database created by `db:push` has no migration history: run " +
-          "`vp run db#db:migrate` with DATABASE_URL pointing at it, then retry.",
-        { cause: error }
-      );
-    });
-    logger.info(`Database schema ready: ${migrationsDirectory}`);
-  }
+/**
+ * 运行时切换 API server。现在还没有设置界面，但先把入口留好：渲染端调用
+ * `aifyDesktop.useServer(origin)` 就会停掉内置子进程、把转发目标换成外部
+ * server，并重载文档。
+ */
+const installServerSelectionIpc = (): void => {
+  ipcMain.handle(IPC_CHANNELS.USE_SERVER, async (event, origin: unknown) => {
+    const frame = event.senderFrame;
+    if (
+      frame === null ||
+      frame !== event.sender.mainFrame ||
+      !isTrustedDocument(frame.url)
+    ) {
+      throw new Error("Rejected API server switch from an untrusted renderer");
+    }
+    if (typeof origin !== "string" || origin === "") {
+      throw new Error("API server origin must be a non-empty string");
+    }
 
+    const next = await server.attach(origin);
+
+    // 用发起请求的窗口重载；`onElectronReady` 里捕获的 mainWindow 在
+    // macOS 关闭再 activate 之后可能已经销毁。
+    BrowserWindow.fromWebContents(event.sender)?.reload();
+
+    return next;
+  });
+};
+
+const onElectronReady = async () => {
   setupBundledRipgrep();
   setupMacDockIcon();
+
+  const origin = await server.start({
+    cwd: app.isPackaged
+      ? app.getPath("userData")
+      : path.resolve(app.getAppPath(), "../.."),
+    // oxlint-disable-next-line unicorn/prefer-module
+    entry: path.join(__dirname, "server-entry.js"),
+    env: serverEnvironment(),
+  });
+  logger.info(`API server: ${origin}`);
 
   if (useProtocol) {
     const devServerUrl = isDev ? rendererDevUrl() : undefined;
@@ -318,7 +349,7 @@ const onElectronReady = async () => {
     protocol.handle(
       APP_SCHEME,
       createAppProtocolHandler({
-        api: { fetch: (request) => server.fetch(request) },
+        api: { origin: () => server.origin },
         devServerUrl,
         webRoot: isDev ? undefined : rendererRoot(),
       })
@@ -330,10 +361,7 @@ const onElectronReady = async () => {
   // 先建窗口再注册 IPC：ipc handler 的模块求值依赖 ipcContext.mainWindow。
   const mainWindow = buildWindow();
   await setupIpcServer();
-  // 逃生模式直连 Vite，渲染端的相对 /rpc 需要一个真实端口。
-  if (!useProtocol) {
-    await createServer();
-  }
+  installServerSelectionIpc();
   showWindow(mainWindow);
 };
 
@@ -362,6 +390,11 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+// 只有自启的内置 server 会被停掉；attach 到外部 server 时这里不碰它。
+app.on("will-quit", () => {
+  server.stop();
 });
 
 app.on("activate", () => {

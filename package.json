@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "ready": "vp check && vp run -r test && vp run -r build",
-    "dev:api": "vp run server#dev",
+    "dev:server": "vp run @workspace/server-app#dev",
+    "dev:api": "vp run @workspace/server-app#dev",
     "dev:web": "vp run web#dev",
     "dev:desktop": "vp run desktop#dev",
     "db:push": "vp run db#db:push",

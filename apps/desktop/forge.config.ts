@@ -6,6 +6,7 @@ import { MakerDeb } from "@electron-forge/maker-deb";
 import { MakerRpm } from "@electron-forge/maker-rpm";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { MakerZIP } from "@electron-forge/maker-zip";
+import { AutoUnpackNativesPlugin } from "@electron-forge/plugin-auto-unpack-natives";
 import { FusesPlugin } from "@electron-forge/plugin-fuses";
 import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
@@ -58,6 +59,10 @@ const config: ForgeConfig = {
     icon: "resources/icons",
   },
   plugins: [
+    // libsql（`@libsql/<platform>/index.node`）是原生模块，不能从 asar 里
+    // dlopen；这个插件把 *.node 解包到 app.asar.unpacked。内置 API server
+    // 在打包后加载数据库依赖它。
+    new AutoUnpackNativesPlugin({}),
     new VitePlugin({
       // `build` can specify multiple entry builds, which can be Main process, Preload scripts, Worker process, etc.
       // If you are familiar with Vite configuration, it will look really familiar.
@@ -66,6 +71,13 @@ const config: ForgeConfig = {
           // `entry` is just an alias for `build.lib.entry` in the corresponding file of `config`.
           config: "vite.main.config.mts",
           entry: "src/main.ts",
+          target: "main",
+        },
+        {
+          // 内置 API server：主进程用 utilityProcess.fork 启动这个产物。
+          // Forge 允许第二个 `main` 目标，两者都写到 .vite/build/。
+          config: "vite.server.config.mts",
+          entry: "src/server-entry.ts",
           target: "main",
         },
         {

@@ -3,14 +3,14 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 import { createClient } from "@libsql/client";
-import dotenv from "dotenv";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import Database from "libsql";
 
 import * as schema from "./schema";
 
-dotenv.config();
+// 环境变量由进程入口加载：`dotenv.config()` 会按 cwd 找 `.env`，让同一个
+// 数据层在仓库根、`apps/server`、打包后的资源目录下连到不同的库。
 
 // Ensure the ~/.aify-zero user data directory exists.
 const ensureDataDir = () => {

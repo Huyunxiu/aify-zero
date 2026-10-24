@@ -1,11 +1,10 @@
 // oxlint-disable
 import type { Language } from "@workspace/shared/constants";
 import type { Logger } from "@workspace/shared/logger";
-import dotenv from "dotenv";
 
-dotenv.config({
-  path: "../../packages/server/.env",
-});
+// 环境变量由进程入口负责加载（`apps/server` 或 Electron 传入的子进程
+// env）：库模块不再按 cwd 找 `.env`，否则同一个包在不同启动目录下会连到
+// 不同的数据库。
 
 export type CreateContextOptions = {
   requestId: string;

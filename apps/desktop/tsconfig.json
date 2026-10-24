@@ -6,6 +6,9 @@
     "noImplicitAny": true,
     "sourceMap": true,
     "outDir": "dist",
+    // 主进程直接引用 `packages/*/src`（monorepo 内以源码消费），rootDir 必须
+    // 覆盖仓库根，否则 TS 会把它们判成“不在项目内”。noEmit 下不影响产物。
+    "rootDir": "../..",
     "resolveJsonModule": true,
     "useDefineForClassFields": true,
     "skipLibCheck": true,
@@ -15,8 +18,6 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client", "./forge.env.d.ts"],
     "experimentalDecorators": true,
-    "composite": true,
-    "declaration": true,
     "forceConsistentCasingInFileNames": true,
 
     /* Bundler mode */

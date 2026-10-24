@@ -67,13 +67,16 @@ export const MODEL_EFFORT_LABELS: readonly ModelEffort[] = [
 export const IPC_CHANNELS = {
   START_IPC_CLIENT: "start-ipc-client",
   START_IPC_SERVER: "start-ipc-server",
+  /** 运行时切换 API server（停内置、改用外部 origin）。 */
+  USE_SERVER: "use-server",
 };
 
 export const inDevelopment = process.env.NODE_ENV === "development";
 
 /**
- * 独立 API 进程和桌面逃生模式的默认端口。桌面主进程、`server#dev` 和
- * Vite 的 `/rpc` 代理都从这里取，避免三处各写一个 `18086`。
+ * 独立 API server 的默认端口。`apps/server`、桌面自启的内置 server、
+ * 桌面 attach 的默认目标和 Vite 的 `/rpc` 代理都从这里取，避免多处各写
+ * 一个 `18086`。
  */
 export const DEFAULT_API_PORT = 18_086;
 

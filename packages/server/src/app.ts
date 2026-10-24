@@ -15,7 +15,6 @@ import { getErrorCause } from "@workspace/shared/errors";
 import type { Logger } from "@workspace/shared/logger";
 import { logger } from "@workspace/shared/logger";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { languageDetector } from "hono/language";
 import { requestId } from "hono/request-id";
 
@@ -66,13 +65,9 @@ app.use(
   })
 );
 
-app.use(
-  "/*",
-  cors({
-    allowMethods: ["GET", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
-    origin: "*",
-  })
-);
+// 没有 CORS 中间件：浏览器永远经同源代理（Vite 或 aify-app:// 转发）访问
+// 这个进程，跨源读取本来就不该被允许。桌面转发和 Vite 代理都在服务端发起
+// 请求，因此也不需要预检响应。
 
 export const apiHandler = new OpenAPIHandler(appRouter, {
   interceptors: [
@@ -133,3 +128,11 @@ app.use("/*", async (c, next) => {
 });
 
 app.get("/", (c) => c.text("OK"));
+
+/**
+ * 就绪探针：桌面壳在 attach 前用它确认 origin 上确实跑着一个 Aify Zero
+ * API，而不是别的进程占用了端口。
+ */
+app.get("/health", (c) =>
+  c.json({ ok: true, pid: process.pid, uptime: process.uptime() })
+);

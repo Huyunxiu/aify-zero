@@ -15,7 +15,8 @@ const appRequest = (pathname: string, init?: RequestInit): Request =>
   new Request(`${APP_ORIGIN}${pathname}`, init);
 
 const noopApi: AppProtocolOptions["api"] = {
-  fetch: () => new Response("ok"),
+  fetch: () => Promise.resolve(new Response("ok")),
+  origin: () => "http://127.0.0.1:18086",
 };
 
 const startDevServer = async (payload: string) => {
@@ -203,24 +204,36 @@ describe("aify-app protocol handler", () => {
     expect(response.status).toBe(404);
   });
 
-  it("forwards API requests to the in-process handler", async () => {
-    let seen: { body: string; origin: string | null; url: string } | undefined;
+  it("forwards API requests to the configured server", async () => {
+    let seen:
+      | { body: string; method: string; origin: string | null; url: string }
+      | undefined;
     const handler = createAppProtocolHandler({
       api: {
-        fetch: async (request) => {
+        fetch: async (input, init) => {
           seen = {
-            body: await request.text(),
-            origin: request.headers.get("origin"),
-            url: request.url,
+            body:
+              init?.body === null || init?.body === undefined
+                ? ""
+                : await new Response(init.body).text(),
+            method: init?.method ?? "GET",
+            origin: new Headers(init?.headers).get("origin"),
+            url:
+              input instanceof URL
+                ? input.href
+                : typeof input === "string"
+                  ? input
+                  : input.url,
           };
           return new Response("ok", { status: 201 });
         },
+        origin: () => "http://127.0.0.1:18086",
       },
       webRoot: root,
     });
 
     const response = await handler(
-      appRequest("/rpc/agent/list", {
+      appRequest("/rpc/agent/list?x=1", {
         body: "hello",
         headers: { origin: APP_ORIGIN },
         method: "POST",
@@ -228,9 +241,25 @@ describe("aify-app protocol handler", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(seen?.url).toBe("http://localhost/rpc/agent/list");
-    expect(seen?.body).toBe("hello");
-    expect(seen?.origin).toBe(APP_ORIGIN);
+    expect(seen).toMatchObject({
+      body: "hello",
+      method: "POST",
+      origin: null,
+      url: "http://127.0.0.1:18086/rpc/agent/list?x=1",
+    });
+  });
+
+  it("answers 503 while no API server is attached", async () => {
+    const handler = createAppProtocolHandler({
+      api: { origin: () => {} },
+      webRoot: root,
+    });
+
+    const response = await handler(
+      appRequest("/rpc/agent/list", { body: "hello", method: "POST" })
+    );
+
+    expect(response.status).toBe(503);
   });
 
   it("rejects API requests from a foreign origin", async () => {
@@ -239,8 +268,9 @@ describe("aify-app protocol handler", () => {
       api: {
         fetch: () => {
           calls += 1;
-          return new Response("ok");
+          return Promise.resolve(new Response("ok"));
         },
+        origin: () => "http://127.0.0.1:18086",
       },
       webRoot: root,
     });

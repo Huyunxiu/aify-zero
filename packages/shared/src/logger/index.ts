@@ -29,7 +29,7 @@ export const logger: Logger = {
   verbose: (...data: any[]) => logWrap("verbose", () => console.log(...data)),
   debug: (...data: any[]) => logWrap("debug", () => console.debug(...data)),
   silly: (...data: any[]) => logWrap("silly", () => console.log(...data)),
-  createLogger: ({ scope }: { scope: string }): Logger => logger,
+  createLogger: () => logger,
   setLevel,
 };
 
