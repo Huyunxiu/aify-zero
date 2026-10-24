@@ -1,7 +1,4 @@
-import type {
-  AgentStreamEvent,
-  CompactionConfig,
-} from "@workspace/agent-client";
+import type { AgentStreamEvent } from "@workspace/agent-client";
 
 import { AgentState } from "./agent-state";
 import type { AgentStateOptions } from "./agent-state";
@@ -51,7 +48,6 @@ export type AgentContextOptions = AgentStateOptions & {
    * 看到同一套说明。
    */
   systemPromptSections?: readonly SystemPromptSection[];
-  compactionConfig: CompactionConfig;
   controller?: AgentStreamEventController;
 };
 export class AgentContext extends AgentState {
@@ -64,7 +60,6 @@ export class AgentContext extends AgentState {
   systemPromptSections: readonly SystemPromptSection[];
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
   abortSignal?: AbortSignal;
-  compactionConfig: CompactionConfig;
   controller?: AgentStreamEventController;
 
   constructor(options: AgentContextOptions) {
@@ -81,7 +76,6 @@ export class AgentContext extends AgentState {
     this.projectId = options.projectId;
     this.skills = options.skills ?? new SkillManager({ dirs: [] });
     this.systemPromptSections = options.systemPromptSections ?? [];
-    this.compactionConfig = options.compactionConfig;
     this.controller = options.controller;
   }
   [x: string]: unknown;

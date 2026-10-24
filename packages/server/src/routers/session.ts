@@ -130,13 +130,6 @@ const createSession = publicProcedure
       projectId,
       modelId: aiModel.model,
       modelEffort: effort,
-      compactionConfig: {
-        recentWindowSize: 10,
-        threshold: 100_000,
-        thresholdPercent: 0.9,
-        lastKnownInputTokens: 0,
-        lastKnownPromptMessageCount: 0,
-      },
     });
 
     const agent = new Agent({

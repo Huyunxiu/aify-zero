@@ -23,18 +23,6 @@ export type TitleGeneratedEvent = {
   title: string;
 };
 
-export type CompactionStartEvent = {
-  sessionId: string;
-  createdAt: number;
-};
-
-export type CompactionEndEvent = {
-  sessionId: string;
-  compacted: boolean;
-  messages: ModelMessage[];
-  createdAt: number;
-};
-
 /**
  * One tool call, about to run. Shared by the `tool:before` and `tool:after`
  * events: the fields describing the call are the same either way, and only the
@@ -104,8 +92,6 @@ export interface HooksMap {
   session_start: HookHandler<SessionStartEvent>;
   session_end: HookHandler<SessionEndEvent>;
   title_generated: HookHandler<TitleGeneratedEvent>;
-  "compaction:start": HookHandler<CompactionStartEvent>;
-  "compaction:end": HookHandler<CompactionEndEvent>;
   /**
    * Raised once per client tool call, before it runs. This is the only place a
    * call can be turned down or its input rewritten: the tools are executed by

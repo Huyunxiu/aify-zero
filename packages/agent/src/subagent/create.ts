@@ -3,7 +3,6 @@ import type {
   AgentTextPart,
   AgentTurn,
   AgentTurnStatus,
-  CompactionConfig,
 } from "@workspace/agent-client";
 import type { ToolSet } from "ai";
 
@@ -202,12 +201,6 @@ export async function createSubagent(
   const resolvedModelId =
     modelId ?? definition.modelId ?? parent.context.modelId;
 
-  const compactionConfig: CompactionConfig = {
-    ...parent.context.compactionConfig,
-    lastKnownInputTokens: 0,
-    lastKnownPromptMessageCount: 0,
-  };
-
   const context = new AgentContext({
     projectDirs: parent.context.projectDirs,
     // 子 agent 共享父会话的目录：它产出的临时文件属于同一个会话。
@@ -219,7 +212,6 @@ export async function createSubagent(
     // 提示片段跟着父上下文走：子 agent 不重新加载资源，看到的就是父所用的
     // 那一套，只是以子 agent 自己的 instructions 作为起点重新渲染。
     systemPromptSections: parent.context.systemPromptSections,
-    compactionConfig,
   });
 
   let systemPrompt = definition.instructions;

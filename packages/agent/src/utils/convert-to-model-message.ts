@@ -8,7 +8,6 @@ import type {
 } from "@ai-sdk/provider-utils";
 import {
   getToolName,
-  isAgentCompactionPart,
   isAgentCustomContentPart,
   isAgentFilePart,
   isAgentReasoningPart,
@@ -18,7 +17,6 @@ import {
 import type {
   AgentToolPart,
   AgentPart,
-  AgentStep,
   AgentTurn,
 } from "@workspace/agent-client";
 import { createToolModelOutput } from "ai/internal";
@@ -27,43 +25,9 @@ import { TOOL_DENIED_TEXT } from "../hooks-manager";
 import { getOwn } from "./get-own";
 
 export async function convertAgentTurnToModalMessage<TOOLS extends ToolSet>(
-  originalTurns: AgentTurn<TOOLS>[]
+  turns: AgentTurn<TOOLS>[]
 ): Promise<ModelMessage[]> {
-  let turns: AgentTurn<TOOLS>[] = [];
-
-  let compactedMessages: ModelMessage[] = [];
-  for (const turn of originalTurns) {
-    const newTurn: AgentTurn<TOOLS> = { ...turn, content: [] };
-    for (const step of turn.content) {
-      const newStep: AgentStep<TOOLS> = { ...step, content: [] };
-      for (const part of step.content) {
-        newStep.content.push(part as any);
-        if (
-          isAgentCompactionPart(part) &&
-          part.compacted &&
-          part.messages?.length
-        ) {
-          compactedMessages = [];
-          turns = [];
-          newTurn.content = [];
-          newStep.content = [];
-          compactedMessages.push(...part.messages);
-        }
-      }
-
-      if (newStep.content.length) {
-        newTurn.content.push(newStep as any);
-      }
-    }
-
-    if (newTurn.content.length) {
-      turns.push(newTurn);
-    }
-  }
-
-  const recentMessages = await convertToModelMessages<TOOLS>(turns);
-
-  return [...compactedMessages, ...recentMessages];
+  return await convertToModelMessages<TOOLS>(turns);
 }
 
 /**
@@ -417,9 +381,6 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
           break;
         }
 
-        break;
-      }
-      case "compaction": {
         break;
       }
       default: {

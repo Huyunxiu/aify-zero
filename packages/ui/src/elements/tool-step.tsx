@@ -7,7 +7,6 @@ import {
 } from "@workspace/agent-client";
 import type {
   AgentAssistantStep,
-  AgentCompactionStep,
   AgentPart,
   AgentStaticToolPart,
   AgentToolPart,
@@ -18,7 +17,7 @@ import type { ReactNode } from "react";
 /** A part as it is rendered, next to the step that owns it. */
 export type StepRow = {
   part: AgentPart<AgentToolSet>;
-  step: AgentAssistantStep<AgentToolSet> | AgentCompactionStep;
+  step: AgentAssistantStep<AgentToolSet>;
 };
 
 /**

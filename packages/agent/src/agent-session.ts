@@ -21,14 +21,11 @@ export class AgentSession {
   turns: AgentTurn<AgentToolSet>[];
   modelMessages: ModelMessage[];
   builder?: AgentTurnBuilder<AgentToolSet>;
-  lastKnownInputTokens: number;
   usage?: LanguageModelUsage;
   totalUsage?: LanguageModelUsage;
 
   constructor({ turns }: AgentSessionOptions) {
     this.turns = turns;
-    this.lastKnownInputTokens =
-      turns.findLast((e) => e.usage)?.usage?.inputTokens ?? 0;
     this.modelMessages = [];
   }
 
@@ -38,8 +35,6 @@ export class AgentSession {
 
   async startTurn({ turns }: AgentSessionOptions): Promise<string> {
     this.turns = turns;
-    this.lastKnownInputTokens =
-      this.turns.findLast((e) => e.usage)?.usage?.inputTokens ?? 0;
     this.modelMessages = await convertAgentTurnToModalMessage<AgentToolSet>(
       this.turns
     );
@@ -64,9 +59,6 @@ export class AgentSession {
     } else if (this.usage) {
       this.totalUsage = addLanguageModelUsage(this.totalUsage, this.usage);
     }
-
-    this.lastKnownInputTokens =
-      this.usage.inputTokens ?? this.lastKnownInputTokens;
   }
 
   finishTurn({ turn }: { turn: AgentTurn<AgentToolSet> | undefined }) {

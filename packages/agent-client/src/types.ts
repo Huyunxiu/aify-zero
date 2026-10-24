@@ -3,7 +3,6 @@ import type {
   FinishReason,
   InferUITool,
   LanguageModelUsage,
-  ModelMessage,
   ProviderMetadata,
   ProviderReference,
   StaticToolOutputDenied,
@@ -30,17 +29,6 @@ export type JSONValue =
 export type JSONObject = {
   [key: string]: JSONValue | undefined;
 };
-
-/**
- * Compaction configuration stored on the session.
- */
-export interface CompactionConfig {
-  lastKnownInputTokens?: number;
-  lastKnownPromptMessageCount?: number;
-  recentWindowSize: number;
-  threshold: number;
-  thresholdPercent?: number;
-}
 
 export type AgentRuntimeContext = Record<string, unknown>;
 
@@ -136,16 +124,6 @@ export type TextStreamToolApprovalResponseEvent = TextStreamEventBase & {
   data?: JSONObject;
   providerExecuted?: boolean;
   providerMetadata?: ProviderMetadata;
-};
-type TextStreamCompactionStartEvent = TextStreamEventBase & {
-  type: "compaction.start";
-  id: string;
-};
-type TextStreamCompactionEndEvent = TextStreamEventBase & {
-  type: "compaction.end";
-  id: string;
-  compacted: boolean;
-  messages: ModelMessage[];
 };
 /**
  * Renames the `type` discriminant of a part.
@@ -257,9 +235,7 @@ export type AgentStreamEvent<TOOLS extends ToolSet> =
   | TextStreamTitleStartEvent
   | TextStreamTitleEndEvent
   | TextStreamAbortEvent
-  | TextStreamErrorEvent
-  | TextStreamCompactionStartEvent
-  | TextStreamCompactionEndEvent;
+  | TextStreamErrorEvent;
 
 export type AgentSessionTitlePart = {
   id: string;
@@ -663,23 +639,6 @@ export function getToolName(part: AgentToolPart): string {
   return isAgentDynamicToolPart(part) ? part.toolName : getStaticToolName(part);
 }
 
-export type AgentCompactionPart = {
-  id: string;
-  type: "compaction";
-  compacted?: boolean;
-  messages?: ModelMessage[];
-  /**
-   * The state of the reasoning part.
-   */
-  state: "streaming" | "done";
-};
-
-export function isAgentCompactionPart(
-  part: AgentPart<any>
-): part is AgentCompactionPart {
-  return part.type === "compaction";
-}
-
 /**
  * Parts a user step can hold.
  */
@@ -704,8 +663,7 @@ export type AgentAssistantPart<TOOLS extends ToolSet> =
  */
 export type AgentPart<TOOLS extends ToolSet> =
   | AgentUserPart
-  | AgentAssistantPart<TOOLS>
-  | AgentCompactionPart;
+  | AgentAssistantPart<TOOLS>;
 
 export type StepMetadata = Record<string, any> & {
   /**
@@ -848,21 +806,6 @@ export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase & {
   model: string;
 };
 
-export type AgentCompactionStep = AgentStepBase & {
-  /**
-   * The type of the step.
-   */
-  type: "compaction";
-
-  content: AgentCompactionPart[];
-
-  /**
-   * The model that produced this step. Steps of one turn can disagree here
-   * when the runtime falls back to another model mid-turn.
-   */
-  model: string;
-};
-
 /**
  * A step of a turn. Discriminated by `kind`, so a consumer that switches over
  * it gets exhaustiveness checking when a new type of step is introduced.
@@ -870,7 +813,6 @@ export type AgentCompactionStep = AgentStepBase & {
 export type AgentStep<TOOLS extends ToolSet> =
   | AgentUserStep
   | AgentAssistantStep<TOOLS>
-  | AgentCompactionStep
   | AgentSessionTitleStep;
 
 export type AgentUserTurn = AgentTurnBase & {
@@ -896,22 +838,9 @@ export type AgentAssistantTurn<TOOLS extends ToolSet> = AgentTurnBase & {
    * The steps of the turn in order. One turn is one assistant reply: the model
    * step, then a step per round of tool calls, until it stops calling tools.
    */
-  content: (AgentAssistantStep<TOOLS> | AgentCompactionStep)[];
-};
-export type AgentCompactionTurn = AgentTurnBase & {
-  /**
-   * The type of the turn.
-   */
-  type: "compaction";
-
-  /**
-   * The steps of the turn in order. One turn is one assistant reply: the model
-   * step, then a step per round of tool calls, until it stops calling tools.
-   */
-  content: AgentCompactionStep[];
+  content: AgentAssistantStep<TOOLS>[];
 };
 
 export type AgentTurn<TOOLS extends ToolSet = ToolSet> =
   | AgentUserTurn
-  | AgentAssistantTurn<TOOLS>
-  | AgentCompactionTurn;
+  | AgentAssistantTurn<TOOLS>;

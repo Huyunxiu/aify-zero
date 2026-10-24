@@ -11,9 +11,6 @@ import {
 import type {
   AgentAssistantStep,
   AgentAssistantTurn,
-  AgentCompactionPart,
-  AgentCompactionStep,
-  AgentCompactionTurn,
   AgentCustomContentPart,
   AgentToolPart,
   AgentPart,
@@ -473,33 +470,6 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         }
         break;
       }
-      case "compaction.start": {
-        const part: AgentCompactionPart = {
-          id: event.id,
-          type: "compaction",
-          state: "streaming",
-        };
-        const uk = `${event.turnId}-${event.stepId}-${event.id}`;
-        this.pendingParts.set(uk, part);
-        const step = this.stepsMap.get(event.stepId);
-        if (step) {
-          (step.content as AgentPart<TOOLS>[]).push(part);
-        }
-        break;
-      }
-      case "compaction.end": {
-        const uk = `${event.turnId}-${event.stepId}-${event.id}`;
-        const part = this.pendingParts.get(uk) as
-          | AgentCompactionPart
-          | undefined;
-        if (part) {
-          part.compacted = event.compacted;
-          part.messages = event.messages;
-          part.state = "done";
-          this.pendingParts.delete(uk);
-        }
-        break;
-      }
       case "session.title.start": {
         const part: AgentSessionTitlePart = {
           id: event.id,
@@ -649,15 +619,6 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         content: [],
       };
       return turn;
-    } else if (event.turnType === "compaction") {
-      const turn: AgentCompactionTurn = {
-        type: "compaction",
-        id: event.id,
-        createdAt: event.createdAt,
-        status: "streaming",
-        content: [],
-      };
-      return turn;
     }
 
     console.error(
@@ -701,16 +662,6 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     } else if (event.stepType === "assistant") {
       const step: AgentAssistantStep<TOOLS> = {
         type: "assistant",
-        id: event.id,
-        createdAt: event.createdAt,
-        status: "streaming",
-        content: [],
-        model: event.model,
-      };
-      return step;
-    } else if (event.stepType === "compaction") {
-      const step: AgentCompactionStep = {
-        type: "compaction",
         id: event.id,
         createdAt: event.createdAt,
         status: "streaming",

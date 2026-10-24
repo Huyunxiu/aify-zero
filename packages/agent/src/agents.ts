@@ -8,7 +8,6 @@ import type {
   AgentStreamEvent,
   AgentTurn,
   AgentTurnStatus,
-  CompactionConfig,
 } from "@workspace/agent-client";
 import type { TurnModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
@@ -23,7 +22,6 @@ import {
 } from "ai";
 import type {
   FinishReason,
-  LanguageModel,
   LanguageModelUsage,
   ModelMessage,
   StepResultPerformance,
@@ -36,7 +34,6 @@ import { collectToolApprovals } from "ai/internal";
 
 import type { AgentContext } from "./agent-context";
 import type { AgentSession } from "./agent-session";
-import { compactMessages, shouldCompact } from "./compaction/compaction";
 import { ExtensionManager } from "./extensions/manager";
 import type { Extension } from "./extensions/types";
 import { HooksManager } from "./hooks-manager";
@@ -526,12 +523,9 @@ export class Agent {
    * Drives one assistant turn: repeated `#runStep` calls until the model stops
    * asking for tools, the step budget runs out, or a step is aborted or fails.
    *
-   * The loop is driven by hand so compaction can run before every model call.
-   * `ToolLoopAgent` invokes `prepareCall` once per stream — its step loop lives
-   * inside a single `streamText` call — so the compaction check only ever saw
-   * the first prompt, and the token count each step reported was never read.
-   * One `streamText` call per step keeps the estimate in sync with the prompt
-   * the model is about to receive.
+   * The loop is driven by hand: each step issues its own `streamText` call, so
+   * tool execution and approval handling stay outside the SDK's step loop and
+   * every step sees the history the loop has built so far.
    *
    * Every step streams into the single UI message started by
    * {@link Agent.stream}; the finish is written once, by `#finishTurn`, because
@@ -559,8 +553,6 @@ export class Agent {
 
     let status: AgentTurnStatus = { status: "done" };
     while (true) {
-      // The step reads the history `messages` currently holds, which compaction
-      // or the previous step may have replaced.
       const stepId = generateStepId();
 
       const outcome = await this.#runStep({
@@ -647,10 +639,9 @@ export class Agent {
   }
 
   /**
-   * Runs one step: compacts the history if it has outgrown the threshold,
-   * issues a single `streamText` call, pipes its chunks into the open UI
-   * message, and folds the step's assistant and tool messages back into that
-   * history so the next step sees them.
+   * Runs one step: issues a single `streamText` call, pipes its chunks into the
+   * open UI message, and folds the step's assistant and tool messages back into
+   * the history so the next step sees them.
    *
    * Reports how the step ended rather than failing the stream: an aborted or
    * failed step is an ending the turn has to record, not a reason for the reader
@@ -659,41 +650,7 @@ export class Agent {
   async #runStep(input: AgentStepInput): Promise<StepOutcome> {
     const { turnId, stepId } = input;
     const model = this.#getModel();
-
-    this.context.compactionConfig.lastKnownInputTokens =
-      this.session.lastKnownInputTokens;
-    this.context.compactionConfig.lastKnownPromptMessageCount =
-      this.session.modelMessages.length;
-
-    // 尝试压缩上下文
-    const compactionStepId = generateStepId();
-    let messages: ModelMessage[];
-    try {
-      const compaction = await this.#maybeCompact({
-        config: this.context.compactionConfig,
-        messages: this.session.modelMessages,
-        abortSignal: this.context.abortSignal,
-        model,
-        onBeforeCompact: () =>
-          this.#announceCompactionStart(turnId, compactionStepId),
-        onAfterCompact: (params) =>
-          this.#announceCompactionEnd(turnId, compactionStepId, params),
-      });
-      ({ messages } = compaction);
-    } catch (error) {
-      console.error(
-        "agent#runStep compaction error.",
-        this.context.abortSignal?.aborted,
-        error
-      );
-      // Compaction is a model call the step makes before its own, so a failure
-      // or an abort there is how the step ended, not a reason to fail the
-      // stream. Left to throw, it would skip `turn.finish` and the store write
-      // below and the turn would disappear instead of showing as aborted.
-      return this.context.abortSignal?.aborted
-        ? { ok: false, reason: "aborted" }
-        : { ok: false, reason: "error", error };
-    }
+    const messages = this.session.modelMessages;
 
     await this.context.controller?.write({
       type: "step.start",
@@ -1044,121 +1001,5 @@ export class Agent {
         ? { ok: false, reason: "aborted" }
         : { ok: false, reason: "error", error: streamError ?? error };
     }
-  }
-
-  async #announceCompactionStart(
-    turnId: string,
-    stepId: string
-  ): Promise<void> {
-    const createdAt = Date.now();
-    // await this.context.controller?.write({
-    //   type: "step.start",
-    //   stepType: "compaction",
-    //   model: modelId,
-    //   turnId,
-    //   id: stepId,
-    //   createdAt: Date.now(),
-    // });
-    await this.context.controller?.write({
-      turnId,
-      stepId,
-      id: generateEventId(),
-      type: "compaction.start",
-      createdAt,
-    });
-    await this.hooks.emit(
-      "compaction:start",
-      { sessionId: this.sessionId, createdAt },
-      this.extensionApi
-    );
-  }
-
-  async #announceCompactionEnd(
-    turnId: string,
-    stepId: string,
-    params: { compacted: boolean; messages: ModelMessage[] }
-  ): Promise<void> {
-    const createdAt = Date.now();
-    await this.context.controller?.write({
-      turnId,
-      stepId,
-      id: generateEventId(),
-      type: "compaction.end",
-      compacted: params.compacted,
-      messages: params.messages,
-      createdAt,
-    });
-    // await this.context.controller?.write({
-    //   id: stepId,
-    //   turnId,
-    //   type: "step.finish",
-    //   createdAt: Date.now(),
-    //   usage: step.usage,
-    //   performance: step.performance,
-    //   finishReason: step.finishReason,
-    //   rawFinishReason: step.rawFinishReason,
-    //   providerMetadata: step.providerMetadata,
-    //   status: "done",
-    // });
-    await this.hooks.emit(
-      "compaction:end",
-      {
-        sessionId: this.sessionId,
-        compacted: params.compacted,
-        messages: params.messages,
-        createdAt,
-      },
-      this.extensionApi
-    );
-  }
-
-  /**
-   * Runs the compaction pipeline once if the session's input-token estimate
-   * is over the configured threshold. Mutates neither input; returns the new
-   * messages array and (possibly updated) session.
-   *
-   * Called by `#runStep` before every model call, so the compacted
-   * messages become the history the next step — and every step after it —
-   * sends to the model. Gating on `shouldCompact` is what keeps that from
-   * re-summarizing the same conversation on every step.
-   */
-  async #maybeCompact(input: {
-    readonly force?: boolean;
-    readonly config: CompactionConfig;
-    readonly abortSignal?: AbortSignal;
-    readonly messages: ModelMessage[];
-    readonly model: LanguageModel;
-    readonly onBeforeCompact?: () => void | Promise<void>;
-    readonly onAfterCompact?: (params: {
-      compacted: boolean;
-      messages: ModelMessage[];
-    }) => void | Promise<void>;
-  }): Promise<{
-    readonly compacted: boolean;
-    readonly messages: ModelMessage[];
-  }> {
-    let { messages } = input;
-    const { config, abortSignal, model, onBeforeCompact, onAfterCompact } =
-      input;
-
-    if (input.force !== true && !shouldCompact(messages, config)) {
-      return { compacted: false, messages };
-    }
-
-    await onBeforeCompact?.();
-
-    messages = await compactMessages(
-      messages,
-      model,
-      config,
-      abortSignal,
-      true
-    );
-
-    const result = { compacted: true, messages };
-
-    await onAfterCompact?.(result);
-
-    return result;
   }
 }
