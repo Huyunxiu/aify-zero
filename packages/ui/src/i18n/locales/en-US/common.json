@@ -1,6 +1,11 @@
 {
   "welcome": "Welcome",
   "apiStatus": "API Status",
+  "serverStatus": {
+    "starting": "Starting the API server…",
+    "restarting": "Reconnecting to the API server…",
+    "unavailable": "The API server is unavailable."
+  },
   "edit": "Edit",
   "andSaveToTest": "and save to test",
   "hmr": "HMR",

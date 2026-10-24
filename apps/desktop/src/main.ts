@@ -2,6 +2,9 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import util from "node:util";
 
+import { resolveApiEndpoint } from "@workspace/shared/api-endpoint";
+import type { ApiServerStatus } from "@workspace/shared/api-status";
+import { resolveApiToken } from "@workspace/shared/api-token";
 import { APP_SCHEME, APP_URL, isAppUrl } from "@workspace/shared/app-url";
 import { IPC_CHANNELS, inDevelopment } from "@workspace/shared/constants";
 import { logger as Logger } from "@workspace/shared/logger";
@@ -18,6 +21,7 @@ import { ipcContext } from "@/ipc/context";
 
 import { createAppProtocolHandler, registerAppScheme } from "./protocol";
 import { DesktopServer } from "./server-manager";
+import { isLoopbackOrigin, normalizeServerOrigin } from "./server-origin";
 
 log.initialize();
 log.scope.labelPadding = false;
@@ -53,9 +57,8 @@ if (started) {
 
 /**
  * 必须在 app ready 之前注册，否则 Chromium 不会把 aify-app:// 当作标准源。
+ * 调用点在下面的单实例分支里：第二个实例不应该再注册协议或启动 server。
  */
-registerAppScheme();
-
 const isDev = !app.isPackaged;
 
 /**
@@ -73,11 +76,36 @@ const migrationsDirectory = app.isPackaged
   : path.resolve(app.getAppPath(), "../../packages/db/src/migrations");
 
 /**
+ * 渲染端看到的最新 server 状态。新窗口加载完成时补发一次，避免错过启动
+ * 阶段的推送。
+ */
+let currentServerStatus: ApiServerStatus = { state: "starting" };
+
+const publishServerStatus = (status: ApiServerStatus): void => {
+  currentServerStatus = status;
+
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.SERVER_STATUS, status);
+    }
+  }
+};
+
+/**
  * API server 的生命周期。默认自启内置 server；`AIFY_API_ORIGIN` 或
  * `AIFY_SERVER_MODE` 可以让它改成一个已经在跑的独立 server。
  */
-const server = new DesktopServer((message) => {
-  logger.info(message);
+const server = new DesktopServer({
+  log: (message) => {
+    logger.info(message);
+  },
+  // 开发期给 `dev:server` 一点启动时间；打包后只探一次，不拖慢冷启动。
+  probeAttempts: isDev ? 5 : 1,
+  probeDelayMs: 250,
+  onStatus: publishServerStatus,
+  // 延迟到真正需要时解析：模块加载阶段不碰用户目录，失败会走 whenReady
+  // 里的统一错误弹窗。
+  token: resolveApiToken,
 });
 
 /**
@@ -182,6 +210,14 @@ const buildWindow = (): BrowserWindow => {
   // ipcContext 的 getter 在 ipc/handler 的模块求值时就会读 mainWindow，
   // 所以窗口必须先于 setupIpcServer() 创建。
   ipcContext.setMainWindow(mainWindow);
+
+  // 页面加载完成时补发当前状态：启动阶段的推送可能早于窗口存在。
+  mainWindow.webContents.on("did-finish-load", () => {
+    mainWindow.webContents.send(
+      IPC_CHANNELS.SERVER_STATUS,
+      currentServerStatus
+    );
+  });
 
   // 应用之外的导航交给系统浏览器，窗口本身只停留在自己的文档源。
   mainWindow.webContents.setWindowOpenHandler(({ url: target }) => {
@@ -314,7 +350,17 @@ const installServerSelectionIpc = (): void => {
       throw new Error("API server origin must be a non-empty string");
     }
 
-    const next = await server.attach(origin);
+    // 运行期切换只接受回环地址：远程 server 必须在启动前通过
+    // `AIFY_API_ORIGIN` + `AIFY_API_TOKEN` 配置，否则一个被注入的渲染端脚本
+    // 就能把本机令牌发到任意主机。
+    const normalized = normalizeServerOrigin(origin);
+    if (!isLoopbackOrigin(normalized)) {
+      throw new Error(
+        "Only loopback API servers can be selected at runtime; set AIFY_API_ORIGIN and AIFY_API_TOKEN instead"
+      );
+    }
+
+    const next = await server.attach(normalized);
 
     // 用发起请求的窗口重载；`onElectronReady` 里捕获的 mainWindow 在
     // macOS 关闭再 activate 之后可能已经销毁。
@@ -325,18 +371,53 @@ const installServerSelectionIpc = (): void => {
 };
 
 const onElectronReady = async () => {
+  // 启动过程中用户已经退出（例如 Cmd+Q）：不要再起 server，否则 before-quit
+  // 的 stop() 已经跑完，这个晚到的子进程会变成孤儿。
+  if (isQuitting) {
+    return;
+  }
+
   setupBundledRipgrep();
   setupMacDockIcon();
 
-  const origin = await server.start({
-    cwd: app.isPackaged
-      ? app.getPath("userData")
-      : path.resolve(app.getAppPath(), "../.."),
-    // oxlint-disable-next-line unicorn/prefer-module
-    entry: path.join(__dirname, "server-entry.js"),
-    env: serverEnvironment(),
-  });
-  logger.info(`API server: ${origin}`);
+  // 默认模式下渲染端经主进程转发，内置 server 不需要固定端口：用 0 让系统
+  // 分配，避免和 `dev:server`、另一个实例或占端口的进程冲突。显式设置了
+  // `AIFY_API_PORT`，或者关掉协议走 Vite 代理时，才需要固定端口。
+  const configuredOrigin = process.env.AIFY_API_ORIGIN?.trim();
+  const mode = process.env.AIFY_SERVER_MODE ?? "auto";
+  const mayStartOwned =
+    mode === "owned" ||
+    (mode === "auto" &&
+      (configuredOrigin === undefined || configuredOrigin === ""));
+
+  let ownedPort: number | undefined;
+
+  if (mayStartOwned) {
+    const endpoint = resolveApiEndpoint();
+
+    if (!useProtocol && endpoint.port === 0) {
+      throw new Error(
+        "AIFY_APP_PROTOCOL=0 needs a fixed AIFY_API_PORT (or AIFY_API_ORIGIN) so the Vite proxy can reach the API"
+      );
+    }
+
+    ownedPort = endpoint.portExplicit || !useProtocol ? endpoint.port : 0;
+  }
+
+  // `start()` 已经解析过令牌（并写进子进程环境），这里拿到的就是同一个值。
+  const apiToken = resolveApiToken();
+
+  // 窗口先出来，server 在后台继续启动。协议 handler 在 origin 还是
+  // undefined 时会等这个 promise，而不是让首屏请求直接吃 503。
+  const waitForOrigin = async (): Promise<string | undefined> => {
+    try {
+      await start;
+    } catch {
+      // 启动失败由 onElectronReady 的调用方弹窗；这里只负责把请求落成 503。
+    }
+
+    return server.origin;
+  };
 
   if (useProtocol) {
     const devServerUrl = isDev ? rendererDevUrl() : undefined;
@@ -349,12 +430,31 @@ const onElectronReady = async () => {
     protocol.handle(
       APP_SCHEME,
       createAppProtocolHandler({
-        api: { origin: () => server.origin },
+        api: {
+          origin: () => server.origin,
+          token: apiToken,
+          waitForOrigin,
+        },
         devServerUrl,
         webRoot: isDev ? undefined : rendererRoot(),
       })
     );
   }
+
+  const start = server.start({
+    cwd: app.isPackaged
+      ? app.getPath("userData")
+      : path.resolve(app.getAppPath(), "../.."),
+    // oxlint-disable-next-line unicorn/prefer-module
+    entry: path.join(__dirname, "server-entry.js"),
+    env: serverEnvironment(),
+    port: ownedPort,
+  });
+  // 启动失败由下面的 await 处理；这里先挂一个 handler，避免窗口先显示时
+  // 这段等待期产生 unhandled rejection。
+  void start.catch((error: unknown) => {
+    logger.debug("API server did not start before the window opened", error);
+  });
 
   await installExtensions();
 
@@ -363,44 +463,101 @@ const onElectronReady = async () => {
   await setupIpcServer();
   installServerSelectionIpc();
   showWindow(mainWindow);
+
+  const origin = await start;
+  logger.info(`API server: ${origin}`);
 };
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-void app.whenReady().then(async () => {
-  try {
-    await onElectronReady();
-  } catch (error) {
-    // 没有窗口时 console 没人看得见：迁移失败之类的启动错误必须弹出来，
-    // 否则用户只会看到图标一闪。
-    logger.error("Error during app initialization", error);
-    dialog.showErrorBox(
-      "Aify Zero failed to start",
-      error instanceof Error ? error.message : String(error)
-    );
-    app.quit();
-  }
-});
+/** 第二个实例启动时，把已有窗口拉到前台，而不是再起一套 server。 */
+const focusExistingWindow = (): void => {
+  const [existing] = BrowserWindow.getAllWindows();
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
+  if (existing === undefined) {
+    return;
   }
-});
 
-// 只有自启的内置 server 会被停掉；attach 到外部 server 时这里不碰它。
-app.on("will-quit", () => {
-  server.stop();
-});
-
-app.on("activate", () => {
-  // On OS X it's common to re-create a window when the dock icon is clicked
-  // and there are no other windows open.
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
+  if (existing.isMinimized()) {
+    existing.restore();
   }
-});
+
+  existing.show();
+  existing.focus();
+};
+
+let isQuitting = false;
+
+/**
+ * 单实例锁：两个 App 实例同时运行会争抢默认端口和同一个 SQLite 库，而且
+ * 先退出的一方会把它“拥有”的 server 一起带走，另一个实例随后就只剩 503。
+ */
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  // 必须在 app ready 之前注册，否则 Chromium 不会把 aify-app:// 当作标准源。
+  registerAppScheme();
+
+  app.on("second-instance", focusExistingWindow);
+
+  // This method will be called when Electron has finished
+  // initialization and is ready to create browser windows.
+  // Some APIs can only be used after this event occurs.
+  void app.whenReady().then(async () => {
+    try {
+      await onElectronReady();
+    } catch (error) {
+      // 没有窗口时 console 没人看得见：迁移失败之类的启动错误必须弹出来，
+      // 否则用户只会看到图标一闪。退出过程中的中断不算启动失败。
+      logger.error("Error during app initialization", error);
+      if (!isQuitting) {
+        publishServerStatus({
+          message: error instanceof Error ? error.message : String(error),
+          state: "unavailable",
+        });
+        dialog.showErrorBox(
+          "Aify Zero failed to start",
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+      app.quit();
+    }
+  });
+
+  // Quit when all windows are closed, except on macOS. There, it's common
+  // for applications and their menu bar to stay active until the user quits
+  // explicitly with Cmd + Q.
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+
+  // 只有自启的内置 server 会被停掉；attach 到外部 server 时这里不碰它。
+  // 退出必须等子进程收尾：否则端口、SQLite 句柄和迁移都可能被半途砍掉。
+  app.on("before-quit", (event) => {
+    if (isQuitting) {
+      return;
+    }
+
+    isQuitting = true;
+    event.preventDefault();
+
+    void server
+      .stop()
+      .catch((error: unknown) => {
+        logger.error("Failed to stop the API server", error);
+      })
+      .finally(() => {
+        app.quit();
+      });
+  });
+
+  app.on("activate", () => {
+    // On OS X it's common to re-create a window when the dock icon is clicked
+    // and there are no other windows open.
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+}

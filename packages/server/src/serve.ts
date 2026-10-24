@@ -10,8 +10,16 @@ import type { Server } from "node:http";
 
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
-import { migrateDb } from "@workspace/db";
-import { DEFAULT_API_PORT } from "@workspace/shared/constants";
+import { closeDb, migrateDb } from "@workspace/db";
+import {
+  formatOrigin,
+  resolveApiEndpoint,
+} from "@workspace/shared/api-endpoint";
+import { resolveApiToken } from "@workspace/shared/api-token";
+import {
+  DEFAULT_API_HOST,
+  DEFAULT_API_PORT,
+} from "@workspace/shared/constants";
 
 import { app } from "./app";
 
@@ -47,26 +55,9 @@ export interface ServerHandle {
 
 /** 从环境变量解析监听地址，非法端口在启动前就报错。 */
 export function resolveListenAddress(): ListenAddress {
-  const host = process.env.AIFY_API_HOST ?? "127.0.0.1";
-  const rawPort = process.env.AIFY_API_PORT;
-  const port =
-    rawPort === undefined || rawPort === ""
-      ? DEFAULT_API_PORT
-      : Number(rawPort);
-
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new Error(`Invalid AIFY_API_PORT: ${String(rawPort)}`);
-  }
+  const { host, port } = resolveApiEndpoint();
 
   return { host, port };
-}
-
-/** IPv6 字面量要加方括号才能出现在 URL 的 authority 里。 */
-function formatOrigin(host: string, port: number): string {
-  const authority =
-    host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-
-  return `http://${authority}:${String(port)}`;
 }
 
 /**
@@ -78,20 +69,39 @@ function formatOrigin(host: string, port: number): string {
 export async function startServer(
   options: ServerOptions = {}
 ): Promise<ServerHandle> {
-  const resolved = resolveListenAddress();
-  const host = options.host ?? resolved.host;
-  const port = options.port ?? resolved.port;
+  // Only consult the environment for the parts the caller did not supply, so an
+  // explicit host/port pair is not rejected by an unrelated malformed env var.
+  const resolved =
+    options.host === undefined || options.port === undefined
+      ? resolveApiEndpoint()
+      : undefined;
+  const host = options.host ?? resolved?.host ?? DEFAULT_API_HOST;
+  const port = options.port ?? resolved?.port ?? DEFAULT_API_PORT;
+
+  // Resolve the token before touching the database or the port: a missing /
+  // unwritable token file should fail startup, not the first request. On a
+  // fresh machine this is also what creates `~/.aify-zero/api-token`, which the
+  // desktop then reads to authenticate against a standalone server.
+  resolveApiToken();
 
   if (options.migrate ?? process.env.AIFY_MIGRATIONS_DIR !== undefined) {
     await migrateDb();
   }
 
   const server = await new Promise<ServerType>((resolve, reject) => {
+    const onError = (error: Error): void => reject(error);
     const created = serve({ fetch: app.fetch, hostname: host, port }, () => {
+      // The listener has done its job; keep a runtime listener below so a
+      // later error is logged instead of being swallowed by a settled promise.
+      created.off("error", onError);
       resolve(created);
     });
 
-    created.once("error", reject);
+    created.once("error", onError);
+  });
+
+  server.on("error", (error) => {
+    console.error("[api] server error", error);
   });
 
   const address = server.address();
@@ -149,6 +159,7 @@ export async function runServerProcess(): Promise<void> {
   const shutdown = (): void => {
     closing ??= handle.close().then(
       () => {
+        closeDb();
         process.exit(0);
       },
       (error: unknown) => {

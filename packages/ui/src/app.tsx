@@ -5,6 +5,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { LangProvider } from "@workspace/ui/components/lang-provider";
+import { ServerStatusBanner } from "@workspace/ui/components/server-status-banner";
 import { ThemeProvider } from "@workspace/ui/components/theme-provider";
 import {
   AnchoredToastProvider,
@@ -31,6 +32,7 @@ export const router = createRouter({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ServerStatusBanner />
       <RouterProvider router={router} />
     </QueryClientProvider>
   );

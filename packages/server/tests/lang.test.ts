@@ -1,18 +1,19 @@
 import { LANGUAGE_HEADER } from "@workspace/shared/constants";
 import { describe, expect, test } from "vitest";
 
-import { app } from "../src/app";
+import { authHeaders, testApp } from "./helpers";
 
 /**
  * The whole ride in one place: the header the client sends, the language the
  * context ends up with, and the message that comes back. oRPC's RPC transport
- * answers `POST /rpc/<path>` with the result wrapped in `{ json }`, hence the
+ * answers `POST /api/rpc/<path>` with the result wrapped in `{ json }`, hence the
  * unwrapping below.
  */
 const ask = (language?: string) =>
-  app.request("/rpc/lang", {
+  testApp.request("/api/rpc/lang", {
     method: "POST",
     headers: {
+      ...authHeaders,
       "content-type": "application/json",
       ...(language === undefined ? {} : { [LANGUAGE_HEADER]: language }),
     },

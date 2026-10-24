@@ -1,6 +1,11 @@
 {
   "welcome": "欢迎",
   "apiStatus": "API 状态",
+  "serverStatus": {
+    "starting": "正在启动 API server…",
+    "restarting": "正在重连 API server…",
+    "unavailable": "API server 暂时不可用。"
+  },
   "edit": "编辑",
   "andSaveToTest": "并保存以测试",
   "hmr": "热更新",

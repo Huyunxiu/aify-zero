@@ -43,6 +43,16 @@ export function createDb() {
 export const db = createDb();
 
 /**
+ * 关闭底层 libsql 连接。
+ *
+ * server 收到 SIGTERM 时先停监听、再关数据库，最后才退出；否则进程被
+ * `process.exit()` 直接带走，WAL 文件和连接句柄都只能交给操作系统回收。
+ */
+export function closeDb(): void {
+  db.$client.close();
+}
+
+/**
  * 应用数据库的迁移入口。
  *
  * 打包后的应用没有仓库里的 `.env`，数据库默认落在

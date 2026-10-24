@@ -24,10 +24,24 @@ const MIME: Record<string, string> = {
 };
 
 /**
- * 由前端 API 拥有的路由前缀。协议 handler 把它们交给同进程的 Hono，
- * 其余路径才按“文档”处理。
+ * 前端 API 的命名空间。协议 handler 只按这个前缀分流，其余路径才按“文档”
+ * 处理；新增 API 路由不需要再同步维护前缀列表。
  */
-const API_PREFIXES = ["/rpc", "/api-reference"] as const;
+const API_PREFIX = "/api";
+
+/**
+ * 转发前统一删掉的请求头：连接级、来源级和凭据都不能穿过协议边界。
+ * 上游需要的凭据由主进程在代理层注入。
+ */
+const STRIPPED_REQUEST_HEADERS = [
+  "host",
+  "origin",
+  "cookie",
+  "authorization",
+  "proxy-authorization",
+  "sec-fetch-site",
+  "sec-fetch-mode",
+] as const;
 
 /**
  * Node 的 fetch 会解压响应体但保留这些头，Chromium 再解压一次就会白屏。
@@ -58,6 +72,17 @@ export interface AppProtocolOptions {
    */
   readonly api: {
     readonly origin: () => string | undefined;
+    /**
+     * Waits until the server has finished starting and returns the origin it
+     * ended up on. The window opens before the server is ready, so the first
+     * requests wait here instead of failing with a 503.
+     */
+    readonly waitForOrigin?: () => Promise<string | undefined>;
+    /**
+     * Bearer token injected into every forwarded request. The renderer never
+     * sees it: any `Authorization` the page sends is discarded first.
+     */
+    readonly token?: string;
     /** 测试注入点；默认用全局 `fetch`。 */
     readonly fetch?: typeof fetch;
   };
@@ -92,10 +117,8 @@ const handleAppRequest = async (
   }
 
   if (
-    API_PREFIXES.some(
-      (prefix) =>
-        url.pathname === prefix || url.pathname.startsWith(`${prefix}/`)
-    )
+    url.pathname === API_PREFIX ||
+    url.pathname.startsWith(`${API_PREFIX}/`)
   ) {
     return await forwardToApi(request, options.api);
   }
@@ -130,9 +153,40 @@ const forwardToApi = async (
     return new Response(null, { status: 403 });
   }
 
-  const target = api.origin();
+  let target = api.origin();
+
+  if (target === undefined && api.waitForOrigin !== undefined) {
+    try {
+      target = await api.waitForOrigin();
+    } catch {
+      target = undefined;
+    }
+  }
+
   if (target === undefined) {
-    return new Response(null, { status: 503 });
+    return Response.json(
+      {
+        // oRPC 的错误体是 `{ json: <error> }`；顶层字段留给非 RPC 的调用方，
+        // 让它们也能看到 code/message。
+        code: "SERVER_UNAVAILABLE",
+        defined: false,
+        json: {
+          code: "SERVER_UNAVAILABLE",
+          defined: false,
+          message: "The API server is not ready.",
+          status: 503,
+        },
+        message: "The API server is not ready.",
+        status: 503,
+      },
+      {
+        headers: {
+          "cache-control": "no-store",
+          "retry-after": "1",
+        },
+        status: 503,
+      }
+    );
   }
 
   const source = new URL(request.url);
@@ -142,37 +196,9 @@ const forwardToApi = async (
   url.pathname = source.pathname;
   url.search = source.search;
 
-  const headers = new Headers(request.headers);
-  for (const name of [
-    "host",
-    "origin",
-    "cookie",
-    "sec-fetch-site",
-    "sec-fetch-mode",
-  ]) {
-    headers.delete(name);
-  }
-
-  const hasBody = request.method !== "GET" && request.method !== "HEAD";
-  const init: RequestInit & { duplex: "half" } = {
-    body: hasBody ? request.body : null,
-    duplex: "half",
-    headers,
-    method: request.method,
-    redirect: "manual",
-    signal: request.signal,
-  };
-
-  const upstream = await (api.fetch ?? fetch)(url, init);
-  const responseHeaders = new Headers(upstream.headers);
-  for (const name of WITHHELD_RESPONSE_HEADERS) {
-    responseHeaders.delete(name);
-  }
-
-  return new Response(request.method === "HEAD" ? null : upstream.body, {
-    headers: responseHeaders,
-    status: upstream.status,
-    statusText: upstream.statusText,
+  return await proxyRequest(request, url, {
+    fetch: api.fetch,
+    token: api.token,
   });
 };
 
@@ -187,13 +213,33 @@ const proxyToDevServer = async (
   const source = new URL(request.url);
   const target = new URL(source.pathname + source.search, devServerUrl);
 
+  return await proxyRequest(request, target);
+};
+
+/** 代理一次请求的共用实现：API 转发和开发期 Vite 反代只差一个 token。 */
+interface ProxyRequestOptions {
+  readonly fetch?: typeof fetch;
+  readonly token?: string;
+}
+
+const proxyRequest = async (
+  request: Request,
+  target: URL,
+  { fetch: fetchImpl = fetch, token }: ProxyRequestOptions = {}
+): Promise<Response> => {
   const headers = new Headers(request.headers);
-  // 让 undici 用目标地址写 Host，否则 Vite 的 allowedHosts 会 403。
-  headers.delete("host");
-  headers.delete("origin");
-  headers.delete("cookie");
-  headers.delete("sec-fetch-site");
-  headers.delete("sec-fetch-mode");
+
+  // Host 必须让 undici 按目标地址重写（Vite 的 allowedHosts 会校验它）；
+  // 其余是来源/凭据/连接头，不该穿过协议边界。
+  for (const name of STRIPPED_REQUEST_HEADERS) {
+    headers.delete(name);
+  }
+
+  // The only credential the upstream should see is the one the main process
+  // holds; a renderer-supplied Authorization header is dropped above.
+  if (token !== undefined && token !== "") {
+    headers.set("authorization", `Bearer ${token}`);
+  }
 
   const hasBody = request.method !== "GET" && request.method !== "HEAD";
   const init: RequestInit & { duplex: "half" } = {
@@ -205,7 +251,7 @@ const proxyToDevServer = async (
     signal: request.signal,
   };
 
-  const upstream = await fetch(target, init);
+  const upstream = await fetchImpl(target, init);
   const responseHeaders = new Headers(upstream.headers);
   for (const name of WITHHELD_RESPONSE_HEADERS) {
     responseHeaders.delete(name);
@@ -214,6 +260,7 @@ const proxyToDevServer = async (
   return new Response(request.method === "HEAD" ? null : upstream.body, {
     headers: responseHeaders,
     status: upstream.status,
+    statusText: upstream.statusText,
   });
 };
 

@@ -21,6 +21,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./api-endpoint": "./src/api-endpoint.ts",
+    "./api-status": "./src/api-status.ts",
+    "./api-token": "./src/api-token.ts",
     "./app-url": "./src/app-url.ts",
     "./constants": "./src/constants/index.ts",
     "./errors": "./src/errors.ts",
