@@ -23,6 +23,7 @@ import { FolderIcon } from "./folder-icon";
 import { ProjectDialog, type ProjectSummary } from "./project-dialog";
 import { ProjectSessions } from "./project-sessions";
 import { SidebarRowMenu } from "./sidebar-row-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
 
 type ProjectItemProps = {
   project: ProjectSummary;
@@ -109,15 +110,22 @@ export function NavProjects() {
           <span className="truncate">{t("projects.title")}</span>
           <ChevronDownIcon className="ml-1" />
         </CollapsibleTrigger>
-        <Button
-          aria-label={t("projects.create")}
-          onClick={openCreateDialog}
-          size="icon-sm"
-          variant="ghost"
-          className="hover:bg-foreground-8"
-        >
-          <FolderPlusIcon />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label={t("projects.create")}
+                onClick={openCreateDialog}
+                size="icon-sm"
+                variant="ghost"
+                className="text-sidebar-foreground/70 hover:bg-foreground-8"
+              />
+            }
+          >
+            <FolderPlusIcon />
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t("projects.create")}</TooltipContent>
+        </Tooltip>
       </div>
       <CollapsibleContent>
         <SidebarGroupContent className="scroll-fade scrollbar-none max-h-[40vh] overflow-y-auto">

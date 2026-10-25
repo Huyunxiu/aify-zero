@@ -287,7 +287,7 @@ function SessionOutline({ sections }: SessionOutlineProps) {
         scrollToMessage(id, { align: "start", behavior: "smooth" });
       }}
       sections={sections}
-      side="right"
+      side="left"
     />
   );
 }
@@ -897,7 +897,7 @@ export function Session({
                 <div
                   className={cn(
                     "relative size-full mx-auto flex min-h-full min-w-0 w-full flex-col",
-                    hasOutline && "@min-[1100px]:pe-[104px]"
+                    hasOutline && "@min-[1100px]:ps-[104px]"
                   )}
                 >
                   <MessageScroller>
@@ -954,7 +954,7 @@ export function Session({
               </div>
               {hasOutline && (
                 <div
-                  className="absolute inset-y-0 end-0 hidden w-[104px] @min-[1100px]:block"
+                  className="absolute inset-y-0 start-0 hidden w-26 @min-[1100px]:block"
                   onWheel={(event) => {
                     // 条目多时先让大纲自己滚；还有余量就交回聊天记录。
                     const list = event.currentTarget.querySelector<HTMLElement>(
@@ -986,7 +986,7 @@ export function Session({
             <div
               className={cn(
                 "sticky bottom-0 z-1 w-full",
-                hasOutline && "@min-[1100px]:pe-[104px]"
+                hasOutline && "@min-[1100px]:ps-[104px]"
               )}
             >
               <div className="mx-auto flex w-full max-w-4xl gap-2 border-t-0 pt-1 px-4 pb-4">

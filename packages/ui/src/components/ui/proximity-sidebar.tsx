@@ -8,6 +8,8 @@ import {
 import type { MotionValue } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "../hover-card";
+
 type Side = "left" | "right";
 type SectionKind = "title" | "subtitle" | "section" | "body";
 type SectionLevel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -202,29 +204,45 @@ const Dash = ({
   const width = useTransform(widthRatio, (ratio) => `${ratio * 100}%`);
 
   return (
-    <button
-      ref={ref}
-      type="button"
-      aria-current={active ? "location" : undefined}
-      aria-label={`Go to ${section.label}`}
-      title={section.label}
-      className="group relative flex h-px items-center border-0 bg-transparent p-0 outline-none before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-['']"
-      style={{ width: dashWidth }}
-      onClick={() => onSelect(section.id)}
-    >
-      <motion.span
-        className={`block rounded-full transition-colors duration-150 ease-out group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 ${
-          active
-            ? "bg-foreground"
-            : `${preset.className} group-hover:bg-foreground/70`
-        }`}
-        style={{
-          height: preset.thickness,
-          marginInlineStart: side === "right" ? "auto" : undefined,
-          width,
-        }}
-      />
-    </button>
+    <HoverCard>
+      <HoverCardTrigger
+        closeDelay={100}
+        delay={150}
+        render={
+          <button
+            ref={ref}
+            type="button"
+            aria-current={active ? "location" : undefined}
+            aria-label={`Go to ${section.label}`}
+            className="group relative flex h-px items-center border-0 bg-transparent p-0 outline-none before:absolute before:inset-x-0 before:-inset-y-1.5 before:content-['']"
+            style={{ width: dashWidth }}
+            onClick={() => onSelect(section.id)}
+          />
+        }
+      >
+        <motion.span
+          className={`block rounded-full transition-colors duration-150 ease-out group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 ${
+            active
+              ? "bg-foreground"
+              : `${preset.className} group-hover:bg-foreground/70`
+          }`}
+          style={{
+            height: preset.thickness,
+            marginInlineStart: side === "right" ? "auto" : undefined,
+            width,
+          }}
+        />
+      </HoverCardTrigger>
+      <HoverCardContent
+        align="center"
+        alignOffset={0}
+        className="w-64 shadow-sm border-none"
+        side={side === "right" ? "left" : "right"}
+        sideOffset={-80}
+      >
+        <p className="line-clamp-4">{section.label}</p>
+      </HoverCardContent>
+    </HoverCard>
   );
 };
 

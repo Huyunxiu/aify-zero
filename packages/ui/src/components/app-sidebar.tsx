@@ -7,121 +7,31 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
 import {
-  TerminalSquareIcon,
-  BotIcon,
-  BookOpenIcon,
-  Settings2Icon,
-  Plus,
+  PlusIcon,
 } from "lucide-react";
 import * as React from "react";
 import { generateSessionId } from "@workspace/agent/utils/id-util";
-import { NavAgents } from "./nav-agents";
 import { useNavigate } from "@tanstack/react-router";
+import { Button } from "./button";
 
-const data = {
-  navMain: [
-    {
-      title: "Playground",
-      url: "#",
-      icon: <TerminalSquareIcon />,
-      isActive: true,
-      items: [
-        {
-          title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Models",
-      url: "#",
-      icon: <BotIcon />,
-      items: [
-        {
-          title: "Genesis",
-          url: "#",
-        },
-        {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: <BookOpenIcon />,
-      items: [
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Settings",
-      url: "#",
-      icon: <Settings2Icon />,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
-          url: "#",
-        },
-      ],
-    },
-  ],
-};
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const navigate = useNavigate();
   return (
     <Sidebar variant="sidebar" {...props}>
-      <SidebarHeader className="select-none py-0">
+      <SidebarHeader className="select-none py-0 mb-4">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={() => navigate({ to: `/sessions/${generateSessionId()}` })}>
-              <Plus />
+            <Button
+              variant="outline"
+              className="flex items-center justify-center w-full bg-foreground hover:bg-foreground/90 active:bg-foreground/90 text-accent hover:text-accent active:text-accent h-8"
+              onClick={() => navigate({ to: `/sessions/${generateSessionId()}` })}
+            >
+              <PlusIcon />
               <span>New Session</span>
-            </SidebarMenuButton>
+            </Button>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
