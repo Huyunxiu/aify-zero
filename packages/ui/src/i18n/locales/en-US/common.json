@@ -115,6 +115,7 @@
   },
   "sessions": {
     "title": "Sessions",
+    "outline": "Session outline",
     "untitled": "Untitled",
     "loadingMore": "Loading more...",
     "actions": "Session actions",

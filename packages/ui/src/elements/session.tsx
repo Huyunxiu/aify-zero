@@ -2,7 +2,9 @@ import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { AgentToolSet } from "@workspace/agent";
+import { isAgentTextPart } from "@workspace/agent-client";
 import type {
+  AgentAssistantTurn,
   AgentStreamEvent,
   AgentTurn,
   AgentUserPart,
@@ -56,10 +58,15 @@ import {
   MessageScrollerItem,
   MessageScrollerProvider,
   MessageScrollerViewport,
+  useMessageScroller,
+  useMessageScrollerVisibility,
 } from "../components/message-scroller";
 import { toastManager } from "../components/toast";
+import ProximitySidebar from "../components/ui/proximity-sidebar";
+import type { ProximitySection } from "../components/ui/proximity-sidebar";
 import { useAgentSession } from "../hooks/use-agent-session";
 import { client, queryClient } from "../lib/orpc";
+import { cn } from "../lib/utils";
 import { AssistantMessage } from "./assistant-message";
 import { CompactionMessage } from "./compaction-message";
 import { Message, MessageContent, MessageResponse } from "./message";
@@ -208,6 +215,81 @@ async function openStream(
     { signal: abortSignal }
   );
   return eventIteratorToUnproxiedDataStream(stream);
+}
+
+const OUTLINE_LABEL_MAX = 48;
+
+type OutlineTurn = AgentUserTurn | AgentAssistantTurn<AgentToolSet>;
+
+/**
+ * 轮次在大纲里的名字。
+ *
+ * 取它写下的文本并压成一行；只发了附件、或答复还没写出文字的轮次，
+ * 用序号代替。名字只用来做读屏标签和悬停提示，不出现在页面上。
+ */
+function getOutlineLabel(turn: OutlineTurn, index: number): string {
+  const textParts: string[] = [];
+
+  for (const step of turn.content) {
+    if (step.type === "compaction") {
+      continue;
+    }
+
+    for (const part of step.content) {
+      if (isAgentTextPart(part)) {
+        textParts.push(part.text);
+      }
+    }
+  }
+
+  const text = textParts.join(" ").replace(/\s+/g, " ").trim();
+
+  if (text.length === 0) {
+    return `#${index + 1}`;
+  }
+
+  return text.length > OUTLINE_LABEL_MAX
+    ? `${text.slice(0, OUTLINE_LABEL_MAX)}…`
+    : text;
+}
+
+interface SessionOutlineProps {
+  sections: ProximitySection[];
+}
+
+/**
+ * 会话大纲：标出读者正在看的那一条，点一下就跳过去。
+ *
+ * 大纲里有答复，而滚动锚点只标用户轮次。所以位置取可见消息里的第一条：
+ * 它正好压在视口上方的阅读线上，答复滚到那里时也会接替前一问。
+ * 跳转交给 scrollToMessage，和“跳到某条消息”是同一个动作。
+ */
+function SessionOutline({ sections }: SessionOutlineProps) {
+  const { t } = useTranslation();
+  const { currentAnchorId, visibleMessageIds } = useMessageScrollerVisibility();
+  const { scrollToMessage } = useMessageScroller();
+
+  const sectionIds = React.useMemo(
+    () => new Set(sections.map((section) => section.id)),
+    [sections]
+  );
+  const activeId =
+    visibleMessageIds.find((id) => sectionIds.has(id)) ??
+    currentAnchorId ??
+    sections[0]?.id;
+
+  return (
+    <ProximitySidebar
+      activeId={activeId}
+      className="py-6"
+      label={t("sessions.outline")}
+      onSelect={(id) => {
+        scrollToMessage(id, { align: "start", behavior: "smooth" });
+      }}
+      sections={sections}
+      side="right"
+    />
+  );
 }
 
 export function Session({
@@ -431,6 +513,46 @@ export function Session({
 
   const finalError =
     sessionError ?? turns.findLast((turn) => turn.status === "error")?.error;
+
+  // 大纲列出提问和答复。答复在流式输出时文字一直在变；按轮次 id 和状态
+  // 命中缓存，只在答复落定时重取一次名字，侧边栏不跟着每个 token 重建。
+  //
+  // 滚动锚点仍然只给用户轮次：MessageScroller 用锚点决定新内容的落点，
+  // 把答复也标成锚点会让每段答复都往视口顶上跳。
+  const outlineCacheRef = React.useRef<{
+    key: string;
+    sections: ProximitySection[];
+  }>({ key: "", sections: [] });
+
+  const outlineSections = React.useMemo(() => {
+    const outlineTurns = turns.filter(
+      (turn): turn is OutlineTurn =>
+        turn.type === "user" || turn.type === "assistant"
+    );
+    const key = outlineTurns
+      .map(
+        (turn) => `${turn.id}:${turn.type === "assistant" ? turn.status : ""}`
+      )
+      .join("|");
+
+    if (outlineCacheRef.current.key === key) {
+      return outlineCacheRef.current.sections;
+    }
+
+    const sections = outlineTurns.map((turn, index) => ({
+      id: turn.id,
+      kind: "title" as const,
+      label: getOutlineLabel(turn, index),
+      level: 1 as const,
+    }));
+
+    outlineCacheRef.current = { key, sections };
+    return sections;
+  }, [turns]);
+
+  // 大纲和滚动容器是并排的两个盒子；滚轮落在大纲上时要交回聊天记录。
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const hasOutline = outlineSections.length > 1;
 
   // Attach to a turn that is still running, once for that turn. The lookup can
   // be repeated — a refetch answers with the same stream id — but a store has
@@ -736,7 +858,7 @@ export function Session({
 
   return (
     <div className="flex h-full w-full flex-row overflow-hidden">
-      <div className="flex min-w-0 flex-col w-full">
+      <div className="@container flex min-w-0 flex-col w-full">
         {/* session header */}
         <TitleBar className="sticky top-0 flex h-12 items-center gap-2 px-4">
           {sessionId && (
@@ -765,13 +887,18 @@ export function Session({
         {/* session container */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           {/* session content */}
-          <div className="relative flex-1">
-            <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
-              <div className="relative size-full mx-auto flex min-h-full min-w-0 w-full flex-col">
-                <MessageScrollerProvider
-                  scrollPreviousItemPeek={64}
-                  defaultScrollPosition="start"
-                  autoScroll
+          <div className="relative flex-1" ref={contentRef}>
+            <MessageScrollerProvider
+              autoScroll
+              defaultScrollPosition="start"
+              scrollPreviousItemPeek={64}
+            >
+              <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
+                <div
+                  className={cn(
+                    "relative size-full mx-auto flex min-h-full min-w-0 w-full flex-col",
+                    hasOutline && "@min-[1100px]:pe-[104px]"
+                  )}
                 >
                   <MessageScroller>
                     <MessageScrollerViewport>
@@ -823,99 +950,133 @@ export function Session({
                     </MessageScrollerViewport>
                     <MessageScrollerButton />
                   </MessageScroller>
-                </MessageScrollerProvider>
+                </div>
               </div>
-            </div>
+              {hasOutline && (
+                <div
+                  className="absolute inset-y-0 end-0 hidden w-[104px] @min-[1100px]:block"
+                  onWheel={(event) => {
+                    // 条目多时先让大纲自己滚；还有余量就交回聊天记录。
+                    const list = event.currentTarget.querySelector<HTMLElement>(
+                      "[data-proximity-list]"
+                    );
+                    if (
+                      event.target instanceof Node &&
+                      list?.contains(event.target) &&
+                      list.scrollHeight > list.clientHeight
+                    ) {
+                      return;
+                    }
+
+                    contentRef.current
+                      ?.querySelector<HTMLElement>(
+                        '[data-slot="message-scroller-viewport"]'
+                      )
+                      ?.scrollBy({ top: event.deltaY });
+                  }}
+                >
+                  <SessionOutline sections={outlineSections} />
+                </div>
+              )}
+            </MessageScrollerProvider>
           </div>
 
           {/* session input */}
           {!readOnly && (
-            <div className="sticky bottom-0 z-1 mx-auto flex w-full max-w-4xl gap-2 border-t-0 pt-1 px-4 pb-4">
-              <PromptInputProvider>
-                {pendingQuestionnaire ? (
-                  <QuestionnaireComposer
-                    part={pendingQuestionnaire}
-                    onRespond={handleRespondToolApproval}
-                  />
-                ) : (
-                  <PromptInput
-                    multiple
-                    maxFileSize={5 * 1024 * 1024}
-                    accept="image/png,image/jpeg,image/webp"
-                    onSubmit={handleSubmit}
-                    onError={console.error}
-                  >
-                    <PromptInputAttachmentsDisplay />
-                    <PromptInputBody>
-                      {/* <PromptInputTextarea /> */}
-                      <PromptInputTiptap
-                        skills={
-                          listSessionResourcesQuery.data?.skills.map((e) => ({
-                            ...e,
-                            type: "skill",
-                          })) || []
-                        }
-                        commands={commands}
-                        onEmptyChange={(isEmpty) => {
-                          if (isEmpty !== isEditorEmpty) {
-                            setIsEditorEmpty(isEmpty);
+            <div
+              className={cn(
+                "sticky bottom-0 z-1 w-full",
+                hasOutline && "@min-[1100px]:pe-[104px]"
+              )}
+            >
+              <div className="mx-auto flex w-full max-w-4xl gap-2 border-t-0 pt-1 px-4 pb-4">
+                <PromptInputProvider>
+                  {pendingQuestionnaire ? (
+                    <QuestionnaireComposer
+                      part={pendingQuestionnaire}
+                      onRespond={handleRespondToolApproval}
+                    />
+                  ) : (
+                    <PromptInput
+                      multiple
+                      maxFileSize={5 * 1024 * 1024}
+                      accept="image/png,image/jpeg,image/webp"
+                      onSubmit={handleSubmit}
+                      onError={console.error}
+                    >
+                      <PromptInputAttachmentsDisplay />
+                      <PromptInputBody>
+                        {/* <PromptInputTextarea /> */}
+                        <PromptInputTiptap
+                          skills={
+                            listSessionResourcesQuery.data?.skills.map((e) => ({
+                              ...e,
+                              type: "skill",
+                            })) || []
                           }
-                        }}
-                      />
-                    </PromptInputBody>
-                    <PromptInputFooter>
-                      <PromptInputTools className="gap-0">
-                        <PromptInputActionMenu>
-                          <PromptInputActionMenuTrigger />
-                          <PromptInputActionMenuContent className="min-w-max">
-                            <PromptInputActionAddAttachments />
-                          </PromptInputActionMenuContent>
-                        </PromptInputActionMenu>
-                        <ProjectSelect
-                          locked={isProjectLocked}
-                          onProjectChange={setSelectedProjectId}
-                          projectId={selectedProjectId}
-                          projects={projects}
+                          commands={commands}
+                          onEmptyChange={(isEmpty) => {
+                            if (isEmpty !== isEditorEmpty) {
+                              setIsEditorEmpty(isEmpty);
+                            }
+                          }}
                         />
-                        <ModelSelect
-                          models={models}
-                          modelId={selectedModelId}
-                          modelEffort={selectedModelEffort}
-                          onModelChange={handleModelChange}
-                          onModelEffortChange={handleModelEffortChange}
-                        />
-                      </PromptInputTools>
-                      <div className="flex items-center gap-2">
-                        <Context
-                          maxTokens={contextWindow}
-                          modelId={selectedModelId}
-                          usage={tokenUsage}
-                          usedTokens={contextUsedTokens}
-                        >
-                          <ContextTrigger />
-                          <ContextContent>
-                            <ContextContentHeader />
-                            <ContextContentBody>
-                              <ContextInputUsage />
-                              <ContextOutputUsage />
-                              <ContextReasoningUsage />
-                              <ContextCacheUsage />
-                            </ContextContentBody>
-                            <ContextContentFooter />
-                          </ContextContent>
-                        </Context>
-                        <PromptInputSubmit
-                          disabled={
-                            !isGenerating && (!selectedModelId || isEditorEmpty)
-                          }
-                          status={status}
-                          onStop={() => void stop()}
-                        />
-                      </div>
-                    </PromptInputFooter>
-                  </PromptInput>
-                )}
-              </PromptInputProvider>
+                      </PromptInputBody>
+                      <PromptInputFooter>
+                        <PromptInputTools className="gap-0">
+                          <PromptInputActionMenu>
+                            <PromptInputActionMenuTrigger />
+                            <PromptInputActionMenuContent className="min-w-max">
+                              <PromptInputActionAddAttachments />
+                            </PromptInputActionMenuContent>
+                          </PromptInputActionMenu>
+                          <ProjectSelect
+                            locked={isProjectLocked}
+                            onProjectChange={setSelectedProjectId}
+                            projectId={selectedProjectId}
+                            projects={projects}
+                          />
+                          <ModelSelect
+                            models={models}
+                            modelId={selectedModelId}
+                            modelEffort={selectedModelEffort}
+                            onModelChange={handleModelChange}
+                            onModelEffortChange={handleModelEffortChange}
+                          />
+                        </PromptInputTools>
+                        <div className="flex items-center gap-2">
+                          <Context
+                            maxTokens={contextWindow}
+                            modelId={selectedModelId}
+                            usage={tokenUsage}
+                            usedTokens={contextUsedTokens}
+                          >
+                            <ContextTrigger />
+                            <ContextContent>
+                              <ContextContentHeader />
+                              <ContextContentBody>
+                                <ContextInputUsage />
+                                <ContextOutputUsage />
+                                <ContextReasoningUsage />
+                                <ContextCacheUsage />
+                              </ContextContentBody>
+                              <ContextContentFooter />
+                            </ContextContent>
+                          </Context>
+                          <PromptInputSubmit
+                            disabled={
+                              !isGenerating &&
+                              (!selectedModelId || isEditorEmpty)
+                            }
+                            status={status}
+                            onStop={() => void stop()}
+                          />
+                        </div>
+                      </PromptInputFooter>
+                    </PromptInput>
+                  )}
+                </PromptInputProvider>
+              </div>
             </div>
           )}
         </div>

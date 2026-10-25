@@ -115,6 +115,7 @@
   },
   "sessions": {
     "title": "会话",
+    "outline": "会话大纲",
     "untitled": "未命名",
     "loadingMore": "加载更多...",
     "actions": "会话操作",
