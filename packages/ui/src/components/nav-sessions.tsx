@@ -76,15 +76,15 @@ export function NavSessions() {
       <Collapsible
         defaultOpen
         render={
-          <SidebarGroup className="group/sessions group-data-[collapsible=icon]:hidden data-open:flex-1 data-open:min-h-0" />
+          <SidebarGroup className="group/sessions group-data-[collapsible=icon]:hidden data-open:flex-1 data-open:min-h-0 py-0" />
         }
       >
         <CollapsibleTrigger
           render={
-            <SidebarGroupLabel className="cursor-pointer items-center [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/sessions:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100" />
+            <SidebarGroupLabel className="cursor-pointer items-center [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/sessions:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100 font-normal" />
           }
         >
-          <span>Sessions</span>
+          <span>{t("sessions.title")}</span>
           <ChevronDownIcon className="ml-1" />
         </CollapsibleTrigger>
         <CollapsibleContent className="min-h-0 data-open:flex data-open:flex-1 data-open:flex-col">

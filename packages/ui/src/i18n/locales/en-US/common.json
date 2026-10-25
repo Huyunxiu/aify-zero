@@ -114,6 +114,7 @@
     "noSession": "Send a message first; there is no history to compact yet."
   },
   "sessions": {
+    "title": "Sessions",
     "untitled": "Untitled",
     "loadingMore": "Loading more...",
     "actions": "Session actions",

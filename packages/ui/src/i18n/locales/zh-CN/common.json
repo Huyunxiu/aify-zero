@@ -114,6 +114,7 @@
     "noSession": "请先发送一条消息，当前还没有可压缩的历史。"
   },
   "sessions": {
+    "title": "会话",
     "untitled": "未命名",
     "loadingMore": "加载更多...",
     "actions": "会话操作",

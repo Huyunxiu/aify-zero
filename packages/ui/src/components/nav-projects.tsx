@@ -95,7 +95,7 @@ export function NavProjects() {
     <Collapsible
       defaultOpen
       render={
-        <SidebarGroup className="group/projects group-data-[collapsible=icon]:hidden" />
+        <SidebarGroup className="group/projects group-data-[collapsible=icon]:hidden py-0" />
       }
     >
       {/* 标题行自己是一个 hover 域，新建按钮只在鼠标停在标题上时出现。 */}
@@ -103,7 +103,7 @@ export function NavProjects() {
         <CollapsibleTrigger
           nativeButton={false}
           render={
-            <SidebarGroupLabel className="min-w-0 flex-1 cursor-pointer items-center pr-8 [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/projects:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100" />
+            <SidebarGroupLabel className="min-w-0 flex-1 cursor-pointer items-center pr-8 [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/projects:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100 font-normal" />
           }
         >
           <span className="truncate">{t("projects.title")}</span>

@@ -82,7 +82,7 @@ export const Settings = ({ onClose }: SettingsProps) => {
           </SidebarGroup>
         </SidebarContent>
       </Sidebar>
-      <SidebarInset className="h-full">
+      <SidebarInset className="h-full bg-transparent">
         <IslandGroup orientation="horizontal">
           <Island defaultSize="50%">
             <TitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3" />

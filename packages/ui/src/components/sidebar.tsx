@@ -242,10 +242,13 @@ function Sidebar({
         {...props}
       >
         <TitleBar className="bg-sidebar" />
+        {/* TitleBar 与本层同级且高度固定，所以本层只能占剩余空间。
+            若用 size-full，内容变高时 min-height: auto 会阻止收缩，本层会
+            溢出标题栏的高度，把 footer 顶出视口。 */}
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border p-2 pt-0"
+          className="flex min-h-0 w-full flex-1 flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border p-2 pt-0"
         >
           {children}
         </div>
