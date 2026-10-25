@@ -1,4 +1,4 @@
-import { Settings2Icon } from "lucide-react";
+import { EllipsisIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -90,8 +90,7 @@ export function SidebarRowMenu({
             aria-label={label}
             className={[
               className,
-              "group-hover/item:opacity-100 group-focus-within/item:opacity-100",
-              "data-popup-open:opacity-100",
+              "group-hover/item:opacity-100 group-focus-within/item:opacity-100 text-sidebar-foreground/70 hover:bg-foreground-8",
               // 右键打开时鼠标很快就移到菜单上了，靠 open 把按钮留在原地；
               // 触屏没有 hover，直接常驻，免得操作入口不可达。
               open ? "opacity-100" : "opacity-0 max-md:opacity-100",
@@ -101,7 +100,7 @@ export function SidebarRowMenu({
           />
         }
       >
-        <Settings2Icon />
+        <EllipsisIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         anchor={anchor ?? undefined}

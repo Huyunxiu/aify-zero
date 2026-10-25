@@ -1,9 +1,9 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  SidebarMenuSub,
+  SidebarMenu,
+  SidebarMenuItem,
   SidebarMenuSubButton,
-  SidebarMenuSubItem,
 } from "@workspace/ui/components/sidebar";
 import { PencilIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -66,9 +66,9 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <SidebarMenuSub>
+      <SidebarMenu>
         {sessions.map((session) => (
-          <SidebarMenuSubItem key={session.id} className="group/item">
+          <SidebarMenuItem key={session.id} className="group/item">
             <SidebarMenuSubButton
               className="w-full cursor-pointer pr-8"
               onClick={() => navigate({ to: `/sessions/${session.id}` })}
@@ -92,7 +92,7 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
                 {t("sessions.rename")}
               </DropdownMenuItem>
             </SidebarRowMenu>
-          </SidebarMenuSubItem>
+          </SidebarMenuItem>
         ))}
         {!isFetching && sessions.length === 0 ? (
           <li className="px-2 py-1 text-xs text-sidebar-foreground/50">
@@ -105,7 +105,7 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
           </li>
         ) : null}
         <li ref={sentinelRef} aria-hidden="true" className="h-px" />
-      </SidebarMenuSub>
+      </SidebarMenu>
       <SessionRenameDialog session={renaming} onOpenChange={setRenaming} />
     </>
   );

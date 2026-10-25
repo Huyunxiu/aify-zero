@@ -441,12 +441,19 @@ export function Session({
         return;
       }
 
+      // 项目随消息发出，不能从 store 的闭包里读：store 在挂载时就建好了，
+      // 那时还没选项目。hook 只把 payload 当不透明数据，所以这里收窄再传。
+      const projectId =
+        typeof options.projectId === "string" ? options.projectId : undefined;
+
       const accepted = await client.session.create(
         {
           sessionId: options.sessionId,
           turns: options.approvals?.length ? [] : [options.turns.at(-1)!],
           model: options.model as string,
           modelEffort: options.modelEffort as string,
+          // 项目只在会话首次落库时写入；省略它，会话就落到默认项目。
+          projectId,
           // An answer to a held call travels with the turn it answers. Its
           // presence is what makes the new stream a resumption: the server runs
           // the calls it names before asking the model anything again.

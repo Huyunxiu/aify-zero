@@ -211,7 +211,10 @@ const createSession = publicProcedure
       approvals?: TextStreamToolApprovalResponseEvent[];
       model: string;
       modelEffort?: string;
-      /** 会话归属的项目；省略时落一条没有项目归属的会话。 */
+      /**
+       * 会话归属的项目；只在会话首次落库时生效，之后沿用行上已有的项目。
+       * 省略时落一条没有项目归属的会话，目录退回默认项目。
+       */
       projectId?: string;
     }>()
   )
@@ -238,6 +241,13 @@ const createSession = publicProcedure
 
     return await withSessionLock(sessionId, async () => {
       const store = new SQLiteStore();
+
+      // 项目在会话行落库时固定：行已存在就沿用行上的项目，输入值只在首次
+      // 落库时生效。否则刷新后还没读到会话行的发送会把目录退回默认项目。
+      const previousSession = await store.getSessionById(sessionId);
+      const sessionProjectId = previousSession
+        ? (previousSession.projectId ?? undefined)
+        : projectId;
 
       // 一条流没跑完之前不能再开一条：手工压缩现在也注册成流，在锁释放后
       // 继续跑，所以这里不能只靠锁来串行化。已经结束但还没从注册表摘掉的
@@ -273,7 +283,7 @@ const createSession = publicProcedure
         sessionId,
         aiModel,
         effort,
-        projectId,
+        projectId: sessionProjectId,
         session,
         store,
       });

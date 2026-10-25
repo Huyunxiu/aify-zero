@@ -13,12 +13,14 @@ import {
   PlusIcon,
 } from "lucide-react";
 import * as React from "react";
+import { useTranslation } from "react-i18next";
 import { generateSessionId } from "@workspace/agent/utils/id-util";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "./button";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   return (
     <Sidebar variant="sidebar" {...props}>
       <SidebarHeader className="select-none py-0 mb-4">
@@ -30,7 +32,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               onClick={() => navigate({ to: `/sessions/${generateSessionId()}` })}
             >
               <PlusIcon />
-              <span>New Session</span>
+              <span>{t("sessions.create")}</span>
             </Button>
           </SidebarMenuItem>
         </SidebarMenu>

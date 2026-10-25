@@ -115,6 +115,7 @@
   },
   "sessions": {
     "title": "Sessions",
+    "create": "New Session",
     "outline": "Session outline",
     "untitled": "Untitled",
     "loadingMore": "Loading more...",

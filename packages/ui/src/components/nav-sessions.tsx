@@ -6,9 +6,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@workspace/ui/components/sidebar"
+import { generateSessionId } from "@workspace/agent/utils/id-util"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDownIcon, PencilIcon } from "lucide-react";
+import { ChevronDownIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -25,6 +26,8 @@ import {
 } from "./session-rename-dialog"
 import { SessionStatus } from "./session-status"
 import { SidebarRowMenu } from "./sidebar-row-menu"
+import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
+import { Button } from "./button";
 
 const SESSION_PAGE_SIZE = 30;
 
@@ -79,14 +82,35 @@ export function NavSessions() {
           <SidebarGroup className="group/sessions group-data-[collapsible=icon]:hidden data-open:flex-1 data-open:min-h-0 py-0" />
         }
       >
-        <CollapsibleTrigger
-          render={
-            <SidebarGroupLabel className="cursor-pointer items-center [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/sessions:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100 font-normal" />
-          }
-        >
-          <span>{t("sessions.title")}</span>
-          <ChevronDownIcon className="ml-1" />
-        </CollapsibleTrigger>
+        <div className="group/label relative flex items-center">
+          <CollapsibleTrigger
+            nativeButton={false}
+            render={
+              <SidebarGroupLabel className="min-w-0 flex-1 cursor-pointer items-center pr-8 [&>svg]:-rotate-90 [&>svg]:opacity-0 [&>svg]:transition-all data-panel-open:[&>svg]:rotate-0 group-hover/label:[&>svg]:opacity-100 focus-visible:[&>svg]:opacity-100 font-normal" />
+            }
+          >
+            <span>{t("sessions.title")}</span>
+            <ChevronDownIcon className="ml-1" />
+          </CollapsibleTrigger>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  aria-label={t("sessions.create")}
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={() =>
+                    navigate({ to: `/sessions/${generateSessionId()}` })
+                  }
+                  className="pointer-events-none text-sidebar-foreground/70 opacity-0 group-hover/label:pointer-events-auto group-hover/label:opacity-100 group-has-[:focus-visible]/label:pointer-events-auto group-has-[:focus-visible]/label:opacity-100 hover:bg-foreground-8 max-md:pointer-events-auto max-md:opacity-100"
+                />
+              }
+            >
+              <PlusIcon />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{t("sessions.create")}</TooltipContent>
+          </Tooltip>
+        </div>
         <CollapsibleContent className="min-h-0 data-open:flex data-open:flex-1 data-open:flex-col">
           <SidebarGroupContent className="scroll-fade scrollbar-none min-h-0 flex-1 overflow-y-auto">
             <SidebarMenu>
