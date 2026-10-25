@@ -12,6 +12,7 @@ import {
   createWebFetchTool,
   createTaskTool,
   createQuestionnaireTool,
+  createPowerShellTool,
   Agent,
   appendSubagentPrompt,
   ContextExtension,
@@ -41,11 +42,16 @@ import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
 import { createLoadSkillTool } from "@workspace/agent/tools/load-skill";
 import {
+  defaultBashShell,
+  defaultPowerShell,
+} from "@workspace/agent/tools/shell/resolve";
+import {
   generateSessionId,
   generateTurnId,
 } from "@workspace/agent/utils/id-util";
 import type { TurnInsertModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
+import type { ToolSet } from "ai";
 import z from "zod";
 
 import { getSessionDir } from "../config";
@@ -111,23 +117,33 @@ async function buildSessionAgent({
     modelContextWindows,
   });
 
+  const tools: ToolSet = {
+    "read-file": createReadFileTool({ agentContext }),
+    "write-file": createWriteFileTool({ agentContext }),
+    "delete-file": createDeleteFileTool({ agentContext }),
+    "edit-file": createEditFileTool({ agentContext }),
+    grep: createGrepTool({ agentContext }),
+    glob: createGlobTool({ agentContext }),
+    "web-fetch": createWebFetchTool({ agentContext }),
+    "load-skill": createLoadSkillTool({ agentContext }),
+  };
+  // The shell tool follows the host: POSIX always has bash; Windows gets
+  // PowerShell, plus bash when Git Bash is installed. A tool whose executable
+  // cannot be resolved is left out rather than advertised and failing later.
+  if (defaultBashShell() !== undefined) {
+    tools.bash = createBashTool({ agentContext });
+  }
+  if (defaultPowerShell() !== undefined) {
+    tools.powershell = createPowerShellTool({ agentContext });
+  }
+
   const agent = new Agent({
     name: "main",
     sessionId,
     modelEffort: effort,
     context: agentContext,
     session,
-    tools: {
-      bash: createBashTool({ agentContext }),
-      "read-file": createReadFileTool({ agentContext }),
-      "write-file": createWriteFileTool({ agentContext }),
-      "delete-file": createDeleteFileTool({ agentContext }),
-      "edit-file": createEditFileTool({ agentContext }),
-      grep: createGrepTool({ agentContext }),
-      glob: createGlobTool({ agentContext }),
-      "web-fetch": createWebFetchTool({ agentContext }),
-      "load-skill": createLoadSkillTool({ agentContext }),
-    },
+    tools,
     store,
     apiKey: aiModel.apiKey,
     apiUrl: aiModel.apiUrl,

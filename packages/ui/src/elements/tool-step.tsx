@@ -227,6 +227,49 @@ const editedPath = (
 ): string | undefined =>
   isFileEditingPart(part) ? part.input?.path : undefined;
 
+/** The status facts both shell tools report. */
+type ShellSummaryMetadata = {
+  timeout?: boolean;
+  aborted?: boolean;
+  exitCode?: number | null;
+  signal?: string | null;
+  truncated?: boolean;
+};
+
+/**
+ * One summary for both shell dialects. A non-zero exit is reported here rather
+ * than as a failed row: the tool treats it as an ordinary result, and so should
+ * the chain. A truncation hint rides along because the model-facing body says
+ * so too.
+ */
+const summarizeShell = (
+  metadata: ShellSummaryMetadata | undefined
+): string | undefined => {
+  if (!metadata) {
+    return undefined;
+  }
+  let summary: string | undefined;
+  if (metadata.timeout) {
+    summary = "timed out";
+  } else if (metadata.aborted) {
+    summary = "aborted";
+  } else if (metadata.signal !== null && metadata.signal !== undefined) {
+    summary = `killed by ${metadata.signal}`;
+  } else if (
+    metadata.exitCode !== null &&
+    metadata.exitCode !== undefined &&
+    metadata.exitCode !== 0
+  ) {
+    summary = `exit ${metadata.exitCode}`;
+  }
+  if (metadata.truncated === true) {
+    return summary === undefined
+      ? "output truncated"
+      : `${summary} · output truncated`;
+  }
+  return summary;
+};
+
 /**
  * A short, honest note about what a tool achieved — `650 lines`, `+12 −4`,
  * `exit 1` — or undefined when there is nothing worth saying.
@@ -327,20 +370,9 @@ export const getPartSummary = (
         : `${metadata.count} files`;
     }
 
-    case "tool-bash": {
-      // A nonzero exit is reported here rather than as a failed row: the tool
-      // treats it as an ordinary result, and so should the chain.
-      const { metadata } = part.output;
-      if (metadata?.timeout) {
-        return "timed out";
-      }
-      if (metadata?.aborted) {
-        return "aborted";
-      }
-      const exitCode = metadata?.exitCode;
-      return exitCode !== null && exitCode !== undefined && exitCode !== 0
-        ? `exit ${exitCode}`
-        : undefined;
+    case "tool-bash":
+    case "tool-powershell": {
+      return summarizeShell(part.output.metadata);
     }
 
     case "tool-web-fetch": {

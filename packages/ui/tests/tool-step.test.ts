@@ -432,6 +432,37 @@ describe(getPartSummary, () => {
     test("should say nothing when the command never reported an exit code", () => {
       expect(bash({ exitCode: null })).toBeUndefined();
     });
+
+    test("should report the signal that killed the command", () => {
+      expect(bash({ signal: "SIGKILL" })).toBe("killed by SIGKILL");
+    });
+
+    test("should mark a truncated output", () => {
+      expect(bash({ exitCode: 1, truncated: true })).toBe(
+        "exit 1 · output truncated"
+      );
+    });
+
+    test("should say only that the output was truncated", () => {
+      expect(bash({ exitCode: 0, truncated: true })).toBe("output truncated");
+    });
+  });
+
+  describe("powershell", () => {
+    const powershell = (metadata: unknown) =>
+      getPartSummary(doneTool("tool-powershell", metadata));
+
+    test("should report a nonzero exit", () => {
+      expect(powershell({ exitCode: 2 })).toBe("exit 2");
+    });
+
+    test("should report a timeout", () => {
+      expect(powershell({ timeout: true })).toBe("timed out");
+    });
+
+    test("should say nothing for a command that succeeded", () => {
+      expect(powershell({ exitCode: 0 })).toBeUndefined();
+    });
   });
 
   describe("web-fetch", () => {

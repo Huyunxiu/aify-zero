@@ -1,175 +1,50 @@
-import { spawn } from "node:child_process";
-
-import { tool } from "ai";
-import type { Tool } from "ai";
-import { z } from "zod";
-
 import type { AgentContext } from "../agent-context";
-import { resolveToolPath } from "../utils/fs-util";
-import type { ToolOutput } from "./types";
+import { MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES } from "./shell/output";
+import { bashArgv, defaultBashShell } from "./shell/resolve";
+import { createShellTool } from "./shell/tool";
 
-const MAX_OUTPUT_LENGTH = 30_000;
-const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000;
-
-const DESCRIPTION = `Execute a shell command in the working directory.
-- Output exceeding ${MAX_OUTPUT_LENGTH} characters will be truncated.
-- Commands that run longer than the timeout will be terminated.
-- Prefer using the workdir parameter over 'cd' commands. The default is the project directory, given in the environment section of the system prompt.`;
-
-const createBashToolSchema = (agentContext: AgentContext) =>
-  z.object({
-    command: z.string().describe("The shell command to execute"),
-    timeout: z
-      .number()
-      .positive()
-      .optional()
-      .describe("Optional timeout in milliseconds (default: 2 minutes)"),
-    workdir: z
-      .string()
-      .optional()
-      .describe(
-        `The working directory to run the command in. Defaults to ${agentContext.primaryProjectDir}. Use this instead of 'cd' commands.`
-      ),
-    description: z
-      .string()
-      .describe(
-        "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies"
-      ),
-  });
-
-type BashToolInput = z.infer<ReturnType<typeof createBashToolSchema>>;
-
-type BashToolOutputMetadata = {
-  exitCode: number | null;
-  timeout: boolean;
-  aborted: boolean;
+/**
+ * 传给 Bash 子进程的环境变量覆盖（这个常量名不是 Bash 的 `BASH_ENV` 环境变量）。
+ * 这些设置可减少颜色、分页器和终端控制字符对捕获输出的干扰。
+ */
+const BASH_ENV: NodeJS.ProcessEnv = {
+  // 让 Git 直接输出，不启动 less 等分页器。
+  GIT_PAGER: "cat",
+  // 请求支持 NO_COLOR 约定的程序关闭彩色输出。
+  NO_COLOR: "1",
+  // 让其他使用通用分页器设置的命令也直接输出。
+  PAGER: "cat",
+  // 声明终端功能有限，避免程序依赖复杂的终端控制能力。
+  TERM: "dumb",
 };
 
-type BashToolOutput = ToolOutput<string, BashToolOutputMetadata>;
-
-type CreateBashToolProps = {
-  agentContext: AgentContext;
-};
+const DESCRIPTION = `Execute a bash command (\`bash -c\`) in the working directory.
+- Each call runs in a fresh shell; pass \`workdir\` instead of using \`cd\` commands.
+- Output is truncated to its tail (${MAX_OUTPUT_LINES} lines or ${MAX_OUTPUT_BYTES / 1024} KB per stream, whichever comes first). When truncated, the full output is saved to a file whose path is reported.
+- A non-zero exit is reported as \`[exit code: N]\`; a terminated command as \`[killed by signal: X]\` or \`[timed out after Nms]\`. Investigate failures before continuing.
+- Commands that run longer than the timeout are terminated (default: 2 minutes).
+- Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked.`;
 
 export const createBashTool = ({
   agentContext,
-}: CreateBashToolProps): Tool<BashToolInput, BashToolOutput, AgentContext> =>
-  tool<BashToolInput, BashToolOutput, AgentContext>({
+}: {
+  agentContext: AgentContext;
+}) =>
+  createShellTool({
     description: DESCRIPTION,
-    inputSchema: createBashToolSchema(agentContext),
-    execute: async ({ command, timeout, workdir }, { abortSignal }) => {
-      const context = agentContext;
-      const cwd = resolveToolPath(
-        workdir ?? context.primaryProjectDir,
-        context.primaryProjectDir
-      ).absolute;
-      const resolvedTimeout = timeout ?? DEFAULT_TIMEOUT_MS;
-
-      const proc = spawn(command, {
-        shell: true,
-        cwd,
-        env: process.env,
-        stdio: ["ignore", "pipe", "pipe"],
-        detached: process.platform !== "win32",
-        windowsHide: process.platform === "win32",
-      });
-
-      let output = "";
-      let timedOut = false;
-      let aborted = false;
-      let exited = false;
-
-      const killTree = () => {
-        if (exited) {
-          return;
-        }
-        try {
-          if (process.platform !== "win32" && proc.pid !== undefined) {
-            process.kill(-proc.pid, "SIGTERM");
-          } else {
-            proc.kill("SIGTERM");
-          }
-        } catch {
-          proc.kill();
-        }
-      };
-
-      const appendOutput = (chunk: Buffer) => {
-        output += chunk.toString();
-      };
-
-      proc.stdout?.on("data", appendOutput);
-      proc.stderr?.on("data", appendOutput);
-
-      // Handle pre-aborted signal
-      if (abortSignal?.aborted) {
-        aborted = true;
-        killTree();
-      }
-
-      const abortHandler = () => {
-        aborted = true;
-        killTree();
-      };
-
-      abortSignal?.addEventListener("abort", abortHandler, { once: true });
-
-      const timeoutTimer = setTimeout(() => {
-        timedOut = true;
-        killTree();
-      }, resolvedTimeout + 100);
-
-      await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-          clearTimeout(timeoutTimer);
-          abortSignal?.removeEventListener("abort", abortHandler);
-        };
-
-        proc.once("exit", () => {
-          exited = true;
-          cleanup();
-          resolve();
-        });
-
-        proc.once("error", (error) => {
-          exited = true;
-          cleanup();
-          reject(error);
-        });
-      });
-
-      const metaParts: string[] = [];
-      if (timedOut) {
-        metaParts.push(
-          `bash tool terminated command after exceeding timeout ${resolvedTimeout} ms`
+    agentContext,
+    program: () => {
+      const file = defaultBashShell();
+      if (file === undefined) {
+        throw new Error(
+          "No bash executable found. Install Git Bash (Windows) or bash (POSIX), or use the powershell tool."
         );
       }
-      if (aborted) {
-        metaParts.push("User aborted the command");
-      }
-      if (metaParts.length > 0) {
-        output += `\n\n<bash_metadata>\n${metaParts.join("\n")}\n</bash_metadata>`;
-      }
-
-      const truncatedOutput =
-        output.length > MAX_OUTPUT_LENGTH
-          ? `${output.slice(0, MAX_OUTPUT_LENGTH)}\n\n...`
-          : output;
-
       return {
-        output: truncatedOutput,
-        code: "ok",
-        metadata: {
-          exitCode: proc.exitCode,
-          timeout: timedOut,
-          aborted,
-        },
+        argv: (command) => bashArgv(file, command),
+        env: BASH_ENV,
       };
     },
-    toModelOutput: ({ output }) => ({
-      type: "text",
-      value: output.output,
-    }),
   });
 
 export type BashToolType = ReturnType<typeof createBashTool>;

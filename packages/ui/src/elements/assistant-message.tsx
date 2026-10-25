@@ -1050,14 +1050,19 @@ export const AssistantMessage = ({
                     />
                   </>
                 );
-              } else if (part.type === "tool-bash") {
+              } else if (
+                part.type === "tool-bash" ||
+                part.type === "tool-powershell"
+              ) {
+                const shellAction =
+                  part.type === "tool-powershell" ? "PowerShell" : "Bash";
                 return (
                   <>
                     <AgentActivityStep
                       key={i}
                       path={`${i}`}
                       icon={SquareTerminalIcon}
-                      label={getStepLabel("Bash", part.input?.description)}
+                      label={getStepLabel(shellAction, part.input?.description)}
                       status={status}
                       summary={summary}
                       duration={duration}
@@ -1065,7 +1070,7 @@ export const AssistantMessage = ({
                       <Frame variant="default" overflowBehavior="scroll">
                         <FrameHeader>
                           <FrameTitle>
-                            {getStepLabel("Bash", part.input?.description)}
+                            {getStepLabel(shellAction, part.input?.description)}
                           </FrameTitle>
                         </FrameHeader>
                         <div className="flex justify-between items-center pl-4 pr-1 mb-1">

@@ -4,6 +4,7 @@ import type {
   EditFileToolType,
   GlobToolType,
   GrepToolType,
+  PowerShellToolType,
   QuestionnaireToolType,
   ReadFileToolType,
   TaskToolType,
@@ -23,5 +24,6 @@ export type AgentToolSet = {
   "load-skill": LoadSkillToolType;
   questionnaire: QuestionnaireToolType;
   bash: BashToolType;
+  powershell: PowerShellToolType;
   task: TaskToolType;
 };
