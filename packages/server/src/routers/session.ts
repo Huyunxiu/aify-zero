@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { streamToEventIterator, type } from "@orpc/server";
 import {
   createBashTool,
+  createJobTools,
   createReadFileTool,
   createWriteFileTool,
   createDeleteFileTool,
@@ -57,6 +58,7 @@ import z from "zod";
 import { getSessionDir } from "../config";
 import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
+import { JOB_REGISTRY } from "../jobs";
 import { withSessionLock } from "../session-lock";
 import {
   getPrimaryProjectDir,
@@ -108,6 +110,7 @@ async function buildSessionAgent({
       .map((configured) => [configured.model, configured.limit?.context ?? 0])
   );
   const agentContext = new AgentContext({
+    sessionId,
     projectDirs,
     sessionDir,
     projectId,
@@ -115,6 +118,7 @@ async function buildSessionAgent({
     modelEffort: effort,
     compaction,
     modelContextWindows,
+    jobs: JOB_REGISTRY,
   });
 
   const tools: ToolSet = {
@@ -127,6 +131,11 @@ async function buildSessionAgent({
     "web-fetch": createWebFetchTool({ agentContext }),
     "load-skill": createLoadSkillTool({ agentContext }),
   };
+  // 任务控制工具跟着注册表走：没有注册表就没有后台任务可控制，模型也就不该
+  // 看见这三个工具。
+  if (agentContext.jobs !== undefined) {
+    Object.assign(tools, createJobTools({ agentContext }));
+  }
   // The shell tool follows the host: POSIX always has bash; Windows gets
   // PowerShell, plus bash when Git Bash is installed. A tool whose executable
   // cannot be resolved is left out rather than advertised and failing later.

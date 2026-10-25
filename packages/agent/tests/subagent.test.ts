@@ -242,6 +242,7 @@ describe("subagent 的 abort scope", () => {
       session: new AgentSession({ turns: [] }),
       store: asStore(new FakeStore()),
       context: new AgentContext({
+        sessionId: "parent-session",
         projectDirs: ["/tmp"],
         sessionDir: "/tmp/sessions/parent-session",
         modelId: "test-model",
@@ -325,6 +326,7 @@ describe("subagent 继承项目说明", () => {
       session: new AgentSession({ turns: [] }),
       store: asStore(new FakeStore()),
       context: new AgentContext({
+        sessionId: "parent-session",
         projectDirs: ["/tmp"],
         sessionDir: "/tmp/sessions/parent-session",
         modelId: "test-model",

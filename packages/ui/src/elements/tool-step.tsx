@@ -229,6 +229,8 @@ const editedPath = (
 
 /** The status facts both shell tools report. */
 type ShellSummaryMetadata = {
+  /** Absent on turns persisted before background execution existed. */
+  kind?: "foreground" | "background";
   timeout?: boolean;
   aborted?: boolean;
   exitCode?: number | null;
@@ -373,6 +375,28 @@ export const getPartSummary = (
     case "tool-bash":
     case "tool-powershell": {
       return summarizeShell(part.output.metadata);
+    }
+
+    case "tool-job-output": {
+      return part.output.metadata?.job.status;
+    }
+
+    case "tool-job-list": {
+      const { metadata } = part.output;
+      if (!metadata) {
+        return undefined;
+      }
+      return `${metadata.count} jobs`;
+    }
+
+    case "tool-job-kill": {
+      const { metadata } = part.output;
+      if (!metadata) {
+        return undefined;
+      }
+      return metadata.outcome === "cancellation-requested"
+        ? "cancelling"
+        : undefined;
     }
 
     case "tool-web-fetch": {

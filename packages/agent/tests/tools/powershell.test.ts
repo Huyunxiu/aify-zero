@@ -7,7 +7,10 @@ import { afterEach, describe, expect, test } from "vitest";
 import type { AgentContext } from "../../src/agent-context.js";
 import { createPowerShellTool } from "../../src/tools/powershell.js";
 import { resolvePowerShell } from "../../src/tools/shell/resolve.js";
-import type { ShellToolOutput } from "../../src/tools/shell/tool.js";
+import type {
+  ShellForegroundMetadata,
+  ShellToolOutput,
+} from "../../src/tools/shell/tool.js";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -49,6 +52,14 @@ describe("powershell resolution", () => {
   });
 });
 
+/** 前台结果的元数据；这些用例都不会产生后台结果。 */
+const metadataOf = (output: ShellToolOutput): ShellForegroundMetadata => {
+  if (output.metadata?.kind !== "foreground") {
+    throw new Error("expected a foreground shell result");
+  }
+  return output.metadata;
+};
+
 describe("powershell tool", () => {
   afterEach(async () => {
     await Promise.all(
@@ -67,7 +78,7 @@ describe("powershell tool", () => {
     const output = await call(shellTool, "Write-Output 'héllo €'", dir);
 
     expect(output.code).toBe("ok");
-    expect(output.metadata?.exitCode).toBe(0);
+    expect(metadataOf(output).exitCode).toBe(0);
     expect(output.output).toContain("héllo €");
   });
 });

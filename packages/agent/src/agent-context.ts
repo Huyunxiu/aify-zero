@@ -4,6 +4,7 @@ import { AgentState } from "./agent-state";
 import type { AgentStateOptions } from "./agent-state";
 import type { ResolvedCompactionPolicy, SummarizeFn } from "./compaction/types";
 import type { SystemPromptSection } from "./extensions/types";
+import type { JobRegistry } from "./jobs/registry";
 import { SkillManager } from "./skill";
 import type { AgentToolSet } from "./types";
 
@@ -22,6 +23,10 @@ export interface AgentStreamEventController {
 }
 
 export type AgentContextOptions = AgentStateOptions & {
+  /**
+   * 当前会话 id。后台任务的归属、以及取消和执行器回写都以它为界。
+   */
+  sessionId: string;
   /**
    * agent 可以读写代码的项目目录，至少一项。
    *
@@ -63,12 +68,19 @@ export type AgentContextOptions = AgentStateOptions & {
    * 从这里解析自己的窗口。
    */
   modelContextWindows?: Readonly<Record<string, number>>;
+  /**
+   * 后台任务注册表。任务要比启动它的那次请求活得久，所以它由宿主创建并
+   * 传给每个会话上下文；省略时 `bash` 等工具不提供后台执行，也不注册任务
+   * 控制工具。
+   */
+  jobs?: JobRegistry;
   controller?: AgentStreamEventController;
 };
 export class AgentContext extends AgentState {
   projectDirs: readonly string[];
   /** 主目录，即 `projectDirs[0]`。构造时保证存在。 */
   readonly primaryProjectDir: string;
+  sessionId: string;
   sessionDir: string;
   projectId?: string;
   skills: SkillManager;
@@ -78,6 +90,7 @@ export class AgentContext extends AgentState {
   modelContextWindows?: Readonly<Record<string, number>>;
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
   abortSignal?: AbortSignal;
+  jobs?: JobRegistry;
   controller?: AgentStreamEventController;
 
   constructor(options: AgentContextOptions) {
@@ -90,6 +103,7 @@ export class AgentContext extends AgentState {
     }
     this.projectDirs = [primaryProjectDir, ...otherProjectDirs];
     this.primaryProjectDir = primaryProjectDir;
+    this.sessionId = options.sessionId;
     this.sessionDir = options.sessionDir;
     this.projectId = options.projectId;
     this.skills = options.skills ?? new SkillManager({ dirs: [] });
@@ -97,6 +111,7 @@ export class AgentContext extends AgentState {
     this.compaction = options.compaction;
     this.summarize = options.summarize;
     this.modelContextWindows = options.modelContextWindows;
+    this.jobs = options.jobs;
     this.controller = options.controller;
   }
   [x: string]: unknown;

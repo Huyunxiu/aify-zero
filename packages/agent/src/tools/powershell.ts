@@ -34,6 +34,7 @@ export const createPowerShellTool = ({
   createShellTool({
     description: DESCRIPTION,
     agentContext,
+    kind: "powershell",
     program: () => {
       const file = defaultPowerShell();
       if (file === undefined) {

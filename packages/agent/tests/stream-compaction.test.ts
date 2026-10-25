@@ -69,6 +69,7 @@ const buildAgent = (
     session: new AgentSession({ turns: [] }),
     store: asStore(store),
     context: new AgentContext({
+      sessionId: "session-1",
       projectDirs: ["/tmp"],
       sessionDir: "/tmp/sessions/session-1",
       modelId: "test-model",

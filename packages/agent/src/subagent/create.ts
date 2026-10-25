@@ -232,6 +232,7 @@ export async function createSubagent(
     modelId ?? definition.modelId ?? parent.context.modelId;
 
   const context = new AgentContext({
+    sessionId: childSessionId,
     projectDirs: parent.context.projectDirs,
     // 子 agent 共享父会话的目录：它产出的临时文件属于同一个会话。
     sessionDir: parent.context.sessionDir,
@@ -244,6 +245,9 @@ export async function createSubagent(
     systemPromptSections: parent.context.systemPromptSections,
     compaction: subagentCompaction(parent.context, resolvedModelId),
     modelContextWindows: parent.context.modelContextWindows,
+    // 子 agent 继承父会话的工具集，工具闭包里绑定的是父上下文，所以后台
+    // 任务同样归父会话所有。
+    jobs: parent.context.jobs,
   });
 
   let systemPrompt = definition.instructions;

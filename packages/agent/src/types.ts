@@ -4,6 +4,9 @@ import type {
   EditFileToolType,
   GlobToolType,
   GrepToolType,
+  JobKillToolType,
+  JobListToolType,
+  JobOutputToolType,
   PowerShellToolType,
   QuestionnaireToolType,
   ReadFileToolType,
@@ -22,6 +25,9 @@ export type AgentToolSet = {
   "write-file": WriteFileToolType;
   "web-fetch": WebFetchToolType;
   "load-skill": LoadSkillToolType;
+  "job-output": JobOutputToolType;
+  "job-list": JobListToolType;
+  "job-kill": JobKillToolType;
   questionnaire: QuestionnaireToolType;
   bash: BashToolType;
   powershell: PowerShellToolType;

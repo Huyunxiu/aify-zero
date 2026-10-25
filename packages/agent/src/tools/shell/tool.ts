@@ -5,9 +5,12 @@ import type { Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../../agent-context";
+import type { JobOutcome } from "../../jobs/types";
 import { resolveToolPath } from "../../utils/fs-util";
 import type { ToolOutput } from "../types";
+import { createShellStreamBuffer } from "./background";
 import { runShell } from "./exec";
+import type { ShellRunResult } from "./exec";
 import type { ShellOutputSnapshot } from "./output";
 import { ShellOutputCollector } from "./output";
 
@@ -24,11 +27,15 @@ export interface ShellProgram {
 export interface ShellToolOptions {
   description: string;
   agentContext: AgentContext;
+  /** 生产方种类，也是后台任务 id 的前缀（`bash`、`powershell`）。 */
+  kind: string;
   /** Resolved lazily so a missing executable reports on the call, not on load. */
   program: () => ShellProgram;
 }
 
-export type ShellToolMetadata = {
+/** 一次前台调用的结局，状态行和 UI 的行摘要都从这里读。 */
+export type ShellForegroundMetadata = {
+  kind: "foreground";
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   /** `timedOut` under the tool's historical name. */
@@ -40,6 +47,17 @@ export type ShellToolMetadata = {
   spillPath?: string;
 };
 
+/** 一次后台调用只交出一个 id；工作本身归任务运行时。 */
+export type ShellBackgroundMetadata = {
+  kind: "background";
+  jobId: string;
+  cwd: string;
+};
+
+export type ShellToolMetadata =
+  | ShellForegroundMetadata
+  | ShellBackgroundMetadata;
+
 export type ShellToolOutput = ToolOutput<string, ShellToolMetadata>;
 
 type ShellToolInput = {
@@ -47,10 +65,11 @@ type ShellToolInput = {
   timeout?: number;
   workdir?: string;
   description: string;
+  run_in_background?: boolean;
 };
 
-const createShellToolSchema = (agentContext: AgentContext) =>
-  z.object({
+const createShellToolSchema = (agentContext: AgentContext) => {
+  const schema = z.object({
     command: z.string().trim().min(1).describe("The shell command to execute"),
     timeout: z
       .number()
@@ -73,6 +92,20 @@ const createShellToolSchema = (agentContext: AgentContext) =>
         "Clear, concise description of what this command does in 5-10 words. Examples:\nInput: ls\nOutput: Lists files in current directory\n\nInput: git status\nOutput: Shows working tree status\n\nInput: npm install\nOutput: Installs package dependencies"
       ),
   });
+  // 后台执行只在装配了任务注册表的会话里存在：没有注册表就没有工具能收走
+  // 那个 id，schema 也就不该向模型许诺它。
+  if (agentContext.jobs === undefined) {
+    return schema;
+  }
+  return schema.extend({
+    run_in_background: z
+      .boolean()
+      .optional()
+      .describe(
+        "Run the command in the background and return a job id immediately. Read it with job-output; stop it with job-kill. No timeout applies."
+      ),
+  });
+};
 
 /**
  * Build one model-facing shell tool over the shared kernel.
@@ -85,12 +118,16 @@ const createShellToolSchema = (agentContext: AgentContext) =>
 export const createShellTool = ({
   description,
   agentContext,
+  kind,
   program,
 }: ShellToolOptions): Tool<ShellToolInput, ShellToolOutput, AgentContext> =>
   tool<ShellToolInput, ShellToolOutput, AgentContext>({
     description,
     inputSchema: createShellToolSchema(agentContext),
-    execute: async ({ command, timeout, workdir }, { abortSignal }) => {
+    execute: async (
+      { command, timeout, workdir, run_in_background },
+      { abortSignal }
+    ) => {
       const resolvedTimeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
       const cwd = resolveToolPath(
         workdir ?? agentContext.primaryProjectDir,
@@ -103,6 +140,20 @@ export const createShellTool = ({
       if (file === undefined) {
         throw new Error("The shell program resolved to an empty argv.");
       }
+
+      if (run_in_background === true) {
+        // 先解析再登记：命令跑起来之后，这个调用就不再等它了。
+        return startBackgroundCommand({
+          agentContext,
+          kind,
+          command,
+          cwd,
+          file,
+          args,
+          env: { ...process.env, ...resolved.env },
+        });
+      }
+
       const collector = new ShellOutputCollector({
         dir: agentContext.sessionDir,
       });
@@ -124,6 +175,7 @@ export const createShellTool = ({
           output: renderShellResult(snapshot),
           code: "ok",
           metadata: {
+            kind: "foreground",
             exitCode: run.exitCode,
             signal: run.signal,
             timeout: run.timedOut,
@@ -156,6 +208,114 @@ export const createShellTool = ({
       };
     },
   });
+
+type BackgroundCommandProps = {
+  agentContext: AgentContext;
+  kind: string;
+  command: string;
+  cwd: string;
+  file: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+};
+
+/**
+ * Register the command as a job and return its id at once.
+ *
+ * The job owns the process from here: the call's own abort signal is not wired
+ * to it, so stopping the turn does not kill work the model asked to keep. Only
+ * `job-kill` (or disposal of the owner) cancels it.
+ * @param props - 已经解析好的命令和目标目录。
+ */
+function startBackgroundCommand({
+  agentContext,
+  kind,
+  command,
+  cwd,
+  file,
+  args,
+  env,
+}: BackgroundCommandProps): ShellToolOutput {
+  const { jobs, sessionId } = agentContext;
+  if (jobs === undefined) {
+    throw new Error(
+      "background execution is unavailable: no job registry in this composition"
+    );
+  }
+  const buffer = createShellStreamBuffer();
+  const controller = new AbortController();
+  const jobId = jobs.start({
+    kind,
+    label: command,
+    owner: sessionId,
+    output: buffer.sources,
+    run: () => ({
+      cancel: () => {
+        controller.abort();
+      },
+      done: runBackgroundCommand({ buffer, controller, file, args, cwd, env }),
+    }),
+  });
+  return {
+    output: `started background job ${jobId}\nRead it with job-output and stop it with job-kill.`,
+    code: "ok",
+    metadata: { kind: "background", jobId, cwd },
+  };
+}
+
+type BackgroundRunProps = {
+  buffer: ReturnType<typeof createShellStreamBuffer>;
+  controller: AbortController;
+  file: string;
+  args: string[];
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+};
+
+/**
+ * Run the command without a deadline until it exits or is cancelled.
+ * @param props - 输出缓冲、取消信号和已经解析好的命令。
+ */
+function runBackgroundCommand({
+  buffer,
+  controller,
+  file,
+  args,
+  cwd,
+  env,
+}: BackgroundRunProps): Promise<JobOutcome> {
+  return runShell({
+    file,
+    args,
+    cwd,
+    env,
+    signal: controller.signal,
+    onData: (channel, chunk) => {
+      buffer.push(channel, chunk);
+    },
+  }).then(
+    (run) => {
+      buffer.close();
+      return backgroundOutcome(run);
+    },
+    (error: unknown): JobOutcome => {
+      buffer.close();
+      return { status: "failed", detail: String(error) };
+    }
+  );
+}
+
+/**
+ * A cancelled command settles `killed`; everything else is `completed` with the
+ * exit code, exactly like the foreground rendering reports a non-zero exit as
+ * an ordinary result rather than a failure.
+ * @param run - 子进程的结算结果。
+ */
+function backgroundOutcome(run: ShellRunResult): JobOutcome {
+  return run.aborted
+    ? { status: "killed", detail: "cancelled" }
+    : { status: "completed", detail: `exit code: ${run.exitCode ?? 0}` };
+}
 
 /** Fail before spawning when the requested directory is unusable. */
 async function assertWorkingDirectory(cwd: string): Promise<void> {
@@ -218,7 +378,8 @@ function truncationNotice(snapshot: ShellOutputSnapshot): string {
  * exit reports its code.
  */
 function shellStatusMarkers(metadata: ShellToolMetadata | undefined): string[] {
-  if (metadata === undefined) {
+  // 后台调用没有退出码：它的结局写在任务的状态行里，由 job-output 交回。
+  if (metadata?.kind !== "foreground") {
     return [];
   }
   const markers: string[] = [];

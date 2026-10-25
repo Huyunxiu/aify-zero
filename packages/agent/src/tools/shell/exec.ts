@@ -18,7 +18,8 @@ export interface ShellRunOptions {
   cwd: string;
   /** The complete environment; the caller owns overrides and scrubbing. */
   env: NodeJS.ProcessEnv;
-  timeoutMs: number;
+  /** 截止时间，毫秒；省略表示不设截止时间，交给调用方自己取消。 */
+  timeoutMs?: number;
   signal?: AbortSignal;
   onData: (channel: "stdout" | "stderr", chunk: Buffer) => void;
   /** Called once the child exists. Test seam for asserting termination. */
@@ -38,7 +39,8 @@ export interface ShellRunResult {
 type EndReason = "timeout" | "abort";
 
 /**
- * Run one shell command under a deadline and an optional caller signal.
+ * Run one shell command under an optional deadline and an optional caller
+ * signal.
  *
  * Resolution happens on the process's `exit` plus a drain window, not `close`
  * alone: a shell that exits while a descendant keeps stdout open would
@@ -83,11 +85,12 @@ export function runShell(options: ShellRunOptions): Promise<ShellRunResult> {
     let drainTimer: NodeJS.Timeout | undefined;
 
     // Armed before the handlers are attached so the deadline covers the whole
-    // call; it stays armed until the call settles, drain included.
-    const timeoutTimer = setTimeout(
-      () => trigger("timeout"),
-      Math.max(1, options.timeoutMs)
-    );
+    // call; it stays armed until the call settles, drain included. A background
+    // command passes no deadline: its owner cancels it through the job runtime.
+    const timeoutTimer =
+      options.timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => trigger("timeout"), Math.max(1, options.timeoutMs));
 
     const cleanup = () => {
       if (timeoutTimer !== undefined) {

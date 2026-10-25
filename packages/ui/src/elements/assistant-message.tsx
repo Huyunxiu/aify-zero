@@ -1249,6 +1249,43 @@ export const AssistantMessage = ({
                     )}
                   </>
                 );
+              } else if (
+                part.type === "tool-job-output" ||
+                part.type === "tool-job-list" ||
+                part.type === "tool-job-kill"
+              ) {
+                const target =
+                  part.type === "tool-job-list" ? undefined : part.input?.jobId;
+                const label =
+                  part.type === "tool-job-list"
+                    ? "Background jobs"
+                    : `${part.type === "tool-job-kill" ? "Kill job" : "Read job"} ${target ?? ""}`;
+                return (
+                  <>
+                    <AgentActivityStep
+                      key={i}
+                      path={`${i}`}
+                      icon={ListChecksIcon}
+                      label={label}
+                      status={status}
+                      summary={summary}
+                      duration={duration}
+                    >
+                      <Frame variant="default" overflowBehavior="scroll">
+                        <FramePanel>
+                          <div className="whitespace-pre">
+                            {part.output?.output ?? ""}
+                          </div>
+                        </FramePanel>
+                        {renderToolError(part)}
+                      </Frame>
+                    </AgentActivityStep>
+                    <AgentActivityApproval
+                      part={part}
+                      onRespondToolApproval={onRespondToolApproval}
+                    />
+                  </>
+                );
               }
               return null;
             })}

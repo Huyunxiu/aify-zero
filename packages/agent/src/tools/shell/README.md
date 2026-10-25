@@ -1,17 +1,18 @@
 # Shell 工具内核（bash / powershell）
 
-`bash` 与 `powershell` 两个模型工具共用的执行内核。上层薄配置在 [`bash.ts`](../bash.ts) 和 [`powershell.ts`](../powershell.ts)；本目录负责可执行文件解析、进程生命周期、输出收集和模型结果渲染。每次调用都是全新进程，不保留 cwd、变量或函数。
+`bash` 与 `powershell` 两个模型工具共用的执行内核。上层薄配置在 [`bash.ts`](../bash.ts) 和 [`powershell.ts`](../powershell.ts)；本目录负责可执行文件解析、进程生命周期、输出收集、后台任务托管和模型结果渲染。每次调用都是全新进程，不保留 cwd、变量或函数。
 
 ## 模块地图
 
-| 文件                       | 职责                                               | 副作用               |
-| -------------------------- | -------------------------------------------------- | -------------------- |
-| [resolve.ts](./resolve.ts) | 解析 shell 可执行文件、构造 argv、探测安装位置     | 否（`lstat` 只读）   |
-| [exec.ts](./exec.ts)       | spawn、超时/取消、TERM→KILL、exit 后排空、结果分类 | 是（启动并终止进程） |
-| [output.ts](./output.ts)   | 尾部保留、按字节/行截断、完整输出落盘、UTF-8 解码  | 是（写 spill 文件）  |
-| [tool.ts](./tool.ts)       | zod schema、cwd 校验、`ToolOutput` 与模型可见结果  | 否（编排前两者）     |
+| 文件                             | 职责                                                       | 副作用               |
+| -------------------------------- | ---------------------------------------------------------- | -------------------- |
+| [resolve.ts](./resolve.ts)       | 解析 shell 可执行文件、构造 argv、探测安装位置             | 否（`lstat` 只读）   |
+| [exec.ts](./exec.ts)             | spawn、超时/取消、TERM→KILL、exit 后排空、结果分类         | 是（启动并终止进程） |
+| [output.ts](./output.ts)         | 尾部保留、按字节/行截断、完整输出落盘、UTF-8 解码          | 是（写 spill 文件）  |
+| [background.ts](./background.ts) | 后台命令的生产者侧输出缓冲：两条流各一个环，按绝对偏移读取 | 否（内存缓冲）       |
+| [tool.ts](./tool.ts)             | zod schema、cwd 校验、前台/后台分支、`ToolOutput` 与渲染   | 否（编排前四者）     |
 
-调用方只需要 `createShellTool()`；`resolve` / `exec` / `output` 都可以单独测试或复用。
+调用方只需要 `createShellTool()`；`resolve` / `exec` / `output` / `background` 都可以单独测试或复用。
 
 ## 一次调用的数据流
 
@@ -27,6 +28,18 @@ tool.execute(input)
   ├─ collector.finish() → { stdout, stderr, truncated, spillPath?, … }
   └─ ToolOutput { output, code: "ok", metadata }
        └─ toModelOutput() → 正文 + 状态 marker
+```
+
+`run_in_background: true` 走另一条分支：同样的路径校验与 argv 构造之后，命令被登记为后台任务，`onData` 写进生产者侧缓冲而不是 collector，调用立刻带着 job id 返回。
+
+```text
+tool.execute(input, run_in_background)
+  ├─ 路径校验 + program() → { argv, env }
+  ├─ createShellStreamBuffer()            // background.ts
+  ├─ jobs.start({ kind, label, owner, output, run })
+  │    └─ runShell(...)                  无截止时间，用任务自己的 AbortController
+  │         └─ onData → buffer.push() → stdout/stderr 两个环
+  └─ ToolOutput { output: "started background job <id>", metadata: { jobId } }
 ```
 
 ## resolve.ts
@@ -139,11 +152,21 @@ stdout 为空且无 stderr 时正文是 `(no output)`；截断提示追加在最
 
 `code` 始终是 `"ok"`：非零退出、超时、取消都是命令结果，不是工具失败；只有这样 UI 才不会把整行标红。只有基础设施错误（spawn 失败、cwd 不存在）才抛异常。
 
+## 后台执行
+
+- **schema 跟着注册表走。** 只有 `agentContext.jobs` 存在时 `run_in_background` 才进 zod schema；没有注册表就没有谁能收走那个 id，工具不该向模型许诺它。
+- **先登记后 spawn。** 准入拒绝（该会话的任务已达上限）时不会启动进程。
+- **取消权归任务，不归调用方。** 后台用任务自己的 `AbortController`，不接 `exec` 收到的 `abortSignal`：停止这一轮不该杀掉模型要求保留的工作。只有 `job-kill` 或拥有者销毁会终止进程组。
+- **没有截止时间。** `runShell` 在 `timeoutMs` 省略时不设截止时间，命令一直跑到结束或被取消。
+- **输出走缓冲，不走 collector。** 所以后台命令没有 spill 文件，只有 [background.ts](./background.ts) 的 256 KB 尾巴和任务环的保留。读取、列表与取消由 [`jobs`](../../jobs/README.md) 负责。
+- **结算**：取消后 `killed`，正常退出 `completed`（`detail` 是 `exit code: N`，非零也一样），spawn 失败 `failed`。
+
 ## 组合方式
 
 - [`bash.ts`](../bash.ts)：`bashArgv` + `NO_COLOR/TERM=dumb/PAGER` 等终端覆盖。
 - [`powershell.ts`](../powershell.ts)：`powerShellArgv` + 不含 `TERM` 的覆盖。
 - [`session.ts`](../../../../server/src/routers/session.ts)：POSIX 始终注册 `bash`；Windows 注册 `powershell`，有 Git Bash 时再注册 `bash`。解析不到可执行文件时不注册，避免广告一个必然失败的工具。
+- [`jobs`](../../jobs/README.md)：进程级任务注册表与三个控制工具；只有它被注入时，shell 才提供后台执行。
 - 子 agent 继承父级 `agent.tools`，两个工具自动可用。
 - UI 卡片在 [`assistant-message.tsx`](../../../../ui/src/elements/assistant-message.tsx) 共用同一套终端渲染。
 
@@ -155,22 +178,24 @@ vp test packages/agent/tests/tools/shell \
   packages/agent/tests/tools/powershell.test.ts
 ```
 
-| 文件                                                          | 覆盖                                                                 |
-| ------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [resolve.test.ts](../../../tests/tools/shell/resolve.test.ts) | POSIX/Windows 候选顺序、PATH 引号、`PWSH_PATH`、argv 形状            |
-| [output.test.ts](../../../tests/tools/shell/output.test.ts)   | 限额内原样、行/字节截断、UTF-8 跨 chunk、spill 内容与上限、幂等      |
-| [exec.test.ts](../../../tests/tools/shell/exec.test.ts)       | 退出码、双流、TERM 忽略后的 SIGKILL、abort、预取消、排空、无残留进程 |
-| [bash.test.ts](../../../tests/tools/bash.test.ts)             | workdir、非零退出 marker、stderr 分段、截断与 spill、超时、cwd 缺失  |
-| [powershell.test.ts](../../../tests/tools/powershell.test.ts) | 解析/argv + Windows 专属 UTF-8 执行（其他平台 skip）                 |
+| 文件                                                                | 覆盖                                                                 |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| [resolve.test.ts](../../../tests/tools/shell/resolve.test.ts)       | POSIX/Windows 候选顺序、PATH 引号、`PWSH_PATH`、argv 形状            |
+| [output.test.ts](../../../tests/tools/shell/output.test.ts)         | 限额内原样、行/字节截断、UTF-8 跨 chunk、spill 内容与上限、幂等      |
+| [exec.test.ts](../../../tests/tools/shell/exec.test.ts)             | 退出码、双流、TERM 忽略后的 SIGKILL、abort、预取消、排空、无残留进程 |
+| [background.test.ts](../../../tests/tools/shell/background.test.ts) | 后台启动、输出可读、取消杀进程、schema 随注册表出现/消失             |
+| [bash.test.ts](../../../tests/tools/bash.test.ts)                   | workdir、非零退出 marker、stderr 分段、截断与 spill、超时、cwd 缺失  |
+| [powershell.test.ts](../../../tests/tools/powershell.test.ts)       | 解析/argv + Windows 专属 UTF-8 执行（其他平台 skip）                 |
 
 exec/bash 的进程用例只在 POSIX 运行；PowerShell 的真实执行用例需要 Windows。
 
 ## 已知边界
 
-- **不提供沙箱、审批、后台任务、持久 shell、流式输出**。这些属于上下文压缩以外的独立能力，当前内核只为一次前台命令服务。
+- **不提供沙箱、审批、持久 shell、流式输出**。这些属于 shell 以外的独立能力；后台执行由 [`jobs`](../../jobs/README.md) 提供，本内核只负责把一个命令交给它。
 - **shell 状态不跨调用**：每次都是新进程，`cd`、`export`、函数定义都不会保留。
 - **不剥离 ANSI**：只通过 `NO_COLOR` / `TERM=dumb` 降低概率；仍需强转义序列的命令可能把控制字符带进正文。
 - **stdout/stderr 分开收集**：正文先 stdout 再 `[stderr]` 段，两个流之间的真实交错顺序会丢失。
-- **后台孙进程不保证被杀**：正常退出时只做空闲排空，不主动杀进程树；只有超时或取消才会终止整个进程组 / 树。
+- **正常退出不杀孙进程**：只做空闲排空；只有超时或取消才终止整个进程组 / 树。后台命令被取消时同样终止进程组。
+- **后台命令不落 spill**：超过 256 KB 的早期输出会被淘汰，读取时标出丢失。
 - **spill 文件跟随会话目录清理**，没有独立的定期清理任务。
 - **Windows 的 `bash` 依赖 Git Bash**；没装时只有 `powershell` 工具，这是有意的降级。

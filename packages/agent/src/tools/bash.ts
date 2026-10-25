@@ -33,6 +33,7 @@ export const createBashTool = ({
   createShellTool({
     description: DESCRIPTION,
     agentContext,
+    kind: "bash",
     program: () => {
       const file = defaultBashShell();
       if (file === undefined) {

@@ -6,6 +6,7 @@ export * from "./resource-dirs";
 export * from "./resources";
 export * from "./tools";
 export * from "./hooks-manager";
+export * from "./jobs";
 export type * from "./types";
 export * from "./stream-registry";
 export * from "./subagent";

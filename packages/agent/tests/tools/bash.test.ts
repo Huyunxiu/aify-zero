@@ -6,7 +6,10 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import type { AgentContext } from "../../src/agent-context.js";
 import { createBashTool } from "../../src/tools/bash.js";
-import type { ShellToolOutput } from "../../src/tools/shell/tool.js";
+import type {
+  ShellForegroundMetadata,
+  ShellToolOutput,
+} from "../../src/tools/shell/tool.js";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -19,6 +22,14 @@ async function createTempDir(): Promise<string> {
 }
 
 type ShellTool = ReturnType<typeof createBashTool>;
+
+/** 前台结果的元数据；这些用例都不会产生后台结果。 */
+const metadataOf = (output: ShellToolOutput): ShellForegroundMetadata => {
+  if (output.metadata?.kind !== "foreground") {
+    throw new Error("expected a foreground shell result");
+  }
+  return output.metadata;
+};
 
 function createTool(sessionDir: string): ShellTool {
   const agentContext = {
@@ -90,8 +101,8 @@ describe("bash tool", () => {
 
       expect(output.code).toBe("ok");
       expect(output.output).toBe("from the workdir\n");
-      expect(output.metadata?.exitCode).toBe(0);
-      expect(output.metadata?.timeoutMs).toBe(120_000);
+      expect(metadataOf(output).exitCode).toBe(0);
+      expect(metadataOf(output).timeoutMs).toBe(120_000);
     }
   );
 
@@ -105,7 +116,7 @@ describe("bash tool", () => {
       const output = await call(shellTool, { command: "exit 3" });
 
       expect(output.code).toBe("ok");
-      expect(output.metadata?.exitCode).toBe(3);
+      expect(metadataOf(output).exitCode).toBe(3);
       expect(modelText(shellTool, output)).toContain("[exit code: 3]");
     }
   );
@@ -134,10 +145,10 @@ describe("bash tool", () => {
         command: "head -c 60000 /dev/zero | tr '\\0' 'a'",
       });
 
-      expect(output.metadata?.truncated).toBeTruthy();
+      expect(metadataOf(output).truncated).toBeTruthy();
       expect(output.output).toContain("[output truncated; full output:");
-      expect(output.metadata?.spillPath).toBeDefined();
-      const spillPath = output.metadata?.spillPath;
+      expect(metadataOf(output).spillPath).toBeDefined();
+      const { spillPath } = metadataOf(output);
       if (spillPath === undefined) {
         throw new Error("expected the truncated output to spill to a file");
       }
@@ -158,7 +169,7 @@ describe("bash tool", () => {
         timeout: 100,
       });
 
-      expect(output.metadata?.timeout).toBeTruthy();
+      expect(metadataOf(output).timeout).toBeTruthy();
       expect(modelText(shellTool, output)).toContain("[timed out after 100ms]");
     }
   );
@@ -178,7 +189,7 @@ describe("bash tool", () => {
         { signal: controller.signal }
       );
 
-      expect(output.metadata?.aborted).toBeTruthy();
+      expect(metadataOf(output).aborted).toBeTruthy();
       expect(modelText(shellTool, output)).toContain("[aborted]");
     }
   );
