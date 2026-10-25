@@ -7,6 +7,7 @@ import {
 } from "@workspace/agent-client";
 import type {
   AgentAssistantStep,
+  AgentCompactionStep,
   AgentPart,
   AgentStaticToolPart,
   AgentToolPart,
@@ -17,7 +18,7 @@ import type { ReactNode } from "react";
 /** A part as it is rendered, next to the step that owns it. */
 export type StepRow = {
   part: AgentPart<AgentToolSet>;
-  step: AgentAssistantStep<AgentToolSet>;
+  step: AgentAssistantStep<AgentToolSet> | AgentCompactionStep;
 };
 
 /**
@@ -79,6 +80,12 @@ export const getPartStatus = (
   part: AgentPart<AgentToolSet>,
   turnStatus?: AgentTurnStatus["status"]
 ): StepRowStatus => {
+  if (part.type === "compaction") {
+    // The part exists from `compaction.start`; only the record makes it a
+    // marker. Until then the row reports the summarization it is waiting on.
+    return part.state === "streaming" ? "running" : "complete";
+  }
+
   if (isAgentToolPart(part)) {
     if (part.state === "approval-requested") {
       // A call a policy approves on its own is not waiting on the user, so it
@@ -235,6 +242,10 @@ const editedPath = (
 export const getPartSummary = (
   part: AgentPart<AgentToolSet>
 ): ReactNode | undefined => {
+  if (part.type === "compaction") {
+    return part.record ? "context compacted" : undefined;
+  }
+
   if (isAgentToolPart(part) && part.state === "approval-requested") {
     // The row's own status carries the waiting; the dialog is where the
     // decision is made, so the row only says that one is owed.
@@ -433,10 +444,12 @@ export type RowApproval = {
  * executed), and a running one has none because `performance` only lands when
  * the step finishes; both are left blank.
  *
- * A text or reasoning row is timed by the part itself, whose span is the whole
- * of what it measures: it starts with the text and ends with the stream. A part
- * the stream never ended has no `completedAt` and is left blank, as is one from
- * a transcript written before the part carried times at all — a `NaN` in the
+ * A text, reasoning, or compaction row is timed by the part itself, whose span
+ * is the whole of what it measures: it starts with the part and ends with the
+ * stream (for compaction, with the summary). A part the stream never ended has
+ * no `completedAt` and is left blank — manual compaction markers never stream,
+ * and a marker from a transcript written before parts carried times has no
+ * usable start — as is one whose `createdAt` is not a number: a `NaN` in the
  * column is the wrong number this function exists to refuse.
  */
 export const getPartDurationMs = (
@@ -447,7 +460,11 @@ export const getPartDurationMs = (
     return step.metadata?.performance?.toolExecutionMs?.[part.toolCallId];
   }
 
-  if (isAgentTextPart(part) || isAgentReasoningPart(part)) {
+  if (
+    part.type === "compaction" ||
+    isAgentTextPart(part) ||
+    isAgentReasoningPart(part)
+  ) {
     if (part.completedAt === undefined || !Number.isFinite(part.createdAt)) {
       return undefined;
     }

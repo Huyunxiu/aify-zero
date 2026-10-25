@@ -9,6 +9,7 @@ import type { ToolSet } from "ai";
 import { AgentContext } from "../agent-context";
 import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
+import { resolvePolicy } from "../compaction/policy";
 import type { AgentStore } from "../storage";
 import type { AgentToolSet } from "../types";
 import {
@@ -176,6 +177,35 @@ export type Subagent = {
   turns: AgentTurn<AgentToolSet>[];
 };
 
+/**
+ * 子 agent 的压缩策略。
+ *
+ * 子 agent 可能跑在与父不同的模型上，所以它的窗口从已配置的窗口表解析，
+ * 而不是原样继承父的阈值。
+ */
+function subagentCompaction(
+  context: AgentContext,
+  modelId: string
+): AgentContext["compaction"] {
+  const parent = context.compaction;
+  if (!parent) {
+    return undefined;
+  }
+
+  return resolvePolicy({
+    contextWindow:
+      context.modelContextWindows?.[modelId] ?? parent.contextWindow,
+    overrides: {
+      auto: parent.auto,
+      thresholdRatio: parent.thresholdRatio,
+      reserveTokens: parent.reserveTokens,
+      keepRecentTokens: parent.keepRecentTokens,
+      pruneToolResults: parent.pruneToolResults,
+      maxSummaryTokens: parent.maxSummaryTokens,
+    },
+  });
+}
+
 export async function createSubagent(
   parent: SubagentParent,
   {
@@ -212,6 +242,8 @@ export async function createSubagent(
     // 提示片段跟着父上下文走：子 agent 不重新加载资源，看到的就是父所用的
     // 那一套，只是以子 agent 自己的 instructions 作为起点重新渲染。
     systemPromptSections: parent.context.systemPromptSections,
+    compaction: subagentCompaction(parent.context, resolvedModelId),
+    modelContextWindows: parent.context.modelContextWindows,
   });
 
   let systemPrompt = definition.instructions;

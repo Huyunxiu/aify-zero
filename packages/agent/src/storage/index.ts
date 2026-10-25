@@ -123,5 +123,16 @@ export interface AgentStore {
 
   saveTurns(messages: TurnInsertModel[]): Promise<number>;
 
+  /**
+   * 追加一条 turn 并把它设为 branch 的新 head。
+   *
+   * 与 `saveTurn` 的区别：这里只管插入和拓扑，不做 upsert；插入和
+   * `activeHeadId` 的更新在同一个事务里完成，失败不会在 branch 上留下孤儿。
+   *
+   * 它只追加，不插入中间：手工压缩的切点记录在 `CompactionRecord` 里，branch
+   * 始终保持线性，客户端本地的 turn 列表因此永远是 branch 的前缀。
+   */
+  insertTurnInBranch({ turn }: { turn: TurnInsertModel }): Promise<void>;
+
   updateTurn(id: string, parts: unknown, metadata?: unknown): Promise<number>;
 }

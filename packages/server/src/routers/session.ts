@@ -19,6 +19,8 @@ import {
   FileSystemContextSource,
   FileSystemSkillSource,
   loadContextFiles,
+  NothingToCompactError,
+  resolvePolicy,
   SkillExtension,
   STREAM_REGISTRY,
   SUBAGENT_DEFINITIONS,
@@ -27,6 +29,7 @@ import type { AgentToolSet } from "@workspace/agent";
 import {
   addToolApprovalResponse,
   findToolApprovalRequests,
+  findTurnWithoutToolResult,
 } from "@workspace/agent-client";
 import type {
   AgentTurn,
@@ -48,18 +51,133 @@ import z from "zod";
 import { getSessionDir } from "../config";
 import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
+import { withSessionLock } from "../session-lock";
 import {
   getPrimaryProjectDir,
   getProjectDirs,
 } from "./project/project.service";
 import { forkSessionSchema, listSessionTurnsSchema } from "./session.schema";
-import { findAiModelById } from "./settings/settings.service";
+import type { AiModel } from "./settings/settings.schema";
+import { findAiModelById, getUserSettings } from "./settings/settings.service";
+
+/**
+ * 建一个会话用的 agent：目录、策略、扩展和工具都按这个会话装配好。
+ *
+ * 建回合和手工压缩都要同一套装配；差别只在 AgentSession 里有什么、以及
+ * 接下来调用 `stream` 时发哪种 signal。
+ */
+async function buildSessionAgent({
+  sessionId,
+  aiModel,
+  effort,
+  projectId,
+  session,
+  store,
+}: {
+  sessionId: string;
+  aiModel: AiModel;
+  effort?: ModelEffort;
+  projectId?: string;
+  session: AgentSession;
+  store: SQLiteStore;
+}): Promise<Agent> {
+  // 会话目录先建出来：Environment 提示会把路径告诉模型，模型可能直接往里
+  // 写文件，不该让它先自己 mkdir。
+  const sessionDir = getSessionDir(sessionId);
+  mkdirSync(sessionDir, { recursive: true });
+
+  // 目录来自 project 表：会话指定了项目就用那个项目，否则用默认项目。
+  const projectDirs = await getProjectDirs(projectId);
+
+  // 技能和上下文由扩展加载并持有；提示词由扩展注册的片段在 turn 开始时
+  // 统一拼接，宿主只负责把资源注册进去。
+  const settings = await getUserSettings();
+  const compaction = resolvePolicy({
+    contextWindow: aiModel.limit?.context,
+    overrides: settings.compaction,
+  });
+  const modelContextWindows = Object.fromEntries(
+    settings.models
+      .filter((configured) => (configured.limit?.context ?? 0) > 0)
+      .map((configured) => [configured.model, configured.limit?.context ?? 0])
+  );
+  const agentContext = new AgentContext({
+    projectDirs,
+    sessionDir,
+    projectId,
+    modelId: aiModel.model,
+    modelEffort: effort,
+    compaction,
+    modelContextWindows,
+  });
+
+  const agent = new Agent({
+    name: "main",
+    sessionId,
+    modelEffort: effort,
+    context: agentContext,
+    session,
+    tools: {
+      bash: createBashTool({ agentContext }),
+      "read-file": createReadFileTool({ agentContext }),
+      "write-file": createWriteFileTool({ agentContext }),
+      "delete-file": createDeleteFileTool({ agentContext }),
+      "edit-file": createEditFileTool({ agentContext }),
+      grep: createGrepTool({ agentContext }),
+      glob: createGlobTool({ agentContext }),
+      "web-fetch": createWebFetchTool({ agentContext }),
+      "load-skill": createLoadSkillTool({ agentContext }),
+    },
+    store,
+    apiKey: aiModel.apiKey,
+    apiUrl: aiModel.apiUrl,
+    providerId: aiModel.provider,
+    modelId: aiModel.model,
+  });
+
+  // 环境信息排在最前：模型先知道自己在哪个项目、哪个会话目录里工作，
+  // 再读项目说明和技能列表。
+  await agent.registerExtension(
+    new EnvironmentExtension({ id: "environment" })
+  );
+
+  const skillsExtension = new SkillExtension({
+    id: "filesystem-skills",
+    sources: [new FileSystemSkillSource()],
+  });
+  await agent.registerExtension(skillsExtension);
+  await agent.registerExtension(
+    new ContextExtension({
+      id: "filesystem-context",
+      sources: [new FileSystemContextSource()],
+    })
+  );
+
+  // 系统提示由扩展注册的片段生成；`load-skill` 工具需要按名字查技能，
+  // 所以这里把扩展持有的 manager 交给上下文。
+  agentContext.skills = skillsExtension.manager;
+  agent.systemPrompt = appendSubagentPrompt("");
+
+  agent.registerTool(
+    "task",
+    createTaskTool({
+      agent,
+      agentContext,
+      definitions: SUBAGENT_DEFINITIONS,
+    })
+  );
+
+  agent.registerTool("questionnaire", createQuestionnaireTool({ agent }));
+
+  return agent;
+}
 
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
   .errors({
     MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
+    SESSION_BUSY: ErrorMap.SESSION_BUSY,
   })
   .input(
     type<{
@@ -93,121 +211,68 @@ const createSession = publicProcedure
       throw new Error("no message.");
     }
 
-    const store = new SQLiteStore();
-    const previousMessages = await store.getBranchTurns(sessionId);
-    const previousTurns = AgentSession.toAgentTurns(previousMessages);
-    const originalTurns = mostRecentTurn
-      ? [...previousTurns, mostRecentTurn]
-      : previousTurns;
-    const session = new AgentSession({ turns: originalTurns });
-    if (approvals?.length) {
-      const changedTurns = addToolApprovalResponse(session.turns, approvals);
-      for (const turn of changedTurns) {
-        await store.updateTurn(turn.id, turn);
+    return await withSessionLock(sessionId, async () => {
+      const store = new SQLiteStore();
+
+      // 一条流没跑完之前不能再开一条：手工压缩现在也注册成流，在锁释放后
+      // 继续跑，所以这里不能只靠锁来串行化。已经结束但还没从注册表摘掉的
+      // 条目（审批恢复时常见）不算占用。
+      const running = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
+      if (running && !running.isDone()) {
+        throw new ApiError("SESSION_BUSY", {
+          data: { sessionId, reason: "running" },
+        });
       }
-      const toolParts = findToolApprovalRequests(session.turns);
-      if (toolParts.length > 0) {
-        return {
-          activeStreamId: null,
-          awaitingToolApprovals: toolParts.length,
-        };
+
+      const previousMessages = await store.getBranchTurns(sessionId);
+      const previousTurns = AgentSession.toAgentTurns(previousMessages);
+      const originalTurns = mostRecentTurn
+        ? [...previousTurns, mostRecentTurn]
+        : previousTurns;
+      const session = new AgentSession({ turns: originalTurns });
+      if (approvals?.length) {
+        const changedTurns = addToolApprovalResponse(session.turns, approvals);
+        for (const turn of changedTurns) {
+          await store.updateTurn(turn.id, turn);
+        }
+        const toolParts = findToolApprovalRequests(session.turns);
+        if (toolParts.length > 0) {
+          return {
+            activeStreamId: null,
+            awaitingToolApprovals: toolParts.length,
+          };
+        }
       }
-    }
 
-    // 会话目录先建出来：Environment 提示会把路径告诉模型，模型可能直接往里
-    // 写文件，不该让它先自己 mkdir。
-    const sessionDir = getSessionDir(sessionId);
-    mkdirSync(sessionDir, { recursive: true });
+      const agent = await buildSessionAgent({
+        sessionId,
+        aiModel,
+        effort,
+        projectId,
+        session,
+        store,
+      });
 
-    // 目录来自 project 表：会话指定了项目就用那个项目，否则用默认项目。
-    const projectDirs = await getProjectDirs(projectId);
+      const activeStreamId = generateSessionId();
 
-    // 技能和上下文由扩展加载并持有；提示词由扩展注册的片段在 turn 开始时
-    // 统一拼接，宿主只负责把资源注册进去。
-    const agentContext = new AgentContext({
-      projectDirs,
-      sessionDir,
-      projectId,
-      modelId: aiModel.model,
-      modelEffort: effort,
+      const stream = await agent.stream({
+        turns: originalTurns,
+        modelId: aiModel.model,
+        signal: { type: "turn" },
+        onFinish: async (status) => {
+          STREAM_REGISTRY.unregisterStream(activeStreamId);
+          await store.clearActiveStream(sessionId, activeStreamId, status);
+        },
+      });
+
+      STREAM_REGISTRY.registerStream(activeStreamId, agent, stream);
+      await store.setActiveStream(sessionId, activeStreamId);
+
+      return {
+        activeStreamId,
+        awaitingToolApprovals: 0,
+      };
     });
-
-    const agent = new Agent({
-      name: "main",
-      sessionId,
-      modelEffort: effort,
-      context: agentContext,
-      session,
-      tools: {
-        bash: createBashTool({ agentContext }),
-        "read-file": createReadFileTool({ agentContext }),
-        "write-file": createWriteFileTool({ agentContext }),
-        "delete-file": createDeleteFileTool({ agentContext }),
-        "edit-file": createEditFileTool({ agentContext }),
-        grep: createGrepTool({ agentContext }),
-        glob: createGlobTool({ agentContext }),
-        "web-fetch": createWebFetchTool({ agentContext }),
-        "load-skill": createLoadSkillTool({ agentContext }),
-      },
-      store,
-      apiKey: aiModel.apiKey,
-      apiUrl: aiModel.apiUrl,
-      providerId: aiModel.provider,
-      modelId: aiModel.model,
-    });
-
-    // 环境信息排在最前：模型先知道自己在哪个项目、哪个会话目录里工作，
-    // 再读项目说明和技能列表。
-    await agent.registerExtension(
-      new EnvironmentExtension({ id: "environment" })
-    );
-
-    const skillsExtension = new SkillExtension({
-      id: "filesystem-skills",
-      sources: [new FileSystemSkillSource()],
-    });
-    await agent.registerExtension(skillsExtension);
-    await agent.registerExtension(
-      new ContextExtension({
-        id: "filesystem-context",
-        sources: [new FileSystemContextSource()],
-      })
-    );
-
-    // 系统提示由扩展注册的片段生成；`load-skill` 工具需要按名字查技能，
-    // 所以这里把扩展持有的 manager 交给上下文。
-    agentContext.skills = skillsExtension.manager;
-    agent.systemPrompt = appendSubagentPrompt("");
-
-    agent.registerTool(
-      "task",
-      createTaskTool({
-        agent,
-        agentContext,
-        definitions: SUBAGENT_DEFINITIONS,
-      })
-    );
-
-    agent.registerTool("questionnaire", createQuestionnaireTool({ agent }));
-
-    const activeStreamId = generateSessionId();
-
-    const stream = await agent.stream({
-      turns: originalTurns,
-      modelId: aiModel.model,
-      onFinish: async (status) => {
-        STREAM_REGISTRY.unregisterStream(activeStreamId);
-        await store.clearActiveStream(sessionId, activeStreamId, status);
-      },
-    });
-
-    STREAM_REGISTRY.registerStream(activeStreamId, agent, stream);
-    await store.setActiveStream(sessionId, activeStreamId);
-
-    return {
-      activeStreamId,
-      awaitingToolApprovals: 0,
-    };
   });
 
 /**
@@ -505,6 +570,109 @@ export const listSessionResources = publicProcedure
     return { skills: skillManager.listUserAvailableSkills(), context };
   });
 
+/**
+ * 按需压缩一个空闲会话。
+ *
+ * 和普通回合一样，这里只负责准备工作并把压缩交给 stream：会话检查、agent
+ * 装配、流注册，然后返回 streamId；摘要本身在后台跑。客户端从
+ * `/sessions/{id}/stream` 读事件，压缩 turn 落库先于流关闭，所以读完再取
+ * branch 一定能看到新标记。
+ *
+ * 选段仍然在流创建之前完成，`NOTHING_TO_COMPACT` 因此还是同步错误——调用方
+ * 不需要先拿 streamId 再等一条失败事件才知道没有可压缩的内容。
+ */
+export const compactSession = publicProcedure
+  .route({ method: "POST", path: "/sessions/{sessionId}/compact" })
+  .errors({
+    MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+    SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND,
+    SESSION_BUSY: ErrorMap.SESSION_BUSY,
+    NOTHING_TO_COMPACT: ErrorMap.NOTHING_TO_COMPACT,
+  })
+  .input(z.object({ sessionId: z.string(), model: z.string() }))
+  .handler(async ({ input }) => {
+    const { sessionId, model } = input;
+    const aiModel = await findAiModelById(model);
+    if (!aiModel) {
+      throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
+    }
+
+    return await withSessionLock(sessionId, async () => {
+      const store = new SQLiteStore();
+      const session = await store.getSessionById(sessionId);
+      if (!session) {
+        throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
+      }
+
+      const running = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
+      if ((running && !running.isDone()) || session.activeStreamId) {
+        throw new ApiError("SESSION_BUSY", {
+          data: { sessionId, reason: "running" },
+        });
+      }
+
+      const branch = await store.getBranchTurns(sessionId);
+      const turns = AgentSession.toAgentTurns(branch);
+      if (
+        findTurnWithoutToolResult(turns) !== null ||
+        findToolApprovalRequests(turns).length > 0
+      ) {
+        throw new ApiError("SESSION_BUSY", {
+          data: { sessionId, reason: "wait_review" },
+        });
+      }
+
+      const agent = await buildSessionAgent({
+        sessionId,
+        aiModel,
+        projectId: session.projectId ?? undefined,
+        session: new AgentSession({ turns }),
+        store,
+      });
+
+      const activeStreamId = generateSessionId();
+      // 先落 activeStreamId 再启动流：压缩可能在流注册之前就结束，那时
+      // onFinish 的 compare-and-clear 必须能找到自己这一行。
+      const previousStatus =
+        session.status === "running" ? "error" : session.status;
+      await store.setActiveStream(sessionId, activeStreamId);
+
+      let stream;
+      try {
+        stream = await agent.stream({
+          turns,
+          modelId: aiModel.model,
+          signal: { type: "compaction", trigger: "manual" },
+          onFinish: async () => {
+            STREAM_REGISTRY.unregisterStream(activeStreamId);
+            // 压缩只插入一条上下文标记 turn，不是模型回复：成功或失败都不该
+            // 改写会话原来的状态——一条完好的会话不该因为摘要失败被标成
+            // error，也不该平白多出一个未读的 done。
+            await store.clearActiveStream(
+              sessionId,
+              activeStreamId,
+              previousStatus
+            );
+          },
+        });
+      } catch (error) {
+        await store.clearActiveStream(
+          sessionId,
+          activeStreamId,
+          previousStatus
+        );
+        if (error instanceof NothingToCompactError) {
+          throw new ApiError("NOTHING_TO_COMPACT");
+        }
+        throw error;
+      }
+
+      STREAM_REGISTRY.registerStream(activeStreamId, agent, stream);
+
+      return { activeStreamId };
+    });
+  });
+
 export const session = {
   create: createSession,
   list: listSessions,
@@ -513,6 +681,7 @@ export const session = {
   markRead: markSessionRead,
   listSessionTurns,
   listSessionResources,
+  compact: compactSession,
   fork: forkSession,
   stream: streamSession,
   stop: stopSession,

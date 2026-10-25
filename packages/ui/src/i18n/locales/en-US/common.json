@@ -98,6 +98,21 @@
   "promptCommand": {
     "compact": "compact"
   },
+  "compaction": {
+    "title": "Context compacted",
+    "trigger": {
+      "pressure": "automatic",
+      "manual": "manual",
+      "overflow": "overflow recovery"
+    },
+    "tokens": "{{before}} → {{after}} tokens",
+    "running": "Compacting context…",
+    "manualResult": "Compacted {{before}} → {{after}} tokens.",
+    "manualFullResult": "Compacted to the minimum context ({{before}} → {{after}} tokens).",
+    "failed": "Could not compact the context.",
+    "commandOnly": "The /compact command must be sent on its own.",
+    "noSession": "Send a message first; there is no history to compact yet."
+  },
   "sessions": {
     "untitled": "Untitled",
     "loadingMore": "Loading more...",

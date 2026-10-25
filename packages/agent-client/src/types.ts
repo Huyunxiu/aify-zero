@@ -32,6 +32,52 @@ export type JSONObject = {
 
 export type AgentRuntimeContext = Record<string, unknown>;
 
+/** 这次压缩为什么发生。 */
+export type CompactionTrigger = "pressure" | "manual" | "overflow";
+
+/**
+ * 一次压缩：替换掉历史前缀的摘要，以及这次替换的代价。
+ *
+ * 它挂在 {@link AgentCompactionPart} 的 `record` 上；part 在 turn 时间线上的位置
+ * 就是边界，因此不需要指向保留历史的指针。摘要是模型的原始输出——面向模型的
+ * checkpoint framing 在投影时再加。
+ */
+export interface CompactionRecord {
+  /** 记录的数据结构版本，用于兼容未来格式变更。 */
+  version: 1;
+  /** 这次压缩的标识；与 part id 一致。 */
+  id: string;
+  /** 压缩触发方式：上下文压力、手动请求，或请求溢出。 */
+  trigger: CompactionTrigger;
+  /** 结构化摘要，不含 checkpoint framing。 */
+  summary: string;
+  /** 压缩前投影历史的 token 数；优先使用模型 usage，否则使用估算值。 */
+  tokensBefore: number;
+  /** 压缩后 checkpoint 与保留历史的估算 token 数，不含系统提示和工具 schema。 */
+  tokensAfter: number;
+  /** 被摘要替换的消息内容的估算 token 数。 */
+  shadowedTokens: number;
+  /** 被摘要替换内容覆盖的 turn 数。 */
+  shadowedTurns: number;
+  /** 被摘要替换内容覆盖的 step 数。 */
+  shadowedSteps: number;
+  /** 生成摘要的模型。 */
+  model: string;
+  /**
+   * 手工压缩保留段的起点。
+   *
+   * checkpoint 替代这条 turn 之前的全部历史，这条 turn 及其后的 turn 原文保留。
+   * 切点写在记录里而不是靠 compaction turn 在 branch 中的位置表达，因此手工
+   * 压缩的 turn 可以线性追加到 branch 末尾。缺省表示全量压缩（marker 之前全部
+   * 被 checkpoint 替代）。
+   */
+  retainedFromTurnId?: string;
+  /** 摘要调用自身的 usage；绝不是会话的 usage。 */
+  usage?: LanguageModelUsage;
+  /** 压缩记录创建时间，以 Unix 毫秒时间戳表示。 */
+  createdAt: number;
+}
+
 type TextStreamEventBase = {
   turnId: string;
   stepId: string;
@@ -202,6 +248,34 @@ export type TextStreamTitleEndEvent = TextStreamEventBase & {
   title: string;
   createdAt: number;
 };
+/**
+ * 一次压缩即将开始。
+ *
+ * 事件带着 placement 决定的 turn/step：压缩 part 从这一刻起就以 `"streaming"`
+ * 存在，摘要完成后由 `compaction.end` 补上记录。失败的尝试由
+ * `compaction.error` 撤回，历史保持原样。
+ */
+type TextStreamCompactionStartEvent = TextStreamEventBase & {
+  type: "compaction.start";
+  id: string;
+  trigger: CompactionTrigger;
+};
+/** 压缩尝试失败；历史未改变，尚未提交的 part 会被撤回。 */
+type TextStreamCompactionErrorEvent = {
+  type: "compaction.error";
+  id: string;
+  error: unknown;
+  createdAt: number;
+};
+/**
+ * 摘要已就绪，标记 step 即将提交。builder 会把记录写到 `compaction.start`
+ * 建立、仍在 streaming 的 part 上。
+ */
+type TextStreamCompactionEndEvent = TextStreamEventBase & {
+  type: "compaction.end";
+  id: string;
+  record: CompactionRecord;
+};
 type TextStreamAbortEvent = TextStreamEventBase & {
   type: "abort";
   reason?: string;
@@ -235,7 +309,10 @@ export type AgentStreamEvent<TOOLS extends ToolSet> =
   | TextStreamTitleStartEvent
   | TextStreamTitleEndEvent
   | TextStreamAbortEvent
-  | TextStreamErrorEvent;
+  | TextStreamErrorEvent
+  | TextStreamCompactionStartEvent
+  | TextStreamCompactionErrorEvent
+  | TextStreamCompactionEndEvent;
 
 export type AgentSessionTitlePart = {
   id: string;
@@ -253,6 +330,38 @@ export function isAgentSessionTitlePart<TOOLS extends ToolSet>(
   part: AgentPart<TOOLS>
 ): part is AgentSessionTitlePart {
   return part.type === "session.title";
+}
+
+/**
+ * 压缩标记 step 的负载：一条记录，整体提交。
+ *
+ * 自动压缩的 part 从 `compaction.start` 起以 `"streaming"` 存在，摘要完成时
+ * 由 `compaction.end` 补上 `record` 并置为 `"done"`；失败的尝试不会留下 part。
+ * 手工压缩直接写入 `"done"`，因为它没有流式过程。
+ *
+ * 做成 part 而不是 step 上的字段，是为了让 turn 的 content 和其它 step 一样
+ * 保持为 part 列表，卡片渲染器也能用同样的方式处理内联（自动）和 turn 级
+ * （手工）标记。
+ */
+export type AgentCompactionPart = {
+  type: "compaction";
+  id: string;
+  state: "streaming" | "done";
+  /**
+   * Epoch (ms) the compaction started.
+   */
+  createdAt: number;
+  /**
+   * Epoch (ms). Absent while the compaction is still running, and on a marker
+   * that never streamed (manual compaction): those have no span to show.
+   */
+  completedAt?: number;
+  record?: CompactionRecord;
+};
+export function isAgentCompactionPart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentCompactionPart {
+  return part.type === "compaction";
 }
 
 /**
@@ -663,7 +772,8 @@ export type AgentAssistantPart<TOOLS extends ToolSet> =
  */
 export type AgentPart<TOOLS extends ToolSet> =
   | AgentUserPart
-  | AgentAssistantPart<TOOLS>;
+  | AgentAssistantPart<TOOLS>
+  | AgentCompactionPart;
 
 export type StepMetadata = Record<string, any> & {
   /**
@@ -791,6 +901,23 @@ export type AgentSessionTitleStep = AgentStepBase & {
   model: string;
 };
 
+/**
+ * 压缩标记。自动压缩时，它在 turn content 中的位置就是边界：投影扫到它时
+ * 会重置为 checkpoint。手工压缩的标记 turn 则线性追加在 branch 末尾，真正的
+ * 切点由记录里的 `retainedFromTurnId` 给出。
+ *
+ * 它要么位于 assistant turn 内（自动压缩，就在模型上下文被切掉的位置），
+ * 要么位于独立的 compaction turn 内（手工压缩）。
+ */
+export type AgentCompactionStep = AgentStepBase & {
+  type: "compaction";
+
+  content: AgentCompactionPart[];
+
+  /** 生成摘要的模型。 */
+  model: string;
+};
+
 export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase & {
   /**
    * The type of the step.
@@ -813,6 +940,7 @@ export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase & {
 export type AgentStep<TOOLS extends ToolSet> =
   | AgentUserStep
   | AgentAssistantStep<TOOLS>
+  | AgentCompactionStep
   | AgentSessionTitleStep;
 
 export type AgentUserTurn = AgentTurnBase & {
@@ -835,12 +963,28 @@ export type AgentAssistantTurn<TOOLS extends ToolSet> = AgentTurnBase & {
   type: "assistant";
 
   /**
-   * The steps of the turn in order. One turn is one assistant reply: the model
-   * step, then a step per round of tool calls, until it stops calling tools.
+   * 这条 turn 按顺序排列的 steps。一条 turn 就是一次 assistant 回复：先是模型
+   * step，然后每轮工具调用一个 step，直到模型不再调用工具。
+   *
+   * 中间可能插入一个压缩 step：自动压缩就地切掉上下文，投影会把它之后的
+   * 所有 step 当作保留段。
    */
-  content: AgentAssistantStep<TOOLS>[];
+  content: (AgentAssistantStep<TOOLS> | AgentCompactionStep)[];
+};
+
+/**
+ * 只用来承载压缩标记的 turn（手工 `/compact`）。
+ *
+ * 它是普通的 branch 节点，并且总是追加到末尾、成为新的 active head。它不代表
+ * 物理切点：切点写在 `CompactionRecord.retainedFromTurnId` 里，投影据此从保留段
+ * 起点重建；全量压缩没有这个字段，标记之前的 turn 全部被 checkpoint 替代。
+ */
+export type AgentCompactionTurn = AgentTurnBase & {
+  type: "compaction";
+  content: AgentCompactionStep[];
 };
 
 export type AgentTurn<TOOLS extends ToolSet = ToolSet> =
   | AgentUserTurn
-  | AgentAssistantTurn<TOOLS>;
+  | AgentAssistantTurn<TOOLS>
+  | AgentCompactionTurn;

@@ -15,19 +15,64 @@ import {
   isAgentToolPart,
 } from "@workspace/agent-client";
 import type {
-  AgentToolPart,
+  AgentAssistantTurn,
   AgentPart,
+  AgentStep,
+  AgentToolPart,
   AgentTurn,
+  AgentUserTurn,
 } from "@workspace/agent-client";
 import { createToolModelOutput } from "ai/internal";
 
 import { TOOL_DENIED_TEXT } from "../hooks-manager";
 import { getOwn } from "./get-own";
 
+/**
+ * 把已存储的 turns 转成模型消息，但不应用压缩标记。
+ *
+ * 需要模型侧历史（压缩标记会把累计器重置）的调用方必须改用 `projectHistory`；
+ * 这里是它依赖的原始转换器，会完全跳过 compaction turn，因此不会产出只应用了
+ * 一半的历史。
+ */
 export async function convertAgentTurnToModalMessage<TOOLS extends ToolSet>(
   turns: AgentTurn<TOOLS>[]
 ): Promise<ModelMessage[]> {
   return await convertToModelMessages<TOOLS>(turns);
+}
+
+/**
+ * 把单个 step 转成它贡献的模型消息。
+ *
+ * step 是压缩切点可能落在的单位，所以投影需要逐步转换。这里复用 turn 转换器，
+ * 而不是重写一遍工具/审批处理。
+ */
+export async function convertStepToModelMessages<TOOLS extends ToolSet>(
+  step: AgentStep<TOOLS>,
+  options?: { tools?: ToolSet }
+): Promise<ModelMessage[]> {
+  if (step.type === "assistant") {
+    const turn: AgentAssistantTurn<TOOLS> = {
+      id: `step:${step.id}`,
+      type: "assistant",
+      createdAt: step.createdAt,
+      status: "done",
+      content: [step],
+    };
+    return await convertToModelMessages<TOOLS>([turn], options);
+  }
+
+  if (step.type === "user") {
+    const turn: AgentUserTurn = {
+      id: `step:${step.id}`,
+      type: "user",
+      createdAt: step.createdAt,
+      status: "done",
+      content: [step],
+    };
+    return await convertToModelMessages<TOOLS>([turn], options);
+  }
+
+  return [];
 }
 
 /**
@@ -87,6 +132,11 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
             )
             .filter(isNonNullable),
         });
+        break;
+      }
+      case "compaction": {
+        // compaction turn 是标记而不是对话；投影会在调用这个转换器之前消费它的
+        // step。
         break;
       }
       case "assistant": {
@@ -346,6 +396,10 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
           }
 
           for (const step of turn.content) {
+            // 压缩 step 和标题 step 都不是 assistant 内容。
+            if (step.type !== "assistant") {
+              continue;
+            }
             for (const part of step.content) {
               // A call that reported part-way through — a `task` call does, so
               // a client can follow the subagent it started — has no result

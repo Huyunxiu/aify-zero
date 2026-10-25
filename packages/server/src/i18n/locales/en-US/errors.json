@@ -24,5 +24,8 @@
   "PROJECT_DIR_EXISTS": "A project already uses this directory.",
   "NOTHING_TO_FORK": "There is nothing to fork in this chat yet.",
   "MESSAGE_NOT_FOUND": "The requested message was not found in this chat.",
-  "STREAM_NOT_FOUND": "There is no reply running for this chat."
+  "STREAM_NOT_FOUND": "There is no reply running for this chat.",
+  "SESSION_BUSY": "This chat is busy. Wait for the current turn to finish and try again.",
+  "NOTHING_TO_COMPACT": "There is not enough history to compact yet.",
+  "COMPACTION_FAILED": "The context could not be compacted. The history is unchanged."
 }

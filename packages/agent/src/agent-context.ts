@@ -2,6 +2,7 @@ import type { AgentStreamEvent } from "@workspace/agent-client";
 
 import { AgentState } from "./agent-state";
 import type { AgentStateOptions } from "./agent-state";
+import type { ResolvedCompactionPolicy, SummarizeFn } from "./compaction/types";
 import type { SystemPromptSection } from "./extensions/types";
 import { SkillManager } from "./skill";
 import type { AgentToolSet } from "./types";
@@ -48,6 +49,20 @@ export type AgentContextOptions = AgentStateOptions & {
    * 看到同一套说明。
    */
   systemPromptSections?: readonly SystemPromptSection[];
+  /**
+   * 宿主根据模型窗口和用户设置解析出的上下文压缩策略。测试和不需要压缩的
+   * 嵌入调用方可以不传。
+   */
+  compaction?: ResolvedCompactionPolicy;
+  /**
+   * 覆盖默认摘要器；测试在这里注入假实现。
+   */
+  summarize?: SummarizeFn;
+  /**
+   * 每个已配置模型的上下文窗口，按 model id 索引。子 agent 跑在自己的模型上，
+   * 从这里解析自己的窗口。
+   */
+  modelContextWindows?: Readonly<Record<string, number>>;
   controller?: AgentStreamEventController;
 };
 export class AgentContext extends AgentState {
@@ -58,6 +73,9 @@ export class AgentContext extends AgentState {
   projectId?: string;
   skills: SkillManager;
   systemPromptSections: readonly SystemPromptSection[];
+  compaction?: ResolvedCompactionPolicy;
+  summarize?: SummarizeFn;
+  modelContextWindows?: Readonly<Record<string, number>>;
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
   abortSignal?: AbortSignal;
   controller?: AgentStreamEventController;
@@ -76,6 +94,9 @@ export class AgentContext extends AgentState {
     this.projectId = options.projectId;
     this.skills = options.skills ?? new SkillManager({ dirs: [] });
     this.systemPromptSections = options.systemPromptSections ?? [];
+    this.compaction = options.compaction;
+    this.summarize = options.summarize;
+    this.modelContextWindows = options.modelContextWindows;
     this.controller = options.controller;
   }
   [x: string]: unknown;

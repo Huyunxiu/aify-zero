@@ -1,3 +1,7 @@
+import type {
+  CompactionRecord,
+  CompactionTrigger,
+} from "@workspace/agent-client";
 import type { ModelMessage } from "ai";
 
 /**
@@ -21,6 +25,18 @@ export type SessionEndEvent = {
 export type TitleGeneratedEvent = {
   sessionId: string;
   title: string;
+};
+
+/** 一次压缩即将调用摘要器。 */
+export type CompactionStartEvent = {
+  sessionId: string;
+  trigger: CompactionTrigger;
+};
+
+/** 一次压缩已提交；记录描述了它替换了什么、代价如何。 */
+export type CompactionEndEvent = {
+  sessionId: string;
+  record: CompactionRecord;
 };
 
 /**
@@ -92,6 +108,8 @@ export interface HooksMap {
   session_start: HookHandler<SessionStartEvent>;
   session_end: HookHandler<SessionEndEvent>;
   title_generated: HookHandler<TitleGeneratedEvent>;
+  "compaction:start": HookHandler<CompactionStartEvent>;
+  "compaction:end": HookHandler<CompactionEndEvent>;
   /**
    * Raised once per client tool call, before it runs. This is the only place a
    * call can be turned down or its input rewritten: the tools are executed by

@@ -19,7 +19,6 @@ import { toAgentStreamEvent } from "../../src/utils/to-agent-stream-event.js";
 
 const turnId = "turn-1";
 const stepId = "step-1";
-const model = "test-model";
 
 const performance: StepResultPerformance = {
   effectiveOutputTokensPerSecond: 1,
@@ -64,13 +63,14 @@ describe(toAgentStreamEvent, () => {
       { type: "reasoning-end", id: "r" },
     ]);
 
+    const base = { turnId, stepId, createdAt: expect.any(Number) };
     expect(parts).toStrictEqual([
-      { type: "text.start", id: "t" },
-      { type: "text.delta", id: "t", text: "hi" },
-      { type: "text.end", id: "t" },
-      { type: "reasoning.start", id: "r" },
-      { type: "reasoning.delta", id: "r", text: "why" },
-      { type: "reasoning.end", id: "r" },
+      { ...base, type: "text.start", id: "t" },
+      { ...base, type: "text.delta", id: "t", text: "hi" },
+      { ...base, type: "text.end", id: "t" },
+      { ...base, type: "reasoning.start", id: "r" },
+      { ...base, type: "reasoning.delta", id: "r", text: "why" },
+      { ...base, type: "reasoning.end", id: "r" },
     ]);
   });
 
@@ -113,10 +113,15 @@ describe(toAgentStreamEvent, () => {
       "tool.error",
       "tool.output-denied",
     ]);
-    expect(parts[3]).toStrictEqual({ ...call, type: "tool.call" });
+    expect(parts[3]).toMatchObject({
+      ...call,
+      type: "tool.call",
+      turnId,
+      stepId,
+    });
   });
 
-  test("should rename the turn and step parts, stamping the ids, without their request or response", async () => {
+  test("should ignore the turn and step chunks the agent opens itself", async () => {
     const parts = await convert<ToolSet>([
       { type: "start" },
       {
@@ -141,28 +146,7 @@ describe(toAgentStreamEvent, () => {
       },
     ]);
 
-    expect(parts).toStrictEqual([
-      { turnId, stepId, type: "turn.start" },
-      { turnId, stepId, type: "step.start", model, warnings: [] },
-      {
-        turnId,
-        stepId,
-        type: "step.finish",
-        usage,
-        performance,
-        finishReason: "stop",
-        rawFinishReason: "stop",
-        providerMetadata: { anthropic: { cacheReadTokens: 7 } },
-      },
-      {
-        turnId,
-        stepId,
-        type: "turn.finish",
-        finishReason: "stop",
-        rawFinishReason: "stop",
-        totalUsage: usage,
-      },
-    ]);
+    expect(parts).toStrictEqual([]);
   });
 
   test("should drop the parts the protocol does not define", async () => {
@@ -172,7 +156,20 @@ describe(toAgentStreamEvent, () => {
       { type: "raw", rawValue: { provider: "chunk" } },
     ]);
 
-    expect(parts).toStrictEqual([{ type: "text.delta", id: "t", text: "hi" }]);
+    expect(parts).toHaveLength(2);
+    expect(parts[0]).toMatchObject({
+      type: "custom",
+      kind: "test.event",
+      turnId,
+      stepId,
+    });
+    expect(parts[1]).toMatchObject({
+      type: "text.delta",
+      id: "t",
+      text: "hi",
+      turnId,
+      stepId,
+    });
   });
 
   test("should cancel the source stream when the consumer stops early", async () => {

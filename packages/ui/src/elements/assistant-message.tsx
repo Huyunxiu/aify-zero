@@ -21,6 +21,7 @@ import {
   Trash2Icon,
   FilePenIcon,
   ListChecksIcon,
+  Minimize2Icon,
 } from "lucide-react";
 
 import {
@@ -49,6 +50,7 @@ import { useElapsedMs } from "../hooks/use-elapsed-ms";
 import { useTouchPrimary } from "../hooks/use-touch-primary";
 import { cn } from "../lib/utils";
 import { useSubagentPane } from "../stores/subagent-pane";
+import { formatTokens } from "./compaction-message";
 import {
   Message,
   MessageAction,
@@ -215,6 +217,18 @@ const TurnElapsed = ({ turn }: { turn: AgentAssistantTurn<AgentToolSet> }) => {
   );
 };
 
+/**
+ * 压缩是怎么触发的，写在行尾和展开后的标题旁。
+ *
+ * 文案与 `compaction.trigger.*` 一致；本组件的行标签都是英文硬编码的，所以
+ * 不为这一行单独走 i18n，免得同一串行一半中文一半英文。
+ */
+const COMPACTION_TRIGGER_LABEL = {
+  pressure: "automatic",
+  manual: "manual",
+  overflow: "overflow recovery",
+} as const;
+
 const TURN_HEADING = {
   streaming: "Working",
   done: "Finished",
@@ -326,6 +340,54 @@ export const AssistantMessage = ({
                 durationMs === undefined
                   ? undefined
                   : formatDuration(durationMs);
+
+              if (part.type === "compaction") {
+                // 内联压缩只是这一轮里的一步：和相邻的 note、工具调用一样，
+                // 收成一行、点开才看摘要。独立的压缩 turn（手工）仍然用
+                // CompactionMessage —— 那一轮本身就是一张概述式的 Frame。
+                const { record } = part;
+                const trigger = record
+                  ? COMPACTION_TRIGGER_LABEL[record.trigger]
+                  : undefined;
+                const tokens =
+                  record &&
+                  `${formatTokens(record.tokensBefore)} → ${formatTokens(record.tokensAfter)} tokens`;
+
+                return (
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={Minimize2Icon}
+                    label={getStepLabel("Compact", trigger)}
+                    status={status}
+                    summary={tokens || summary}
+                    duration={duration}
+                  >
+                    <Frame variant="default" overflowBehavior="scroll">
+                      <FrameHeader>
+                        <FrameTitle>
+                          Compact
+                          {trigger && (
+                            <span className="ml-2 font-normal text-muted-foreground text-xs">
+                              {trigger}
+                            </span>
+                          )}
+                        </FrameTitle>
+                        {tokens && (
+                          <span className="text-muted-foreground text-xs">
+                            {tokens}
+                          </span>
+                        )}
+                      </FrameHeader>
+                      <FramePanel>
+                        <MessageResponse controls={FRAME_CONTROLS}>
+                          {record?.summary ?? ""}
+                        </MessageResponse>
+                      </FramePanel>
+                    </Frame>
+                  </AgentActivityStep>
+                );
+              }
 
               if (part.type === "text") {
                 return (

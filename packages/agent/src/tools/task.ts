@@ -165,6 +165,7 @@ Usage:
       const stream = await subagent.stream({
         turns,
         modelId: subagent.context.modelId,
+        signal: { type: "turn" },
         onFinish: async (status) => {
           STREAM_REGISTRY.unregisterStream(activeStreamId);
           await store.clearActiveStream(

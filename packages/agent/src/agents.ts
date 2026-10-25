@@ -1,13 +1,18 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
-import { findToolPartByToolCallId } from "@workspace/agent-client";
+import {
+  findToolPartByToolCallId,
+  findTurnWithoutToolResult,
+} from "@workspace/agent-client";
 import type {
+  AgentCompactionTurn,
   AgentRuntimeContext,
   AgentStep,
   AgentStreamEvent,
   AgentTurn,
   AgentTurnStatus,
+  CompactionRecord,
 } from "@workspace/agent-client";
 import type { TurnModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
@@ -34,6 +39,23 @@ import { collectToolApprovals } from "ai/internal";
 
 import type { AgentContext } from "./agent-context";
 import type { AgentSession } from "./agent-session";
+import { CompactionError, compactHistory } from "./compaction/compact";
+import { estimateMessagesTokens, estimateTokens } from "./compaction/estimate";
+import { createCompactionStep } from "./compaction/marker";
+import { isContextOverflowError } from "./compaction/overflow";
+import {
+  resolvePolicy as resolveCompactionPolicy,
+  shouldCompact,
+} from "./compaction/policy";
+import { pruneOlderToolResults } from "./compaction/prune";
+import {
+  findEndPlacement,
+  findPreTurnPlacement,
+  measureContext,
+  planManualCompaction,
+} from "./compaction/select";
+import { createSummarizer } from "./compaction/summarizer";
+import type { ResolvedCompactionPolicy, SummarizeFn } from "./compaction/types";
 import { ExtensionManager } from "./extensions/manager";
 import type { Extension } from "./extensions/types";
 import { HooksManager } from "./hooks-manager";
@@ -41,10 +63,31 @@ import type { HookContext } from "./hooks-manager";
 import type { AgentStore, SessionEndStatus } from "./storage";
 import { executeToolCalls, stripToolExecution } from "./tools/execution";
 import type { AgentToolSet } from "./types";
-import { generateEventId, generateStepId } from "./utils/id-util";
+import {
+  generateEventId,
+  generateStepId,
+  generateTurnId,
+} from "./utils/id-util";
 import { toAgentEvent } from "./utils/to-agent-stream-event";
 
 registerTelemetry(DevToolsTelemetry());
+
+const MAX_COMPACTIONS_PER_TURN = 3;
+
+const ZERO_USAGE: LanguageModelUsage = {
+  inputTokens: 0,
+  inputTokenDetails: {
+    noCacheTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+  },
+  outputTokens: 0,
+  outputTokenDetails: {
+    textTokens: 0,
+    reasoningTokens: 0,
+  },
+  totalTokens: 0,
+};
 
 export const TITLE_PROMPT = `Generate a very short session title (2-5 words max) based on the user's message.
 Rules:
@@ -102,15 +145,36 @@ export type AgentOptions = {
   abortSignal?: AbortSignal;
 };
 
+/**
+ * What a stream is asked to run.
+ *
+ * A turn is the ordinary case: a user turn is in `turns` and the model drives it
+ * to an ending. A compaction is the same stream machinery applied to the manual
+ * `/compact` path: there is no model turn to run, the agent folds the history
+ * itself and writes the marker, and the stream reports it like any other turn.
+ * The union is what keeps both behind one entry point — a caller sends the
+ * signal, the agent decides what that means.
+ */
+export type AgentStreamSignal =
+  | { readonly type: "turn" }
+  | { readonly type: "compaction"; readonly trigger: "manual" };
+
 export type AgentStreamOptions = {
   modelId: string;
   turns: AgentTurn<AgentToolSet>[];
+  /** What this stream runs; see {@link AgentStreamSignal}. */
+  signal: AgentStreamSignal;
   /**
-   * How the turn ended, so the caller can settle the session it belongs to. The
-   * outcome is only known here, once the turn has run.
+   * How the run ended, so the caller can settle the session it belongs to. The
+   * outcome is only known here, once the run has finished.
    */
   onFinish: (status: SessionEndStatus) => Promise<void>;
 };
+
+/** 手工压缩被要求压缩一段没有可压缩内容的历史。 */
+export class NothingToCompactError extends Error {
+  override readonly name = "NothingToCompactError";
+}
 
 type AgentTurnInput = {
   readonly title?: string;
@@ -181,6 +245,12 @@ export class Agent {
   #running = false;
   /** 本 turn 拼接好的系统提示；turn 开始前算一次，turn 内保持稳定。 */
   #instructions?: string;
+  /** 当前 turn 的压缩记账。 */
+  #compactionsThisTurn = 0;
+  #currentTurnId?: string;
+  #lastCompactionGuard?: { messageCount: number; tokens: number };
+  /** 是否追加了新的 user turn；只有这种情况下才允许回合开始前的压缩。 */
+  #startedFromUserTurn = false;
 
   constructor(options: AgentOptions) {
     this.name = options.name;
@@ -294,7 +364,65 @@ export class Agent {
     }
   }
 
-  async #startStream({ turns, modelId, onFinish }: AgentStreamOptions) {
+  async #startStream(options: AgentStreamOptions) {
+    if (options.signal.type === "compaction") {
+      return await this.#startCompactionStream(options);
+    }
+    return await this.#startTurnStream(options);
+  }
+
+  /**
+   * Builds the stream a run produces into, with the writes the run needs.
+   *
+   * `start` runs synchronously when the stream is constructed, so `write` is
+   * usable as soon as this returns. Every write also feeds the turn builder
+   * when there is one; the compaction run and the turn run both report through
+   * the same channel, which is what lets one reader follow either.
+   */
+  #createEventStream(): {
+    stream: ReadableStream<AgentStreamEvent<AgentToolSet>>;
+    write: (event: AgentStreamEvent<AgentToolSet>) => Promise<void>;
+    close: () => void;
+    fail: (error: unknown) => void;
+  } {
+    let controller!: ReadableStreamDefaultController<
+      AgentStreamEvent<AgentToolSet>
+    >;
+
+    const stream = new ReadableStream<AgentStreamEvent<AgentToolSet>>({
+      start(controllerArg) {
+        controller = controllerArg;
+      },
+    });
+
+    return {
+      stream,
+      write: async (event) => {
+        try {
+          await this.session.builder?.push(event);
+          controller.enqueue(event);
+        } catch {
+          // suppress errors when the stream has been closed
+        }
+      },
+      close: () => {
+        try {
+          controller.close();
+        } catch {
+          // suppress errors when the stream has been closed
+        }
+      },
+      fail: (error) => {
+        try {
+          controller.error(error);
+        } catch {
+          // suppress errors when the stream has been closed
+        }
+      },
+    };
+  }
+
+  async #startTurnStream({ turns, modelId, onFinish }: AgentStreamOptions) {
     this.context.modelId = modelId;
     this.session.turns = turns;
     // 提示片段在 turn 开始时拼一次：同一 turn 的每一步看到同一份提示词，
@@ -307,6 +435,7 @@ export class Agent {
     if (!mostRecentTurn) {
       throw new Error("no message.");
     }
+    this.#startedFromUserTurn = mostRecentTurn.type === "user";
 
     await this.hooks.emit(
       "session_start",
@@ -349,40 +478,7 @@ export class Agent {
       await this.store.setActiveHead(this.sessionId, mostRecentTurn.id);
     }
 
-    let controller!: ReadableStreamDefaultController<
-      AgentStreamEvent<AgentToolSet>
-    >;
-
-    const stream = new ReadableStream<AgentStreamEvent<AgentToolSet>>({
-      start(controllerArg) {
-        controller = controllerArg;
-      },
-    });
-
-    const safeError = (error: unknown) => {
-      try {
-        controller.error(error);
-      } catch {
-        // suppress errors when the stream has been closed
-      }
-    };
-
-    const safeClose = () => {
-      try {
-        controller.close();
-      } catch {
-        // suppress errors when the stream has been closed
-      }
-    };
-
-    const safeEnqueue = async (event: AgentStreamEvent<AgentToolSet>) => {
-      try {
-        await this.session.builder?.push(event);
-        controller.enqueue(event);
-      } catch {
-        // suppress errors when the stream has been closed
-      }
-    };
+    const { stream, write, close, fail } = this.#createEventStream();
 
     // Started, not awaited: the turn runs as a producer into `stream` while the
     // caller begins reading it. Awaiting here would run the whole turn to
@@ -395,9 +491,9 @@ export class Agent {
 
       try {
         this.context.controller = {
-          write: safeEnqueue,
-          close: safeClose,
-          error: safeError,
+          write,
+          close,
+          error: fail,
         };
 
         const turnId = await this.session.startTurn({
@@ -423,7 +519,7 @@ export class Agent {
         // covers the rest of the turn — the store writes around it in
         // particular — which would otherwise reject unobserved and leave the
         // reader waiting for a stream that never ends.
-        safeError(error);
+        fail(error);
       } finally {
         this.#running = false;
         await this.hooks.emit(
@@ -432,6 +528,198 @@ export class Agent {
           this.extensionApi
         );
         onFinish(outcome);
+      }
+    })();
+
+    return stream;
+  }
+
+  /**
+   * Runs a manual compaction as a stream of its own.
+   *
+   * It is the same producer/consumer shape as a turn: the caller gets a stream
+   * back at once, the summary runs in the background, and the marker is written
+   * before the stream closes — so a reader that reaches the end can fetch the
+   * branch and find it. The plan is made before the stream exists, which is what
+   * lets a caller answer "nothing to compact" synchronously and keep the lock
+   * until the run has actually started.
+   *
+   * The turn the stream reports is an independent `compaction` turn. It is
+   * always appended and becomes the active head; `recent` records its cut
+   * point in the record instead of splicing itself into the middle of the
+   * branch, so the stored turn list stays linear.
+   */
+  async #startCompactionStream(options: AgentStreamOptions) {
+    const { turns, modelId, signal, onFinish } = options;
+    if (signal.type !== "compaction") {
+      throw new Error("not a compaction signal");
+    }
+
+    this.context.modelId = modelId;
+    await this.session.loadTurns({ turns });
+
+    const policy = this.#policy();
+    const plan = planManualCompaction(turns, this.session.projected, policy);
+    if (!plan?.parentTurnId) {
+      throw new NothingToCompactError();
+    }
+
+    const turnId = generateTurnId();
+    const stepId = generateStepId();
+    const compactionId = generateEventId();
+    const startedAt = Date.now();
+    const { stream, write, close, fail } = this.#createEventStream();
+    this.context.controller = { write, close, error: fail };
+
+    void (async () => {
+      let outcome: SessionEndStatus = "error";
+
+      try {
+        // 标记先以 streaming 出现，长摘要期间读者能看到它在进行；失败时
+        // compaction.error 会把这个 part（以及只为它存在的 step）撤回。
+        await write({
+          type: "turn.start",
+          id: turnId,
+          turnType: "compaction",
+          createdAt: startedAt,
+        });
+        await write({
+          type: "step.start",
+          id: stepId,
+          turnId,
+          stepType: "compaction",
+          model: modelId,
+          createdAt: startedAt,
+        });
+        await write({
+          type: "compaction.start",
+          id: compactionId,
+          trigger: signal.trigger,
+          turnId,
+          stepId,
+          createdAt: startedAt,
+        });
+        await this.hooks.emit(
+          "compaction:start",
+          { sessionId: this.sessionId, trigger: signal.trigger },
+          this.extensionApi
+        );
+
+        const result = await compactHistory({
+          projected: this.session.projected,
+          policy,
+          trigger: signal.trigger,
+          modelId,
+          summarize: this.#summarize(),
+          region: plan.region,
+          signal: this.context.abortSignal,
+        });
+        if (!result) {
+          throw new CompactionError("compaction produced no record");
+        }
+
+        // 手工压缩的 part 与记录共用一个 id：时间线上的这个标记只有一个身份。
+        // 切点写进记录，压缩 turn 本身只做线性追加。
+        const record: CompactionRecord = {
+          ...result.record,
+          id: compactionId,
+          ...(plan.retainedFromTurnId
+            ? { retainedFromTurnId: plan.retainedFromTurnId }
+            : {}),
+        };
+        const completedAt = Date.now();
+
+        const turn: AgentCompactionTurn = {
+          id: turnId,
+          type: "compaction",
+          createdAt: startedAt,
+          completedAt,
+          status: "done",
+          content: [
+            {
+              id: stepId,
+              type: "compaction",
+              createdAt: startedAt,
+              completedAt,
+              status: "done",
+              model: modelId,
+              content: [
+                {
+                  type: "compaction",
+                  id: compactionId,
+                  state: "done",
+                  createdAt: startedAt,
+                  completedAt,
+                  record,
+                },
+              ],
+            },
+          ],
+        };
+
+        await write({
+          type: "compaction.end",
+          id: compactionId,
+          turnId,
+          stepId,
+          record,
+          createdAt: completedAt,
+        });
+        await write({
+          id: stepId,
+          turnId,
+          type: "step.finish",
+          createdAt: completedAt,
+          usage: ZERO_USAGE,
+          finishReason: "stop",
+          rawFinishReason: "stop",
+          providerMetadata: undefined,
+          status: "done",
+        });
+        await write({
+          id: turnId,
+          type: "turn.finish",
+          createdAt: completedAt,
+          usage: ZERO_USAGE,
+          status: "done",
+        });
+
+        await this.store.insertTurnInBranch({
+          turn: {
+            id: turn.id,
+            sessionId: this.sessionId,
+            type: "compaction",
+            metadata: {},
+            content: turn,
+            parentId: plan.parentTurnId,
+            createdAt: new Date(turn.createdAt),
+          },
+        });
+
+        await this.hooks.emit(
+          "compaction:end",
+          { sessionId: this.sessionId, record },
+          this.extensionApi
+        );
+        outcome = "done";
+      } catch (error) {
+        outcome = this.context.abortSignal?.aborted ? "canceled" : "error";
+        // 历史没有改，标记也不该留下：撤回到 start 之前的样子。
+        await write({
+          type: "compaction.error",
+          id: compactionId,
+          error: getErrorMessage(error),
+          createdAt: Date.now(),
+        });
+      } finally {
+        this.#running = false;
+        try {
+          // 先落定会话行再关流：读者读到结尾时，branch 和 activeStreamId
+          // 都已经是一致的。
+          await onFinish(outcome);
+        } finally {
+          close();
+        }
       }
     })();
 
@@ -536,6 +824,16 @@ export class Agent {
   ): Promise<AgentTurn<AgentToolSet> | undefined> {
     const { turnId, title } = input;
 
+    this.#compactionsThisTurn = 0;
+    this.#lastCompactionGuard = undefined;
+    this.#currentTurnId = turnId;
+
+    // 在 assistant turn 打开之前执行，让标记落在上一条回复末尾：新的用户消息
+    // 保持原文。
+    if (this.#startedFromUserTurn) {
+      await this.#maybeCompact({ trigger: "pressure", mode: "before-turn" });
+    }
+
     await this.context.controller?.write({
       type: "turn.start",
       id: turnId,
@@ -552,7 +850,13 @@ export class Agent {
     }
 
     let status: AgentTurnStatus = { status: "done" };
+    let firstStep = true;
     while (true) {
+      if (!firstStep) {
+        await this.#maybeCompact({ trigger: "pressure", mode: "end" });
+      }
+      firstStep = false;
+
       const stepId = generateStepId();
 
       const outcome = await this.#runStep({
@@ -810,9 +1114,7 @@ export class Agent {
         this.context.abortSignal?.aborted,
         error
       );
-      return this.context.abortSignal?.aborted
-        ? { ok: false, reason: "aborted" }
-        : { ok: false, reason: "error", error };
+      return await this.#stepFailure(error);
     }
 
     // A provider that fails mid-stream reports it as an `error` chunk, which the
@@ -857,7 +1159,7 @@ export class Agent {
       // An abort surfaces here as the stream is torn down.
       return this.context.abortSignal?.aborted
         ? { ok: false, reason: "aborted" }
-        : { ok: false, reason: "error", error: streamError ?? error };
+        : await this.#stepFailure(streamError ?? error);
     } finally {
       reader.releaseLock();
     }
@@ -885,11 +1187,9 @@ export class Agent {
           metadata: { performance: step.performance },
         });
 
-        return {
-          ok: false,
-          reason: "error",
-          error: streamError ?? new Error("The model stream failed."),
-        };
+        return await this.#stepFailure(
+          streamError ?? new Error("The model stream failed.")
+        );
       }
 
       // The calls this loop owns. A provider-executed call arrives with its
@@ -948,7 +1248,9 @@ export class Agent {
 
       // What the SDK feeds its own next step: the assistant message for this
       // step, then a tool message for whatever the loop executed.
+      const promptMessageCount = messages.length;
       messages.push(...responseMessages, ...execution.toolMessages);
+      this.session.noteStepUsage(usage, promptMessageCount);
 
       // The step ends here either way — everything it streamed is on the wire —
       // but a held step ends the turn with it: the model has no results to read
@@ -999,7 +1301,323 @@ export class Agent {
       // promises above instead of ending the reader loop.
       return this.context.abortSignal?.aborted
         ? { ok: false, reason: "aborted" }
-        : { ok: false, reason: "error", error: streamError ?? error };
+        : await this.#stepFailure(streamError ?? error);
+    }
+  }
+
+  #policy(): ResolvedCompactionPolicy {
+    return this.context.compaction ?? resolveCompactionPolicy();
+  }
+
+  #summarize(): SummarizeFn {
+    return this.context.summarize ?? createSummarizer(this.#getModel());
+  }
+
+  #overheadTokens(): number {
+    // usage 锚点已经覆盖 instructions 和工具 schema；这个估算只在第一步回报
+    // 真实数量之前有意义。
+    return estimateTokens(this.#instructions ?? "") + 2000;
+  }
+
+  /** 历史中是否存在尚未返回结果的工具调用。 */
+  #hasUnresolvedToolCall(messages: readonly ModelMessage[]): boolean {
+    const calls = new Set<string>();
+    const results = new Set<string>();
+
+    for (const message of messages) {
+      if (typeof message.content === "string") {
+        continue;
+      }
+      for (const part of message.content) {
+        if (part.type === "tool-call") {
+          calls.add(part.toolCallId);
+        } else if (part.type === "tool-result") {
+          results.add(part.toolCallId);
+        }
+      }
+    }
+
+    for (const id of calls) {
+      if (!results.has(id)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async #stepFailure(error: unknown): Promise<StepOutcome> {
+    if (this.context.abortSignal?.aborted) {
+      return { ok: false, reason: "aborted" };
+    }
+
+    if (await this.#handleOverflow(error)) {
+      return {
+        ok: false,
+        reason: "error",
+        error: new Error(
+          "The model's context window was exceeded. The history has been compacted; retry the request."
+        ),
+      };
+    }
+
+    return { ok: false, reason: "error", error };
+  }
+
+  async #handleOverflow(error: unknown): Promise<boolean> {
+    if (!isContextOverflowError(error)) {
+      return false;
+    }
+
+    try {
+      return await this.#maybeCompact({
+        trigger: "overflow",
+        mode: "end",
+      });
+    } catch (compactionError) {
+      logger.warn("[agent] overflow compaction failed", compactionError);
+      return false;
+    }
+  }
+
+  /**
+   * 尝试缩短当前会话的模型历史：先按策略剪枝旧工具结果，必要时再摘要压缩历史。
+   *
+   * `pressure` 表示常规的上下文压力检查：仅在启用自动压缩、达到压缩阈值且本 turn
+   * 未超过重试上限时继续。`overflow` 表示模型调用已遇到上下文溢出，不受自动压缩
+   * 开关和每 turn 次数上限限制，但仍须通过工具调用完整性、可压缩区间等检查。
+   *
+   * `before-turn` 将当前历史中最近 user turn 之前的消息作为摘要候选区间，并把压缩
+   * 标记放在新 turn 之前；`end` 则将当前 turn 末尾作为候选区间和标记插入位置。
+   * 两种模式都会保留候选区间之后的消息，让下一次模型请求使用 checkpoint 加保留段。
+   *
+   * 成功时把压缩记录写回会话、替换模型侧历史，并更新本 turn 的计数和防重复压缩
+   * 标记。失败或不满足条件时返回 `false`；但剪枝发生在摘要尝试之前，因此即使后续
+   * 不压缩，已经剪掉工具结果的 `modelMessages` 也会保留。压力压缩是优化，不应仅因
+   * 无法压缩而中断当前 turn。
+   *
+   * @param input 压缩触发原因，以及压缩标记相对于当前 turn 的放置模式。
+   * @returns 是否成功完成并应用了摘要压缩。
+   */
+  async #maybeCompact(input: {
+    trigger: "pressure" | "overflow";
+    mode: "before-turn" | "end";
+  }): Promise<boolean> {
+    const policy = this.#policy();
+    // 压力压缩可由配置关闭；溢出恢复则仍然尝试，避免失去恢复上下文的机会。
+    if (input.trigger === "pressure" && !policy.auto) {
+      return false;
+    }
+    // 同一 turn 设上限，防止压缩后仍触发压力检查时不断重复摘要。
+    if (
+      input.trigger === "pressure" &&
+      this.#compactionsThisTurn >= MAX_COMPACTIONS_PER_TURN
+    ) {
+      return false;
+    }
+
+    let messages = this.session.modelMessages;
+    if (policy.pruneToolResults) {
+      // 先移除/截短较旧的工具结果；若产生新数组，立即同步模型侧会话历史。
+      const pruned = pruneOlderToolResults(messages, {
+        keepRecentTokens: policy.keepRecentTokens,
+        thresholdChars: policy.pruneThresholdChars,
+        headChars: policy.pruneHeadChars,
+        tailChars: policy.pruneTailChars,
+      });
+      if (pruned !== messages) {
+        messages = pruned;
+        this.session.modelMessages = pruned;
+      }
+    }
+
+    // 使用最新的 provider usage（若尚无则估算），并把 instructions 等固定开销计入。
+    const measurement = measureContext({
+      messages,
+      usage: this.session.lastUsage,
+      overheadTokens: this.#overheadTokens(),
+    });
+    // 常规压力触发必须达到阈值；overflow 触发即使尚未达到估算阈值也继续恢复。
+    if (
+      input.trigger === "pressure" &&
+      !shouldCompact(measurement.tokens, policy)
+    ) {
+      return false;
+    }
+    // 如果历史长度没有增长、但压缩后仍超阈值，跳过重复的无进展压缩。
+    if (
+      input.trigger === "pressure" &&
+      this.#lastCompactionGuard !== undefined &&
+      messages.length <= this.#lastCompactionGuard.messageCount &&
+      measurement.tokens >= (policy.thresholdTokens ?? Number.POSITIVE_INFINITY)
+    ) {
+      return false;
+    }
+    // 不能在工具调用尚未返回结果时改写历史，否则会留下不完整的工具交互。
+    if (
+      this.#hasUnresolvedToolCall(messages) ||
+      findTurnWithoutToolResult(this.session.turns) !== null
+    ) {
+      return false;
+    }
+
+    let placement: { turnId: string; stepIndex: number };
+    let regionEnd: number;
+    if (input.mode === "before-turn") {
+      // 找到下一个 turn 前可写入压缩 step 的位置；只摘要最近 user turn 之前的历史。
+      const found = findPreTurnPlacement(this.session.turns);
+      const { lastUserTurn } = this.session.projected;
+      if (!found || !lastUserTurn) {
+        return false;
+      }
+      placement = found;
+      regionEnd = lastUserTurn.messageIndex;
+    } else {
+      // turn 收尾或 overflow 恢复时，将压缩标记挂到当前 assistant turn 的末尾。
+      if (!this.#currentTurnId) {
+        return false;
+      }
+      const found = findEndPlacement(this.session.turns, this.#currentTurnId);
+      if (!found) {
+        return false;
+      }
+      placement = found;
+      regionEnd = messages.length;
+    }
+
+    // checkpoint 本身位于消息 0，不纳入新摘要；否则重复压缩可能摘要已有摘要。
+    const start = this.session.projected.checkpoint ? 1 : 0;
+    if (
+      estimateMessagesTokens(messages.slice(start, regionEnd)) <
+      policy.minSummarizeTokens
+    ) {
+      return false;
+    }
+
+    // 先开出 compaction step 与 part，再调用压缩流水线；后者拿到精确的候选区间
+    // 和取消信号。part 从 start 起就以 streaming 存在，摘要失败时由
+    // compaction.error 把它和这个 step 一起撤回。
+    const compactionId = generateEventId();
+    const stepId = generateStepId();
+    const createdAt = Date.now();
+    await this.context.controller?.write({
+      type: "step.start",
+      stepType: "compaction",
+      model: this.context.modelId,
+      turnId: placement.turnId,
+      id: stepId,
+      createdAt,
+    });
+    await this.context.controller?.write({
+      type: "compaction.start",
+      id: compactionId,
+      trigger: input.trigger,
+      turnId: placement.turnId,
+      stepId,
+      createdAt,
+    });
+    await this.hooks.emit(
+      "compaction:start",
+      { sessionId: this.sessionId, trigger: input.trigger },
+      this.extensionApi
+    );
+
+    try {
+      const result = await compactHistory({
+        projected: {
+          ...this.session.projected,
+          messages,
+          usageAnchor: this.session.lastUsage,
+        },
+        policy,
+        trigger: input.trigger,
+        modelId: this.context.modelId,
+        summarize: this.#summarize(),
+        region: { start, end: regionEnd },
+        signal: this.context.abortSignal,
+      });
+      if (!result) {
+        // 区间在进入流水线前已经校验过，理论上不会走到这里；真到了就把刚开出的
+        // part 撤回，避免留下一个永远 streaming 的标记。
+        await this.context.controller?.write({
+          type: "compaction.error",
+          id: compactionId,
+          error: "compaction produced no record",
+          createdAt: Date.now(),
+        });
+        return false;
+      }
+
+      // 记录写到 start 时开出的 step/part 上，让存储和 turn builder 都能重建该标记。
+      // 结束时间要重新读：step.start 的 createdAt 早于摘要调用，不能拿它当耗时终点。
+      const completedAt = Date.now();
+      await this.context.controller?.write({
+        type: "compaction.end",
+        id: compactionId,
+        turnId: placement.turnId,
+        stepId,
+        record: result.record,
+        createdAt: completedAt,
+      });
+      await this.context.controller?.write({
+        id: stepId,
+        turnId: placement.turnId,
+        type: "step.finish",
+        createdAt: completedAt,
+        usage: ZERO_USAGE,
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        providerMetadata: undefined,
+        status: "done",
+      });
+
+      // builder 通常会因上述事件追加 step；无 controller 时也显式更新 turn，保持测试
+      // 和其他轻量调用方看到的会话状态一致。
+      const turn = this.session.turns.find(
+        (candidate) => candidate.id === placement.turnId
+      );
+      if (
+        turn?.type === "assistant" &&
+        !turn.content.some((step) => step.id === stepId)
+      ) {
+        turn.content.push(createCompactionStep(result.record));
+      }
+
+      // checkpoint 替代被摘要区间，区间之后的消息原样保留。
+      const nextMessages = [result.checkpoint, ...messages.slice(regionEnd)];
+      this.session.applyCompaction({
+        checkpoint: result.record,
+        messages: nextMessages,
+      });
+      this.#compactionsThisTurn += 1;
+      this.#lastCompactionGuard = {
+        messageCount: nextMessages.length,
+        tokens: result.record.tokensAfter,
+      };
+
+      // before-turn 的压缩 step 不一定属于当前正在构建的 turn，因此显式持久化更新。
+      if (input.mode === "before-turn" && turn) {
+        await this.store.updateTurn(turn.id, turn);
+      }
+
+      await this.hooks.emit(
+        "compaction:end",
+        { sessionId: this.sessionId, record: result.record },
+        this.extensionApi
+      );
+      return true;
+    } catch (error) {
+      if (this.context.abortSignal?.aborted) {
+        return false;
+      }
+      // 摘要/持久化异常作为可恢复的压缩失败记录；不把压力压缩失败升级为 turn 失败。
+      logger.warn("[agent] compaction failed", error);
+      await this.context.controller?.write({
+        type: "compaction.error",
+        id: compactionId,
+        error: getErrorMessage(error),
+        createdAt: Date.now(),
+      });
+      return false;
     }
   }
 }

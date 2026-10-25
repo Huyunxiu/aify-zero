@@ -655,6 +655,10 @@ export function createAgentSessionStore({
       return;
     }
 
+    // The local read has to stop too: the server closes its stream, but a
+    // reader parked in `read()` must be woken, or the turn never settles.
+    active?.abort();
+
     try {
       await apiStop({ sessionId: id });
     } catch {

@@ -57,9 +57,11 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "../components/message-scroller";
+import { toastManager } from "../components/toast";
 import { useAgentSession } from "../hooks/use-agent-session";
 import { client, queryClient } from "../lib/orpc";
 import { AssistantMessage } from "./assistant-message";
+import { CompactionMessage } from "./compaction-message";
 import { Message, MessageContent, MessageResponse } from "./message";
 import { ModelSelect } from "./model-select";
 import { ProjectSelect } from "./project-select";
@@ -78,6 +80,7 @@ import {
 } from "./prompt-input";
 import type { PromptInputMessage } from "./prompt-input";
 import { PromptInputTiptap } from "./prompt-input-tiptap";
+import { parseLeadingCommand } from "./prompt-tag";
 import {
   findPendingQuestionnaire,
   QuestionnaireComposer,
@@ -341,7 +344,7 @@ export function Session({
   const {
     sendTurns,
     turns,
-    error,
+    error: sessionError,
     status,
     stop,
     resume,
@@ -352,7 +355,6 @@ export function Session({
     // at once — the turn runs on in the background — so its body says only that
     // it was accepted, and the events come from the GET below.
     apiStream: async (options) => {
-      console.log(111, options);
       if (!options.model || !options.modelEffort || !options.turns.length) {
         return;
       }
@@ -428,15 +430,16 @@ export function Session({
   }, [sessionId, status]);
 
   const finalError =
-    error ?? turns.findLast((turn) => turn.status === "error")?.error;
-
-  // console.log("session page refresh.", sessionId, initialTurns.length);
+    sessionError ?? turns.findLast((turn) => turn.status === "error")?.error;
 
   // Attach to a turn that is still running, once for that turn. The lookup can
   // be repeated — a refetch answers with the same stream id — but a store has
   // to attach to a given turn only once.
   const resumedStreamRef = React.useRef<string | null>(null);
 
+  // Attach to a run that is still going, once for that run. The lookup can be
+  // repeated — a refetch answers with the same stream id — but a store has to
+  // attach to a given run only once.
   React.useEffect(() => {
     if (!sessionId || !activeStreamId) {
       return;
@@ -462,10 +465,54 @@ export function Session({
     })();
 
     return () => controller.abort();
-  }, [sessionId, activeStreamId, resume]);
+  }, [activeStreamId, resume, sessionId]);
 
   const tokenUsage =
     turns.findLast((turn) => turn.usage)?.usage || defaultTokenUsage;
+
+  // 压缩之后，最近一次 usage 描述的是一个已经不存在的 prompt；上下文环应优先
+  // 采用压缩记录里的估算，否则刚压缩完反而会显示压缩前的占用（手工 marker 的
+  // usage 甚至是零）。
+  const contextUsedTokens = React.useMemo(() => {
+    let usage: { at: number; tokens: number } | undefined;
+    let latestCompaction: { at: number; tokens: number } | undefined;
+
+    for (const turn of turns) {
+      for (const step of turn.content) {
+        if (step.type === "compaction") {
+          const record = step.content.find(
+            (part) => part.type === "compaction"
+          )?.record;
+          if (
+            record &&
+            (!latestCompaction || record.createdAt >= latestCompaction.at)
+          ) {
+            latestCompaction = {
+              at: record.createdAt,
+              tokens: record.tokensAfter,
+            };
+          }
+        } else if (step.type === "assistant" && step.usage) {
+          const tokens = step.usage.totalTokens ?? 0;
+          if (tokens > 0 && (!usage || step.createdAt >= usage.at)) {
+            usage = { at: step.createdAt, tokens };
+          }
+        }
+      }
+    }
+
+    return latestCompaction && (!usage || latestCompaction.at >= usage.at)
+      ? latestCompaction.tokens
+      : (usage?.tokens ?? 0);
+  }, [turns]);
+
+  const configuredContextWindow = models.find(
+    (model) => model.id === selectedModelId
+  )?.limit?.context;
+  const contextWindow =
+    configuredContextWindow !== undefined && configuredContextWindow > 0
+      ? configuredContextWindow
+      : 128_000;
 
   // The submit button doubles as the stop control, so an empty editor — which
   // is exactly what submitting leaves behind — must not disable it mid-turn.
@@ -485,9 +532,80 @@ export function Session({
     },
   ];
 
+  /**
+   * Runs `/compact` as a stream of its own.
+   *
+   * The server only starts the compaction and answers with a stream id; the
+   * summarization itself runs in the background. The compaction turn is
+   * appended to the branch like any other turn — the cut point lives in its
+   * record — so attaching to the stream and letting the builder append it is
+   * enough: the local transcript stays a prefix of the branch.
+   */
+  const handleCompact = async (modelId: string): Promise<void> => {
+    if (!sessionId) {
+      toastManager.add({
+        description: t("compaction.noSession"),
+        title: t("compaction.failed"),
+        type: "error",
+      });
+      return;
+    }
+
+    try {
+      await client.session.compact({ model: modelId, sessionId });
+    } catch (error) {
+      // Refused synchronously — busy session, or nothing to compact.
+      toastManager.add({
+        description: getErrorMessage(error),
+        title: t("compaction.failed"),
+        type: "error",
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+
+    try {
+      const stream = await openStream(sessionId, controller.signal);
+      await resume({ abortSignal: controller.signal, stream });
+    } catch {
+      // The run can end between the POST and the attach; the transcript already
+      // has everything the stream would have replayed.
+    }
+
+    // The marker is in the branch now; refresh the row and the cached branch so
+    // a remount sees the same thing the transcript just showed.
+    void queryClient.invalidateQueries({
+      queryKey: ["listSessionTurns", sessionId],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["getSession", sessionId],
+    });
+  };
+
   const handleSubmit = (message: PromptInputMessage) => {
     const modelId = selectedModelId;
     if (!modelId) {
+      return;
+    }
+
+    const command = parseLeadingCommand(message.text);
+    if (command?.id === "compact") {
+      const rest = message.text
+        .replace(/^\[@[^\]]+\]\(command:\/\/[^)]+\)/, "")
+        .trim();
+      if (rest.length > 0 || message.files.length > 0) {
+        toastManager.add({
+          description: t("compaction.commandOnly"),
+          title: t("compaction.failed"),
+          type: "error",
+        });
+        return;
+      }
+
+      // The editor empties once this returns; the run continues on screen as
+      // the compaction turn the stream writes.
+      void handleCompact(modelId);
       return;
     }
 
@@ -533,7 +651,6 @@ export function Session({
       void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
     }
 
-    console.log(666, selectedModelEffort);
     void sendTurns({
       turns: [...turns, turn],
       // A newer send cancels the older request on its own, so nothing aborts
@@ -579,6 +696,14 @@ export function Session({
   const renderTurn = (turn: AgentTurn<AgentToolSet>) => {
     if (turn.type === "user") {
       return <UserMessage key={turn.id} turn={turn} />;
+    }
+
+    if (turn.type === "compaction") {
+      const [step] = turn.content;
+      const record = step?.content.find(
+        (part) => part.type === "compaction"
+      )?.record;
+      return <CompactionMessage key={turn.id} record={record} />;
     }
 
     if (turn.type === "assistant") {
@@ -762,10 +887,10 @@ export function Session({
                       </PromptInputTools>
                       <div className="flex items-center gap-2">
                         <Context
-                          maxTokens={128_000}
+                          maxTokens={contextWindow}
                           modelId={selectedModelId}
                           usage={tokenUsage}
-                          usedTokens={tokenUsage.totalTokens || 0}
+                          usedTokens={contextUsedTokens}
                         >
                           <ContextTrigger />
                           <ContextContent>

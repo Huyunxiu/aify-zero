@@ -11,6 +11,9 @@ import {
 import type {
   AgentAssistantStep,
   AgentAssistantTurn,
+  AgentCompactionPart,
+  AgentCompactionStep,
+  AgentCompactionTurn,
   AgentCustomContentPart,
   AgentToolPart,
   AgentPart,
@@ -38,6 +41,19 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
   private readonly toolParts: Map<string, AgentToolPart>;
   private readonly pendingParts: Map<string, AgentPart<TOOLS>>;
   /**
+   * Compaction parts opened by `compaction.start` and not yet committed by
+   * `compaction.end`, keyed by the compaction id.
+   *
+   * They are held separately from `pendingParts` because ending one is not
+   * simply a state change: a failed attempt has to take its part — and the step
+   * that exists only for it — back out again, and `compaction.error` names the
+   * compaction, not the step.
+   */
+  private readonly pendingCompactions: Map<
+    string,
+    { turnId: string; stepId: string; part: AgentCompactionPart }
+  >;
+  /**
    * Every turn the stream has changed, in the order it first touched them.
    *
    * A turn that finished is only one of them: an event can land on a turn that
@@ -55,6 +71,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
   constructor({ turns }: { turns: AgentTurn<TOOLS>[] }) {
     this.turns = turns;
     this.pendingParts = new Map<string, AgentPart<TOOLS>>();
+    this.pendingCompactions = new Map();
     this.toolParts = new Map<string, AgentToolPart>();
     this.turnsMap = new Map<string, AgentTurn<TOOLS>>();
     this.stepsMap = new Map<string, AgentStep<TOOLS>>();
@@ -470,6 +487,63 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         }
         break;
       }
+      case "compaction.start": {
+        const step = this.stepsMap.get(event.stepId);
+        if (!step || step.type !== "compaction") {
+          console.warn(
+            `AgentTurnBuilder#push compaction.start without a compaction step ${event.id}`
+          );
+          break;
+        }
+        const part: AgentCompactionPart = {
+          type: "compaction",
+          id: event.id,
+          state: "streaming",
+          createdAt: event.createdAt,
+        };
+        step.content.push(part);
+        this.pendingCompactions.set(event.id, {
+          turnId: event.turnId,
+          stepId: event.stepId,
+          part,
+        });
+        break;
+      }
+      case "compaction.end": {
+        const pending = this.pendingCompactions.get(event.id);
+        if (pending) {
+          pending.part.state = "done";
+          pending.part.completedAt = event.createdAt;
+          pending.part.record = event.record;
+          this.pendingCompactions.delete(event.id);
+          break;
+        }
+
+        // An end without a start still commits: the record is the whole point,
+        // and the step it names is enough to hold it.
+        const step = this.stepsMap.get(event.stepId);
+        if (!step || step.type !== "compaction") {
+          console.warn(
+            `AgentTurnBuilder#push compaction.end without a compaction step ${event.id}`
+          );
+          break;
+        }
+        const part: AgentCompactionPart = {
+          type: "compaction",
+          id: event.id,
+          state: "done",
+          createdAt: event.createdAt,
+          record: event.record,
+        };
+        step.content.push(part);
+        break;
+      }
+      case "compaction.error": {
+        // The summary never arrived, so there is no marker to keep. Removing
+        // the part restores the turn to what it looked like before the attempt.
+        this.dropCompaction(event.id);
+        break;
+      }
       case "session.title.start": {
         const part: AgentSessionTitlePart = {
           id: event.id,
@@ -555,6 +629,13 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         part.completedAt = now;
       }
     }
+
+    // A compaction whose summary never arrived leaves no marker: it is not a
+    // part that can be "done", and keeping it streaming would claim the
+    // history was cut when it was not.
+    for (const id of this.pendingCompactions.keys()) {
+      this.dropCompaction(id);
+    }
   }
 
   /**
@@ -570,11 +651,54 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       return event.id;
     }
 
-    if (event.type === "abort" || event.type === "error") {
+    if (
+      event.type === "abort" ||
+      event.type === "error" ||
+      event.type === "compaction.error"
+    ) {
       return undefined;
     }
 
     return event.turnId;
+  }
+
+  /**
+   * Takes back a compaction part that was opened but never committed.
+   *
+   * The step goes with it when it is left empty: the compaction step exists
+   * only to hold this part, so keeping a bare step would leave a boundary in
+   * the turn that does not mark anything.
+   */
+  private dropCompaction(id: string): void {
+    const pending = this.pendingCompactions.get(id);
+    if (!pending) {
+      return;
+    }
+    this.pendingCompactions.delete(id);
+
+    const step = this.stepsMap.get(pending.stepId);
+    if (!step || step.type !== "compaction") {
+      return;
+    }
+
+    const partIndex = step.content.findIndex((part) => part.id === id);
+    if (partIndex !== -1) {
+      step.content.splice(partIndex, 1);
+    }
+    if (step.content.length > 0) {
+      return;
+    }
+
+    this.stepsMap.delete(step.id);
+    const turn = this.turnsMap.get(pending.turnId);
+    if (!turn) {
+      return;
+    }
+    const steps = turn.content as AgentStep<TOOLS>[];
+    const stepIndex = steps.findIndex((candidate) => candidate.id === step.id);
+    if (stepIndex !== -1) {
+      steps.splice(stepIndex, 1);
+    }
   }
 
   /**
@@ -613,6 +737,15 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     } else if (event.turnType === "assistant") {
       const turn: AgentAssistantTurn<TOOLS> = {
         type: "assistant",
+        id: event.id,
+        createdAt: event.createdAt,
+        status: "streaming",
+        content: [],
+      };
+      return turn;
+    } else if (event.turnType === "compaction") {
+      const turn: AgentCompactionTurn = {
+        type: "compaction",
         id: event.id,
         createdAt: event.createdAt,
         status: "streaming",
@@ -662,6 +795,16 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     } else if (event.stepType === "assistant") {
       const step: AgentAssistantStep<TOOLS> = {
         type: "assistant",
+        id: event.id,
+        createdAt: event.createdAt,
+        status: "streaming",
+        content: [],
+        model: event.model,
+      };
+      return step;
+    } else if (event.stepType === "compaction") {
+      const step: AgentCompactionStep = {
+        type: "compaction",
         id: event.id,
         createdAt: event.createdAt,
         status: "streaming",

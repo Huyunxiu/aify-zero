@@ -213,6 +213,23 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
+  async insertTurnInBranch({ turn }: { turn: TurnInsertModel }): Promise<void> {
+    // Insert the turn and make it the branch head in one transaction, so a
+    // failure cannot leave a dangling row or an active head pointing at
+    // nothing. Turns are only appended: a manual compaction records its cut
+    // point instead of splicing itself into the middle of the branch.
+    await db.transaction(async (tx) => {
+      await tx.insert(turn_table).values(turn);
+
+      if (turn.sessionId) {
+        await tx
+          .update(session_table)
+          .set({ activeHeadId: turn.id })
+          .where(eq(session_table.id, turn.sessionId));
+      }
+    });
+  }
+
   async updateTurn(
     id: string,
     content: unknown,

@@ -50,6 +50,11 @@ export const updateUserSettingsRoute = publicProcedure
     return await saveUserSettings(merged);
   });
 
+/** The user's settings, created with defaults on first read. */
+export async function getUserSettings(): Promise<UserSettings> {
+  return await ensureUserSettings();
+}
+
 /** Look up an AI model by id from the UserSettings store. */
 export async function findAiModelById(
   id: string

@@ -65,6 +65,24 @@ export const ErrorMap = {
     message: "No reply is running for this chat.",
     data: z.object({ sessionId: z.string() }),
   },
+  SESSION_BUSY: {
+    status: 409,
+    message:
+      "This chat is busy. Wait for the current turn to finish and try again.",
+    data: z.object({
+      sessionId: z.string(),
+      reason: z.enum(["running", "wait_review", "compacting"]).optional(),
+    }),
+  },
+  NOTHING_TO_COMPACT: {
+    status: 400,
+    message: "There is not enough history to compact yet.",
+  },
+  COMPACTION_FAILED: {
+    status: 502,
+    message: "The context could not be compacted. The history is unchanged.",
+    data: z.object({ reason: z.string() }),
+  },
 } satisfies ErrorMapType;
 
 /** Every code above, i.e. the whole set a throw site may use. */
