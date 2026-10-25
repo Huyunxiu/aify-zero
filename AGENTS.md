@@ -1,9 +1,10 @@
 # Guidelines
 
-1. Write code comments in Chinese too, but keep log messages in English.
-2. Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
-3. Fix a bug at its cause, reasoning from first principles and established best practice. Do not patch over the symptom.
-4. Always talk in ASD-STE100 Simplified Technical English. Always read CONTEXT.md files, and use their ubiquitous language.
+1. Always respond in Chinese.
+2. Write code comments in Chinese too, but keep log messages in English.
+3. Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+4. Fix a bug at its cause, reasoning from first principles and established best practice. Do not patch over the symptom.
+5. Always talk in ASD-STE100 Simplified Technical English. Always read CONTEXT.md files, and use their ubiquitous language.
 
 <!--VITE PLUS START-->
 

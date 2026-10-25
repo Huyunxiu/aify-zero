@@ -1,18 +1,21 @@
 /* oxlint-disable */
 
 import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
+import { Bubble, BubbleContent } from "@workspace/ui/components/bubble";
 import { Button } from "@workspace/ui/components/button";
 import {
   ButtonGroup,
   ButtonGroupText,
 } from "@workspace/ui/components/button-group";
 import {
+  Message as MessageRoot,
+  MessageContent as MessageBody,
+  MessageFooter,
+} from "@workspace/ui/components/message";
+import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
@@ -35,6 +38,10 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 
+import { markdownComponents } from "./markdown-code";
+
+const MessageContext = createContext<UIMessage["role"]>("assistant");
+
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
   /** 消息头像：用户消息排在内容右侧，其余排在左侧。 */
@@ -51,24 +58,23 @@ export const Message = ({
   const isUser = from === "user";
 
   return (
-    <div
-      className={cn(
-        "group flex w-full max-w-[95%] gap-3",
-        isUser ? "is-user ml-auto flex-row-reverse" : "is-assistant",
-        className
-      )}
-      {...props}
-    >
-      {avatar && <div className="shrink-0">{avatar}</div>}
-      <div
-        className={cn(
-          "flex min-w-0 flex-1 flex-col gap-2",
-          isUser && "items-end justify-end"
-        )}
+    <MessageContext.Provider value={from}>
+      <MessageRoot
+        align={isUser ? "end" : "start"}
+        className={cn("max-w-[95%]", isUser && "ml-auto", className)}
+        {...props}
       >
-        {children}
-      </div>
-    </div>
+        {avatar && <div className="shrink-0">{avatar}</div>}
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 flex-col gap-2",
+            isUser && "items-end justify-end"
+          )}
+        >
+          {children}
+        </div>
+      </MessageRoot>
+    </MessageContext.Provider>
   );
 };
 
@@ -78,19 +84,21 @@ export const MessageContent = ({
   children,
   className,
   ...props
-}: MessageContentProps) => (
-  <div
-    className={cn(
-      "is-user:dark flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm",
-      "group-[.is-user]:ml-auto group-[.is-user]:rounded-lg group-[.is-user]:bg-secondary group-[.is-user]:px-4 group-[.is-user]:py-3 group-[.is-user]:text-foreground",
-      "group-[.is-assistant]:text-foreground",
-      className
-    )}
-    {...props}
-  >
-    {children}
-  </div>
-);
+}: MessageContentProps) => {
+  const from = useContext(MessageContext);
+
+  return (
+    <MessageBody className={className} {...props}>
+      {from === "user" ? (
+        <Bubble align="end" variant="muted">
+          <BubbleContent>{children}</BubbleContent>
+        </Bubble>
+      ) : (
+        children
+      )}
+    </MessageBody>
+  );
+};
 
 export type MessageActionsProps = ComponentProps<"div">;
 
@@ -99,9 +107,9 @@ export const MessageActions = ({
   children,
   ...props
 }: MessageActionsProps) => (
-  <div className={cn("flex items-center gap-1", className)} {...props}>
+  <MessageFooter className={cn("gap-1 px-0", className)} {...props}>
     {children}
-  </div>
+  </MessageFooter>
 );
 
 export type MessageActionProps = ComponentProps<typeof Button> & {
@@ -117,27 +125,30 @@ export const MessageAction = ({
   size = "icon-sm",
   ...props
 }: MessageActionProps) => {
-  const button = (
-    <Button size={size} type="button" variant={variant} {...props}>
-      {children}
-      <span className="sr-only">{label || tooltip}</span>
-    </Button>
+  const tooltipText = tooltip ?? label;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            aria-label={label ?? tooltip}
+            size={size}
+            type="button"
+            variant={variant}
+            {...props}
+          />
+        }
+      >
+        {children}
+      </TooltipTrigger>
+      {tooltipText ? (
+        <TooltipContent>
+          <p>{tooltipText}</p>
+        </TooltipContent>
+      ) : null}
+    </Tooltip>
   );
-
-  if (tooltip) {
-    return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger>{button}</TooltipTrigger>
-          <TooltipContent>
-            <p>{tooltip}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  }
-
-  return button;
 };
 
 interface MessageBranchContextType {
@@ -348,7 +359,7 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-const streamdownPlugins = { cjk, code, math, mermaid };
+const streamdownPlugins = { cjk, math };
 
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
@@ -357,6 +368,7 @@ export const MessageResponse = memo(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
+      components={markdownComponents}
       plugins={streamdownPlugins}
       {...props}
     />

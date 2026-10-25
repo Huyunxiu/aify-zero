@@ -9,8 +9,6 @@
 @source "../**/*.{ts,tsx}";
 
 @source "../../../../node_modules/streamdown/dist/*.js";
-@source "../../../../node_modules/@streamdown/code/dist/*.js";
-@source "../../../../node_modules/@streamdown/mermaid/dist/*.js";
 @source "../../../../node_modules/@streamdown/math/dist/*.js";
 @source "../../../../node_modules/@streamdown/cjk/dist/*.js";
 
@@ -489,6 +487,23 @@
 [data-streamdown="table-wrapper"] {
   padding: 0;
   border: none;
+}
+
+/* Pele 图表的颜色和字体沿用应用的主题变量。 */
+.pele-diagram {
+  --pele-bg: var(--background);
+  --pele-fg: var(--foreground);
+  --pele-muted: var(--muted-foreground);
+  --pele-line: var(--foreground);
+  --pele-surface: var(--muted);
+  --pele-surface-alt: var(--secondary);
+  --pele-border: var(--border);
+  --pele-accent: var(--primary);
+  --pele-critical: var(--destructive);
+  --pele-error: var(--destructive);
+  --pele-radius: calc(var(--radius) * 0.6);
+  --pele-font: var(--font-sans);
+  --pele-font-mono: var(--font-mono);
 }
 
 /*tiptap*/

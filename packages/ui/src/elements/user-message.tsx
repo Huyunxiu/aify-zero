@@ -46,7 +46,7 @@ export const UserMessage = ({ turn }: UserMessageProps) => {
     .join("\n\n");
 
   return (
-    <Message avatar={<UserAvatar />} from="user">
+    <Message avatar={<UserAvatar />} from="user" className="group">
       {files.length > 0 && (
         <Attachments
           className="flex items-start flex-wrap gap-2 ml-auto w-fit"
