@@ -421,9 +421,7 @@ export const AgentActivityStep = memo(
             className={cn(
               "-mx-1.5 flex w-[calc(100%+0.75rem)] flex-col gap-2 rounded-md px-1.5 text-left text-sm outline-none",
               "fade-in-0 slide-in-from-top-2 animate-in",
-              selected
-                ? "bg-foreground-5 text-foreground"
-                : "hover:bg-foreground-3",
+              selected ? "bg-muted" : "hover:bg-muted",
               className
             )}
             {...props}

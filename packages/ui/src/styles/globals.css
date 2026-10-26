@@ -81,26 +81,35 @@
   --text-9xl: 8rem;
   --text-9xl--line-height: 1;
 
-  --color-foreground-0: var(--foreground-0);
-  --color-foreground-1: var(--foreground-1);
-  --color-foreground-2: var(--foreground-2);
-  --color-foreground-3: var(--foreground-3);
-  --color-foreground-4: var(--foreground-4);
-  --color-foreground-5: var(--foreground-5);
-  --color-foreground-6: var(--foreground-6);
-  --color-foreground-7: var(--foreground-7);
-  --color-foreground-8: var(--foreground-8);
-  --color-foreground-9: var(--foreground-9);
-  --color-foreground-10: var(--foreground-10);
-  --color-foreground-20: var(--foreground-20);
-  --color-foreground-30: var(--foreground-30);
-  --color-foreground-40: var(--foreground-40);
-  --color-foreground-50: var(--foreground-50);
-  --color-foreground-60: var(--foreground-60);
-  --color-foreground-70: var(--foreground-70);
-  --color-foreground-80: var(--foreground-80);
-  --color-foreground-90: var(--foreground-90);
-  --color-foreground-95: var(--foreground-95);
+  --color-neutral-0: var(--neutral-0);
+  --color-neutral-1: var(--neutral-1);
+  --color-neutral-2: var(--neutral-2);
+  --color-neutral-3: var(--neutral-3);
+  --color-neutral-4: var(--neutral-4);
+  --color-neutral-5: var(--neutral-5);
+  --color-neutral-6: var(--neutral-6);
+  --color-neutral-7: var(--neutral-7);
+  --color-neutral-8: var(--neutral-8);
+  --color-neutral-9: var(--neutral-9);
+  --color-neutral-10: var(--neutral-10);
+  --color-neutral-11: var(--neutral-11);
+  --color-neutral-12: var(--neutral-12);
+  --color-neutral-13: var(--neutral-13);
+  --color-neutral-14: var(--neutral-14);
+  --color-neutral-15: var(--neutral-15);
+  --color-neutral-16: var(--neutral-16);
+  --color-neutral-17: var(--neutral-17);
+  --color-neutral-18: var(--neutral-18);
+  --color-neutral-19: var(--neutral-19);
+  --color-neutral-20: var(--neutral-20);
+  --color-neutral-30: var(--neutral-30);
+  --color-neutral-40: var(--neutral-40);
+  --color-neutral-50: var(--neutral-50);
+  --color-neutral-60: var(--neutral-60);
+  --color-neutral-70: var(--neutral-70);
+  --color-neutral-80: var(--neutral-80);
+  --color-neutral-90: var(--neutral-90);
+  --color-neutral-95: var(--neutral-95);
 
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
@@ -208,99 +217,143 @@
 }
 
 :root {
-  --foreground-0: color-mix(in oklch, var(--foreground) 0%, var(--background));
-  --foreground-1: color-mix(in oklch, var(--foreground) 1%, var(--background));
-  --foreground-2: color-mix(in oklch, var(--foreground) 2%, var(--background));
-  --foreground-3: color-mix(in oklch, var(--foreground) 3%, var(--background));
-  --foreground-4: color-mix(in oklch, var(--foreground) 4%, var(--background));
-  --foreground-5: color-mix(in oklch, var(--foreground) 5%, var(--background));
-  --foreground-6: color-mix(in oklch, var(--foreground) 6%, var(--background));
-  --foreground-7: color-mix(in oklch, var(--foreground) 7%, var(--background));
-  --foreground-8: color-mix(in oklch, var(--foreground) 8%, var(--background));
-  --foreground-9: color-mix(in oklch, var(--foreground) 9%, var(--background));
-  --foreground-10: color-mix(
-    in oklch,
-    var(--foreground) 10%,
-    var(--background)
-  );
-  --foreground-20: color-mix(
-    in oklch,
-    var(--foreground) 20%,
-    var(--background)
-  );
-  --foreground-30: color-mix(
-    in oklch,
-    var(--foreground) 30%,
-    var(--background)
-  );
-  --foreground-40: color-mix(
-    in oklch,
-    var(--foreground) 40%,
-    var(--background)
-  );
-  --foreground-50: color-mix(
-    in oklch,
-    var(--foreground) 50%,
-    var(--background)
-  );
-  --foreground-60: color-mix(
-    in oklch,
-    var(--foreground) 60%,
-    var(--background)
-  );
-  --foreground-70: color-mix(
-    in oklch,
-    var(--foreground) 70%,
-    var(--background)
-  );
-  --foreground-80: color-mix(
-    in oklch,
-    var(--foreground) 80%,
-    var(--background)
-  );
-  --foreground-90: color-mix(
-    in oklch,
-    var(--foreground) 90%,
-    var(--background)
-  );
-  --foreground-95: color-mix(
-    in oklch,
-    var(--foreground) 95%,
-    var(--background)
-  );
+  --extreme: oklch(1 0 0);
+  --background: oklch(0.9823 0.0013 282.73);
+  --foreground: oklch(0.2223 0 0);
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --neutral-0: var(--extreme);
+  --neutral-1: color-mix(in oklch, var(--background) 10%, var(--extreme) 90%);
+  --neutral-2: color-mix(in oklch, var(--background) 11%, var(--extreme) 89%);
+  --neutral-3: color-mix(in oklch, var(--background) 22%, var(--extreme) 78%);
+  --neutral-4: color-mix(in oklch, var(--background) 33%, var(--extreme) 67%);
+  --neutral-5: color-mix(in oklch, var(--background) 44%, var(--extreme) 56%);
+  --neutral-6: color-mix(in oklch, var(--background) 55%, var(--extreme) 45%);
+  --neutral-7: color-mix(in oklch, var(--background) 66%, var(--extreme) 34%);
+  --neutral-8: color-mix(in oklch, var(--background) 77%, var(--extreme) 23%);
+  --neutral-9: color-mix(in oklch, var(--background) 88%, var(--extreme) 12%);
+  --neutral-10: var(--background); /* 固定为背景色 */
+  --neutral-11: color-mix(
+    in oklch,
+    var(--foreground) 1.1%,
+    var(--background) 98.9%
+  );
+  --neutral-12: color-mix(
+    in oklch,
+    var(--foreground) 2.2%,
+    var(--background) 97.8%
+  );
+  --neutral-13: color-mix(
+    in oklch,
+    var(--foreground) 3.3%,
+    var(--background) 96.7%
+  );
+  --neutral-14: color-mix(
+    in oklch,
+    var(--foreground) 4.4%,
+    var(--background) 95.6%
+  );
+  --neutral-15: color-mix(
+    in oklch,
+    var(--foreground) 5.5%,
+    var(--background) 94.5%
+  );
+  --neutral-16: color-mix(
+    in oklch,
+    var(--foreground) 6.6%,
+    var(--background) 93.4%
+  );
+  --neutral-17: color-mix(
+    in oklch,
+    var(--foreground) 7.7%,
+    var(--background) 92.3%
+  );
+  --neutral-18: color-mix(
+    in oklch,
+    var(--foreground) 8.8%,
+    var(--background) 91.2%
+  );
+  --neutral-19: color-mix(
+    in oklch,
+    var(--foreground) 9.9%,
+    var(--background) 90.1%
+  );
+  --neutral-20: color-mix(
+    in oklch,
+    var(--foreground) 11%,
+    var(--background) 89%
+  );
+  --neutral-30: color-mix(
+    in oklch,
+    var(--foreground) 22%,
+    var(--background) 78%
+  );
+  --neutral-40: color-mix(
+    in oklch,
+    var(--foreground) 33%,
+    var(--background) 67%
+  );
+  --neutral-50: color-mix(
+    in oklch,
+    var(--foreground) 44%,
+    var(--background) 56%
+  );
+  --neutral-60: color-mix(
+    in oklch,
+    var(--foreground) 55%,
+    var(--background) 45%
+  );
+  --neutral-70: color-mix(
+    in oklch,
+    var(--foreground) 66%,
+    var(--background) 34%
+  );
+  --neutral-80: color-mix(
+    in oklch,
+    var(--foreground) 77%,
+    var(--background) 23%
+  );
+  --neutral-90: color-mix(
+    in oklch,
+    var(--foreground) 88%,
+    var(--background) 12%
+  );
+  --neutral-95: color-mix(
+    in oklch,
+    var(--foreground) 93.5%,
+    var(--background) 6.5%
+  );
+  --neutral-100: var(--foreground); /* 终点为前景色 */
+
+  --card: var(--neutral-10);
+  --card-foreground: var(--neutral-95);
+  --popover: var(--neutral-10);
+  --popover-foreground: var(--neutral-95);
   --primary: oklch(0.488 0.243 264.376);
-  --primary-foreground: oklch(0.97 0.014 254.604);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --primary-foreground: var(--neutral-10);
+  --secondary: var(--neutral-14);
+  --secondary-foreground: var(--neutral-90);
+  --muted: var(--neutral-14);
+  --muted-foreground: var(--neutral-70);
+  --accent: var(--neutral-14);
+  --accent-foreground: var(--neutral-80);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: var(--neutral-18);
+  --input: var(--neutral-18);
+  --ring: var(--neutral-40);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.546 0.245 262.881);
-  --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: var(--neutral-12);
+  --sidebar-foreground: var(--neutral-95);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: var(--neutral-10);
+  --sidebar-accent: var(--neutral-16);
+  --sidebar-accent-foreground: var(--neutral-95);
+  --sidebar-border: var(--neutral-18);
+  --sidebar-ring: var(--neutral-40);
 
   --destructive-foreground: var(--color-red-700);
   --warning: var(--color-amber-500);
@@ -312,98 +365,142 @@
 }
 
 .dark {
-  --foreground-0: color-mix(in oklch, var(--foreground) 0%, var(--background));
-  --foreground-1: color-mix(in oklch, var(--foreground) 1%, var(--background));
-  --foreground-2: color-mix(in oklch, var(--foreground) 2%, var(--background));
-  --foreground-3: color-mix(in oklch, var(--foreground) 3%, var(--background));
-  --foreground-4: color-mix(in oklch, var(--foreground) 4%, var(--background));
-  --foreground-5: color-mix(in oklch, var(--foreground) 5%, var(--background));
-  --foreground-6: color-mix(in oklch, var(--foreground) 6%, var(--background));
-  --foreground-7: color-mix(in oklch, var(--foreground) 7%, var(--background));
-  --foreground-8: color-mix(in oklch, var(--foreground) 8%, var(--background));
-  --foreground-9: color-mix(in oklch, var(--foreground) 9%, var(--background));
-  --foreground-10: color-mix(
-    in oklch,
-    var(--foreground) 10%,
-    var(--background)
-  );
-  --foreground-20: color-mix(
-    in oklch,
-    var(--foreground) 20%,
-    var(--background)
-  );
-  --foreground-30: color-mix(
-    in oklch,
-    var(--foreground) 30%,
-    var(--background)
-  );
-  --foreground-40: color-mix(
-    in oklch,
-    var(--foreground) 40%,
-    var(--background)
-  );
-  --foreground-50: color-mix(
-    in oklch,
-    var(--foreground) 50%,
-    var(--background)
-  );
-  --foreground-60: color-mix(
-    in oklch,
-    var(--foreground) 60%,
-    var(--background)
-  );
-  --foreground-70: color-mix(
-    in oklch,
-    var(--foreground) 70%,
-    var(--background)
-  );
-  --foreground-80: color-mix(
-    in oklch,
-    var(--foreground) 80%,
-    var(--background)
-  );
-  --foreground-90: color-mix(
-    in oklch,
-    var(--foreground) 90%,
-    var(--background)
-  );
-  --foreground-95: color-mix(
-    in oklch,
-    var(--foreground) 95%,
-    var(--background)
-  );
+  --extreme: oklch(0 0 0);
+  --background: oklch(0.2438 0.0059 271.17);
+  --foreground: oklch(1 0 0);
 
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.424 0.199 265.638);
-  --primary-foreground: oklch(0.97 0.014 254.604);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --neutral-0: var(--extreme);
+  --neutral-1: color-mix(in oklch, var(--background) 10%, var(--extreme) 90%);
+  --neutral-2: color-mix(in oklch, var(--background) 11%, var(--extreme) 89%);
+  --neutral-3: color-mix(in oklch, var(--background) 22%, var(--extreme) 78%);
+  --neutral-4: color-mix(in oklch, var(--background) 33%, var(--extreme) 67%);
+  --neutral-5: color-mix(in oklch, var(--background) 44%, var(--extreme) 56%);
+  --neutral-6: color-mix(in oklch, var(--background) 55%, var(--extreme) 45%);
+  --neutral-7: color-mix(in oklch, var(--background) 66%, var(--extreme) 34%);
+  --neutral-8: color-mix(in oklch, var(--background) 77%, var(--extreme) 23%);
+  --neutral-9: color-mix(in oklch, var(--background) 88%, var(--extreme) 12%);
+  --neutral-10: var(--background); /* 固定为背景色 */
+  --neutral-11: color-mix(
+    in oklch,
+    var(--foreground) 1.1%,
+    var(--background) 98.9%
+  );
+  --neutral-12: color-mix(
+    in oklch,
+    var(--foreground) 2.2%,
+    var(--background) 97.8%
+  );
+  --neutral-13: color-mix(
+    in oklch,
+    var(--foreground) 3.3%,
+    var(--background) 96.7%
+  );
+  --neutral-14: color-mix(
+    in oklch,
+    var(--foreground) 4.4%,
+    var(--background) 95.6%
+  );
+  --neutral-15: color-mix(
+    in oklch,
+    var(--foreground) 5.5%,
+    var(--background) 94.5%
+  );
+  --neutral-16: color-mix(
+    in oklch,
+    var(--foreground) 6.6%,
+    var(--background) 93.4%
+  );
+  --neutral-17: color-mix(
+    in oklch,
+    var(--foreground) 7.7%,
+    var(--background) 92.3%
+  );
+  --neutral-18: color-mix(
+    in oklch,
+    var(--foreground) 8.8%,
+    var(--background) 91.2%
+  );
+  --neutral-19: color-mix(
+    in oklch,
+    var(--foreground) 9.9%,
+    var(--background) 90.1%
+  );
+  --neutral-20: color-mix(
+    in oklch,
+    var(--foreground) 11%,
+    var(--background) 89%
+  );
+  --neutral-30: color-mix(
+    in oklch,
+    var(--foreground) 22%,
+    var(--background) 78%
+  );
+  --neutral-40: color-mix(
+    in oklch,
+    var(--foreground) 33%,
+    var(--background) 67%
+  );
+  --neutral-50: color-mix(
+    in oklch,
+    var(--foreground) 44%,
+    var(--background) 56%
+  );
+  --neutral-60: color-mix(
+    in oklch,
+    var(--foreground) 55%,
+    var(--background) 45%
+  );
+  --neutral-70: color-mix(
+    in oklch,
+    var(--foreground) 66%,
+    var(--background) 34%
+  );
+  --neutral-80: color-mix(
+    in oklch,
+    var(--foreground) 77%,
+    var(--background) 23%
+  );
+  --neutral-90: color-mix(
+    in oklch,
+    var(--foreground) 88%,
+    var(--background) 12%
+  );
+  --neutral-95: color-mix(
+    in oklch,
+    var(--foreground) 93.5%,
+    var(--background) 6.5%
+  );
+  --neutral-100: var(--foreground); /* 终点为前景色 */
+
+  --card: var(--neutral-10);
+  --card-foreground: var(--neutral-95);
+  --popover: var(--neutral-10);
+  --popover-foreground: var(--neutral-95);
+  --primary: oklch(0.488 0.243 264.376);
+  --primary-foreground: var(--neutral-95);
+  --secondary: var(--neutral-14);
+  --secondary-foreground: var(--neutral-90);
+  --muted: var(--neutral-14);
+  --muted-foreground: var(--neutral-70);
+  --accent: var(--neutral-14);
+  --accent-foreground: var(--neutral-80);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: var(--neutral-18);
+  --input: var(--neutral-18);
+  --ring: var(--neutral-40);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.623 0.214 259.815);
-  --sidebar-primary-foreground: oklch(0.97 0.014 254.604);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar: var(--neutral-9);
+  --sidebar-foreground: var(--neutral-95);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: var(--neutral-10);
+  --sidebar-accent: var(--neutral-16);
+  --sidebar-accent-foreground: var(--neutral-95);
+  --sidebar-border: var(--neutral-18);
+  --sidebar-ring: var(--neutral-40);
 
   --destructive-foreground: var(--color-red-400);
   --warning: var(--color-amber-500);

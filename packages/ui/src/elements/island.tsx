@@ -25,7 +25,7 @@ function Island({ className, ...props }: ResizablePrimitive.PanelProps) {
       data-slot="resizable-panel"
       {...props}
       className={cn(
-        "island bg-foreground-0",
+        "island bg-background",
         layout === "default" ? "rounded-none" : "rounded-lg shadow-md",
         className
       )}

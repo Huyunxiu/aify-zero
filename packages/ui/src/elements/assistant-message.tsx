@@ -1146,7 +1146,10 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                       selected={selectedSubagentSessionId === subagentSessionId}
-                      onSelect={() => selectSubagent(subagentSessionId)}
+                      onSelect={() => {
+                        console.log(111, subagentSessionId);
+                        selectSubagent(subagentSessionId);
+                      }}
                     />
                   );
                 }
