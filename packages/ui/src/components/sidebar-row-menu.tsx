@@ -33,7 +33,10 @@ type SidebarRowMenuProps = {
 
 /**
  * 侧边栏每一行最右侧的设置按钮：平时藏起来，鼠标停在这一行、键盘焦点落进
- * 这一行，或者菜单已经展开时才露出来。行元素需要带 `group/item`。
+ * 这一行，或者菜单已经展开时才露出来。
+ *
+ * 调用方要把 `group/item` 放在只包住这一行自己控件的外层上，不要让子行
+ * 也落在里面：命名组会匹配悬停元素的任意祖先，嵌套的行会互相点亮。
  *
  * 整行右键同样打开这个菜单：监听器挂在行的 `li` 上，菜单锚定在鼠标位置；
  * 齿轮按钮则仍锚定在按钮自己身上。菜单内容由调用方给（`DropdownMenuItem`）。
@@ -90,7 +93,7 @@ export function SidebarRowMenu({
             aria-label={label}
             className={[
               className,
-              "group-hover/item:opacity-100 group-focus-within/item:opacity-100 text-sidebar-foreground/70 hover:bg-foreground-8",
+              "group-hover/item:opacity-100 group-focus-within/item:opacity-100",
               // 右键打开时鼠标很快就移到菜单上了，靠 open 把按钮留在原地；
               // 触屏没有 hover，直接常驻，免得操作入口不可达。
               open ? "opacity-100" : "opacity-0 max-md:opacity-100",

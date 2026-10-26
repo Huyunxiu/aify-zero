@@ -173,6 +173,13 @@ export type SessionProps = React.ComponentProps<"div"> & {
   sessionId: string | undefined;
   initialTurns?: AgentTurn<AgentToolSet>[];
   /**
+   * 新建会话时预选的项目。
+   *
+   * 只作为初始值。会话行一旦存在，行上的项目就是唯一事实源；首次落库后
+   * 不能再改，否则后续回合会跑到别的目录。
+   */
+  initialProjectId?: string;
+  /**
    * Whether the session is being read rather than written to.
    *
    * A subagent's is: its turns belong to the `task` call that made it, and
@@ -295,6 +302,7 @@ function SessionOutline({ sections }: SessionOutlineProps) {
 export function Session({
   sessionId,
   initialTurns = [],
+  initialProjectId,
   readOnly = false,
   questionnairePlacement = "composer",
   onClose,
@@ -383,11 +391,12 @@ export function Session({
 
   const [selectedProjectId, setSelectedProjectId] = React.useState<
     string | undefined
-  >();
+  >(initialProjectId);
 
   // An existing session's row is the source of truth: `session.create` writes
   // the project on insert only, so a reloaded page has to read it back from
-  // there to keep showing the directories the session runs in.
+  // there to keep showing the directories the session runs in. A new session
+  // has no row yet, so the project picked in the sidebar stays selected.
   const sessionProjectId =
     getSessionQuery.data?.session?.projectId ?? undefined;
 

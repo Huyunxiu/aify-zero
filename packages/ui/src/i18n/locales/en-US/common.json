@@ -140,6 +140,7 @@
     "create": "New project",
     "edit": "Edit project",
     "actions": "Project actions",
+    "newSession": "New session in this project",
     "noSessions": "No sessions",
     "none": "No project",
     "search": "Search projects...",

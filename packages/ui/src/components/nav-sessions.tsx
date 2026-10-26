@@ -3,6 +3,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@workspace/ui/components/sidebar"
@@ -95,14 +96,12 @@ export function NavSessions() {
           <Tooltip>
             <TooltipTrigger
               render={
-                <Button
+                <SidebarMenuAction
                   aria-label={t("sessions.create")}
-                  size="icon-sm"
-                  variant="ghost"
                   onClick={() =>
                     navigate({ to: `/sessions/${generateSessionId()}` })
                   }
-                  className="pointer-events-none text-sidebar-foreground/70 opacity-0 group-hover/label:pointer-events-auto group-hover/label:opacity-100 group-has-[:focus-visible]/label:pointer-events-auto group-has-[:focus-visible]/label:opacity-100 hover:bg-foreground-8 max-md:pointer-events-auto max-md:opacity-100"
+                  className="pointer-events-none opacity-0 group-hover/label:pointer-events-auto group-hover/label:opacity-100 group-has-[:focus-visible]/label:pointer-events-auto group-has-[:focus-visible]/label:opacity-100 max-md:pointer-events-auto max-md:opacity-100"
                 />
               }
             >

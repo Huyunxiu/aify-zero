@@ -140,6 +140,7 @@
     "create": "新建项目",
     "edit": "编辑项目",
     "actions": "项目操作",
+    "newSession": "在此项目中新建会话",
     "noSessions": "暂无会话",
     "none": "不使用项目",
     "search": "搜索项目...",

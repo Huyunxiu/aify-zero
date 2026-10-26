@@ -6,6 +6,8 @@ import { Session } from "./session";
 
 export type SessionContainerProps = {
   sessionId?: string;
+  /** 新建会话时预选的项目；已有会话行上的项目仍然优先。 */
+  initialProjectId?: string;
   /** Whether the session is being read rather than written to. See {@link Session}. */
   readOnly?: boolean;
   /** Where a held questionnaire draws its form. See {@link Session}. */
@@ -16,6 +18,7 @@ export type SessionContainerProps = {
 
 export function SessionContainer({
   sessionId,
+  initialProjectId,
   readOnly,
   questionnairePlacement,
   onClose,
@@ -39,8 +42,12 @@ export function SessionContainer({
 
   return (
     <Session
+      // 本地状态属于某个会话：切到另一个会话时重新挂载，别让草稿和选中的
+      // 项目串过去。会话 id 变了，内容就该从头开始。
+      key={sessionId ?? "new"}
       sessionId={sessionId}
       initialTurns={initialTurns ?? []}
+      initialProjectId={initialProjectId}
       readOnly={readOnly}
       questionnairePlacement={questionnairePlacement}
       onClose={onClose}
