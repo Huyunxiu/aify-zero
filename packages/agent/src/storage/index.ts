@@ -3,6 +3,7 @@ import type {
   SessionInsertModel,
   SessionModel,
   SessionStatus,
+  StepInsertModel,
 } from "@workspace/db";
 
 import type { TurnRecord, TurnWrite } from "./turn-record";
@@ -131,6 +132,15 @@ export interface AgentStore {
 
   /** fork 专用：批量写入 turn 行和 step 行。 */
   saveTurns(turns: TurnWrite[]): Promise<number>;
+
+  /**
+   * 写一个已经到达 `step.finish` 的 step。
+   *
+   * 冲突时只更新可变列，不覆盖 `stream_id`：一个 step 可能在上一次运行里创建、
+   * 在这次运行里被 `step.metadata` 或 `tool.output-denied` 更新，它的归属仍是
+   * 创建它的那次运行。
+   */
+  saveStep(step: StepInsertModel): Promise<number>;
 
   /**
    * 追加一条 turn 并把它设为 branch 的新 head。

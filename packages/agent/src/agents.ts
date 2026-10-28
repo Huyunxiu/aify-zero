@@ -14,6 +14,7 @@ import type {
   AgentTurnStatus,
   CompactionRecord,
 } from "@workspace/agent-client";
+import type { StepInsertModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
@@ -60,6 +61,7 @@ import type { Extension } from "./extensions/types";
 import { HooksManager } from "./hooks-manager";
 import type { HookContext } from "./hooks-manager";
 import type { AgentStore, SessionEndStatus, TurnRecord } from "./storage";
+import { journaledStepTarget } from "./storage/step-journal";
 import { executeToolCalls, stripToolExecution } from "./tools/execution";
 import type { AgentToolSet } from "./types";
 import {
@@ -254,6 +256,8 @@ export class Agent {
   /** 当前 turn 的压缩记账。 */
   #compactionsThisTurn = 0;
   #currentTurnId?: string;
+  /** 本次运行的 id；step 行用它区分当前运行与历史。 */
+  #streamId?: string;
   #lastCompactionGuard?: { messageCount: number; tokens: number };
   /** 是否追加了新的 user turn；只有这种情况下才允许回合开始前的压缩。 */
   #startedFromUserTurn = false;
@@ -361,6 +365,7 @@ export class Agent {
       throw new Error("agent is already running");
     }
     this.#running = true;
+    this.#streamId = options.streamId;
     try {
       return await this.#startStream(options);
     } catch (error) {
@@ -385,7 +390,9 @@ export class Agent {
    * when there is one; the compaction run and the turn run both report through
    * the same channel, which is what lets one reader follow either.
    */
-  #createEventStream(): {
+  #createEventStream({
+    persistSteps = false,
+  }: { persistSteps?: boolean } = {}): {
     stream: ReadableStream<AgentStreamEvent<AgentToolSet>>;
     write: (event: AgentStreamEvent<AgentToolSet>) => Promise<void>;
     close: () => void;
@@ -406,6 +413,9 @@ export class Agent {
       write: async (event) => {
         try {
           await this.session.builder?.push(event);
+          if (persistSteps) {
+            await this.#persistStepEvent(event);
+          }
           controller.enqueue(event);
         } catch {
           // suppress errors when the stream has been closed
@@ -426,6 +436,53 @@ export class Agent {
         }
       },
     };
+  }
+
+  /**
+   * 在 step 到达终态、或被终态更新时写一行 step。
+   *
+   * 只处理 `journaledStepTarget` 认可的事件；其余事件不写库。写失败只告警，
+   * 不打断流——回合本身仍然可以正常收尾。
+   */
+  async #persistStepEvent(
+    event: AgentStreamEvent<AgentToolSet>
+  ): Promise<void> {
+    const target = journaledStepTarget(event);
+    if (!target) {
+      return;
+    }
+
+    const step = this.session.builder?.getStep(target.stepId);
+    const turn = this.session.turns.find(
+      (candidate) => candidate.id === target.turnId
+    );
+    if (!step || !turn) {
+      return;
+    }
+
+    const seq = turn.content.findIndex((candidate) => candidate.id === step.id);
+    if (seq === -1) {
+      return;
+    }
+
+    const row: StepInsertModel = {
+      id: step.id,
+      turnId: target.turnId,
+      sessionId: this.sessionId,
+      seq,
+      streamId: this.#streamId ?? null,
+      type: step.type,
+      status: step.status,
+      content: step,
+      createdAt: new Date(step.createdAt),
+      updatedAt: new Date(),
+    };
+
+    try {
+      await this.store.saveStep(row);
+    } catch (error) {
+      logger.warn("[agent] failed to persist step", error);
+    }
   }
 
   async #startTurnStream({ turns, modelId, onFinish }: AgentStreamOptions) {
@@ -484,7 +541,9 @@ export class Agent {
       await this.store.setActiveHead(this.sessionId, mostRecentTurn.id);
     }
 
-    const { stream, write, close, fail } = this.#createEventStream();
+    const { stream, write, close, fail } = this.#createEventStream({
+      persistSteps: true,
+    });
 
     // Started, not awaited: the turn runs as a producer into `stream` while the
     // caller begins reading it. Awaiting here would run the whole turn to

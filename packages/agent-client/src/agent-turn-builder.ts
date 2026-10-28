@@ -68,6 +68,15 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
   changedTurns: AgentTurn<TOOLS>[] = [];
   private readonly changedTurnIds = new Set<string>();
 
+  /**
+   * 取一个已经由事件建立起来的 step。
+   *
+   * 存储层用它在事件到达后读取 step 的最新快照；unknown id 返回 undefined。
+   */
+  getStep(stepId: string): AgentStep<TOOLS> | undefined {
+    return this.stepsMap.get(stepId);
+  }
+
   constructor({ turns }: { turns: AgentTurn<TOOLS>[] }) {
     this.turns = turns;
     this.pendingParts = new Map<string, AgentPart<TOOLS>>();
@@ -602,20 +611,32 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
    * those is enough, and it is a no-op for a stream that ended properly, where
    * the ending arrives on the finish event instead.
    *
+   * Only `"streaming"` turns and steps are settled. A turn that already reached
+   * `done` — an earlier turn in the same session, or a step that finished before
+   * the transport failed — keeps its status: the storage layer persists these
+   * objects, and rewriting a completed step as aborted would make the transcript
+   * claim work that did finish never happened.
+   *
    * The caller supplies the outcome: a builder cannot tell from its own state
    * whether the transport failed or was cancelled — only that nothing finished.
-   *
-   * `status` is a union of string literals, so a plain assignment is enough; note
-   * that comparing it first would narrow the union and turn the assignment into a
-   * type error. Tool parts run their own state machine and are left alone.
+   * Tool parts run their own state machine and are left alone.
    */
   settle(outcome: "aborted" | "error"): void {
     for (const turn of this.turnsMap.values()) {
-      turn.status = outcome;
+      // 先取到局部变量再比较：直接比较 turn.status 会把属性窄化成
+      // `"streaming"`，后面赋 outcome 就成了类型错误。
+      const { status } = turn;
+      if (status === "streaming") {
+        // 断言回可写类型：上面的比较已经把 turn 收窄成 status: "streaming"。
+        (turn as { status: string }).status = outcome;
+      }
     }
 
     for (const step of this.stepsMap.values()) {
-      step.status = outcome;
+      const { status } = step;
+      if (status === "streaming") {
+        (step as { status: string }).status = outcome;
+      }
     }
 
     // These parts are ended here rather than by their own `*`.end event, so

@@ -325,6 +325,27 @@ export class SQLiteStore implements AgentStore {
     });
   }
 
+  async saveStep(step: StepInsertModel): Promise<number> {
+    // upsert 不覆盖 stream_id：step 的归属永远是创建它的那次运行，后来的
+    // step.metadata / tool.output-denied 只改内容。
+    const result = await db
+      .insert(step_table)
+      .values(step)
+      .onConflictDoUpdate({
+        target: step_table.id,
+        set: {
+          turnId: step.turnId,
+          sessionId: step.sessionId,
+          seq: step.seq,
+          type: step.type,
+          status: step.status,
+          content: step.content,
+          updatedAt: step.updatedAt,
+        },
+      });
+    return result.rowsAffected;
+  }
+
   async beginTurn({ turn }: { turn: TurnWrite }): Promise<void> {
     // 强制成 streaming：恢复一条 wait_review turn 时，内存里的 status 可能还是
     // 旧值；这一行是崩溃标记，必须从回合开始就写明正在运行。
@@ -373,23 +394,10 @@ export class SQLiteStore implements AgentStore {
   }
 
   async updateTurn(id: string, turn: AgentTurn): Promise<number> {
-    const [existing] = await db
-      .select({ sessionId: turn_table.sessionId })
-      .from(turn_table)
-      .where(eq(turn_table.id, id))
-      .limit(1);
-    if (!existing) {
-      return 0;
-    }
-
-    const steps = toStepRows({
-      turnId: id,
-      sessionId: existing.sessionId ?? "",
-      content: turn,
-    });
-
-    await db.transaction(async (tx) => {
-      await tx
+    // 只更新已存在的 step 行。新 step 由 `step.finish` 插入；崩溃时正在执行的
+    // step 没有行，也不应该在这里被补造成历史。
+    return await db.transaction(async (tx) => {
+      const header = await tx
         .update(turn_table)
         .set({
           status: turn.status,
@@ -399,9 +407,22 @@ export class SQLiteStore implements AgentStore {
           updatedAt: new Date(),
         })
         .where(eq(turn_table.id, id));
-      await upsertStepRows(tx, steps);
-    });
 
-    return 1;
+      const now = new Date();
+      for (const [seq, step] of turn.content.entries()) {
+        await tx
+          .update(step_table)
+          .set({
+            seq,
+            type: step.type,
+            status: step.status,
+            content: step,
+            updatedAt: now,
+          })
+          .where(eq(step_table.id, step.id));
+      }
+
+      return header.rowsAffected;
+    });
   }
 }
