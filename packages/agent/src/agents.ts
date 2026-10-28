@@ -60,10 +60,12 @@ import { ExtensionManager } from "./extensions/manager";
 import type { Extension } from "./extensions/types";
 import { HooksManager } from "./hooks-manager";
 import type { HookContext } from "./hooks-manager";
+import { AgentInbox } from "./inbox/agent-inbox";
 import type { AgentStore, SessionEndStatus, TurnRecord } from "./storage";
 import { journaledStepTarget } from "./storage/step-journal";
 import { executeToolCalls, stripToolExecution } from "./tools/execution";
 import type { AgentToolSet } from "./types";
+import { convertStepToModelMessages } from "./utils/convert-to-model-message";
 import {
   generateEventId,
   generateStepId,
@@ -144,6 +146,10 @@ export type AgentOptions = {
    * 自己的 `abort()` 是并集而不是替代，所以子 agent 仍然能被单独停掉。
    */
   abortSignal?: AbortSignal;
+  /**
+   * 会话待发送消息的入口。默认用同一个 store 构造；测试可以注入替身。
+   */
+  inbox?: AgentInbox;
 };
 
 /**
@@ -177,6 +183,13 @@ export type AgentStreamOptions = {
    * outcome is only known here, once the run has finished.
    */
   onFinish: (status: SessionEndStatus) => Promise<void>;
+  /**
+   * 这条 user turn 来自 Inbox 的哪一行。
+   *
+   * 给了就要求保存 turn 时原子删除该行；行不存在说明已经被另一个调用者领走，
+   * 本次启动会失败，而不是写出一条重复的 user turn。
+   */
+  inboxId?: string;
 };
 
 /** 手工压缩被要求压缩一段没有可压缩内容的历史。 */
@@ -209,6 +222,15 @@ export type AgentStepResult = {
    * the loop's continuation rule.
    */
   readonly toolCallsResolved: boolean;
+  /** 这一步是否发起了 client 工具调用。 */
+  readonly hadClientToolCalls: boolean;
+  /**
+   * 是否有非法或没有返回结果的 client 工具调用。
+   *
+   * 这类 step 的历史不完整，不能在上面追加引导消息；回合在这里结束，残留的
+   * next-step 消息由收尾逻辑提升为 next-turn。
+   */
+  readonly unresolvedToolCalls: boolean;
   /**
    * Whether the step's calls were held for the user to approve. The turn ends
    * on this rather than continuing: there is nothing for the model to read
@@ -232,6 +254,7 @@ export class Agent {
   tools: ToolSet;
 
   store: AgentStore;
+  readonly inbox: AgentInbox;
   hooks: HooksManager;
   extensionApi: HookContext;
 
@@ -258,6 +281,8 @@ export class Agent {
   #currentTurnId?: string;
   /** 本次运行的 id；step 行用它区分当前运行与历史。 */
   #streamId?: string;
+  /** 这次运行是普通回合还是手工压缩；服务端据此判断能否 steer。 */
+  #streamKind?: AgentStreamSignal["type"];
   #lastCompactionGuard?: { messageCount: number; tokens: number };
   /** 是否追加了新的 user turn；只有这种情况下才允许回合开始前的压缩。 */
   #startedFromUserTurn = false;
@@ -268,6 +293,7 @@ export class Agent {
     this.systemPrompt = options.systemPrompt;
     this.tools = options.tools ?? {};
     this.store = options.store;
+    this.inbox = options.inbox ?? new AgentInbox(options.store);
     this.hooks = options.hooks ?? new HooksManager();
     this.extensionApi = options.extensionApi ?? {};
     this.apiKey = options.apiKey;
@@ -356,6 +382,16 @@ export class Agent {
     this.#abortController.abort();
   }
 
+  /**
+   * 正在运行的流类型；空闲或结束时为 undefined。
+   *
+   * 服务端用它判断 steering 是否可用：只有普通回合还有下一步可以接收引导
+   * 消息，手工压缩没有。
+   */
+  get streamKind(): AgentStreamSignal["type"] | undefined {
+    return this.#running ? this.#streamKind : undefined;
+  }
+
   #getModel() {
     return this.provider.chatModel(this.context.modelId);
   }
@@ -366,6 +402,7 @@ export class Agent {
     }
     this.#running = true;
     this.#streamId = options.streamId;
+    this.#streamKind = options.signal.type;
     try {
       return await this.#startStream(options);
     } catch (error) {
@@ -485,7 +522,12 @@ export class Agent {
     }
   }
 
-  async #startTurnStream({ turns, modelId, onFinish }: AgentStreamOptions) {
+  async #startTurnStream({
+    turns,
+    modelId,
+    onFinish,
+    inboxId,
+  }: AgentStreamOptions) {
     this.context.modelId = modelId;
     this.session.turns = turns;
     // 提示片段在 turn 开始时拼一次：同一 turn 的每一步看到同一份提示词，
@@ -528,15 +570,18 @@ export class Agent {
     let lastTurnId = turns.at(-2)?.id;
 
     if (mostRecentTurn?.type === "user") {
-      await this.store.saveTurn({
-        id: mostRecentTurn.id,
-        sessionId: this.sessionId,
-        type: "user",
-        metadata: {},
-        parentId: lastTurnId,
-        content: mostRecentTurn,
-        createdAt: new Date(),
-      });
+      await this.store.saveTurn(
+        {
+          id: mostRecentTurn.id,
+          sessionId: this.sessionId,
+          type: "user",
+          metadata: {},
+          parentId: lastTurnId,
+          content: mostRecentTurn,
+          createdAt: new Date(),
+        },
+        { inboxId }
+      );
       lastTurnId = mostRecentTurn.id;
       await this.store.setActiveHead(this.sessionId, mostRecentTurn.id);
     }
@@ -959,11 +1004,26 @@ export class Agent {
     }
 
     let status: AgentTurnStatus = { status: "done" };
+    let ending: AgentTurnStatus | undefined;
+    // 上一步是否留下了可以继续的完整历史。只有这种边界才允许把引导消息
+    // 插进当前 turn。
+    let steeringAllowed = false;
     let firstStep = true;
     while (true) {
       if (!firstStep) {
         await this.#maybeCompact({ trigger: "pressure", mode: "end" });
       }
+
+      // 先把 next-step 消息插进当前 turn，再开下一步。纯文本步默认要结束，
+      // 但如果这里领到了引导消息，ending 被清掉，循环继续跑下一步。
+      if (!firstStep && steeringAllowed && (await this.#applySteering())) {
+        ending = undefined;
+        steeringAllowed = false;
+      } else if (ending) {
+        status = ending;
+        break;
+      }
+
       firstStep = false;
 
       const stepId = generateStepId();
@@ -993,14 +1053,28 @@ export class Agent {
       // than with it: a step is what the loop continues from, and it cannot
       // continue past a call nobody has answered yet.
       if (outcome.result.awaitingApproval) {
-        status = { status: "wait_review" };
-        break;
+        ending = { status: "wait_review" };
+        steeringAllowed = false;
+        continue;
       }
 
-      if (!outcome.result.toolCallsResolved) {
-        status = { status: "done" };
-        break;
+      // 非法/没有结果的工具调用让历史不完整，不能在上面追加 user 消息；
+      // 回合在这里结束，残留的 next-step 由收尾逻辑提升为 next-turn。
+      if (outcome.result.unresolvedToolCalls) {
+        ending = { status: "done" };
+        steeringAllowed = false;
+        continue;
       }
+
+      // 工具调用全部完成：照旧让模型读结果，下一步前会检查引导消息。
+      if (outcome.result.toolCallsResolved) {
+        steeringAllowed = true;
+        continue;
+      }
+
+      // 纯文本步：默认收尾；若引导消息在下一轮顶部被领到，就继续。
+      ending = { status: "done" };
+      steeringAllowed = true;
     }
 
     await this.context.controller?.write({
@@ -1060,6 +1134,59 @@ export class Agent {
     // reports — not simply the last one changed, because an earlier turn can be
     // touched after it.
     return changedTurns.findLast((changed) => changed.id === turnId);
+  }
+
+  /**
+   * 把 Inbox 里待应用的引导消息插进当前 assistant turn。
+   *
+   * 只在步边界调用，而且调用方必须先确认上一步留下了完整历史。事务里删除
+   * Inbox 行并写入 steering step；随后发 `turn.steer` 事件，再把对应的 user
+   * 消息追加到模型历史。它不开启新的 turn，也不改 `#currentTurnId`。
+   *
+   * @returns 是否应用了至少一条消息。
+   */
+  async #applySteering(): Promise<boolean> {
+    if (this.context.abortSignal?.aborted) {
+      return false;
+    }
+
+    const turnId = this.#currentTurnId;
+    const streamId = this.#streamId;
+    if (!turnId || !streamId) {
+      return false;
+    }
+
+    const pending = await this.inbox.listSteering(this.sessionId);
+    if (pending.length === 0) {
+      return false;
+    }
+
+    // 只有仍然存在于表里的 id 会被领取；被取消或并发领走的行不会变成 step。
+    const steps = await this.inbox.applySteeringSteps({
+      sessionId: this.sessionId,
+      turnId,
+      streamId,
+      messageIds: pending.map((message) => message.id),
+    });
+    if (steps.length === 0) {
+      return false;
+    }
+
+    for (const step of steps) {
+      await this.context.controller?.write({
+        type: "turn.steer",
+        turnId,
+        step,
+        createdAt: Date.now(),
+      });
+
+      // 模型在下一步读到的就是这条 user 消息，位置在上一 step 的工具结果之后。
+      this.session.modelMessages.push(
+        ...(await convertStepToModelMessages(step))
+      );
+    }
+
+    return true;
   }
 
   /**
@@ -1372,6 +1499,17 @@ export class Agent {
       messages.push(...responseMessages, ...execution.toolMessages);
       this.session.noteStepUsage(usage, promptMessageCount);
 
+      const executableToolCalls = clientToolCalls.filter(
+        (call) => call.invalid !== true
+      );
+      const hadClientToolCalls = clientToolCalls.length > 0;
+      // 等待审批不是“历史坏了”：调用被挂起，答案会从下一次流回来。其余
+      // 情况里，非法或没有结果的调用会让历史不完整。
+      const unresolvedToolCalls =
+        !execution.awaitingApproval &&
+        (executableToolCalls.length !== clientToolCalls.length ||
+          execution.outcomes.length !== executableToolCalls.length);
+
       // The step ends here either way — everything it streamed is on the wire —
       // but a held step ends the turn with it: the model has no results to read
       // and the user still has the calls to answer, which is the next stream.
@@ -1384,6 +1522,8 @@ export class Agent {
             finishReason,
             rawFinishReason,
             toolCallsResolved: false,
+            hadClientToolCalls,
+            unresolvedToolCalls: false,
             awaitingApproval: true,
           },
         };
@@ -1394,10 +1534,7 @@ export class Agent {
       // back. A denial is an answer — the model is told the call was refused —
       // but a call the model got wrong is not, and continuing there would send
       // an assistant tool call with no matching tool message.
-      const toolCallsResolved =
-        clientToolCalls.length > 0 &&
-        clientToolCalls.every((call) => call.invalid !== true) &&
-        execution.outcomes.length === clientToolCalls.length;
+      const toolCallsResolved = hadClientToolCalls && !unresolvedToolCalls;
 
       return {
         ok: true,
@@ -1407,6 +1544,8 @@ export class Agent {
           finishReason,
           rawFinishReason,
           toolCallsResolved,
+          hadClientToolCalls,
+          unresolvedToolCalls,
           awaitingApproval: false,
         },
       };

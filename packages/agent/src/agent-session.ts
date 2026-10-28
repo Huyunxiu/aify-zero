@@ -113,6 +113,12 @@ export class AgentSession {
       return;
     }
 
+    // builder 在 turn.start 时已经把同一个对象放进 turns；再 push 一次会让
+    // 同一个 turn 在数组里出现两次。
+    if (this.turns.some((candidate) => candidate.id === turn.id)) {
+      return;
+    }
+
     this.turns.push(turn);
   }
 }
