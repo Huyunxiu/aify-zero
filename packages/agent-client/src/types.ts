@@ -224,6 +224,19 @@ export type TextStreamStepMetadataEvent = {
   createdAt: number;
   metadata: StepMetadata;
 };
+/**
+ * 一条引导消息已插入当前 assistant turn。
+ *
+ * `step` 是完整的 steering step：客户端按 id upsert 到 turn 的步骤列表，
+ * 同时按同一个 id 从待发送队列里移除它。它不开启新的 turn，所以没有
+ * `step.start` / `step.finish` 配对。
+ */
+export type TextStreamSteerEvent = {
+  type: "turn.steer";
+  turnId: string;
+  step: AgentSteeringStep;
+  createdAt: number;
+};
 export type TextStreamStartTurnEvent = {
   id: string;
   createdAt: number;
@@ -304,6 +317,7 @@ export type AgentStreamEvent<TOOLS extends ToolSet> =
   | TextStreamStartStepEvent
   | TextStreamFinishStepEvent
   | TextStreamStepMetadataEvent
+  | TextStreamSteerEvent
   | TextStreamStartTurnEvent
   | TextStreamFinishTurnEvent
   | TextStreamTitleStartEvent
@@ -886,6 +900,21 @@ export type AgentUserStep = AgentStepBase & {
   content: AgentUserPart[];
 };
 
+/**
+ * 回合运行中插入的一条引导消息。
+ *
+ * 它不是独立的 user turn，而是当前 assistant turn 里的一个 step：用户在回复
+ * 过程中补一句话，模型在下一步读到它。位置就是它生效的地方，渲染也因此在
+ * assistant turn 的步骤链里。
+ *
+ * id 直接使用 Inbox 行的 id，客户端据此在 `turn.steer` 到达时移除队列项。
+ */
+export type AgentSteeringStep = AgentStepBase & {
+  type: "steering";
+
+  content: AgentUserPart[];
+};
+
 export type AgentSessionTitleStep = AgentStepBase & {
   /**
    * The type of the step.
@@ -941,7 +970,14 @@ export type AgentStep<TOOLS extends ToolSet> =
   | AgentUserStep
   | AgentAssistantStep<TOOLS>
   | AgentCompactionStep
+  | AgentSteeringStep
   | AgentSessionTitleStep;
+
+export function isAgentSteeringStep<TOOLS extends ToolSet>(
+  step: AgentStep<TOOLS>
+): step is AgentSteeringStep {
+  return step.type === "steering";
+}
 
 export type AgentUserTurn = AgentTurnBase & {
   /**
@@ -968,8 +1004,15 @@ export type AgentAssistantTurn<TOOLS extends ToolSet> = AgentTurnBase & {
    *
    * 中间可能插入一个压缩 step：自动压缩就地切掉上下文，投影会把它之后的
    * 所有 step 当作保留段。
+   *
+   * 也可能插入一个 steering step：回合运行中用户补的一句话，模型在下一步
+   * 读到它。它属于当前回复，不拆成独立的 user turn。
    */
-  content: (AgentAssistantStep<TOOLS> | AgentCompactionStep)[];
+  content: (
+    | AgentAssistantStep<TOOLS>
+    | AgentCompactionStep
+    | AgentSteeringStep
+  )[];
 };
 
 /**

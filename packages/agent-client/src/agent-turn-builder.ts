@@ -149,6 +149,23 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         }
         break;
       }
+      case "turn.steer": {
+        const turn = this.turnsMap.get(event.turnId);
+        if (!turn || turn.type !== "assistant") {
+          break;
+        }
+
+        // 重放时同一个 step 可能已经存在：覆盖内容，不重复追加。
+        const existing = this.stepsMap.get(event.step.id);
+        if (existing) {
+          Object.assign(existing, event.step);
+          break;
+        }
+
+        (turn.content as AgentStep<TOOLS>[]).push(event.step);
+        this.stepsMap.set(event.step.id, event.step);
+        break;
+      }
       case "text.start": {
         const part: AgentTextPart = {
           type: "text",

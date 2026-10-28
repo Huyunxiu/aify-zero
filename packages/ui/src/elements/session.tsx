@@ -242,6 +242,11 @@ function getOutlineLabel(turn: OutlineTurn, index: number): string {
       continue;
     }
 
+    // 引导消息是回合中用户插的话，不进入回复的大纲标题。
+    if (step.type === "steering") {
+      continue;
+    }
+
     for (const part of step.content) {
       if (isAgentTextPart(part)) {
         textParts.push(part.text);

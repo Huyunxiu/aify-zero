@@ -169,12 +169,18 @@ const parseRenderedDiffLine = (line: string) => ({
  * how long it took.
  */
 const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
-  const parts: StepRow[] = turn.content.flatMap((step) =>
-    step.content.map((part) => ({
+  const parts: StepRow[] = turn.content.flatMap((step) => {
+    // steering step 是用户插话，不是 assistant part；它在步骤链里单独渲染。
+    // 这里先不摊平，避免被当成 Note 或工具行。
+    if (step.type === "steering") {
+      return [];
+    }
+
+    return step.content.map((part) => ({
       part: part as AgentPart<AgentToolSet>,
       step,
-    }))
-  );
+    }));
+  });
 
   const answerPartIndex =
     parts.at(-1)?.part.type === "text" ? parts.length - 1 : -1;
