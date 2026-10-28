@@ -330,7 +330,7 @@ const createSession = publicProcedure
             // 回合结束前没被领走的 next-step 消息不能留在“下一步”上：把它们
             // 变成下一回合的排队消息，否则它们永远不会被发送。
             try {
-              await inbox.promoteStale(sessionId, activeStreamId);
+              await inbox.promoteStale(sessionId);
             } catch (error) {
               logger.warn(
                 "[session] failed to promote pending steering messages",
@@ -770,7 +770,7 @@ export const compactSession = publicProcedure
           signal: { type: "compaction", trigger: "manual" },
           onFinish: async () => {
             try {
-              await inbox.promoteStale(sessionId, activeStreamId);
+              await inbox.promoteStale(sessionId);
             } catch (error) {
               logger.warn(
                 "[session] failed to promote pending steering messages",
@@ -856,17 +856,12 @@ export const enqueueInboxMessage = publicProcedure
       running: running !== undefined && !running.isDone(),
       streamKind: running?.agent.streamKind,
     });
-    // 只有 next-step 需要记住“属于哪一次运行”：回合收尾时按它精确提升，
-    // 不会误伤下一个回合刚入队的引导。
-    const targetStreamId =
-      placement === "next-step" ? running?.streamId : undefined;
 
     const inbox = new AgentInbox(store);
     const message = await inbox.enqueue({
       sessionId: input.sessionId,
       requestId: input.requestId,
       placement,
-      targetStreamId,
       content: input.turn,
       payload: {
         model: input.model,
@@ -874,23 +869,6 @@ export const enqueueInboxMessage = publicProcedure
         projectId: session.projectId ?? input.projectId ?? undefined,
       },
     });
-
-    // 入队和“回合结束”之间有窗口：读 registry 时它还在跑，插入时已经结束。
-    // 这时不能把消息留在 next-step 上；按 targetStreamId 精确提升，下一次
-    // 读取会把它当成排队消息。
-    if (targetStreamId) {
-      const current = STREAM_REGISTRY.getStreamEntryBySession(input.sessionId);
-      if (!current || current.isDone() || current.streamId !== targetStreamId) {
-        await inbox.promoteStale(input.sessionId, targetStreamId);
-        return {
-          message: {
-            ...message,
-            placement: "next-turn" as const,
-            targetStreamId: undefined,
-          },
-        };
-      }
-    }
 
     return { message };
   });
