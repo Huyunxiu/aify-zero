@@ -4,6 +4,7 @@ import react from "ultracite/oxlint/react";
 import remix from "ultracite/oxlint/remix";
 import vitest from "ultracite/oxlint/vitest";
 import { defineConfig } from "vite-plus";
+import { configDefaults } from "vitest/config";
 
 export default defineConfig({
   fmt: {
@@ -79,6 +80,15 @@ export default defineConfig({
       "unicorn/filename-case": "allow",
       "unicorn/empty-brace-spaces": "allow",
     },
+  },
+  test: {
+    // `.delta` 里是旧 worktree 的完整副本；测试扫描会连它们一起跑，
+    // 结果是同一份测试在旧代码上失败。排除掉这些副本。
+    exclude: [
+      ...configDefaults.exclude,
+      "**/.delta/**",
+      "**/.claude/worktrees/**",
+    ],
   },
   run: {
     cache: false,
