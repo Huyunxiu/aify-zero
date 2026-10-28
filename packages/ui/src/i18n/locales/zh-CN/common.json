@@ -169,6 +169,26 @@
       "update": "保存"
     }
   },
+  "composer": {
+    "mode": {
+      "steering": "引导",
+      "followup": "排队"
+    },
+    "send": {
+      "default": "发送",
+      "steering": "发送引导消息",
+      "followup": "发送排队消息"
+    }
+  },
+  "inbox": {
+    "title": "{{count}} 条待发送",
+    "steering": "引导中",
+    "queued": "排队中",
+    "sendNow": "立即发送",
+    "remove": "移除",
+    "clear": "全部清除",
+    "empty": "（空消息）"
+  },
   "steering": {
     "marker": "引导消息"
   },

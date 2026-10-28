@@ -169,6 +169,26 @@
       "update": "Save"
     }
   },
+  "composer": {
+    "mode": {
+      "steering": "Steer",
+      "followup": "Queue"
+    },
+    "send": {
+      "default": "Send",
+      "steering": "Send as steering message",
+      "followup": "Send as queued message"
+    }
+  },
+  "inbox": {
+    "title": "{{count}} pending",
+    "steering": "Steering",
+    "queued": "Queued",
+    "sendNow": "Send now",
+    "remove": "Remove",
+    "clear": "Clear all",
+    "empty": "(empty message)"
+  },
   "steering": {
     "marker": "Steering message"
   },

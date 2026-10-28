@@ -44,6 +44,7 @@ import {
   ContextTrigger,
 } from "../components/ai-elements/token-context";
 import { Button } from "../components/button";
+import { ButtonGroup } from "../components/button-group";
 import {
   Empty,
   EmptyDescription,
@@ -65,10 +66,12 @@ import { toastManager } from "../components/toast";
 import ProximitySidebar from "../components/ui/proximity-sidebar";
 import type { ProximitySection } from "../components/ui/proximity-sidebar";
 import { useAgentSession } from "../hooks/use-agent-session";
+import type { SubmitMode } from "../hooks/use-agent-session";
 import { client, queryClient } from "../lib/orpc";
 import { cn } from "../lib/utils";
 import { AssistantMessage } from "./assistant-message";
 import { CompactionMessage } from "./compaction-message";
+import { InboxDock } from "./inbox-dock";
 import { Message, MessageContent, MessageResponse } from "./message";
 import { ModelSelect } from "./model-select";
 import { ProjectSelect } from "./project-select";
@@ -81,6 +84,7 @@ import {
   PromptInputBody,
   PromptInputFooter,
   PromptInputProvider,
+  PromptInputStop,
   PromptInputSubmit,
   PromptInputTools,
   usePromptInputAttachments,
@@ -372,6 +376,19 @@ export function Session({
       : "default";
   });
 
+  // 运行中按 Enter 的默认投递方式；空闲时这个值不参与发送。默认 steering，
+  // 与产品的选择一致。
+  const [busyMode, setBusyMode] = React.useState<SubmitMode>(() =>
+    localStorage.getItem(LOCAL_STORAGE_KEYS.COMPOSER_BUSY_MODE) === "followup"
+      ? "followup"
+      : "steering"
+  );
+
+  const handleBusyModeChange = (mode: SubmitMode) => {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.COMPOSER_BUSY_MODE, mode);
+    setBusyMode(mode);
+  };
+
   // Restore the last used model, falling back to the first one.
   React.useEffect(() => {
     if (models.length > 0 && !models.some((m) => m.id === selectedModelId)) {
@@ -438,8 +455,12 @@ export function Session({
   );
 
   const {
-    sendTurns,
     turns,
+    pendingMessages,
+    submit,
+    sendPending,
+    cancelPending,
+    clearPending,
     error: sessionError,
     status,
     stop,
@@ -459,6 +480,10 @@ export function Session({
       // 那时还没选项目。hook 只把 payload 当不透明数据，所以这里收窄再传。
       const projectId =
         typeof options.projectId === "string" ? options.projectId : undefined;
+      // 排队消息领取时带上 Inbox 行 id：服务端在保存 user turn 的同一事务里
+      // 删除它，重复领取会失败而不是写出重复 turn。
+      const inboxId =
+        typeof options.inboxId === "string" ? options.inboxId : undefined;
 
       const accepted = await client.session.create(
         {
@@ -472,6 +497,7 @@ export function Session({
           // presence is what makes the new stream a resumption: the server runs
           // the calls it names before asking the model anything again.
           approvals: options.approvals,
+          inboxId,
         },
         { signal: options.abortSignal }
       );
@@ -492,6 +518,19 @@ export function Session({
     apiStop: async ({ sessionId: id }) => {
       await client.session.stop({ sessionId: id });
     },
+    apiInbox: {
+      list: async ({ sessionId: id }) => {
+        const result = await client.session.listInbox({ sessionId: id });
+        return result.messages;
+      },
+      enqueue: async (input) => await client.session.enqueueInbox(input),
+      cancel: async ({ sessionId: id, messageId }) =>
+        await client.session.cancelInbox({ sessionId: id, messageId }),
+      clear: async ({ sessionId: id }) =>
+        await client.session.clearInbox({ sessionId: id }),
+    },
+    // 只读的子会话没有 composer：不渲染队列，也不 drain。
+    allowSend: !readOnly,
     turns: initialTurns,
     onEvent,
   });
@@ -660,6 +699,11 @@ export function Session({
   // The submit button doubles as the stop control, so an empty editor — which
   // is exactly what submitting leaves behind — must not disable it mid-turn.
   const isGenerating = status === "submitted" || status === "streaming";
+  const submitLabel = isGenerating
+    ? busyMode === "steering"
+      ? t("composer.send.steering")
+      : t("composer.send.followup")
+    : t("composer.send.default");
 
   // A project is fixed once the session exists: later turns have to keep
   // running in the directories its first turn was started with.
@@ -726,7 +770,7 @@ export function Session({
     });
   };
 
-  const handleSubmit = (message: PromptInputMessage) => {
+  const handleSubmit = async (message: PromptInputMessage) => {
     const modelId = selectedModelId;
     if (!modelId) {
       return;
@@ -794,17 +838,46 @@ export function Session({
       void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
     }
 
-    void sendTurns({
-      turns: [...turns, turn],
-      // A newer send cancels the older request on its own, so nothing aborts
-      // this one.
-      abortSignal: new AbortController().signal,
-      payload: {
-        model: modelId,
-        modelEffort: selectedModelEffort,
-        projectId: selectedProjectId,
-      },
+    try {
+      // 新会话直接发送；已有会话先入队，再按顺序 drain。空闲时 mode 不参与。
+      await submit({
+        turn,
+        mode: isGenerating ? busyMode : undefined,
+        payload: {
+          model: modelId,
+          modelEffort: selectedModelEffort,
+          projectId: selectedProjectId,
+        },
+      });
+    } catch (error) {
+      // 入队或发送被拒绝时，PromptInput 不会清空编辑器；这里负责让用户看到原因。
+      toastManager.add({
+        description: getErrorMessage(error),
+        title: t("requestFailed"),
+        type: "error",
+      });
+      throw error;
+    }
+  };
+
+  const reportQueueError = (error: unknown) => {
+    toastManager.add({
+      description: getErrorMessage(error),
+      title: t("requestFailed"),
+      type: "error",
     });
+  };
+
+  const handleQueueSend = () => {
+    void sendPending().catch(reportQueueError);
+  };
+
+  const handleQueueCancel = (messageId: string) => {
+    void cancelPending(messageId).catch(reportQueueError);
+  };
+
+  const handleQueueClear = () => {
+    void clearPending().catch(reportQueueError);
   };
 
   const handleRespondToolApproval = React.useCallback(
@@ -1010,7 +1083,14 @@ export function Session({
                 hasOutline && "@min-[1100px]:ps-[104px]"
               )}
             >
-              <div className="mx-auto flex w-full max-w-4xl gap-2 border-t-0 pt-1 px-4 pb-4">
+              <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 border-t-0 pt-1 px-4 pb-4">
+                <InboxDock
+                  busy={isGenerating}
+                  messages={pendingMessages}
+                  onCancel={handleQueueCancel}
+                  onClear={handleQueueClear}
+                  onSend={handleQueueSend}
+                />
                 <PromptInputProvider>
                   {pendingQuestionnaire ? (
                     <QuestionnaireComposer
@@ -1066,6 +1146,34 @@ export function Session({
                           />
                         </PromptInputTools>
                         <div className="flex items-center gap-2">
+                          {isGenerating && (
+                            <ButtonGroup>
+                              <Button
+                                onClick={() => handleBusyModeChange("steering")}
+                                size="xs"
+                                type="button"
+                                variant={
+                                  busyMode === "steering"
+                                    ? "secondary"
+                                    : "ghost"
+                                }
+                              >
+                                {t("composer.mode.steering")}
+                              </Button>
+                              <Button
+                                onClick={() => handleBusyModeChange("followup")}
+                                size="xs"
+                                type="button"
+                                variant={
+                                  busyMode === "followup"
+                                    ? "secondary"
+                                    : "ghost"
+                                }
+                              >
+                                {t("composer.mode.followup")}
+                              </Button>
+                            </ButtonGroup>
+                          )}
                           <Context
                             maxTokens={contextWindow}
                             modelId={selectedModelId}
@@ -1084,13 +1192,13 @@ export function Session({
                               <ContextContentFooter />
                             </ContextContent>
                           </Context>
+                          {isGenerating && (
+                            <PromptInputStop onStop={() => void stop()} />
+                          )}
                           <PromptInputSubmit
-                            disabled={
-                              !isGenerating &&
-                              (!selectedModelId || isEditorEmpty)
-                            }
+                            disabled={isEditorEmpty || !selectedModelId}
+                            label={submitLabel}
                             status={status}
-                            onStop={() => void stop()}
                           />
                         </div>
                       </PromptInputFooter>

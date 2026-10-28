@@ -1221,7 +1221,8 @@ export const PromptInputActionMenuItem = ({
 
 export type PromptInputSubmitProps = ComponentProps<typeof InputGroupButton> & {
   status?: ChatStatus;
-  onStop?: () => void;
+  /** 可访问名称；composer 在这里传入当前投递方式。 */
+  label?: string;
 };
 
 export const PromptInputSubmit = ({
@@ -1229,42 +1230,24 @@ export const PromptInputSubmit = ({
   variant = "default",
   size = "icon-sm",
   status,
-  onStop,
-  onClick,
+  label,
   children,
   ...props
 }: PromptInputSubmitProps) => {
-  const isGenerating = status === "submitted" || status === "streaming";
-
   let Icon = <CornerDownLeftIcon className="size-4" />;
 
   if (status === "submitted") {
     Icon = <Spinner />;
-  } else if (status === "streaming") {
-    Icon = <SquareIcon className="size-4" />;
   } else if (status === "error") {
     Icon = <XIcon className="size-4" />;
   }
 
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (isGenerating && onStop) {
-        e.preventDefault();
-        onStop();
-        return;
-      }
-      onClick?.(e);
-    },
-    [isGenerating, onStop, onClick]
-  );
-
   return (
     <InputGroupButton
-      aria-label={isGenerating ? "Stop" : "Submit"}
+      aria-label={label ?? "Submit"}
       className={cn(className)}
-      onClick={handleClick}
       size={size}
-      type={isGenerating && onStop ? "button" : "submit"}
+      type="submit"
       variant={variant}
       {...props}
     >
@@ -1272,6 +1255,36 @@ export const PromptInputSubmit = ({
     </InputGroupButton>
   );
 };
+
+export type PromptInputStopProps = ComponentProps<typeof InputGroupButton> & {
+  onStop: () => void;
+};
+
+/**
+ * 停止当前回合的独立按钮。
+ *
+ * 发送按钮始终负责提交，所以运行中按 Enter 或点发送都把文本交给 composer
+ * 决定投递方式；停止是另一个明确动作。
+ */
+export const PromptInputStop = ({
+  className,
+  size = "icon-sm",
+  variant = "outline",
+  onStop,
+  ...props
+}: PromptInputStopProps) => (
+  <InputGroupButton
+    aria-label="Stop"
+    className={cn(className)}
+    size={size}
+    type="button"
+    variant={variant}
+    {...props}
+    onClick={() => onStop()}
+  >
+    <SquareIcon className="size-4" />
+  </InputGroupButton>
+);
 
 export type PromptInputSelectProps = ComponentProps<typeof Select>;
 

@@ -4,6 +4,8 @@ export const LOCAL_STORAGE_KEYS = {
   THEME: "theme",
   MODEL_ID: "model-id",
   MODEL_EFFORT: "model-effort",
+  /** 运行中按 Enter 的默认投递方式：steering 或 followup。 */
+  COMPOSER_BUSY_MODE: "composer-busy-mode",
 };
 
 // languages
