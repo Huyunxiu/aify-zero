@@ -1,14 +1,53 @@
 import type { AgentToolSet } from "@workspace/agent";
-import { AgentTurnBuilder, isAgentToolPart } from "@workspace/agent-client";
+import {
+  AgentTurnBuilder,
+  findToolApprovalRequests,
+  isAgentToolPart,
+} from "@workspace/agent-client";
 import type {
   AgentStreamEvent,
   AgentTurn,
+  AgentUserTurn,
+  InboxMessage,
   JSONObject,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { parseJsonEventStream } from "ai";
+import { nanoid } from "nanoid";
 import * as React from "react";
 import throttle from "throttleit";
+
+/** 运行中提交消息的投递方式。 */
+export type SubmitMode = "steering" | "followup";
+
+/**
+ * 服务端 Inbox 的客户端入口。
+ *
+ * 入队成功就意味着消息已经落库，之后即使页面关掉也不会丢；发送失败时它会
+ * 留在队列里，等用户手动重试。
+ */
+export type InboxApi = {
+  list: (input: { sessionId: string }) => Promise<InboxMessage[]>;
+  enqueue: (input: {
+    sessionId: string;
+    requestId: string;
+    mode: SubmitMode;
+    turn: AgentUserTurn;
+    model: string;
+    modelEffort?: string;
+    projectId?: string;
+  }) => Promise<{ message: InboxMessage }>;
+  cancel: (input: { sessionId: string; messageId: string }) => Promise<unknown>;
+  clear: (input: { sessionId: string }) => Promise<unknown>;
+};
+
+export type SubmitOptions = {
+  turn: AgentUserTurn;
+  /** 运行中才有意义；空闲时按普通发送处理。 */
+  mode?: SubmitMode;
+  /** 发送所需的模型信息，原样并入请求体。 */
+  payload?: Record<string, unknown>;
+};
 
 export type UseAgentSessionOptions = {
   id: string;
@@ -28,6 +67,16 @@ export type UseAgentSessionOptions = {
    * Read when the store is created, like `api` and `apiStream`.
    */
   apiStop?: (options: { sessionId: string }) => Promise<unknown>;
+  /**
+   * Durable pending-message queue. Read when the store is created, like the
+   * other API callbacks.
+   */
+  apiInbox?: InboxApi;
+  /**
+   * Whether this page may send at all. A read-only subagent page lists nothing
+   * and drains nothing.
+   */
+  allowSend?: boolean;
   /**
    * Minimum gap, in milliseconds, between the `turns` snapshots published while
    * a response streams, defaulting to `200`. Every publish hands subscribers a
@@ -56,6 +105,24 @@ type AgentSessionStatus = "submitted" | "streaming" | "ready" | "error";
 
 export type UseAgentSessionResponse = {
   turns: AgentTurn<AgentToolSet>[];
+  /** 服务端返回的待发送消息，按 FIFO 排列。 */
+  pendingMessages: InboxMessage[];
+  /**
+   * Submits a user turn.
+   *
+   * A session with no transcript yet sends directly — the server has no row to
+   * attach an inbox item to. Every later message is enqueued first, so a
+   * failed send cannot lose it, then drained.
+   *
+   * The promise resolves once the message is accepted (enqueued, or the first
+   * turn's stream has started), which is what lets the composer clear only on
+   * success.
+   */
+  submit: (options: SubmitOptions) => Promise<void>;
+  /** Clears the paused flag and sends the next pending message. */
+  sendPending: () => Promise<void>;
+  cancelPending: (messageId: string) => Promise<void>;
+  clearPending: () => Promise<void>;
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
   /**
    * Attaches to the turn a session is already running, for a page that arrived
@@ -92,6 +159,12 @@ type SendTurnsOptions = {
    * options, which are only read when the store is created.
    */
   payload?: Record<string, unknown>;
+  /** 这条 user turn 来自 Inbox 的哪一行；服务端在同一事务里认领。 */
+  inboxId?: string;
+  /** 请求已被服务端接受（流已拿到）时调用。 */
+  onAccepted?: () => void;
+  /** 流拿到之前失败时调用，参数是原始错误。 */
+  onRejected?: (error: unknown) => void;
 };
 
 type ResumeOptions = {
@@ -152,6 +225,11 @@ type AgentSessionStore = {
   getTurns: () => AgentTurn<AgentToolSet>[];
   getStatus: () => AgentSessionStatus;
   getError: () => Error | undefined;
+  getInbox: () => InboxMessage[];
+  submit: (options: SubmitOptions) => Promise<void>;
+  sendPending: () => Promise<void>;
+  cancelPending: (messageId: string) => Promise<void>;
+  clearPending: () => Promise<void>;
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
   resume: (options: ResumeOptions) => Promise<void>;
   addToolApprovalResponse: (
@@ -171,6 +249,19 @@ type AgentSessionStoreOptions = UseAgentSessionOptions & {
 
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
+
+/** oRPC 错误带着 `code`；队列发送失败时用它区分“已被领走”和真正的失败。 */
+const isInboxMessageNotFound = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  (error as { code?: unknown }).code === "INBOX_MESSAGE_NOT_FOUND";
+
+const isSessionNotFound = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  "code" in error &&
+  (error as { code?: unknown }).code === "SESSION_NOT_FOUND";
 
 /**
  * Pulls the message out of a failed response.
@@ -256,6 +347,8 @@ export function createAgentSessionStore({
   api,
   apiStream,
   apiStop,
+  apiInbox,
+  allowSend = true,
   throttleMs = 200,
   turns,
   emit,
@@ -266,6 +359,11 @@ export function createAgentSessionStore({
   let status: AgentSessionStatus = "ready";
   let currentError: Error | undefined;
   let active: AbortController | null = null;
+  let inbox: InboxMessage[] = [];
+  let inboxRevision = 0;
+  let sendingId: string | undefined;
+  let drainPaused = false;
+  let draining = false;
 
   const notify = (): void => {
     for (const listener of listeners) {
@@ -293,6 +391,13 @@ export function createAgentSessionStore({
   const getTurns = (): AgentTurn<AgentToolSet>[] => currentTurns;
   const getStatus = (): AgentSessionStatus => status;
   const getError = (): Error | undefined => currentError;
+  const getInbox = (): InboxMessage[] => inbox;
+
+  const isBusy = (): boolean =>
+    status === "submitted" || status === "streaming";
+
+  const hasPendingApproval = (): boolean =>
+    findToolApprovalRequests(currentTurns).length > 0;
 
   /**
    * `commit` on a leash: at most one snapshot per window while a response
@@ -321,6 +426,67 @@ export function createAgentSessionStore({
           }
         }, throttleMs)
       : commit;
+
+  /** 队列发生了本地增删；正在路上的列表响应不能再覆盖它。 */
+  const bumpInbox = (): void => {
+    inboxRevision += 1;
+  };
+
+  /**
+   * 从服务端重新读取待发送消息。
+   *
+   * 本地增删会让这次请求作废：列表响应可能比本地状态旧，下一次刷新再对齐。
+   * 读取失败不冒泡——队列是辅助信息，不该把 transcript 拖进错误态。
+   */
+  const refreshInbox = async (): Promise<void> => {
+    if (!apiInbox) {
+      return;
+    }
+
+    const revision = inboxRevision;
+
+    try {
+      const messages = await apiInbox.list({ sessionId: id });
+      if (revision !== inboxRevision) {
+        return;
+      }
+      inbox = messages;
+      notify();
+    } catch {
+      // 下一次 settle 或用户操作会再试。
+    }
+  };
+
+  const addInboxMessage = (message: InboxMessage): void => {
+    // 入队响应回来之前，流可能已经用 turn.steer 把它领走并删了行。
+    const claimed = currentTurns.some(
+      (turn) =>
+        turn.type === "assistant" &&
+        turn.content.some(
+          (step) => step.type === "steering" && step.id === message.id
+        )
+    );
+    if (claimed || inbox.some((item) => item.id === message.id)) {
+      return;
+    }
+
+    bumpInbox();
+    inbox = [...inbox, message].toSorted((left, right) => left.seq - right.seq);
+    notify();
+  };
+
+  const removeInboxMessage = (messageId: string): void => {
+    if (!inbox.some((item) => item.id === messageId)) {
+      return;
+    }
+
+    bumpInbox();
+    inbox = inbox.filter((item) => item.id !== messageId);
+    if (sendingId === messageId) {
+      sendingId = undefined;
+    }
+    notify();
+  };
 
   /**
    * Ends a request.
@@ -363,6 +529,14 @@ export function createAgentSessionStore({
     currentError = failure;
     status = failure ? "error" : "ready";
     commit();
+
+    // 回合结束后队列可能已经变化：先对齐服务端，再尝试发送下一条。错误态
+    // 不自动重试，避免一条坏消息在失败后立刻再次触发同一个错误。
+    void refreshInbox().then(() => {
+      if (status === "ready") {
+        void drain();
+      }
+    });
   };
 
   /**
@@ -403,6 +577,11 @@ export function createAgentSessionStore({
         await builder.push(event);
         emit(event);
 
+        // 引导消息已经落进当前 assistant turn：队列里的同 id 项可以撤下。
+        if (event.type === "turn.steer") {
+          removeInboxMessage(event.step.id);
+        }
+
         // The guard is repeated inside the throttle, which is what covers the
         // trailing call; this one is what covers the unthrottled branch, where
         // `publish` is `commit`. It also spares a request that is already
@@ -429,6 +608,9 @@ export function createAgentSessionStore({
     turns: nextTurns,
     abortSignal,
     payload,
+    inboxId,
+    onAccepted,
+    onRejected,
   }: SendTurnsOptions): Promise<void> => {
     // One request at a time: a newer call takes over and cancels the older one.
     active?.abort();
@@ -461,7 +643,12 @@ export function createAgentSessionStore({
     }
 
     try {
-      const body = { sessionId: id, turns: nextTurns, ...payload };
+      const body = {
+        sessionId: id,
+        turns: nextTurns,
+        ...payload,
+        ...(inboxId ? { inboxId } : {}),
+      };
       let stream: ReadableStream | undefined = undefined;
       if (apiStream) {
         stream = await apiStream({ ...body, abortSignal: controller.signal });
@@ -469,6 +656,9 @@ export function createAgentSessionStore({
         // transition the `api` branch makes when its response arrives.
         if (stream && active === controller) {
           setStatus("streaming");
+        }
+        if (stream) {
+          onAccepted?.();
         }
       } else if (api) {
         const response = await fetch(api, {
@@ -493,6 +683,7 @@ export function createAgentSessionStore({
         if (active === controller) {
           setStatus("streaming");
         }
+        onAccepted?.();
 
         stream = parseJsonEventStream<AgentStreamEvent<AgentToolSet>>({
           stream: response.body,
@@ -504,6 +695,7 @@ export function createAgentSessionStore({
 
       // 注意：这里会有工具还未审批完导致 stream 没有的情况
       if (!stream) {
+        onRejected?.(new Error("The chat did not start a turn."));
         return;
       }
 
@@ -511,6 +703,7 @@ export function createAgentSessionStore({
     } catch (error) {
       // Nothing is being read — the request was refused, or the transport died
       // before a stream existed — so the ending is settled here instead.
+      onRejected?.(error);
       settle({
         builder,
         controller,
@@ -521,6 +714,159 @@ export function createAgentSessionStore({
     } finally {
       abortSignal.removeEventListener("abort", forwardAbort);
     }
+  };
+
+  /**
+   * 直接开始一个回合，并等到服务端接受为止。
+   *
+   * 首条消息还没有 session 行可以挂 Inbox，只能走这条路；`onAccepted` 在流
+   * 拿到后才 resolve，编辑器因此只在真正开始后才清空。
+   */
+  const sendDirect = (
+    turn: AgentUserTurn,
+    payload: Record<string, unknown> | undefined
+  ): Promise<void> =>
+    new Promise((resolve, reject) => {
+      void sendTurns({
+        turns: [...currentTurns, turn],
+        abortSignal: new AbortController().signal,
+        payload,
+        onAccepted: resolve,
+        onRejected: reject,
+      });
+    });
+
+  /**
+   * 发送队列里的下一条。
+   *
+   * 一次只发一条；成功领取后从队列移除，等这次回合 settle 再发下一条。
+   * 失败时保留消息并暂停自动发送，避免同一条坏消息反复重试。
+   */
+  const drain = async (): Promise<void> => {
+    if (!apiInbox || !allowSend || draining || drainPaused) {
+      return;
+    }
+    if (isBusy() || hasPendingApproval()) {
+      return;
+    }
+
+    const [next] = inbox;
+    if (!next) {
+      return;
+    }
+
+    draining = true;
+    sendingId = next.id;
+    notify();
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        void sendTurns({
+          turns: [...currentTurns, next.content],
+          payload: { ...next.payload },
+          abortSignal: new AbortController().signal,
+          inboxId: next.id,
+          onAccepted: resolve,
+          onRejected: reject,
+        });
+      });
+      removeInboxMessage(next.id);
+    } catch (error) {
+      if (isInboxMessageNotFound(error)) {
+        removeInboxMessage(next.id);
+      } else {
+        drainPaused = true;
+      }
+    } finally {
+      draining = false;
+      if (sendingId === next.id) {
+        sendingId = undefined;
+      }
+      notify();
+    }
+  };
+
+  const submit = async ({
+    turn,
+    mode,
+    payload,
+  }: SubmitOptions): Promise<void> => {
+    if (!allowSend) {
+      throw new Error("This session is read-only.");
+    }
+
+    const model =
+      typeof payload?.model === "string" ? payload.model : undefined;
+    if (!model) {
+      throw new Error("submit requires a model.");
+    }
+
+    // 新会话还没有行可以挂 Inbox，直接走原来的发送路径。
+    if (!apiInbox || currentTurns.length === 0) {
+      await sendDirect(turn, payload);
+      return;
+    }
+
+    // 用户明确发了一条新消息：之前因停止/失败暂停的队列继续。
+    drainPaused = false;
+
+    const busy = isBusy();
+    const effectiveMode: SubmitMode = busy ? (mode ?? "followup") : "followup";
+
+    let message: InboxMessage;
+    try {
+      const result = await apiInbox.enqueue({
+        sessionId: id,
+        requestId: nanoid(),
+        mode: effectiveMode,
+        turn,
+        model,
+        modelEffort:
+          typeof payload?.modelEffort === "string"
+            ? payload.modelEffort
+            : undefined,
+        projectId:
+          typeof payload?.projectId === "string"
+            ? payload.projectId
+            : undefined,
+      });
+      ({ message } = result);
+    } catch (error) {
+      // 本地有 transcript 但服务端行已经不在：退回直接发送，让服务端重建。
+      if (isSessionNotFound(error)) {
+        await sendDirect(turn, payload);
+        return;
+      }
+      throw error;
+    }
+
+    addInboxMessage(message);
+    void drain();
+  };
+
+  const sendPending = async (): Promise<void> => {
+    drainPaused = false;
+    await drain();
+  };
+
+  const cancelPending = async (messageId: string): Promise<void> => {
+    if (!apiInbox) {
+      return;
+    }
+
+    await apiInbox.cancel({ sessionId: id, messageId });
+    removeInboxMessage(messageId);
+  };
+
+  const clearPending = async (): Promise<void> => {
+    if (!apiInbox) {
+      return;
+    }
+
+    await apiInbox.clear({ sessionId: id });
+    bumpInbox();
+    inbox = [];
+    notify();
   };
 
   /**
@@ -655,6 +1001,10 @@ export function createAgentSessionStore({
       return;
     }
 
+    // 用户按了停止：回合结束后的 settle 不能立刻把队列里的消息再发出去。
+    // “立即发送”或下一次显式提交会清除这个暂停标记。
+    drainPaused = true;
+
     // The local read has to stop too: the server closes its stream, but a
     // reader parked in `read()` must be woken, or the turn never settles.
     active?.abort();
@@ -667,11 +1017,19 @@ export function createAgentSessionStore({
     }
   };
 
+  // 页面挂载时恢复服务端队列；不自动发送，等下一次 settle 或用户显式操作。
+  void refreshInbox();
+
   return {
     subscribe,
     getTurns,
     getStatus,
     getError,
+    getInbox,
+    submit,
+    sendPending,
+    cancelPending,
+    clearPending,
     sendTurns,
     resume,
     addToolApprovalResponse,
@@ -684,6 +1042,8 @@ export function useAgentSession({
   api,
   apiStream,
   apiStop,
+  apiInbox,
+  allowSend,
   throttleMs,
   turns,
   onEvent,
@@ -706,6 +1066,8 @@ export function useAgentSession({
       api,
       apiStream,
       apiStop,
+      apiInbox,
+      allowSend,
       throttleMs,
       turns,
       emit,
@@ -714,7 +1076,7 @@ export function useAgentSession({
 
   const store = storeRef.current;
 
-  // Three subscriptions over a single listener set, mirroring `useChat`.
+  // Four subscriptions over a single listener set, mirroring `useChat`.
   const currentTurns = React.useSyncExternalStore(
     store.subscribe,
     store.getTurns,
@@ -730,9 +1092,19 @@ export function useAgentSession({
     store.getError,
     store.getError
   );
+  const pendingMessages = React.useSyncExternalStore(
+    store.subscribe,
+    store.getInbox,
+    store.getInbox
+  );
 
   return {
     turns: currentTurns,
+    pendingMessages,
+    submit: store.submit,
+    sendPending: store.sendPending,
+    cancelPending: store.cancelPending,
+    clearPending: store.clearPending,
     sendTurns: store.sendTurns,
     resume: store.resume,
     addToolApprovalResponse: store.addToolApprovalResponse,
