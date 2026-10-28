@@ -10,6 +10,8 @@ import type { Server } from "node:http";
 
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
+import { recoverInterruptedRuns } from "@workspace/agent/storage/recovery";
+import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
 import { closeDb, migrateDb } from "@workspace/db";
 import {
   formatOrigin,
@@ -20,6 +22,7 @@ import {
   DEFAULT_API_HOST,
   DEFAULT_API_PORT,
 } from "@workspace/shared/constants";
+import { logger } from "@workspace/shared/logger";
 
 import { app } from "./app";
 
@@ -86,6 +89,19 @@ export async function startServer(
 
   if (options.migrate ?? process.env.AIFY_MIGRATIONS_DIR !== undefined) {
     await migrateDb();
+  }
+
+  // 启动时内存里的流注册表是空的，任何 activeStreamId 都属于已经退出的进程。
+  // 恢复失败不阻塞启动：开发库可能还没应用 step 迁移，下一次启动会再试。
+  try {
+    const recovered = await recoverInterruptedRuns(new SQLiteStore());
+    if (recovered.length > 0) {
+      logger.warn(
+        `[startup] settled ${recovered.length} interrupted session(s)`
+      );
+    }
+  } catch (error) {
+    logger.warn("[startup] interrupted-session recovery failed", error);
   }
 
   const server = await new Promise<ServerType>((resolve, reject) => {

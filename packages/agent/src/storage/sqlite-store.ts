@@ -7,7 +7,7 @@ import type {
   StepModel,
   TurnModel,
 } from "@workspace/db";
-import { and, asc, count, desc, eq, gt, lt } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, isNotNull, lt } from "drizzle-orm";
 
 import type { AgentStore, SessionEndStatus } from ".";
 import {
@@ -116,6 +116,14 @@ export class SQLiteStore implements AgentStore {
       .where(eq(session_table.parentSessionId, parentSessionId));
 
     return sessions;
+  }
+
+  /** 启动恢复用：所有还挂着流标记的会话（含子 agent）。 */
+  async listInterruptedSessions(): Promise<SessionModel[]> {
+    return await db
+      .select()
+      .from(session_table)
+      .where(isNotNull(session_table.activeStreamId));
   }
 
   async saveSession(session: SessionInsertModel): Promise<boolean> {
