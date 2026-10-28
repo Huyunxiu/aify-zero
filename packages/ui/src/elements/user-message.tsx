@@ -21,6 +21,69 @@ import { Message, MessageActions, MessageContent } from "./message";
 import { UserAvatar } from "./message-avatar";
 import { renderTextToReactElement } from "./prompt-input-tiptap";
 
+/** 用户侧 parts 的纯文本；复制按钮和渲染都用同一份。 */
+export const getUserMessageText = (parts: AgentUserPart[]): string =>
+  parts
+    .filter(isAgentTextPart)
+    .map((part) => part.text)
+    .join("\n\n");
+
+/**
+ * 用户消息的附件。
+ *
+ * 顶层用户消息和 assistant turn 里的 steering step 共用它；`onRemove` 不传，
+ * 历史消息里的附件因此不显示删除按钮。
+ */
+export const UserMessageAttachments = ({
+  parts,
+}: {
+  parts: AgentUserPart[];
+}) => {
+  const files = parts.filter(isAgentFilePart).map((file) => ({
+    filename: file.filename,
+    id: nanoid(),
+    mediaType: file.mediaType,
+    type: file.type,
+    url: file.url,
+  }));
+
+  if (files.length === 0) {
+    return null;
+  }
+
+  return (
+    <Attachments
+      className="flex items-start flex-wrap gap-2 ml-auto w-fit"
+      variant="grid"
+    >
+      {files.map((file, i) => (
+        <Attachment
+          data={file}
+          key={`${file.type}-${file.mediaType}-${file.filename}-${i}`}
+        >
+          <AttachmentPreview />
+          <AttachmentRemove />
+        </Attachment>
+      ))}
+    </Attachments>
+  );
+};
+
+/** 用户消息的正文；空文本不渲染外壳。 */
+export const UserMessageText = ({ parts }: { parts: AgentUserPart[] }) => {
+  const text = getUserMessageText(parts);
+
+  if (text.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+      {renderTextToReactElement(text)}
+    </div>
+  );
+};
+
 type UserMessageProps = {
   turn: AgentUserTurn;
   onFork?: (messageId: string) => void;
@@ -31,42 +94,13 @@ export const UserMessage = ({ turn }: UserMessageProps) => {
   // A user turn wraps exactly one user step, so flattening gives back the flat
   // part list the rendering below was written against.
   const parts: AgentUserPart[] = turn.content.flatMap((step) => step.content);
-
-  const files = parts.filter(isAgentFilePart).map((file) => ({
-    filename: file.filename,
-    id: nanoid(),
-    mediaType: file.mediaType,
-    type: file.type,
-    url: file.url,
-  }));
-
-  const text = parts
-    .filter(isAgentTextPart)
-    .map((e) => e.text)
-    .join("\n\n");
+  const text = getUserMessageText(parts);
 
   return (
     <Message avatar={<UserAvatar />} from="user" className="group">
-      {files.length > 0 && (
-        <Attachments
-          className="flex items-start flex-wrap gap-2 ml-auto w-fit"
-          variant="grid"
-        >
-          {files.map((file, i) => (
-            <Attachment
-              data={file}
-              key={`${file.type}-${file.mediaType}-${file.filename}-${i}`}
-            >
-              <AttachmentPreview />
-              <AttachmentRemove />
-            </Attachment>
-          ))}
-        </Attachments>
-      )}
+      <UserMessageAttachments parts={parts} />
       <MessageContent>
-        <div className="size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-          {renderTextToReactElement(text)}
-        </div>
+        <UserMessageText parts={parts} />
       </MessageContent>
       {text.length > 0 && (
         <MessageActions

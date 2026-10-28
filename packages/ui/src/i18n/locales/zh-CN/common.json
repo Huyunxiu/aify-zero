@@ -169,5 +169,8 @@
       "update": "保存"
     }
   },
+  "steering": {
+    "marker": "引导消息"
+  },
   "requestFailed": "请求失败"
 }

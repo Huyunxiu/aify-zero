@@ -169,5 +169,8 @@
       "update": "Save"
     }
   },
+  "steering": {
+    "marker": "Steering message"
+  },
   "requestFailed": "Request failed"
 }

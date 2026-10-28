@@ -3,7 +3,6 @@ import { isAgentToolPart } from "@workspace/agent-client";
 import type {
   AgentAssistantTurn,
   AgentPart,
-  AgentTextPart,
   AgentToolPart,
 } from "@workspace/agent-client";
 import {
@@ -50,6 +49,7 @@ import { useElapsedMs } from "../hooks/use-elapsed-ms";
 import { useTouchPrimary } from "../hooks/use-touch-primary";
 import { cn } from "../lib/utils";
 import { useSubagentPane } from "../stores/subagent-pane";
+import { splitAssistantMessageSteps } from "./assistant-entries";
 import { formatTokens } from "./compaction-message";
 import {
   Message,
@@ -61,6 +61,7 @@ import {
 import { AssistantAvatar } from "./message-avatar";
 import { QuestionnaireCard, QuestionnaireSummary } from "./questionnaire";
 import type { QuestionnairePlacement } from "./questionnaire";
+import { SteeringStep } from "./steering-step";
 import {
   formatDuration,
   getPartDurationMs,
@@ -68,7 +69,6 @@ import {
   getPartSummary,
   summarizeTurn,
 } from "./tool-step";
-import type { StepRow } from "./tool-step";
 
 type AssistantMessageProps = {
   turn: AgentAssistantTurn<AgentToolSet>;
@@ -160,42 +160,6 @@ const parseRenderedDiffLine = (line: string) => ({
   sign: line[0] ?? " ",
   text: line.slice(1),
 });
-
-/**
- * Splits a turn into the steps that led to its answer and the answer itself.
- *
- * Each step's parts are kept paired with the step that holds them: the step is
- * where the timing lives, so a row flattened away from its owner could not say
- * how long it took.
- */
-const splitAssistantMessageSteps = (turn: AgentAssistantTurn<AgentToolSet>) => {
-  const parts: StepRow[] = turn.content.flatMap((step) => {
-    // steering step 是用户插话，不是 assistant part；它在步骤链里单独渲染。
-    // 这里先不摊平，避免被当成 Note 或工具行。
-    if (step.type === "steering") {
-      return [];
-    }
-
-    return step.content.map((part) => ({
-      part: part as AgentPart<AgentToolSet>,
-      step,
-    }));
-  });
-
-  const answerPartIndex =
-    parts.at(-1)?.part.type === "text" ? parts.length - 1 : -1;
-  const answerPart =
-    answerPartIndex === -1
-      ? undefined
-      : (parts[answerPartIndex]?.part as AgentTextPart | undefined);
-  return {
-    // A turn with no text at all — one still running, or one that failed
-    // mid-tool — has no answer to hold back, so every row is a step. Slicing to
-    // a `-1` index would silently drop the last of them.
-    parts: answerPartIndex === -1 ? parts : parts.slice(0, answerPartIndex),
-    answerPart,
-  };
-};
 
 /**
  * The turn's elapsed time, kept in its own component so the once-a-second tick
@@ -293,7 +257,7 @@ export const AssistantMessage = ({
   const selectedSubagentSessionId = useSubagentPane((state) => state.sessionId);
   const selectSubagent = useSubagentPane((state) => state.select);
 
-  const { answerPart, parts } = splitAssistantMessageSteps(turn);
+  const { answerPart, entries, parts } = splitAssistantMessageSteps(turn);
 
   const getInlineToolApprovalComponent = (part: AgentToolPart) => {
     if (!part.approval) {
@@ -338,7 +302,12 @@ export const AssistantMessage = ({
             {TURN_HEADING[turn.status]}
           </AgentActivityHeader>
           <AgentActivityContent path="root">
-            {parts.map(({ part, step }, i) => {
+            {entries.map((entry, i) => {
+              if (entry.kind === "steering") {
+                return <SteeringStep key={entry.step.id} step={entry.step} />;
+              }
+
+              const { part, step } = entry;
               const status = getPartStatus(part, turn.status);
               const summary = getPartSummary(part);
               const durationMs = getPartDurationMs(part, step);
