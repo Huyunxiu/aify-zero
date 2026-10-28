@@ -50,6 +50,13 @@
       "when": 1793198475935,
       "tag": "0006_sweet_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1793204426542,
+      "tag": "0007_mushy_vulcan",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,10 @@
-import type { AgentTurn } from "@workspace/agent-client";
+import type {
+  AgentSteeringStep,
+  AgentTurn,
+  EnqueueInboxInput,
+  InboxMessage,
+  InboxPlacement,
+} from "@workspace/agent-client";
 import type {
   SessionInsertModel,
   SessionModel,
@@ -127,8 +133,11 @@ export interface AgentStore {
    *
    * 用于新的 user turn，也用于兜底写入一条还没落库的 turn。upsert 时只更新
    * 可变的行字段，保留原有 parentId 和 createdAt。
+   *
+   * 带 `inboxId` 时，删除 Inbox 行和写入 turn 在同一个事务里完成：删除 0 行
+   * 说明这条消息已被另一个调用者领走，抛 `InboxMessageNotFoundError`。
    */
-  saveTurn(turn: TurnWrite): Promise<number>;
+  saveTurn(turn: TurnWrite, options?: { inboxId?: string }): Promise<number>;
 
   /** fork 专用：批量写入 turn 行和 step 行。 */
   saveTurns(turns: TurnWrite[]): Promise<number>;
@@ -141,6 +150,46 @@ export interface AgentStore {
    * 创建它的那次运行。
    */
   saveStep(step: StepInsertModel): Promise<number>;
+
+  /**
+   * 按 seq 列出会话的待发送消息，可只取某一种 placement。
+   *
+   * 领取成功时行会被删除，所以这里只返回仍然待发送的内容。
+   */
+  listInboxMessages(
+    sessionId: string,
+    options?: { placement?: InboxPlacement }
+  ): Promise<InboxMessage[]>;
+
+  /**
+   * 幂等入队一条消息。
+   *
+   * `(sessionId, requestId)` 冲突时返回已有行，客户端重试不会产生两条。
+   */
+  insertInboxMessage(input: EnqueueInboxInput): Promise<InboxMessage>;
+
+  /** 删除一条待发送消息；返回删除的行数。 */
+  deleteInboxMessage(sessionId: string, id: string): Promise<number>;
+
+  /** 清空会话的待发送消息；返回删除的行数。 */
+  clearInboxMessages(sessionId: string): Promise<number>;
+
+  /**
+   * 原子领取 next-step 消息，并把它们写进指定 assistant turn 的 step 表。
+   *
+   * 删除 Inbox 行和插入 steering step 在同一个事务里完成；只插入仍在表中的
+   * id，因此被取消或被并发领走的行不会变成 step。step id 就是 Inbox 行 id，
+   * 前端据此把队列项和 transcript 里的 step 对上。
+   */
+  applySteeringSteps(input: {
+    sessionId: string;
+    turnId: string;
+    streamId: string;
+    messageIds: string[];
+  }): Promise<AgentSteeringStep[]>;
+
+  /** 把会话里残留的 next-step 消息提升为 next-turn；返回提升的行数。 */
+  promoteStaleInboxMessages(sessionId: string): Promise<number>;
 
   /**
    * 追加一条 turn 并把它设为 branch 的新 head。

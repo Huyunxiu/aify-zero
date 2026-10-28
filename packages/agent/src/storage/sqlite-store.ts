@@ -1,15 +1,42 @@
-import type { AgentTurn } from "@workspace/agent-client";
-import { session_table, db, step_table, turn_table } from "@workspace/db";
 import type {
+  AgentSteeringStep,
+  AgentTurn,
+  AgentUserTurn,
+  EnqueueInboxInput,
+  InboxMessage,
+  InboxPlacement,
+  InboxPayload,
+} from "@workspace/agent-client";
+import {
+  inbox_message_table,
+  session_table,
+  db,
+  step_table,
+  turn_table,
+} from "@workspace/db";
+import type {
+  InboxMessageModel,
   SessionInsertModel,
   SessionModel,
   StepInsertModel,
   StepModel,
   TurnModel,
 } from "@workspace/db";
-import { and, asc, count, desc, eq, gt, isNotNull, lt } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lt,
+  max,
+} from "drizzle-orm";
 
 import type { AgentStore, SessionEndStatus } from ".";
+import { InboxMessageNotFoundError } from "../inbox/errors";
 import {
   hydrateTurn,
   toStepRows,
@@ -49,6 +76,25 @@ async function upsertStepRows(
         },
       });
   }
+}
+
+/**
+ * 把 Inbox 行映射成 wire 类型。
+ *
+ * `content` / `payload` 在 schema 里是 `unknown` 的 JSON 列；写入时来自
+ * `EnqueueInboxInput`，读取时在这里收窄回会话类型。
+ */
+function toInboxMessage(row: InboxMessageModel): InboxMessage {
+  return {
+    seq: row.seq,
+    id: row.id,
+    sessionId: row.sessionId,
+    requestId: row.requestId,
+    placement: row.placement,
+    content: row.content as AgentUserTurn,
+    payload: row.payload as InboxPayload,
+    createdAt: row.createdAt.getTime(),
+  };
 }
 
 export class SQLiteStore implements AgentStore {
@@ -259,7 +305,10 @@ export class SQLiteStore implements AgentStore {
     return (result[0]?.count ?? 0) > 0;
   }
 
-  async saveTurn(turn: TurnWrite): Promise<number> {
+  async saveTurn(
+    turn: TurnWrite,
+    options?: { inboxId?: string }
+  ): Promise<number> {
     // Upsert: client resends existing message ids on regenerate. 只改可变行字段，
     // parentId 和 createdAt 保持它原来的 branch 位置。
     const row = toTurnRow(turn);
@@ -270,6 +319,24 @@ export class SQLiteStore implements AgentStore {
     });
 
     await db.transaction(async (tx) => {
+      // 认领和写入必须同成同败：删不到行说明消息已经被另一个调用者领走，
+      // 这时不能再写一条重复的 user turn。
+      if (options?.inboxId) {
+        const claimed = await tx
+          .delete(inbox_message_table)
+          .where(
+            and(
+              eq(inbox_message_table.id, options.inboxId),
+              eq(inbox_message_table.sessionId, turn.sessionId)
+            )
+          )
+          .returning({ id: inbox_message_table.id });
+
+        if (claimed.length === 0) {
+          throw new InboxMessageNotFoundError(options.inboxId);
+        }
+      }
+
       await tx
         .insert(turn_table)
         .values(row)
@@ -352,6 +419,169 @@ export class SQLiteStore implements AgentStore {
         },
       });
     return result.rowsAffected;
+  }
+
+  async listInboxMessages(
+    sessionId: string,
+    options?: { placement?: InboxPlacement }
+  ): Promise<InboxMessage[]> {
+    const conditions = [eq(inbox_message_table.sessionId, sessionId)];
+
+    if (options?.placement) {
+      conditions.push(eq(inbox_message_table.placement, options.placement));
+    }
+
+    const rows = await db
+      .select()
+      .from(inbox_message_table)
+      .where(and(...conditions))
+      .orderBy(asc(inbox_message_table.seq));
+
+    return rows.map(toInboxMessage);
+  }
+
+  async insertInboxMessage(input: EnqueueInboxInput): Promise<InboxMessage> {
+    // 冲突时不报错，随后按幂等键把已有行读回来：客户端重试和并发提交都
+    // 只会留下一条。
+    await db
+      .insert(inbox_message_table)
+      .values({
+        sessionId: input.sessionId,
+        requestId: input.requestId,
+        placement: input.placement,
+        content: input.content,
+        payload: input.payload,
+      })
+      .onConflictDoNothing();
+
+    const [row] = await db
+      .select()
+      .from(inbox_message_table)
+      .where(
+        and(
+          eq(inbox_message_table.sessionId, input.sessionId),
+          eq(inbox_message_table.requestId, input.requestId)
+        )
+      )
+      .limit(1);
+
+    if (!row) {
+      throw new Error("inbox message insert did not produce a row");
+    }
+
+    return toInboxMessage(row);
+  }
+
+  async deleteInboxMessage(sessionId: string, id: string): Promise<number> {
+    const removed = await db
+      .delete(inbox_message_table)
+      .where(
+        and(
+          eq(inbox_message_table.sessionId, sessionId),
+          eq(inbox_message_table.id, id)
+        )
+      )
+      .returning({ id: inbox_message_table.id });
+
+    return removed.length;
+  }
+
+  async clearInboxMessages(sessionId: string): Promise<number> {
+    const removed = await db
+      .delete(inbox_message_table)
+      .where(eq(inbox_message_table.sessionId, sessionId))
+      .returning({ id: inbox_message_table.id });
+
+    return removed.length;
+  }
+
+  async applySteeringSteps({
+    sessionId,
+    turnId,
+    streamId,
+    messageIds,
+  }: {
+    sessionId: string;
+    turnId: string;
+    streamId: string;
+    messageIds: string[];
+  }): Promise<AgentSteeringStep[]> {
+    if (messageIds.length === 0) {
+      return [];
+    }
+
+    return await db.transaction(async (tx) => {
+      // 先删再插：只有仍然存在的行会进入 RETURNING，取消或并发领走的消息
+      // 不会变成 step。
+      const claimed = await tx
+        .delete(inbox_message_table)
+        .where(
+          and(
+            eq(inbox_message_table.sessionId, sessionId),
+            inArray(inbox_message_table.id, messageIds)
+          )
+        )
+        .returning();
+
+      if (claimed.length === 0) {
+        return [];
+      }
+
+      const ordered = claimed.toSorted((left, right) => left.seq - right.seq);
+      const [head] = await tx
+        .select({ lastSeq: max(step_table.seq) })
+        .from(step_table)
+        .where(eq(step_table.turnId, turnId));
+      let seq = (head?.lastSeq ?? -1) + 1;
+
+      const steps: AgentSteeringStep[] = [];
+
+      for (const row of ordered) {
+        const turn = row.content as AgentUserTurn;
+        const createdAt = row.createdAt.getTime();
+        const step: AgentSteeringStep = {
+          id: row.id,
+          type: "steering",
+          createdAt,
+          completedAt: createdAt,
+          status: "done",
+          content: turn.content.flatMap((userStep) => userStep.content),
+        };
+
+        await tx.insert(step_table).values({
+          id: step.id,
+          turnId,
+          sessionId,
+          seq,
+          streamId,
+          type: step.type,
+          status: step.status,
+          content: step,
+          createdAt: new Date(createdAt),
+          updatedAt: new Date(),
+        });
+
+        steps.push(step);
+        seq += 1;
+      }
+
+      return steps;
+    });
+  }
+
+  async promoteStaleInboxMessages(sessionId: string): Promise<number> {
+    const promoted = await db
+      .update(inbox_message_table)
+      .set({ placement: "next-turn" })
+      .where(
+        and(
+          eq(inbox_message_table.sessionId, sessionId),
+          eq(inbox_message_table.placement, "next-step")
+        )
+      )
+      .returning({ id: inbox_message_table.id });
+
+    return promoted.length;
   }
 
   async beginTurn({ turn }: { turn: TurnWrite }): Promise<void> {

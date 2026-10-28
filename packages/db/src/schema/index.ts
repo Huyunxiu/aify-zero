@@ -223,6 +223,53 @@ export const step_table = sqliteTable(
 export type StepModel = InferSelectModel<typeof step_table>;
 export type StepInsertModel = InferInsertModel<typeof step_table>;
 
+/**
+ * 会话待发送的消息。
+ *
+ * `next-step` 表示它是回合运行中补的引导消息，下一个模型步边界领取；
+ * `next-turn` 表示它等当前回合结束后作为新回合发送。领取成功就删除这一行，
+ * 消息本身随后写进 `turn` / `step`。
+ *
+ * `seq` 自增，保证 FIFO；`(session_id, request_id)` 唯一，客户端重试不会重复
+ * 入队。`content` 存完整的 `AgentUserTurn`，`payload` 存发送所需的模型信息。
+ */
+export const inbox_message_table = sqliteTable(
+  "inbox_message",
+  {
+    seq: integer("seq").primaryKey({ autoIncrement: true }),
+    id: text("id")
+      .notNull()
+      .unique()
+      .$defaultFn(() => randomUUID()),
+    sessionId: text("session_id").notNull(),
+    requestId: text("request_id").notNull(),
+    placement: text("placement", {
+      enum: ["next-step", "next-turn"],
+    }).notNull(),
+    content: text("content", { mode: "json" }).notNull(),
+    payload: text("payload", { mode: "json" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("idx_inbox_session_request").on(
+      table.sessionId,
+      table.requestId
+    ),
+    index("idx_inbox_session_placement_seq").on(
+      table.sessionId,
+      table.placement,
+      table.seq
+    ),
+  ]
+);
+
+export type InboxMessageModel = InferSelectModel<typeof inbox_message_table>;
+export type InboxMessageInsertModel = InferInsertModel<
+  typeof inbox_message_table
+>;
+
 export const dict_table = sqliteTable("dict", {
   code: text("code").primaryKey(),
   name: text("name").notNull(),
