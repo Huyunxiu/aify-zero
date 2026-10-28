@@ -161,6 +161,13 @@ export type AgentStreamSignal =
 export type AgentStreamOptions = {
   modelId: string;
   turns: AgentTurn<AgentToolSet>[];
+  /**
+   * 这次运行的 id；就是会话行上的 `activeStreamId`。
+   *
+   * step 行把它记进 `step.stream_id`。读取时用它区分“当前运行刚写下的
+   * step”和上一次运行留下的 step，避免页面中途加载后又被流重放一遍。
+   */
+  streamId: string;
   /** What this stream runs; see {@link AgentStreamSignal}. */
   signal: AgentStreamSignal;
   /**

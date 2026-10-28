@@ -297,6 +297,7 @@ const createSession = publicProcedure
       const stream = await agent.stream({
         turns: originalTurns,
         modelId: aiModel.model,
+        streamId: activeStreamId,
         signal: { type: "turn" },
         onFinish: async (status) => {
           STREAM_REGISTRY.unregisterStream(activeStreamId);
@@ -719,6 +720,7 @@ export const compactSession = publicProcedure
         stream = await agent.stream({
           turns,
           modelId: aiModel.model,
+          streamId: activeStreamId,
           signal: { type: "compaction", trigger: "manual" },
           onFinish: async () => {
             STREAM_REGISTRY.unregisterStream(activeStreamId);

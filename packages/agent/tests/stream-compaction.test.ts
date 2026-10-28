@@ -109,6 +109,7 @@ describe("手工压缩的 stream signal", () => {
     const stream = await agent.stream({
       turns: compactableTurns(),
       modelId: "test-model",
+      streamId: "test-stream",
       signal: { type: "compaction", trigger: "manual" },
       onFinish: (status) => {
         finished.push(status);
@@ -173,6 +174,7 @@ describe("手工压缩的 stream signal", () => {
       agent.stream({
         turns: asTurns(userTurn("u1", "hi")),
         modelId: "test-model",
+        streamId: "test-stream",
         signal: { type: "compaction", trigger: "manual" },
         onFinish: async () => {},
       })
@@ -198,6 +200,7 @@ describe("手工压缩的 stream signal", () => {
     const stream = await agent.stream({
       turns: compactableTurns(),
       modelId: "test-model",
+      streamId: "test-stream",
       signal: { type: "compaction", trigger: "manual" },
       onFinish: (status) => {
         finished.push(status);
