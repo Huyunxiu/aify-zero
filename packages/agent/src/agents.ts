@@ -818,6 +818,45 @@ export class Agent {
    * {@link Agent.stream}; the finish is written once, by `#finishTurn`, because
    * only after the last step is "last" known.
    */
+  /**
+   * 在 `turn.start` 之前把 turn 行写成 `streaming`。
+   *
+   * 新回合插入一条空 turn；审批恢复复用内存里已有的 turn（它可能已经带
+   * step），只把 status 拉回 streaming。parentId 和 createdAt 由 store 的
+   * upsert 保留，所以同一次审批恢复仍然落在原来的 branch 节点上。
+   */
+  async #beginTurn(
+    turnId: string,
+    input: AgentTurnInput,
+    startedAt: number
+  ): Promise<void> {
+    const resumed = this.session.turns.find((turn) => turn.id === turnId);
+    if (resumed) {
+      resumed.status = "streaming";
+      resumed.completedAt = undefined;
+    }
+
+    const content: AgentTurn<AgentToolSet> = resumed ?? {
+      id: turnId,
+      type: "assistant",
+      createdAt: startedAt,
+      status: "streaming",
+      content: [],
+    };
+
+    await this.store.beginTurn({
+      turn: {
+        id: turnId,
+        sessionId: this.sessionId,
+        type: content.type,
+        metadata: {},
+        parentId: input.parentId ?? null,
+        createdAt: new Date(content.createdAt),
+        content,
+      },
+    });
+  }
+
   async #runTurn(
     input: AgentTurnInput
   ): Promise<AgentTurn<AgentToolSet> | undefined> {
@@ -833,11 +872,16 @@ export class Agent {
       await this.#maybeCompact({ trigger: "pressure", mode: "before-turn" });
     }
 
+    // 先把 turn 行写成 streaming 再发 turn.start：这一行是崩溃标记，必须在
+    // 任何 step 事件之前就存在。
+    const startedAt = Date.now();
+    await this.#beginTurn(turnId, input, startedAt);
+
     await this.context.controller?.write({
       type: "turn.start",
       id: turnId,
       turnType: "assistant",
-      createdAt: Date.now(),
+      createdAt: startedAt,
     });
 
     // Start title generation in the background (never awaited)
@@ -900,6 +944,17 @@ export class Agent {
       usage: this.session.usage,
       ...status,
     });
+
+    // 终态先单独落一行：收尾循环还要 settle 并同步 step，进程在两者之间退出
+    // 时 turn 行不应该还停在 streaming。写失败只告警，收尾循环会再写一次。
+    const finishedTurn = this.session.turns.find((turn) => turn.id === turnId);
+    if (finishedTurn) {
+      try {
+        await this.store.updateTurnHeader(turnId, finishedTurn);
+      } catch (error) {
+        logger.warn("[agent] failed to persist turn header", error);
+      }
+    }
 
     // An aborted or failed step returns from `#runStep` before its
     // `step.finish`, so the step and its parts are still pending here; the

@@ -325,6 +325,53 @@ export class SQLiteStore implements AgentStore {
     });
   }
 
+  async beginTurn({ turn }: { turn: TurnWrite }): Promise<void> {
+    // 强制成 streaming：恢复一条 wait_review turn 时，内存里的 status 可能还是
+    // 旧值；这一行是崩溃标记，必须从回合开始就写明正在运行。
+    const row = {
+      ...toTurnRow(turn),
+      status: "streaming" as const,
+      completedAt: null,
+    };
+
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(turn_table)
+        .values(row)
+        .onConflictDoUpdate({
+          target: turn_table.id,
+          set: {
+            type: row.type,
+            status: row.status,
+            detail: row.detail,
+            completedAt: row.completedAt,
+            updatedAt: row.updatedAt,
+          },
+        });
+
+      if (turn.sessionId) {
+        await tx
+          .update(session_table)
+          .set({ activeHeadId: turn.id })
+          .where(eq(session_table.id, turn.sessionId));
+      }
+    });
+  }
+
+  async updateTurnHeader(id: string, turn: AgentTurn): Promise<number> {
+    const result = await db
+      .update(turn_table)
+      .set({
+        status: turn.status,
+        detail: turnDetailOf(turn),
+        completedAt:
+          turn.completedAt === undefined ? null : new Date(turn.completedAt),
+        updatedAt: new Date(),
+      })
+      .where(eq(turn_table.id, id));
+    return result.rowsAffected;
+  }
+
   async updateTurn(id: string, turn: AgentTurn): Promise<number> {
     const [existing] = await db
       .select({ sessionId: turn_table.sessionId })

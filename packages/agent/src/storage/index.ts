@@ -144,6 +144,26 @@ export interface AgentStore {
   insertTurnInBranch({ turn }: { turn: TurnWrite }): Promise<void>;
 
   /**
+   * 回合开始时先把 turn 行写成 `streaming`，并把它设为 branch head。
+   *
+   * 这一步不写 step：新回合还没有 step，审批恢复的 step 已经在表里。它的价值
+   * 是留一个可靠的崩溃标记——进程在回合中途退出时，这一行仍然是
+   * `streaming`，启动恢复据此知道该收尾哪条 turn。
+   *
+   * upsert 只改 status/detail/completedAt 和 type；parentId 与 createdAt
+   * 保持原值，审批恢复因此复用同一个 turn 节点。
+   */
+  beginTurn({ turn }: { turn: TurnWrite }): Promise<void>;
+
+  /**
+   * 只更新 turn 行的 status/detail/completedAt，不碰 step。
+   *
+   * `turn.finish` 之后、收尾循环之前调用：即使进程在两者之间退出，turn 的
+   * 终态也已经落库，不会让一条已经跑完的 turn 被恢复成 `error`。
+   */
+  updateTurnHeader(id: string, turn: AgentTurn): Promise<number>;
+
+  /**
    * 用内存里的完整 turn 更新已有 turn。
    *
    * 更新 status/detail/completedAt 等行字段，并同步它的 step 行。step 的
