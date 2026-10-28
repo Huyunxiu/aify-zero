@@ -157,6 +157,18 @@ export async function projectHistory<TOOLS extends ToolSet>(
         }
         continue;
       }
+      // steering step 在模型侧是一条 user 消息，位置就是它在 turn 里的位置。
+      // 它不是新的 turn 边界，所以不更新 lastUserTurn / stepAnchors。
+      if (step.type === "steering") {
+        const stepMessages = await convertStepToModelMessages<TOOLS>(step);
+        if (stepMessages.length > 0) {
+          if (turnAnchorIndex === undefined) {
+            turnAnchorIndex = messages.length;
+          }
+          messages.push(...stepMessages);
+        }
+        continue;
+      }
       if (step.type !== "assistant") {
         continue;
       }

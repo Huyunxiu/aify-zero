@@ -11,6 +11,7 @@ import {
   compactionStep,
   compactionTurn,
   record,
+  steeringStep,
   userTurn,
 } from "./fixtures.js";
 
@@ -224,6 +225,41 @@ describe(projectHistory, () => {
       "user",
       "assistant",
       "tool",
+    ]);
+  });
+
+  test("interleaves a steering step as a user message without starting a new turn", async () => {
+    const projected = await projectHistory(
+      asTurns(
+        userTurn("u1", "start"),
+        assistantTurn("a1", [
+          assistantStep("s1", { text: "working", createdAt: 2 }),
+          steeringStep("steer-1", "go left", 3),
+          assistantStep("s2", { text: "done", createdAt: 4 }),
+        ])
+      )
+    );
+
+    expect(projected.messages.map((message) => message.role)).toStrictEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(textOf(projected.messages[2])).toBe("go left");
+    // steering 不是新的 turn 边界：turn 锚点仍然只有 u1 和 a1。
+    expect(projected.turnAnchors).toStrictEqual([
+      { turnId: "u1", messageIndex: 0 },
+      { turnId: "a1", messageIndex: 1 },
+    ]);
+    expect(projected.lastUserTurn).toStrictEqual({
+      turnId: "u1",
+      messageIndex: 0,
+    });
+    // step 锚点只标 assistant step。
+    expect(projected.stepAnchors.map((anchor) => anchor.stepId)).toStrictEqual([
+      "s1",
+      "s2",
     ]);
   });
 

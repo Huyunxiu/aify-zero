@@ -1,10 +1,10 @@
-import { isNonNullable } from "@ai-sdk/provider-utils";
 import type {
   ToolSet,
   AssistantContent,
   ModelMessage,
   ToolResultPart,
   ToolApprovalResponse,
+  UserContent,
 } from "@ai-sdk/provider-utils";
 import {
   getToolName,
@@ -20,12 +20,52 @@ import type {
   AgentStep,
   AgentToolPart,
   AgentTurn,
+  AgentUserPart,
   AgentUserTurn,
 } from "@workspace/agent-client";
 import { createToolModelOutput } from "ai/internal";
 
 import { TOOL_DENIED_TEXT } from "../hooks-manager";
 import { getOwn } from "./get-own";
+
+type UserContentParts = Exclude<UserContent, string>;
+
+/**
+ * 把用户侧 parts 转成模型消息内容。
+ *
+ * user turn 和 steering step 共用这一套转换：两者在模型看来都是 user 消息，
+ * 区别只在持久化位置上——前者是独立 turn，后者是当前 assistant turn 里的
+ * 一个步骤。
+ */
+function userPartsToModelContent(parts: AgentUserPart[]): UserContentParts {
+  const content: UserContentParts = [];
+
+  for (const part of parts) {
+    if (isAgentTextPart(part)) {
+      content.push({
+        type: "text",
+        text: part.text,
+        ...(part.providerMetadata
+          ? { providerOptions: part.providerMetadata }
+          : {}),
+      });
+    } else if (isAgentFilePart(part)) {
+      content.push({
+        type: "file",
+        mediaType: part.mediaType,
+        filename: part.filename,
+        data: part.providerReference
+          ? { type: "reference", reference: part.providerReference }
+          : { type: "url", url: new URL(part.url) },
+        ...(part.providerMetadata
+          ? { providerOptions: part.providerMetadata }
+          : {}),
+      });
+    }
+  }
+
+  return content;
+}
 
 /**
  * 把已存储的 turns 转成模型消息，但不应用压缩标记。
@@ -72,6 +112,16 @@ export async function convertStepToModelMessages<TOOLS extends ToolSet>(
     return await convertToModelMessages<TOOLS>([turn], options);
   }
 
+  // steering step 属于 assistant turn，但模型看到的是一条 user 消息。
+  if (step.type === "steering") {
+    return [
+      {
+        role: "user",
+        content: userPartsToModelContent(step.content),
+      },
+    ];
+  }
+
   return [];
 }
 
@@ -99,38 +149,9 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
       case "user": {
         modelMessages.push({
           role: "user",
-          content: turn.content
-            .flatMap((step) =>
-              step.content.map((part) => {
-                if (isAgentTextPart(part)) {
-                  return {
-                    type: "text" as const,
-                    text: part.text,
-                    ...(part.providerMetadata
-                      ? { providerOptions: part.providerMetadata }
-                      : {}),
-                  };
-                } else if (isAgentFilePart(part)) {
-                  return {
-                    type: "file" as const,
-                    mediaType: part.mediaType,
-                    filename: part.filename,
-                    data: part.providerReference
-                      ? {
-                          type: "reference" as const,
-                          reference: part.providerReference,
-                        }
-                      : { type: "url" as const, url: new URL(part.url) },
-                    ...(part.providerMetadata
-                      ? { providerOptions: part.providerMetadata }
-                      : {}),
-                  };
-                }
-
-                return null;
-              })
-            )
-            .filter(isNonNullable),
+          content: userPartsToModelContent(
+            turn.content.flatMap((step) => step.content)
+          ),
         });
         break;
       }
@@ -396,6 +417,17 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
           }
 
           for (const step of turn.content) {
+            // steering step 是回合中插入的用户消息：先把当前 assistant block
+            // 和工具结果冲掉，再按原位置放一条 user 消息。
+            if (step.type === "steering") {
+              await processBlock();
+              modelMessages.push({
+                role: "user",
+                content: userPartsToModelContent(step.content),
+              });
+              continue;
+            }
+
             // 压缩 step 和标题 step 都不是 assistant 内容。
             if (step.type !== "assistant") {
               continue;

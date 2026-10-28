@@ -3,6 +3,11 @@ import { describe, expect, test } from "vitest";
 
 import type { AgentToolSet } from "../../src/types.js";
 import { convertAgentTurnToModalMessage } from "../../src/utils/convert-to-model-message.js";
+import {
+  assistantStep,
+  assistantTurn,
+  steeringStep,
+} from "../compaction/fixtures.js";
 
 /**
  * An assistant turn holding one `task` call, in the state a case is about.
@@ -96,6 +101,34 @@ describe(convertAgentTurnToModalMessage, () => {
           output: { type: "error-text", value: "boom" },
         },
       ],
+    });
+  });
+
+  test("puts a steering step in the history as a user message at its position", async () => {
+    const messages = await convertAgentTurnToModalMessage([
+      assistantTurn("a1", [
+        assistantStep("s1", { text: "before" }),
+        steeringStep("steer-1", "try the other path"),
+        assistantStep("s2", { text: "after" }),
+      ]),
+    ]);
+
+    expect(messages.map((message) => message.role)).toStrictEqual([
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(messages[1]).toMatchObject({
+      role: "user",
+      content: [{ type: "text", text: "try the other path" }],
+    });
+    expect(messages[0]).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "before" }],
+    });
+    expect(messages[2]).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "after" }],
     });
   });
 });

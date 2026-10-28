@@ -3,6 +3,7 @@ import type {
   AgentAssistantTurn,
   AgentCompactionStep,
   AgentCompactionTurn,
+  AgentSteeringStep,
   AgentTurn,
   AgentUserTurn,
   CompactionRecord,
@@ -69,13 +70,31 @@ export const assistantStep = (
 
 export const assistantTurn = (
   id: string,
-  content: (AgentAssistantStep<AgentToolSet> | AgentCompactionStep)[]
+  content: (
+    | AgentAssistantStep<AgentToolSet>
+    | AgentCompactionStep
+    | AgentSteeringStep
+  )[]
 ): AgentAssistantTurn<AgentToolSet> => ({
   id,
   type: "assistant",
   createdAt: 1,
   status: "done",
   content,
+});
+
+/** 回合运行中插入的一条引导消息，作为 assistant turn 里的一个 step。 */
+export const steeringStep = (
+  id: string,
+  text: string,
+  createdAt = 1
+): AgentSteeringStep => ({
+  id,
+  type: "steering",
+  createdAt,
+  completedAt: createdAt,
+  status: "done",
+  content: [textPart(text, createdAt)],
 });
 
 export const record = (
