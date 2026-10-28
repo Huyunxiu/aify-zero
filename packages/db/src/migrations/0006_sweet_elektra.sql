@@ -1,0 +1,1 @@
+ALTER TABLE `turn` DROP COLUMN `content`;

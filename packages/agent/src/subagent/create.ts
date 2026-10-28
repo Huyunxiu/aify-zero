@@ -146,7 +146,9 @@ export async function resolveSubagentSession(
 
   if (existing) {
     const turns = AgentSession.toAgentTurns(
-      await store.getBranchTurns(existing.id)
+      await store.getBranchTurns(existing.id, {
+        activeStreamId: existing.activeStreamId ?? undefined,
+      })
     );
 
     // 行写了但一轮都没落下——进程恰好死在两次写之间。这种情况当作没跑过：

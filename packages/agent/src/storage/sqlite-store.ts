@@ -1,13 +1,55 @@
-import { session_table, db, turn_table } from "@workspace/db";
+import type { AgentTurn } from "@workspace/agent-client";
+import { session_table, db, step_table, turn_table } from "@workspace/db";
 import type {
   SessionInsertModel,
   SessionModel,
-  TurnInsertModel,
+  StepInsertModel,
+  StepModel,
   TurnModel,
 } from "@workspace/db";
 import { and, asc, count, desc, eq, gt, lt } from "drizzle-orm";
 
 import type { AgentStore, SessionEndStatus } from ".";
+import {
+  hydrateTurn,
+  toStepRows,
+  toTurnRow,
+  turnDetailOf,
+} from "./turn-record";
+import type { TurnRecord, TurnWrite } from "./turn-record";
+
+/** drizzle 事务回调拿到的句柄；批量写 step 的辅助函数需要它。 */
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * 按 id upsert 一组 step 行。
+ *
+ * 冲突时只更新可变列，不碰 `stream_id`：一个 step 可能在上一次运行里创建、
+ * 在这次运行里被 `step.metadata` 或 `tool.output-denied` 更新，它的归属仍是
+ * 创建它的那次运行。
+ */
+async function upsertStepRows(
+  tx: Transaction,
+  steps: StepInsertModel[]
+): Promise<void> {
+  for (const step of steps) {
+    await tx
+      .insert(step_table)
+      .values(step)
+      .onConflictDoUpdate({
+        target: step_table.id,
+        set: {
+          turnId: step.turnId,
+          sessionId: step.sessionId,
+          seq: step.seq,
+          type: step.type,
+          status: step.status,
+          content: step.content,
+          updatedAt: step.updatedAt,
+        },
+      });
+  }
+}
 
 export class SQLiteStore implements AgentStore {
   async listSessions({
@@ -102,34 +144,53 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async getAllTurnsBySessionId(sessionId: string): Promise<TurnModel[]> {
-    return await db
-      .select()
-      .from(turn_table)
-      .where(eq(turn_table.sessionId, sessionId))
-      .orderBy(asc(turn_table.createdAt), asc(turn_table.id));
-  }
-
   async getBranchTurns(
     sessionId: string,
-    turns?: TurnModel[]
-  ): Promise<TurnModel[]> {
+    options?: { activeStreamId?: string }
+  ): Promise<TurnRecord[]> {
     const session = await this.getSessionById(sessionId);
     if (!session?.activeHeadId) {
       return [];
     }
 
-    const finalTurns = turns || (await this.getAllTurnsBySessionId(sessionId));
-    const turnsMap = new Map(finalTurns.map((turn) => [turn.id, turn]));
+    const turns = await db
+      .select()
+      .from(turn_table)
+      .where(eq(turn_table.sessionId, sessionId))
+      .orderBy(asc(turn_table.createdAt), asc(turn_table.id));
+    const turnsMap = new Map(turns.map((turn) => [turn.id, turn]));
 
-    const path: TurnModel[] = [];
+    const branch: TurnModel[] = [];
     let current = turnsMap.get(session.activeHeadId);
     while (current) {
-      path.unshift(current);
+      branch.unshift(current);
       turnsMap.delete(current.id);
       current = current.parentId ? turnsMap.get(current.parentId) : undefined;
     }
-    return path;
+    if (branch.length === 0) {
+      return [];
+    }
+
+    // 一次取这个会话的全部 step：branch 通常很短，多取几个非 branch 的行比
+    // 按 turn id 拼 in 查询更简单，也不会撞上 SQLite 的参数个数上限。
+    const steps = await db
+      .select()
+      .from(step_table)
+      .where(eq(step_table.sessionId, sessionId))
+      .orderBy(asc(step_table.turnId), asc(step_table.seq));
+    const stepsByTurn = new Map<string, StepModel[]>();
+    for (const step of steps) {
+      const list = stepsByTurn.get(step.turnId);
+      if (list) {
+        list.push(step);
+      } else {
+        stepsByTurn.set(step.turnId, [step]);
+      }
+    }
+
+    return branch.map((turn) =>
+      hydrateTurn(turn, stepsByTurn.get(turn.id) ?? [], options?.activeStreamId)
+    );
   }
 
   async setActiveHead(
@@ -190,36 +251,70 @@ export class SQLiteStore implements AgentStore {
     return (result[0]?.count ?? 0) > 0;
   }
 
-  async saveTurn(message: TurnInsertModel): Promise<number> {
-    // Upsert: client resends existing message ids on regenerate; only
-    // content/metadata change in that case — parentId keeps its original
-    // branch position.
-    const result = await db
-      .insert(turn_table)
-      .values(message)
-      .onConflictDoUpdate({
-        target: turn_table.id,
-        set: {
-          content: message.content,
-          metadata: message.metadata,
-          updatedAt: new Date(),
-        },
-      });
-    return result.rowsAffected;
+  async saveTurn(turn: TurnWrite): Promise<number> {
+    // Upsert: client resends existing message ids on regenerate. 只改可变行字段，
+    // parentId 和 createdAt 保持它原来的 branch 位置。
+    const row = toTurnRow(turn);
+    const steps = toStepRows({
+      turnId: turn.id,
+      sessionId: turn.sessionId,
+      content: turn.content,
+    });
+
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(turn_table)
+        .values(row)
+        .onConflictDoUpdate({
+          target: turn_table.id,
+          set: {
+            type: row.type,
+            metadata: row.metadata,
+            status: row.status,
+            detail: row.detail,
+            completedAt: row.completedAt,
+            updatedAt: row.updatedAt,
+          },
+        });
+      await upsertStepRows(tx, steps);
+    });
+
+    return 1;
   }
 
-  async saveTurns(messages: TurnInsertModel[]): Promise<number> {
-    const result = await db.insert(turn_table).values(messages);
-    return result.rowsAffected;
+  async saveTurns(turns: TurnWrite[]): Promise<number> {
+    await db.transaction(async (tx) => {
+      for (const turn of turns) {
+        await tx.insert(turn_table).values(toTurnRow(turn));
+        await upsertStepRows(
+          tx,
+          toStepRows({
+            turnId: turn.id,
+            sessionId: turn.sessionId,
+            content: turn.content,
+          })
+        );
+      }
+    });
+
+    return turns.length;
   }
 
-  async insertTurnInBranch({ turn }: { turn: TurnInsertModel }): Promise<void> {
+  async insertTurnInBranch({ turn }: { turn: TurnWrite }): Promise<void> {
     // Insert the turn and make it the branch head in one transaction, so a
     // failure cannot leave a dangling row or an active head pointing at
     // nothing. Turns are only appended: a manual compaction records its cut
     // point instead of splicing itself into the middle of the branch.
     await db.transaction(async (tx) => {
-      await tx.insert(turn_table).values(turn);
+      await tx.insert(turn_table).values(toTurnRow(turn));
+      await upsertStepRows(
+        tx,
+        toStepRows({
+          turnId: turn.id,
+          sessionId: turn.sessionId,
+          content: turn.content,
+        })
+      );
 
       if (turn.sessionId) {
         await tx
@@ -230,15 +325,36 @@ export class SQLiteStore implements AgentStore {
     });
   }
 
-  async updateTurn(
-    id: string,
-    content: unknown,
-    metadata?: unknown
-  ): Promise<number> {
-    const result = await db
-      .update(turn_table)
-      .set({ content, metadata })
-      .where(eq(turn_table.id, id));
-    return result.rowsAffected;
+  async updateTurn(id: string, turn: AgentTurn): Promise<number> {
+    const [existing] = await db
+      .select({ sessionId: turn_table.sessionId })
+      .from(turn_table)
+      .where(eq(turn_table.id, id))
+      .limit(1);
+    if (!existing) {
+      return 0;
+    }
+
+    const steps = toStepRows({
+      turnId: id,
+      sessionId: existing.sessionId ?? "",
+      content: turn,
+    });
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(turn_table)
+        .set({
+          status: turn.status,
+          detail: turnDetailOf(turn),
+          completedAt:
+            turn.completedAt === undefined ? null : new Date(turn.completedAt),
+          updatedAt: new Date(),
+        })
+        .where(eq(turn_table.id, id));
+      await upsertStepRows(tx, steps);
+    });
+
+    return 1;
   }
 }

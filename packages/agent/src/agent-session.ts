@@ -3,13 +3,13 @@ import {
   findTurnWithoutToolResult,
 } from "@workspace/agent-client";
 import type { AgentTurn, CompactionRecord } from "@workspace/agent-client";
-import type { TurnModel } from "@workspace/db";
 import type { LanguageModelUsage, ModelMessage } from "ai";
 import { addLanguageModelUsage } from "ai/internal";
 
 import type { AgentStepResult } from "./agents";
 import { projectHistory } from "./compaction/project";
 import type { ProjectedHistory, UsageAnchor } from "./compaction/types";
+import type { TurnRecord } from "./storage/turn-record";
 import type { AgentToolSet } from "./types";
 import { generateTurnId } from "./utils/id-util";
 
@@ -35,8 +35,8 @@ export class AgentSession {
     this.projected = { messages: [], turnAnchors: [], stepAnchors: [] };
   }
 
-  static toAgentTurns(turns: TurnModel[]): AgentTurn<AgentToolSet>[] {
-    return turns.map((e) => e.content as AgentTurn<AgentToolSet>);
+  static toAgentTurns(turns: TurnRecord[]): AgentTurn<AgentToolSet>[] {
+    return turns.map((e) => e.content);
   }
 
   /**

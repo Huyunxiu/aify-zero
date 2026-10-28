@@ -14,7 +14,6 @@ import type {
   AgentTurnStatus,
   CompactionRecord,
 } from "@workspace/agent-client";
-import type { TurnModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
@@ -60,7 +59,7 @@ import { ExtensionManager } from "./extensions/manager";
 import type { Extension } from "./extensions/types";
 import { HooksManager } from "./hooks-manager";
 import type { HookContext } from "./hooks-manager";
-import type { AgentStore, SessionEndStatus } from "./storage";
+import type { AgentStore, SessionEndStatus, TurnRecord } from "./storage";
 import { executeToolCalls, stripToolExecution } from "./tools/execution";
 import type { AgentToolSet } from "./types";
 import {
@@ -803,8 +802,8 @@ export class Agent {
       .join("");
   }
 
-  toAgentTurns(turns: TurnModel[]): AgentTurn<AgentToolSet>[] {
-    return turns.map((e) => e.content as AgentTurn<AgentToolSet>);
+  toAgentTurns(turns: TurnRecord[]): AgentTurn<AgentToolSet>[] {
+    return turns.map((e) => e.content);
   }
 
   /**
@@ -930,7 +929,7 @@ export class Agent {
           metadata: {},
           content: changed,
           parentId: input.parentId ?? null,
-          createdAt: new Date(),
+          createdAt: new Date(changed.createdAt),
         });
         await this.store.setActiveHead(this.sessionId, changed.id);
       }

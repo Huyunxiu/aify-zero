@@ -36,6 +36,20 @@
       "when": 1792600460158,
       "tag": "0004_low_thor",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793198445096,
+      "tag": "0005_spotty_mandarin",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1793198475935,
+      "tag": "0006_sweet_elektra",
+      "breakpoints": true
     }
   ]
 }

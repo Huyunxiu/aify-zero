@@ -1,9 +1,5 @@
 import type { AgentTurn } from "@workspace/agent-client";
-import type {
-  SessionInsertModel,
-  SessionModel,
-  TurnModel,
-} from "@workspace/db";
+import type { SessionInsertModel, SessionModel } from "@workspace/db";
 import { describe, expect, test } from "vitest";
 
 import { AgentContext } from "../src/agent-context.js";
@@ -12,7 +8,7 @@ import { Agent } from "../src/agents.js";
 import type { ContextFile } from "../src/context-files.js";
 import { renderProjectContext } from "../src/context-files.js";
 import { SkillManager } from "../src/skill/index.js";
-import type { AgentStore } from "../src/storage/index.js";
+import type { AgentStore, TurnRecord } from "../src/storage/index.js";
 import {
   buildPromptTurn,
   createSubagent,
@@ -32,7 +28,7 @@ import type { AgentToolSet } from "../src/types.js";
 class FakeStore {
   readonly saved: SessionInsertModel[] = [];
   readonly #byParentToolCall = new Map<string, SessionModel>();
-  readonly #turns = new Map<string, TurnModel[]>();
+  readonly #turns = new Map<string, TurnRecord[]>();
 
   /** 预置一个"已经派生过"的子会话，模拟父 turn 被 resume 时的场景。 */
   seedChild(
@@ -46,7 +42,7 @@ class FakeStore {
     } as SessionModel);
     this.#turns.set(
       id,
-      turns.map((turn) => ({ content: turn }) as TurnModel)
+      turns.map((turn) => ({ content: turn }) as TurnRecord)
     );
     return id;
   }
@@ -68,7 +64,7 @@ class FakeStore {
     return Promise.resolve(true);
   }
 
-  getBranchTurns(sessionId: string): Promise<TurnModel[]> {
+  getBranchTurns(sessionId: string): Promise<TurnRecord[]> {
     return Promise.resolve(this.#turns.get(sessionId) ?? []);
   }
 }

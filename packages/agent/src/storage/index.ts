@@ -1,10 +1,13 @@
+import type { AgentTurn } from "@workspace/agent-client";
 import type {
   SessionInsertModel,
   SessionModel,
   SessionStatus,
-  TurnInsertModel,
-  TurnModel,
 } from "@workspace/db";
+
+import type { TurnRecord, TurnWrite } from "./turn-record";
+
+export type { TurnDetail, TurnRecord, TurnWrite } from "./turn-record";
 
 export type SessionEndStatus = Exclude<SessionStatus, "running">;
 
@@ -62,17 +65,16 @@ export interface AgentStore {
   updateSessionById(sessionId: string, title: string): Promise<number>;
 
   /**
-   * All messages of the session, including every branch version.
-   * @param sessionId
+   * 一条 branch 的完整 turn：turn 行 + step 行拼出的 content。
+   *
+   * `activeStreamId` 是会话当前正在跑的那次运行。传入后，streaming turn 里
+   * 属于这次运行的 step 会被隐藏：客户端会用流的重放重建它们，提前返回会
+   * 造成文本和工具调用重复。上一次运行留下的 step 仍然返回。
    */
-  getAllTurnsBySessionId(sessionId: string): Promise<TurnModel[]>;
-
-  /**
-   * Messages on the branch, walking parent_id from session.activeHeadId.
-   * @param sessionId
-   * @param messages
-   */
-  getBranchTurns(sessionId: string, turns?: TurnModel[]): Promise<TurnModel[]>;
+  getBranchTurns(
+    sessionId: string,
+    options?: { activeStreamId?: string }
+  ): Promise<TurnRecord[]>;
 
   setActiveHead(
     sessionId: string,
@@ -119,9 +121,16 @@ export interface AgentStore {
 
   existsTurn(id: string): Promise<boolean>;
 
-  saveTurn(message: TurnInsertModel): Promise<number>;
+  /**
+   * 写一条完整 turn：turn 行 + 它的全部 step。
+   *
+   * 用于新的 user turn，也用于兜底写入一条还没落库的 turn。upsert 时只更新
+   * 可变的行字段，保留原有 parentId 和 createdAt。
+   */
+  saveTurn(turn: TurnWrite): Promise<number>;
 
-  saveTurns(messages: TurnInsertModel[]): Promise<number>;
+  /** fork 专用：批量写入 turn 行和 step 行。 */
+  saveTurns(turns: TurnWrite[]): Promise<number>;
 
   /**
    * 追加一条 turn 并把它设为 branch 的新 head。
@@ -132,7 +141,13 @@ export interface AgentStore {
    * 它只追加，不插入中间：手工压缩的切点记录在 `CompactionRecord` 里，branch
    * 始终保持线性，客户端本地的 turn 列表因此永远是 branch 的前缀。
    */
-  insertTurnInBranch({ turn }: { turn: TurnInsertModel }): Promise<void>;
+  insertTurnInBranch({ turn }: { turn: TurnWrite }): Promise<void>;
 
-  updateTurn(id: string, parts: unknown, metadata?: unknown): Promise<number>;
+  /**
+   * 用内存里的完整 turn 更新已有 turn。
+   *
+   * 更新 status/detail/completedAt 等行字段，并同步它的 step 行。step 的
+   * `seq` 来自它在 content 里的下标；turn 内的 step 只追加，所以下标稳定。
+   */
+  updateTurn(id: string, turn: AgentTurn): Promise<number>;
 }

@@ -155,7 +155,7 @@ describe("手工压缩的 stream signal", () => {
       type: "compaction",
     });
 
-    const turn = inserted?.content as AgentTurn<AgentToolSet>;
+    const turn = inserted!.content;
     expect(turn).toMatchObject({
       id: start.id,
       status: "done",

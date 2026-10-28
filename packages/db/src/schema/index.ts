@@ -152,8 +152,21 @@ export const turn_table = sqliteTable(
     sessionId: text("session_id"),
     type: text("type").notNull(),
     metadata: text("metadata", { mode: "json" }),
-    content: text("content", { mode: "json" }).notNull(),
     parentId: text("parent_id"),
+    status: text("status", {
+      enum: ["streaming", "done", "wait_review", "aborted", "error"],
+    })
+      .notNull()
+      .default("done"),
+    /**
+     * turn 级可变字段，不属于任何 step。
+     *
+     * 包含 `usage`、`performance`、`finishReason`、`rawFinishReason`、
+     * `providerMetadata`、`error` 和 `abortReason`。做成 JSON 而不是逐列，
+     * 是因为这些字段只被整体读回 `AgentTurn`，没有按列查询的需求。
+     */
+    detail: text("detail", { mode: "json" }),
+    completedAt: integer("completed_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -170,6 +183,45 @@ export const turn_table = sqliteTable(
 
 export type TurnModel = InferSelectModel<typeof turn_table>;
 export type TurnInsertModel = InferInsertModel<typeof turn_table>;
+
+/**
+ * 一条 turn 里的一个 step。
+ *
+ * 这张表是 step 的唯一存储；`turn` 表不再保存 step 数组。`seq` 是 turn 内
+ * 序号，从 0 开始、只追加、不重排；`streamId` 记录产生该 step 的那次运行，
+ * 读取时用它隐藏“当前运行”的 step，避免和流重放重复。
+ *
+ * `content` 存完整 `AgentStep` JSON；`type` / `status` 是供查询用的冗余列，
+ * 与 `content` 里的同名字段保持一致。
+ */
+export const step_table = sqliteTable(
+  "step",
+  {
+    id: text("id").primaryKey(),
+    turnId: text("turn_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    seq: integer("seq").notNull(),
+    streamId: text("stream_id"),
+    type: text("type").notNull(),
+    status: text("status", {
+      enum: ["streaming", "done", "wait_review", "aborted", "error"],
+    }).notNull(),
+    content: text("content", { mode: "json" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("idx_step_turn_seq").on(table.turnId, table.seq),
+    index("idx_step_session_created").on(table.sessionId, table.createdAt),
+  ]
+);
+
+export type StepModel = InferSelectModel<typeof step_table>;
+export type StepInsertModel = InferInsertModel<typeof step_table>;
 
 export const dict_table = sqliteTable("dict", {
   code: text("code").primaryKey(),

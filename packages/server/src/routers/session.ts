@@ -34,12 +34,14 @@ import {
   findTurnWithoutToolResult,
 } from "@workspace/agent-client";
 import type {
+  AgentStep,
   AgentTurn,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { AgentContext } from "@workspace/agent/agent-context";
 import { AgentSession } from "@workspace/agent/agent-session";
 import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
+import type { TurnWrite } from "@workspace/agent/storage/index";
 import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
 import { createLoadSkillTool } from "@workspace/agent/tools/load-skill";
 import {
@@ -48,9 +50,9 @@ import {
 } from "@workspace/agent/tools/shell/resolve";
 import {
   generateSessionId,
+  generateStepId,
   generateTurnId,
 } from "@workspace/agent/utils/id-util";
-import type { TurnInsertModel } from "@workspace/db";
 import { ModelEffort } from "@workspace/shared/constants";
 import type { ToolSet } from "ai";
 import z from "zod";
@@ -259,7 +261,9 @@ const createSession = publicProcedure
         });
       }
 
-      const previousMessages = await store.getBranchTurns(sessionId);
+      const previousMessages = await store.getBranchTurns(sessionId, {
+        activeStreamId: previousSession?.activeStreamId ?? undefined,
+      });
       const previousTurns = AgentSession.toAgentTurns(previousMessages);
       const originalTurns = mostRecentTurn
         ? [...previousTurns, mostRecentTurn]
@@ -506,12 +510,11 @@ export const listSessionTurns = publicProcedure
       return [];
     }
 
-    const turns = await store.getAllTurnsBySessionId(session.id);
-    const activeBranchTurns = await store.getBranchTurns(session.id, turns);
+    const activeBranchTurns = await store.getBranchTurns(session.id, {
+      activeStreamId: session.activeStreamId ?? undefined,
+    });
 
-    return activeBranchTurns.map(
-      (message) => message.content as AgentTurn<AgentToolSet>
-    );
+    return activeBranchTurns.map((message) => message.content);
   });
 
 export const forkSession = publicProcedure
@@ -531,8 +534,9 @@ export const forkSession = publicProcedure
       throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
     }
 
-    const turns = await store.getAllTurnsBySessionId(sessionId);
-    const branchTurns = await store.getBranchTurns(source.id, turns);
+    const branchTurns = await store.getBranchTurns(source.id, {
+      activeStreamId: source.activeStreamId ?? undefined,
+    });
     const upToIndex = messageId
       ? branchTurns.findIndex((turn) => turn.id === messageId)
       : branchTurns.length - 1;
@@ -548,11 +552,11 @@ export const forkSession = publicProcedure
     }
 
     const newSessionId = generateSessionId();
-    // Copy rows with fresh ids: message.id is a global primary key, and the
-    // fork must be self-contained — later edits in either session must not
-    // affect the other.
+    // Copy rows with fresh ids: message.id and step.id are global primary keys,
+    // and the fork must be self-contained — later edits in either session must
+    // not affect the other.
     const idMap = new Map<string, string>();
-    const copies: TurnInsertModel[] = prefix.map((message) => {
+    const copies: TurnWrite[] = prefix.map((message) => {
       const newTurnId = generateTurnId();
       idMap.set(message.id, newTurnId);
       return {
@@ -560,7 +564,7 @@ export const forkSession = publicProcedure
         sessionId: newSessionId,
         type: message.type,
         metadata: message.metadata,
-        content: message.content,
+        content: cloneTurnContent(message.content, newTurnId, idMap),
         parentId: message.parentId
           ? (idMap.get(message.parentId) ?? null)
           : null,
@@ -582,6 +586,44 @@ export const forkSession = publicProcedure
 
     return { sessionId: newSessionId };
   });
+
+/**
+ * 复制一条 turn，并给它的 step 换新的 id。
+ *
+ * turn id 和 step id 都是全局主键，fork 必须重新生成。压缩记录里的
+ * `retainedFromTurnId` 也指向 turn id，必须映射到新会话里的对应 turn，否则
+ * 投影在 fork 里找不到保留段，会把已有历史整段丢掉。
+ */
+function cloneTurnContent(
+  turn: AgentTurn<AgentToolSet>,
+  newTurnId: string,
+  idMap: Map<string, string>
+): AgentTurn<AgentToolSet> {
+  const steps = turn.content.map((step): AgentStep<AgentToolSet> => {
+    const id = generateStepId();
+
+    if (step.type !== "compaction") {
+      return { ...step, id };
+    }
+
+    const content = step.content.map((part) => {
+      if (part.type !== "compaction" || !part.record?.retainedFromTurnId) {
+        return part;
+      }
+
+      const { retainedFromTurnId: previous, ...record } = part.record;
+      const retainedFromTurnId = idMap.get(previous);
+      return {
+        ...part,
+        record: retainedFromTurnId ? { ...record, retainedFromTurnId } : record,
+      };
+    });
+
+    return { ...step, id, content };
+  });
+
+  return { ...turn, id: newTurnId, content: steps } as AgentTurn<AgentToolSet>;
+}
 
 export const listSessionResources = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/resources" })
