@@ -25,6 +25,7 @@
   "NOTHING_TO_FORK": "There is nothing to fork in this chat yet.",
   "MESSAGE_NOT_FOUND": "The requested message was not found in this chat.",
   "STREAM_NOT_FOUND": "There is no reply running for this chat.",
+  "INBOX_MESSAGE_NOT_FOUND": "This queued message was already sent or removed.",
   "SESSION_BUSY": "This chat is busy. Wait for the current turn to finish and try again.",
   "NOTHING_TO_COMPACT": "There is not enough history to compact yet.",
   "COMPACTION_FAILED": "The context could not be compacted. The history is unchanged."

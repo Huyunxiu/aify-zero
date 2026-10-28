@@ -24,6 +24,8 @@ export type RecoveryStore = {
     streamId: string,
     status: SessionEndStatus
   ): Promise<number>;
+  /** 把会话里残留的 next-step 消息提升为 next-turn；返回提升的行数。 */
+  promoteStaleInboxMessages(sessionId: string): Promise<number>;
 };
 
 export type RecoveryOutcome = {
@@ -87,6 +89,18 @@ export async function recoverInterruptedRuns(
         : statusOfHead(branch, session.activeHeadId);
 
       await store.clearActiveStream(session.id, streamId, status);
+
+      // 上个进程留下的 next-step 已经没有“下一步”了：提升成下一回合的排队
+      // 消息，否则它们永远不会被发送。提升失败不影响收尾，下次启动会再试。
+      try {
+        await store.promoteStaleInboxMessages(session.id);
+      } catch (error) {
+        logger.warn(
+          `[recovery] failed to promote pending messages for ${session.id}`,
+          error
+        );
+      }
+
       outcomes.push({
         sessionId: session.id,
         ...(settledTurnId ? { settledTurnId } : {}),

@@ -72,17 +72,20 @@ class FakeStore implements RecoveryStore {
     streamId: string;
     status: SessionEndStatus;
   }[] = [];
+  readonly promoted: string[] = [];
 
   private readonly options: {
     sessions: SessionModel[];
     branch: TurnRecord[];
     failUpdate?: boolean;
+    failPromote?: boolean;
   };
 
   constructor(options: {
     sessions: SessionModel[];
     branch: TurnRecord[];
     failUpdate?: boolean;
+    failPromote?: boolean;
   }) {
     this.options = options;
   }
@@ -111,6 +114,14 @@ class FakeStore implements RecoveryStore {
     this.clears.push({ sessionId, streamId, status });
     return Promise.resolve(1);
   }
+
+  promoteStaleInboxMessages(sessionId: string): Promise<number> {
+    if (this.options.failPromote) {
+      return Promise.reject(new Error("inbox down"));
+    }
+    this.promoted.push(sessionId);
+    return Promise.resolve(0);
+  }
 }
 
 describe(recoverInterruptedRuns, () => {
@@ -131,6 +142,8 @@ describe(recoverInterruptedRuns, () => {
     expect(store.clears).toStrictEqual([
       { sessionId: "session-1", streamId: "stream-1", status: "error" },
     ]);
+    // 上个进程没领走的 next-step 消息要提升为下一回合。
+    expect(store.promoted).toStrictEqual(["session-1"]);
     expect(outcomes).toStrictEqual([
       { sessionId: "session-1", settledTurnId: "a1" },
     ]);
@@ -194,5 +207,16 @@ describe(recoverInterruptedRuns, () => {
     await expect(recoverInterruptedRuns(store)).resolves.toStrictEqual([]);
     expect(store.updates).toHaveLength(0);
     expect(store.clears).toHaveLength(0);
+  });
+
+  test("still settles the session when promoting pending messages fails", async () => {
+    const store = new FakeStore({
+      sessions: [session()],
+      branch: [record(streamingTurn())],
+      failPromote: true,
+    });
+
+    await expect(recoverInterruptedRuns(store)).resolves.toHaveLength(1);
+    expect(store.clears).toHaveLength(1);
   });
 });
