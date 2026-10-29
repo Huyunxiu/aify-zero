@@ -87,7 +87,7 @@ part 用 `createdAt` / `completedAt` 记录自己的起止时间，界面上的�
 | `compaction.end`   | 摘要就绪，带 `record`；把 start 建立的 part 置为 `"done"`  |
 | `compaction.error` | 本次压缩失败，历史未变；尚未提交的 part 及其空 step 被撤回 |
 
-`compaction.start` 绑定 placement 决定的 turn/step，`AgentTurnBuilder` 从这一刻起建立 streaming 的 part（[agent-turn-builder.ts](../../../agent-client/src/agent-turn-builder.ts#L490-L510)）。摘要失败时 `compaction.error` 按 id 撤回这个 part；step 只用来承载它，part 没了就一起移除。被中止的尝试没有 error 事件，由 `settle` 做同样的清理。这样“开始即可见”和“失败不留标记”可以同时成立。
+`compaction.start` 绑定 placement 决定的 turn/step，`AgentTurnAssembler` 从这一刻起建立 streaming 的 part（[agent-turn-assembler.ts](../../../agent-client/src/agent-turn-assembler.ts#L490-L510)）。摘要失败时 `compaction.error` 按 id 撤回这个 part；step 只用来承载它，part 没了就一起移除。被中止的尝试没有 error 事件，由 `settle` 做同样的清理。这样“开始即可见”和“失败不留标记”可以同时成立。
 
 Hook 侧对应 `compaction:start` 和 `compaction:end`（[hooks-manager.ts](../hooks-manager.ts)）。
 
@@ -272,7 +272,7 @@ step.start(compaction)
 ```
 
 - `session.applyCompaction` 把模型消息换成 `[checkpoint, ...messages.slice(regionEnd)]`，并清掉 `lastUsage`：旧的 usage 描述的是已经不存在的 prompt（[agent-session.ts](../agent-session.ts#L58-L82)）。
-- 标记 step 由 `step.start` 事件驱动 builder 追加，part 由紧随其后的 `compaction.start` 建立；没有 controller 的调用（测试）由 `createCompactionStep` 兜底 push。
+- 标记 step 由 `step.start` 事件驱动 assembler 追加，part 由紧随其后的 `compaction.start` 建立；没有 controller 的调用（测试）由 `createCompactionStep` 兜底 push。
 - 失败时写 `compaction.error` 并记日志，历史不变。自动压缩是优化，不应该导致回合失败。
 
 ### overflow 的特殊行为
@@ -443,7 +443,7 @@ await agent.stream({
 
 `Agent` 在流存在之前完成投影和 `planManualCompaction`，所以 `NOTHING_TO_COMPACT` 仍是同步错误。随后后台按普通 turn 的事件顺序写出 `turn.start`（`turnType: "compaction"`）→ `step.start` → `compaction.start` → 摘要 → `compaction.end` → `step.finish` → `turn.finish`，再把 turn 写进 branch，最后才关流并让 `onFinish` 落定会话行。读者读到结尾时，branch 和 `activeStreamId` 都已经是一致的。
 
-客户端只需要读流：压缩 turn 是线性追加的，本地 builder 追加出来的 transcript 与 branch 一致，不再需要在流结束后用 `listSessionTurns` 替换本地 turns（[session.tsx](../../../ui/src/elements/session.tsx)）。界面不再另存压缩状态：进行中是 transcript 里 streaming 的 compaction part，成功和失败分别用摘要记录和 `compaction.error` 报告。
+客户端只需要读流：压缩 turn 是线性追加的，本地 assembler 追加出来的 transcript 与 branch 一致，不再需要在流结束后用 `listSessionTurns` 替换本地 turns（[session.tsx](../../../ui/src/elements/session.tsx)）。界面不再另存压缩状态：进行中是 transcript 里 streaming 的 compaction part，成功和失败分别用摘要记录和 `compaction.error` 报告。
 
 ### `/compact` 命令
 
@@ -509,7 +509,7 @@ vp test packages/agent/tests/compaction packages/agent-client/tests/compaction.t
 - compact 的空摘要、截断、未缩小、abort、空区间；
 - prompt 的 framing 和预算降级；
 - marker 的构造；
-- `AgentTurnBuilder` 对 `compaction.start` / `compaction.end` / `compaction.error` 的装配与撤回；
+- `AgentTurnAssembler` 对 `compaction.start` / `compaction.end` / `compaction.error` 的装配与撤回；
 - `Agent.stream` 的 `compaction` signal：独立 turn 的落库位置、无内容时同步失败、abort 后的撤回（[stream-compaction.test.ts](../../tests/stream-compaction.test.ts)）。
 
 测试通过注入 `SummarizeFn` 避免依赖 provider。

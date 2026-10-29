@@ -725,7 +725,7 @@ export function Session({
    * The server only starts the compaction and answers with a stream id; the
    * summarization itself runs in the background. The compaction turn is
    * appended to the branch like any other turn — the cut point lives in its
-   * record — so attaching to the stream and letting the builder append it is
+   * record — so attaching to the stream and letting the assembler append it is
    * enough: the local transcript stays a prefix of the branch.
    */
   const handleCompact = async (modelId: string): Promise<void> => {

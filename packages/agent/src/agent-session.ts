@@ -1,5 +1,5 @@
 import {
-  AgentTurnBuilder,
+  AgentTurnAssembler,
   findTurnWithoutToolResult,
 } from "@workspace/agent-client";
 import type { AgentTurn, CompactionRecord } from "@workspace/agent-client";
@@ -15,13 +15,13 @@ import { generateTurnId } from "./utils/id-util";
 
 export type AgentSessionOptions = {
   turns: AgentTurn<AgentToolSet>[];
-  builder?: AgentTurnBuilder<AgentToolSet>;
+  assembler?: AgentTurnAssembler<AgentToolSet>;
 };
 
 export class AgentSession {
   turns: AgentTurn<AgentToolSet>[];
   modelMessages: ModelMessage[];
-  builder?: AgentTurnBuilder<AgentToolSet>;
+  assembler?: AgentTurnAssembler<AgentToolSet>;
   usage?: LanguageModelUsage;
   totalUsage?: LanguageModelUsage;
   /** 当前 turn 开始时模型侧的历史视图。 */
@@ -54,7 +54,7 @@ export class AgentSession {
 
   async startTurn({ turns }: AgentSessionOptions): Promise<string> {
     await this.loadTurns({ turns });
-    this.builder = new AgentTurnBuilder<AgentToolSet>({
+    this.assembler = new AgentTurnAssembler<AgentToolSet>({
       turns: this.turns,
     });
     const turn = findTurnWithoutToolResult(this.turns);
@@ -113,7 +113,7 @@ export class AgentSession {
       return;
     }
 
-    // builder 在 turn.start 时已经把同一个对象放进 turns；再 push 一次会让
+    // assembler 在 turn.start 时已经把同一个对象放进 turns；再 push 一次会让
     // 同一个 turn 在数组里出现两次。
     if (this.turns.some((candidate) => candidate.id === turn.id)) {
       return;

@@ -34,7 +34,7 @@ import type {
   AgentDynamicToolPart,
 } from "./types";
 
-export class AgentTurnBuilder<TOOLS extends ToolSet> {
+export class AgentTurnAssembler<TOOLS extends ToolSet> {
   turns: AgentTurn<TOOLS>[];
   private readonly turnsMap: Map<string, AgentTurn<TOOLS>>;
   private readonly stepsMap: Map<string, AgentStep<TOOLS>>;
@@ -362,7 +362,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         const part = this.toolParts.get(uk);
         if (!part) {
           console.warn(
-            `AgentTurnBuilder#push no tool invocation for approval response ${event.approvalId}`
+            `AgentTurnAssembler#push no tool invocation for approval response ${event.approvalId}`
           );
           break;
         }
@@ -517,7 +517,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         const step = this.stepsMap.get(event.stepId);
         if (!step || step.type !== "compaction") {
           console.warn(
-            `AgentTurnBuilder#push compaction.start without a compaction step ${event.id}`
+            `AgentTurnAssembler#push compaction.start without a compaction step ${event.id}`
           );
           break;
         }
@@ -550,7 +550,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         const step = this.stepsMap.get(event.stepId);
         if (!step || step.type !== "compaction") {
           console.warn(
-            `AgentTurnBuilder#push compaction.end without a compaction step ${event.id}`
+            `AgentTurnAssembler#push compaction.end without a compaction step ${event.id}`
           );
           break;
         }
@@ -597,7 +597,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
         break;
       }
       case "error": {
-        console.error("AgentTurnBuilder#push error", event.error);
+        console.error("AgentTurnAssembler#push error", event.error);
         break;
       }
       case "abort": {
@@ -606,14 +606,14 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
       }
       default: {
         console.warn(
-          `AgentTurnBuilder#onEvent unknown event ${JSON.stringify(event)}`
+          `AgentTurnAssembler#onEvent unknown event ${JSON.stringify(event)}`
         );
         break;
       }
     }
 
     // The turn an event names is the turn it changed, so it is recorded here
-    // rather than in each branch above. An event naming a part this builder
+    // rather than in each branch above. An event naming a part this assembler
     // never opened is the one case where that overstates what happened, and a
     // caller writing back a turn whose stored state already matches is a price
     // worth paying to keep the rule in one place.
@@ -634,7 +634,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
    * objects, and rewriting a completed step as aborted would make the transcript
    * claim work that did finish never happened.
    *
-   * The caller supplies the outcome: a builder cannot tell from its own state
+   * The caller supplies the outcome: an assembler cannot tell from its own state
    * whether the transport failed or was cancelled — only that nothing finished.
    * Tool parts run their own state machine and are left alone.
    */
@@ -743,7 +743,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
    * Records that a turn changed, the first time it does.
    *
    * The turn is looked up rather than built from the event: a stream can name
-   * turns this builder was never seeded with, and one it does not hold is one
+   * turns this assembler was never seeded with, and one it does not hold is one
    * it cannot hand back.
    */
   private markChanged(turnId: string | undefined): void {
@@ -793,7 +793,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     }
 
     console.error(
-      `AgentTurnBuilder#startTurn unknown event ${JSON.stringify(event)}`
+      `AgentTurnAssembler#startTurn unknown event ${JSON.stringify(event)}`
     );
     return undefined;
   }
@@ -863,7 +863,7 @@ export class AgentTurnBuilder<TOOLS extends ToolSet> {
     }
 
     console.log(
-      `AgentTurnBuilder#startStep unknown event ${JSON.stringify(event)}`
+      `AgentTurnAssembler#startStep unknown event ${JSON.stringify(event)}`
     );
     return undefined;
   }

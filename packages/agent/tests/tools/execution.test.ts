@@ -1,4 +1,4 @@
-import { AgentTurnBuilder } from "@workspace/agent-client";
+import { AgentTurnAssembler } from "@workspace/agent-client";
 import type { AgentStreamEvent } from "@workspace/agent-client";
 import { tool } from "ai";
 import type { ToolSet } from "ai";
@@ -561,15 +561,15 @@ describe("the synthesized events", () => {
   async function buildPart(
     events: AgentStreamEvent<AgentToolSet>[]
   ): Promise<string> {
-    const builder = new AgentTurnBuilder<AgentToolSet>({ turns: [] });
+    const assembler = new AgentTurnAssembler<AgentToolSet>({ turns: [] });
 
-    await builder.push({
+    await assembler.push({
       type: "turn.start",
       id: turnId,
       turnType: "assistant",
       createdAt: 0,
     });
-    await builder.push({
+    await assembler.push({
       type: "step.start",
       id: stepId,
       stepType: "assistant",
@@ -577,7 +577,7 @@ describe("the synthesized events", () => {
       turnId,
       createdAt: 0,
     });
-    await builder.push({
+    await assembler.push({
       type: "tool.input-start",
       id: "call-1",
       toolName: "echo",
@@ -585,7 +585,7 @@ describe("the synthesized events", () => {
       stepId,
       createdAt: 0,
     });
-    await builder.push({
+    await assembler.push({
       type: "tool.call",
       toolCallId: "call-1",
       toolName: "echo",
@@ -596,10 +596,10 @@ describe("the synthesized events", () => {
     } as AgentStreamEvent<AgentToolSet>);
 
     for (const event of events) {
-      await builder.push(event);
+      await assembler.push(event);
     }
 
-    const step = builder.turns[0]?.content[0];
+    const step = assembler.turns[0]?.content[0];
     const part =
       step && "content" in step
         ? step.content.find((candidate) => candidate.type.startsWith("tool-"))
@@ -663,17 +663,17 @@ describe("the synthesized events", () => {
 });
 
 describe("the timing on text and reasoning parts", () => {
-  /** A builder holding one assistant turn with one empty assistant step. */
-  async function buildEmptyStep(): Promise<AgentTurnBuilder<AgentToolSet>> {
-    const builder = new AgentTurnBuilder<AgentToolSet>({ turns: [] });
+  /** An assembler holding one assistant turn with one empty assistant step. */
+  async function buildEmptyStep(): Promise<AgentTurnAssembler<AgentToolSet>> {
+    const assembler = new AgentTurnAssembler<AgentToolSet>({ turns: [] });
 
-    await builder.push({
+    await assembler.push({
       type: "turn.start",
       id: turnId,
       turnType: "assistant",
       createdAt: 0,
     });
-    await builder.push({
+    await assembler.push({
       type: "step.start",
       id: stepId,
       stepType: "assistant",
@@ -682,27 +682,27 @@ describe("the timing on text and reasoning parts", () => {
       createdAt: 0,
     });
 
-    return builder;
+    return assembler;
   }
 
   /** The step's parts, which are what the events above landed on. */
   // oxlint-disable-next-line unicorn/consistent-function-scoping
-  const stepContent = (builder: AgentTurnBuilder<AgentToolSet>) => {
-    const step = builder.turns[0]?.content[0];
+  const stepContent = (assembler: AgentTurnAssembler<AgentToolSet>) => {
+    const step = assembler.turns[0]?.content[0];
     return step && "content" in step ? step.content : [];
   };
 
   test("stamp a text part with the times it started and ended", async () => {
-    const builder = await buildEmptyStep();
+    const assembler = await buildEmptyStep();
 
-    await builder.push({
+    await assembler.push({
       type: "text.start",
       id: "text-1",
       turnId,
       stepId,
       createdAt: 100,
     });
-    await builder.push({
+    await assembler.push({
       type: "text.delta",
       id: "text-1",
       turnId,
@@ -710,7 +710,7 @@ describe("the timing on text and reasoning parts", () => {
       createdAt: 150,
       text: "hi",
     });
-    await builder.push({
+    await assembler.push({
       type: "text.end",
       id: "text-1",
       turnId,
@@ -718,7 +718,7 @@ describe("the timing on text and reasoning parts", () => {
       createdAt: 200,
     });
 
-    expect(stepContent(builder)).toStrictEqual([
+    expect(stepContent(assembler)).toStrictEqual([
       {
         type: "text",
         text: "hi",
@@ -732,16 +732,16 @@ describe("the timing on text and reasoning parts", () => {
   });
 
   test("stamp a reasoning part the same way", async () => {
-    const builder = await buildEmptyStep();
+    const assembler = await buildEmptyStep();
 
-    await builder.push({
+    await assembler.push({
       type: "reasoning.start",
       id: "reasoning-1",
       turnId,
       stepId,
       createdAt: 100,
     });
-    await builder.push({
+    await assembler.push({
       type: "reasoning.delta",
       id: "reasoning-1",
       turnId,
@@ -749,7 +749,7 @@ describe("the timing on text and reasoning parts", () => {
       createdAt: 150,
       text: "hmm",
     });
-    await builder.push({
+    await assembler.push({
       type: "reasoning.end",
       id: "reasoning-1",
       turnId,
@@ -757,7 +757,7 @@ describe("the timing on text and reasoning parts", () => {
       createdAt: 200,
     });
 
-    expect(stepContent(builder)).toStrictEqual([
+    expect(stepContent(assembler)).toStrictEqual([
       {
         type: "reasoning",
         text: "hmm",
@@ -770,9 +770,9 @@ describe("the timing on text and reasoning parts", () => {
   });
 
   test("leave a part still streaming without a completion time", async () => {
-    const builder = await buildEmptyStep();
+    const assembler = await buildEmptyStep();
 
-    await builder.push({
+    await assembler.push({
       type: "text.start",
       id: "text-1",
       turnId,
@@ -780,15 +780,15 @@ describe("the timing on text and reasoning parts", () => {
       createdAt: 100,
     });
 
-    const [part] = stepContent(builder);
+    const [part] = stepContent(assembler);
     expect(part).toMatchObject({ state: "streaming", createdAt: 100 });
     expect(part).not.toHaveProperty("completedAt");
   });
 
   test("time a part the stream never ended, so a settled one is not read as streaming", async () => {
-    const builder = await buildEmptyStep();
+    const assembler = await buildEmptyStep();
 
-    await builder.push({
+    await assembler.push({
       type: "text.start",
       id: "text-1",
       turnId,
@@ -797,10 +797,10 @@ describe("the timing on text and reasoning parts", () => {
     });
 
     const before = Date.now();
-    builder.settle("aborted");
+    assembler.settle("aborted");
     const after = Date.now();
 
-    const [part] = stepContent(builder);
+    const [part] = stepContent(assembler);
     expect(part).toMatchObject({ state: "done", createdAt: 100 });
 
     const completedAt =

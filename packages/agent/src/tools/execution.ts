@@ -278,7 +278,7 @@ async function planToolCall(
 /**
  * Puts one call to the user.
  *
- * The `id` is the call's, so the client and the turn builder address the same
+ * The `id` is the call's, so the client and the turn assembler address the same
  * part the `tool.input-start` opened, while the approval id is what the answer
  * will name — kept apart from the call because the same call may be asked about
  * again on a later stream.
@@ -306,7 +306,7 @@ async function writeApprovalRequest(
 /**
  * Puts one call to the user.
  *
- * The `id` is the call's, so the client and the turn builder address the same
+ * The `id` is the call's, so the client and the turn assembler address the same
  * part the `tool.input-start` opened, while the approval id is what the answer
  * will name — kept apart from the call because the same call may be asked about
  * again on a later stream.
@@ -408,7 +408,7 @@ async function runToolCall(
       // follow the subagent it started while the call is still running. Such a
       // report is published as this call's own result, carrying `preliminary`:
       // the protocol's mark for a result that is not the outcome, which the
-      // turn builder folds onto the same part the final one lands on and the
+      // turn assembler folds onto the same part the final one lands on and the
       // model never reads.
       async (preliminary) => {
         await write({

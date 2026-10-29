@@ -1,6 +1,6 @@
 import type { AgentToolSet } from "@workspace/agent";
 import {
-  AgentTurnBuilder,
+  AgentTurnAssembler,
   findToolApprovalRequests,
   isAgentToolPart,
 } from "@workspace/agent-client";
@@ -337,7 +337,7 @@ const findToolApprovalTarget = (
  * The mutable half of the hook, kept free of React so it can be driven
  * directly.
  *
- * `AgentTurnBuilder` mutates the turns array in place and never changes its
+ * `AgentTurnAssembler` mutates the turns array in place and never changes its
  * identity, so each snapshot published here is a shallow copy taken right after
  * a mutation — the identity changes exactly when the content does, which is
  * what `useSyncExternalStore` requires of a snapshot.
@@ -407,7 +407,7 @@ export function createAgentSessionStore({
    * only `active` says whether those turns still belong on screen, and by then
    * it may name a newer request, or none.
    *
-   * `commit` reads `builder.turns` when it runs rather than being handed a
+   * `commit` reads `assembler.turns` when it runs rather than being handed a
    * snapshot, so a collapsed call publishes the latest state and nothing is
    * lost but the intermediate frames.
    *
@@ -508,13 +508,13 @@ export function createAgentSessionStore({
    * clearing `active` afterwards.
    */
   const settle = ({
-    builder,
+    assembler,
     controller,
     failure,
     aborted,
     commit,
   }: {
-    builder: AgentTurnBuilder<AgentToolSet>;
+    assembler: AgentTurnAssembler<AgentToolSet>;
     controller: AbortController;
     failure: Error | undefined;
     aborted: boolean;
@@ -525,7 +525,7 @@ export function createAgentSessionStore({
     }
 
     active = null;
-    builder.settle(failure && !aborted ? "error" : "aborted");
+    assembler.settle(failure && !aborted ? "error" : "aborted");
     currentError = failure;
     status = failure ? "error" : "ready";
     commit();
@@ -540,7 +540,7 @@ export function createAgentSessionStore({
   };
 
   /**
-   * Reads a turn's events into `builder` until the stream ends, publishing
+   * Reads a turn's events into `assembler` until the stream ends, publishing
    * snapshots as they land and settling what the stream left unfinished.
    *
    * Shared by `sendTurns` and `resume`, which differ only in where the stream
@@ -549,13 +549,13 @@ export function createAgentSessionStore({
    */
   const readInto = async ({
     stream,
-    builder,
+    assembler,
     controller,
     commit,
     publish,
   }: {
     stream: ReadableStream;
-    builder: AgentTurnBuilder<AgentToolSet>;
+    assembler: AgentTurnAssembler<AgentToolSet>;
     controller: AbortController;
     commit: () => void;
     publish: () => void;
@@ -574,7 +574,7 @@ export function createAgentSessionStore({
         }
 
         const event = value as AgentStreamEvent<AgentToolSet>;
-        await builder.push(event);
+        await assembler.push(event);
         emit(event);
 
         // 引导消息已经落进当前 assistant turn：队列里的同 id 项可以撤下。
@@ -600,7 +600,7 @@ export function createAgentSessionStore({
       }
     } finally {
       reader.releaseLock();
-      settle({ builder, controller, failure, aborted, commit });
+      settle({ assembler, controller, failure, aborted, commit });
     }
   };
 
@@ -617,10 +617,12 @@ export function createAgentSessionStore({
     const controller = new AbortController();
     active = controller;
 
-    const builder = new AgentTurnBuilder<AgentToolSet>({ turns: nextTurns });
+    const assembler = new AgentTurnAssembler<AgentToolSet>({
+      turns: nextTurns,
+    });
 
     const commit = (): void => {
-      currentTurns = [...builder.turns];
+      currentTurns = [...assembler.turns];
       notify();
     };
 
@@ -699,13 +701,13 @@ export function createAgentSessionStore({
         return;
       }
 
-      await readInto({ stream, builder, controller, commit, publish });
+      await readInto({ stream, assembler, controller, commit, publish });
     } catch (error) {
       // Nothing is being read — the request was refused, or the transport died
       // before a stream existed — so the ending is settled here instead.
       onRejected?.(error);
       settle({
-        builder,
+        assembler,
         controller,
         failure: controller.signal.aborted ? undefined : toError(error),
         aborted: controller.signal.aborted,
@@ -874,7 +876,7 @@ export function createAgentSessionStore({
    *
    * A page that reloads mid-turn has no stream of its own: the send that started
    * the turn belongs to the page that left, and the turn keeps running without
-   * it. Attaching replays the running turn from its start, so seeding a builder
+   * it. Attaching replays the running turn from its start, so seeding an assembler
    * with the turns already on screen rebuilds the turn and then follows it live
    * — the turn is read whole rather than joined mid-sentence.
    */
@@ -888,10 +890,12 @@ export function createAgentSessionStore({
     const controller = new AbortController();
     active = controller;
 
-    const builder = new AgentTurnBuilder<AgentToolSet>({ turns: currentTurns });
+    const assembler = new AgentTurnAssembler<AgentToolSet>({
+      turns: currentTurns,
+    });
 
     const commit = (): void => {
-      currentTurns = [...builder.turns];
+      currentTurns = [...assembler.turns];
       notify();
     };
 
@@ -910,7 +914,7 @@ export function createAgentSessionStore({
     }
 
     try {
-      await readInto({ stream, builder, controller, commit, publish });
+      await readInto({ stream, assembler, controller, commit, publish });
     } finally {
       abortSignal?.removeEventListener("abort", forwardAbort);
     }
@@ -961,18 +965,20 @@ export function createAgentSessionStore({
       createdAt: answeredAt,
     } satisfies TextStreamToolApprovalResponseEvent;
 
-    // The answer is applied to the transcript through the builder, with the
+    // The answer is applied to the transcript through the assembler, with the
     // very event the stream would carry. That is what keeps the local answer
     // and a streamed one the same rewrite of the same fields — the part moves
     // to `approval-responded` and nothing else about it moves, because the call
     // has not run and only the stream can say that it did.
-    const builder = new AgentTurnBuilder<AgentToolSet>({ turns: currentTurns });
-    await builder.push(answer);
+    const assembler = new AgentTurnAssembler<AgentToolSet>({
+      turns: currentTurns,
+    });
+    await assembler.push(answer);
 
     // The rewrite was in place, so the snapshot has to take a new identity for
     // the listeners to see it — the rule every publish here keeps, and the one
     // `useSyncExternalStore` demands of a snapshot.
-    currentTurns = [...builder.turns];
+    currentTurns = [...assembler.turns];
     notify();
 
     await sendTurns({

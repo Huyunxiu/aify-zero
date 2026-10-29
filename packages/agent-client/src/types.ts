@@ -281,7 +281,7 @@ type TextStreamCompactionErrorEvent = {
   createdAt: number;
 };
 /**
- * 摘要已就绪，标记 step 即将提交。builder 会把记录写到 `compaction.start`
+ * 摘要已就绪，标记 step 即将提交。assembler 会把记录写到 `compaction.start`
  * 建立、仍在 streaming 的 part 上。
  */
 type TextStreamCompactionEndEvent = TextStreamEventBase & {

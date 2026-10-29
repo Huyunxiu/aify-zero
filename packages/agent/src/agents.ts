@@ -423,7 +423,7 @@ export class Agent {
    * Builds the stream a run produces into, with the writes the run needs.
    *
    * `start` runs synchronously when the stream is constructed, so `write` is
-   * usable as soon as this returns. Every write also feeds the turn builder
+   * usable as soon as this returns. Every write also feeds the turn assembler
    * when there is one; the compaction run and the turn run both report through
    * the same channel, which is what lets one reader follow either.
    */
@@ -449,7 +449,7 @@ export class Agent {
       stream,
       write: async (event) => {
         try {
-          await this.session.builder?.push(event);
+          await this.session.assembler?.push(event);
           if (persistSteps) {
             await this.#persistStepEvent(event);
           }
@@ -489,7 +489,7 @@ export class Agent {
       return;
     }
 
-    const step = this.session.builder?.getStep(target.stepId);
+    const step = this.session.assembler?.getStep(target.stepId);
     const turn = this.session.turns.find(
       (candidate) => candidate.id === target.turnId
     );
@@ -1103,7 +1103,7 @@ export class Agent {
     // turn is skipped so a still-streaming background title is not marked —
     // and so is one held for approval, whose step did reach its own end.
     if (status.status === "aborted" || status.status === "error") {
-      this.session.builder?.settle(status.status);
+      this.session.assembler?.settle(status.status);
     }
 
     // Every turn the stream changed is written back, not just the one that
@@ -1111,7 +1111,7 @@ export class Agent {
     // its result against the turn that asked for it — a turn that ended turns
     // ago — so writing back only the ending would leave the store holding the
     // unanswered state of a call that has since been answered.
-    const changedTurns = this.session.builder?.changedTurns ?? [];
+    const changedTurns = this.session.assembler?.changedTurns ?? [];
 
     for (const changed of changedTurns) {
       if (await this.store.existsTurn(changed.id)) {
@@ -1806,7 +1806,7 @@ export class Agent {
         return false;
       }
 
-      // 记录写到 start 时开出的 step/part 上，让存储和 turn builder 都能重建该标记。
+      // 记录写到 start 时开出的 step/part 上，让存储和 turn assembler 都能重建该标记。
       // 结束时间要重新读：step.start 的 createdAt 早于摘要调用，不能拿它当耗时终点。
       const completedAt = Date.now();
       await this.context.controller?.write({
@@ -1829,7 +1829,7 @@ export class Agent {
         status: "done",
       });
 
-      // builder 通常会因上述事件追加 step；无 controller 时也显式更新 turn，保持测试
+      // assembler 通常会因上述事件追加 step；无 controller 时也显式更新 turn，保持测试
       // 和其他轻量调用方看到的会话状态一致。
       const turn = this.session.turns.find(
         (candidate) => candidate.id === placement.turnId

@@ -1,7 +1,7 @@
 import type { ToolSet } from "ai";
 import { describe, expect, test } from "vitest";
 
-import { AgentTurnBuilder } from "../src/agent-turn-builder";
+import { AgentTurnAssembler } from "../src/agent-turn-assembler";
 import type {
   AgentCompactionStep,
   AgentStreamEvent,
@@ -35,21 +35,21 @@ const usage = {
 };
 
 const push = (
-  builder: AgentTurnBuilder<ToolSet>,
+  assembler: AgentTurnAssembler<ToolSet>,
   event: AgentStreamEvent<ToolSet>
-) => builder.push(event);
+) => assembler.push(event);
 
-describe("AgentTurnBuilder compaction markers", () => {
+describe("AgentTurnAssembler compaction markers", () => {
   test("opens the part on start and commits the record on end", async () => {
-    const builder = new AgentTurnBuilder<ToolSet>({ turns: [] });
+    const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
 
-    await push(builder, {
+    await push(assembler, {
       type: "turn.start",
       id: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "step.start",
       id: "step-1",
       turnId: "turn-1",
@@ -57,7 +57,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       model: "test-model",
       createdAt: 2,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "step.start",
       id: "step-2",
       turnId: "turn-1",
@@ -65,7 +65,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       model: "test-model",
       createdAt: 3,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "compaction.start",
       id: "compaction-1",
       turnId: "turn-1",
@@ -74,7 +74,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       createdAt: 4,
     });
 
-    const [turn] = builder.turns;
+    const [turn] = assembler.turns;
     expect(turn?.type).toBe("assistant");
     const [, startedStep] = (turn?.content ?? []) as AgentCompactionStep[];
     expect(startedStep?.content).toStrictEqual([
@@ -86,7 +86,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       },
     ]);
 
-    await push(builder, {
+    await push(assembler, {
       type: "compaction.end",
       id: "compaction-1",
       turnId: "turn-1",
@@ -94,7 +94,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       record,
       createdAt: 5,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "step.finish",
       id: "step-2",
       turnId: "turn-1",
@@ -123,14 +123,14 @@ describe("AgentTurnBuilder compaction markers", () => {
   });
 
   test("takes back an uncommitted part on error", async () => {
-    const builder = new AgentTurnBuilder<ToolSet>({ turns: [] });
-    await push(builder, {
+    const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
+    await push(assembler, {
       type: "turn.start",
       id: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "step.start",
       id: "step-1",
       turnId: "turn-1",
@@ -138,7 +138,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       model: "test-model",
       createdAt: 2,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "step.start",
       id: "step-2",
       turnId: "turn-1",
@@ -146,7 +146,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       model: "test-model",
       createdAt: 3,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "compaction.start",
       id: "compaction-1",
       turnId: "turn-1",
@@ -154,27 +154,27 @@ describe("AgentTurnBuilder compaction markers", () => {
       trigger: "pressure",
       createdAt: 4,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "compaction.error",
       id: "compaction-1",
       error: "boom",
       createdAt: 5,
     });
 
-    const [turn] = builder.turns;
+    const [turn] = assembler.turns;
     expect(turn?.content).toHaveLength(1);
     expect(turn?.content[0]?.type).toBe("assistant");
   });
 
   test("settle takes back a compaction that never finished", async () => {
-    const builder = new AgentTurnBuilder<ToolSet>({ turns: [] });
-    await push(builder, {
+    const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
+    await push(assembler, {
       type: "turn.start",
       id: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "step.start",
       id: "step-1",
       turnId: "turn-1",
@@ -182,7 +182,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       model: "test-model",
       createdAt: 2,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "step.start",
       id: "step-2",
       turnId: "turn-1",
@@ -190,7 +190,7 @@ describe("AgentTurnBuilder compaction markers", () => {
       model: "test-model",
       createdAt: 3,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "compaction.start",
       id: "compaction-1",
       turnId: "turn-1",
@@ -199,22 +199,22 @@ describe("AgentTurnBuilder compaction markers", () => {
       createdAt: 4,
     });
 
-    builder.settle("aborted");
+    assembler.settle("aborted");
 
-    const [turn] = builder.turns;
+    const [turn] = assembler.turns;
     expect(turn?.content).toHaveLength(1);
     expect(turn?.content[0]?.type).toBe("assistant");
   });
 
   test("ignores an end event that arrives before its step", async () => {
-    const builder = new AgentTurnBuilder<ToolSet>({ turns: [] });
-    await push(builder, {
+    const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
+    await push(assembler, {
       type: "turn.start",
       id: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
-    await push(builder, {
+    await push(assembler, {
       type: "compaction.end",
       id: "compaction-1",
       turnId: "turn-1",
@@ -223,6 +223,6 @@ describe("AgentTurnBuilder compaction markers", () => {
       createdAt: 2,
     });
 
-    expect(builder.turns[0]?.content).toHaveLength(0);
+    expect(assembler.turns[0]?.content).toHaveLength(0);
   });
 });

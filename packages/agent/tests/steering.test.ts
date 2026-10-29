@@ -431,7 +431,7 @@ describe("agent steering", () => {
     expect(lastUserMessageText(1)).toBe("Try the other path.");
   });
 
-  test("does not append a turn the builder already holds", () => {
+  test("does not append a turn the assembler already holds", () => {
     const session = new AgentSession({ turns: [] });
     const turn = userTurn("u1", "Hello.");
 
