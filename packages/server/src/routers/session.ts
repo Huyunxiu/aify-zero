@@ -293,8 +293,11 @@ const createSession = publicProcedure
     const session = new AgentSession({ turns: originalTurns });
     if (approvals?.length) {
       const changedTurns = addToolApprovalResponse(session.turns, approvals);
+      // 每个答复只改它指名的那条 step；整条 turn 重写会把同一 turn 里的大
+      // 工具结果也带上，回写量随 turn 大小线性增长。
+      const stepIds = new Set(approvals.map((approval) => approval.stepId));
       for (const turn of changedTurns) {
-        await store.updateTurn(turn.id, turn);
+        await store.updateTurn(turn.id, turn, { stepIds });
       }
       const toolParts = findToolApprovalRequests(session.turns);
       if (toolParts.length > 0) {

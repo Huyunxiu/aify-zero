@@ -207,6 +207,16 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
   changedTurns: AgentTurn<TOOLS>[] = [];
   private readonly changedTurnIds = new Set<string>();
 
+  /**
+   * 本流改动过、且最后一次改动还没有落库的 step，按第一次被改动的顺序排列。
+   *
+   * turn 头部和 step 整行分开记账：step 的 `content` 是一条 turn 里最大的
+   * 载荷，按 turn 回写会把没变的 step 也重写一遍。写入方写成功后用
+   * {@link markStepPersisted} 清掉，剩下的正好是回合结束时要兜底补写的那几条。
+   */
+  changedSteps: { turnId: string; stepId: string }[] = [];
+  private readonly changedStepIds = new Set<string>();
+
   private readonly handlers = new Map<string, StoredHandler<TOOLS>>();
   /** 事件类型归哪个模块；注销和冲突检查都用它。 */
   private readonly handlerOwners = new Map<string, string>();
@@ -227,6 +237,25 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
    */
   getStep(stepId: string): AgentStep<TOOLS> | undefined {
     return this.stepsMap.get(stepId);
+  }
+
+  /**
+   * 记录一个 step 已经落库。
+   *
+   * 只清掉这一条：之后再有事件改它，`push` 会重新记上。写失败时不要调用它，
+   * 回合结束的兜底写入会重试。
+   */
+  markStepPersisted(stepId: string): void {
+    if (!this.changedStepIds.delete(stepId)) {
+      return;
+    }
+
+    const index = this.changedSteps.findIndex(
+      (changed) => changed.stepId === stepId
+    );
+    if (index !== -1) {
+      this.changedSteps.splice(index, 1);
+    }
   }
 
   constructor({
@@ -394,11 +423,13 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
 
     await handler(this.ctx, event);
 
-    // 事件属于哪条 turn，就是哪条 turn 被改了，所以记账放在这里，而不是
-    // 每个 handler 各记一次。唯一会多记的情况，是事件指向本装配器从未打开过
-    // 的 part；此时写回的 turn 状态本来就一致，代价只是一次多余的写入，
+    // 事件属于哪条 turn、哪个 step，就是哪个对象被改了，所以记账放在这里，
+    // 而不是每个 handler 各记一次。唯一会多记的情况，是事件指向本装配器从未
+    // 打开过的 part；此时写回的状态本来就一致，代价只是一次多余的写入，
     // 换来规则只存在于一处。
-    this.markChanged(this.eventTurnId(event));
+    const turnId = this.eventTurnId(event);
+    this.markChanged(turnId);
+    this.markChangedStep(turnId, this.eventStepId(event));
   }
 
   /**
@@ -470,6 +501,42 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
     return event.turnId;
   }
 
+  /**
+   * 事件改的是哪个 step。
+   *
+   * 生命周期事件不指向 step：`turn.*` 只动 turn，`abort` / `error` 什么都不
+   * 改，`compaction.error` 按压缩 id 撤回 part。`turn.steer` 把整条 step 带在
+   * 事件里，其余事件用 `stepId`。
+   */
+  private eventStepId(event: AgentStreamEvent<TOOLS>): string | undefined {
+    if (event.type === "turn.start" || event.type === "turn.finish") {
+      return undefined;
+    }
+
+    if (
+      event.type === "abort" ||
+      event.type === "error" ||
+      event.type === "compaction.error"
+    ) {
+      return undefined;
+    }
+
+    if (event.type === "turn.steer") {
+      return event.step.id;
+    }
+
+    // step 的生命周期事件把 step id 放在 `id` 上；其余事件用 `stepId`。
+    if (
+      event.type === "step.start" ||
+      event.type === "step.finish" ||
+      event.type === "step.metadata"
+    ) {
+      return event.id;
+    }
+
+    return event.stepId;
+  }
+
   /** 撤回 part：从 step 里移除，step 变空就一起删掉。 */
   private retractPart(turnId: string, stepId: string, partId: string): void {
     const step = this.stepsMap.get(stepId);
@@ -537,6 +604,29 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
 
     this.changedTurnIds.add(turnId);
     this.changedTurns.push(turn);
+  }
+
+  /**
+   * 记录一个 step 被改动，只在第一次时记录。
+   *
+   * 和 `markChanged` 一样，只记本装配器真正持有的 step：事件指向没打开过的
+   * step 时，写回它也不会命中任何行。
+   */
+  private markChangedStep(
+    turnId: string | undefined,
+    stepId: string | undefined
+  ): void {
+    if (
+      !turnId ||
+      !stepId ||
+      this.changedStepIds.has(stepId) ||
+      !this.stepsMap.has(stepId)
+    ) {
+      return;
+    }
+
+    this.changedStepIds.add(stepId);
+    this.changedSteps.push({ turnId, stepId });
   }
 
   private warnUnhandled(type: string): void {

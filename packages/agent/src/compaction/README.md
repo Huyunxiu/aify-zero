@@ -514,7 +514,7 @@ vp test packages/agent/tests/compaction packages/agent-client/tests/compaction.t
 - **摘要 prompt 超预算时会丢弃最旧的消息。** 第一次压缩一个巨大 region 时，最早的内容可能既没进摘要、也没有 previous checkpoint 兜底；这是为了让摘要调用本身不爆窗。
 - **回合中途压缩的 shadowed 统计可能偏小。** `compactHistory` 用的是 turn 开始时的投影锚点；当前 assistant turn 的 step 还不在锚点里，所以 `shadowedTurns` / `shadowedSteps` 会少计。只影响审计统计，不影响压缩结果。
 - **`record.tokensAfter` 不含系统提示和工具 schema 开销。** UI 展示的是纯消息口径；下一次压力测量在没有 usage 锚点时会加上 overhead，两者会有少量差异。
-- **before-turn 路径先切换内存态、再写回上一条 assistant turn。** 如果 `store.updateTurn` 失败，catch 只记日志、不回滚内存态；本回合模型看到的是压缩后历史，重载后回到未压缩历史。回合结束时的 `changedTurns` 写入通常会补上这次持久化。
+- **before-turn 路径先切换内存态、再写回上一条 assistant turn。** 如果 `store.updateTurn` 失败，catch 只记日志、不回滚内存态；本回合模型看到的是压缩后历史，重载后回到未压缩历史。回合结束时的脏 step 写入通常会补上这次持久化。
 - **自动压力压缩每 turn 最多 3 次。** overflow 不受这个上限约束。
 - **`auto: false` 时压力路径完全不进入，包括剪枝。** 自动路径里只有 overflow 还会尝试压缩，手工压缩不受影响。
 - **手工压缩是后台流，但不会续跑。** 页面断开不影响它（和普通回合一样），`stop` 或进程结束会中止摘要；中止走 `compaction.error`，历史不变。

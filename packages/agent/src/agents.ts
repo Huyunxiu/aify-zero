@@ -517,6 +517,8 @@ export class Agent {
 
     try {
       await this.store.saveStep(row);
+      // 写成功才清账：失败时留着，回合结束的兜底写入会重试。
+      this.session.assembler?.markStepPersisted(step.id);
     } catch (error) {
       logger.warn("[agent] failed to persist step", error);
     }
@@ -1112,12 +1114,25 @@ export class Agent {
     // its result against the turn that asked for it — a turn that ended turns
     // ago — so writing back only the ending would leave the store holding the
     // unanswered state of a call that has since been answered.
+    //
+    // Only the step rows still carrying a change are written. Everything else
+    // was journaled when it reached its end, so the usual turn ends with no
+    // step write at all; what remains is the resumed call's old step and any
+    // step whose journal write failed.
     const changedTurns = this.session.assembler?.changedTurns ?? [];
+    const changedStepIds = new Set(
+      (this.session.assembler?.changedSteps ?? []).map(
+        (changed) => changed.stepId
+      )
+    );
 
     for (const changed of changedTurns) {
-      if (await this.store.existsTurn(changed.id)) {
-        await this.store.updateTurn(changed.id, changed);
-      } else {
+      // `rowsAffected` doubles as the existence check: 0 means the turn row was
+      // never written, which is the one case that needs an insert.
+      const updated = await this.store.updateTurn(changed.id, changed, {
+        stepIds: changedStepIds,
+      });
+      if (updated === 0) {
         await this.store.saveTurn({
           id: changed.id,
           sessionId: this.sessionId,
@@ -1180,6 +1195,10 @@ export class Agent {
         step,
         createdAt: Date.now(),
       });
+
+      // `applySteeringSteps` 在领取消息的同一个事务里写好了这条 step 行，
+      // 事件只是把它带进内存；回合结束不必再写一次。
+      this.session.assembler?.markStepPersisted(step.id);
 
       // 模型在下一步读到的就是这条 user 消息，位置在上一 step 的工具结果之后。
       this.session.modelMessages.push(
@@ -1330,10 +1349,14 @@ export class Agent {
         });
       }
 
-      // 将调用完的工具结果保存
+      // 工具结果写回的是当初挂起调用的旧 step，journal 不覆盖跨 turn 的回写，
+      // 所以这里先落一次，进程在下一步之前退出也不会丢掉结果。只写这条 step：
+      // 整条 turn 重写会把同一 turn 里早已落库的其他 step 也带上一遍。
       const turn = this.session.turns.find((e) => e.id === askedTurnId);
       if (turn) {
-        this.store.updateTurn(turn.id, turn);
+        await this.store.updateTurn(turn.id, turn, {
+          stepIds: new Set([askedStepId]),
+        });
       }
     }
 
@@ -1855,8 +1878,11 @@ export class Agent {
       };
 
       // before-turn 的压缩 step 不一定属于当前正在构建的 turn，因此显式持久化更新。
+      // 只写这条 step：它前面的 step 早已落库，整条 turn 重写没有必要。
       if (input.mode === "before-turn" && turn) {
-        await this.store.updateTurn(turn.id, turn);
+        await this.store.updateTurn(turn.id, turn, {
+          stepIds: new Set([stepId]),
+        });
       }
 
       await this.hooks.emit(

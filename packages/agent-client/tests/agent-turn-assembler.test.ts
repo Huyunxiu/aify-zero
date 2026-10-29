@@ -159,3 +159,71 @@ describe("AgentTurnAssembler#turn.steer", () => {
     expect(assembler.getStep("steer-1")).toBeUndefined();
   });
 });
+
+const startTurnAndStep = async (assembler: AgentTurnAssembler<ToolSet>) => {
+  await assembler.push({
+    type: "turn.start",
+    id: "turn-1",
+    turnType: "assistant",
+    createdAt: 1,
+  });
+  await assembler.push({
+    type: "step.start",
+    id: "step-1",
+    turnId: "turn-1",
+    stepType: "assistant",
+    model: "test-model",
+    createdAt: 2,
+  });
+};
+
+describe("AgentTurnAssembler#changedSteps", () => {
+  test("tracks the steps a stream changes until they are persisted", async () => {
+    const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
+    await startTurnAndStep(assembler);
+
+    await assembler.push({
+      type: "text.start",
+      id: "part-1",
+      turnId: "turn-1",
+      stepId: "step-1",
+      createdAt: 3,
+    });
+
+    expect(assembler.changedSteps).toStrictEqual([
+      { turnId: "turn-1", stepId: "step-1" },
+    ]);
+
+    assembler.markStepPersisted("step-1");
+    expect(assembler.changedSteps).toStrictEqual([]);
+
+    // 落库之后又被改动，要重新记上：回合结束的兜底写入不能漏掉它。
+    await assembler.push({
+      type: "text.delta",
+      id: "part-1",
+      turnId: "turn-1",
+      stepId: "step-1",
+      text: "more",
+      createdAt: 4,
+    });
+
+    expect(assembler.changedSteps).toStrictEqual([
+      { turnId: "turn-1", stepId: "step-1" },
+    ]);
+  });
+
+  test("ignores a step the assembler does not hold", async () => {
+    const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
+
+    await assembler.push({
+      type: "text.delta",
+      id: "part-1",
+      turnId: "missing-turn",
+      stepId: "missing-step",
+      text: "ignored",
+      createdAt: 2,
+    });
+
+    expect(assembler.changedSteps).toStrictEqual([]);
+  });
+});

@@ -25,7 +25,6 @@ import type {
 import {
   and,
   asc,
-  count,
   desc,
   eq,
   gt,
@@ -295,14 +294,6 @@ export class SQLiteStore implements AgentStore {
         and(eq(session_table.id, sessionId), eq(session_table.status, "done"))
       );
     return result.rowsAffected;
-  }
-
-  async existsTurn(id: string): Promise<boolean> {
-    const result = await db
-      .select({ count: count() })
-      .from(turn_table)
-      .where(eq(turn_table.id, id));
-    return (result[0]?.count ?? 0) > 0;
   }
 
   async saveTurn(
@@ -631,9 +622,16 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async updateTurn(id: string, turn: AgentTurn): Promise<number> {
+  async updateTurn(
+    id: string,
+    turn: AgentTurn,
+    { stepIds }: { stepIds?: ReadonlySet<string> } = {}
+  ): Promise<number> {
     // 只更新已存在的 step 行。新 step 由 `step.finish` 插入；崩溃时正在执行的
     // step 没有行，也不应该在这里被补造成历史。
+    //
+    // `stepIds` 收窄回写的范围：已经逐条 journal 过的 step 不必再写一次，
+    // 回合结束通常一条都不剩。省略时保持旧行为，回写全部 step。
     return await db.transaction(async (tx) => {
       const header = await tx
         .update(turn_table)
@@ -648,6 +646,10 @@ export class SQLiteStore implements AgentStore {
 
       const now = new Date();
       for (const [seq, step] of turn.content.entries()) {
+        if (stepIds && !stepIds.has(step.id)) {
+          continue;
+        }
+
         await tx
           .update(step_table)
           .set({

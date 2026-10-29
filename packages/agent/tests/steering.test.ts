@@ -114,7 +114,7 @@ const sessionRow: SessionModel = {
 class FakeStore {
   readonly savedSteps: unknown[] = [];
   readonly begun: unknown[] = [];
-  readonly updated: string[] = [];
+  readonly updated: { id: string; stepIds: ReadonlySet<string> }[] = [];
 
   getSessionById(): Promise<SessionModel> {
     return Promise.resolve(sessionRow);
@@ -142,12 +142,12 @@ class FakeStore {
     return Promise.resolve(1);
   }
 
-  existsTurn(): Promise<boolean> {
-    return Promise.resolve(true);
-  }
-
-  updateTurn(id: string): Promise<number> {
-    this.updated.push(id);
+  updateTurn(
+    id: string,
+    _turn: unknown,
+    { stepIds }: { stepIds?: ReadonlySet<string> } = {}
+  ): Promise<number> {
+    this.updated.push({ id, stepIds: stepIds ?? new Set() });
     return Promise.resolve(1);
   }
 }
@@ -300,6 +300,26 @@ describe("agent steering", () => {
       1
     );
     expect(session.turns).toHaveLength(2);
+  });
+
+  test("does not rewrite a steering step the inbox already persisted", async () => {
+    const inbox = new FakeInbox();
+    inbox.messages = [steeringMessage("steer-1", "Try the other path.")];
+    const { agent, store } = makeAgent(inbox);
+
+    script(
+      stepResult({ text: "First answer." }),
+      stepResult({ text: "Second answer." })
+    );
+
+    await runTurn(agent, asTurns(userTurn("u1", "Start.")));
+
+    // 引导 step 在领取消息时已经写库，assistant step 在 step.finish 时写库；
+    // 回合结束只剩 turn 头部，没有 step 需要补写。
+    expect(store.updated.length).toBeGreaterThan(0);
+    expect(
+      store.updated.every((entry) => entry.stepIds.size === 0)
+    ).toBeTruthy();
   });
 
   test("ends the turn when no steering message is waiting", async () => {

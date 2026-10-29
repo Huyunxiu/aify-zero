@@ -126,8 +126,6 @@ export interface AgentStore {
    */
   markSessionRead(sessionId: string): Promise<number>;
 
-  existsTurn(id: string): Promise<boolean>;
-
   /**
    * 写一条完整 turn：turn 行 + 它的全部 step。
    *
@@ -227,6 +225,15 @@ export interface AgentStore {
    *
    * 更新 status/detail/completedAt 等行字段，并同步它的 step 行。step 的
    * `seq` 来自它在 content 里的下标；turn 内的 step 只追加，所以下标稳定。
+   *
+   * `stepIds` 限定要回写的 step：已经由 journal 写过的 step 不必再重写一遍，
+   * 回合结束通常只需要补写审批恢复时改动的那一条。省略时回写全部 step。
+   *
+   * @returns 更新到的 turn 行数；0 表示这条 turn 还没有行。
    */
-  updateTurn(id: string, turn: AgentTurn): Promise<number>;
+  updateTurn(
+    id: string,
+    turn: AgentTurn,
+    options?: { stepIds?: ReadonlySet<string> }
+  ): Promise<number>;
 }
