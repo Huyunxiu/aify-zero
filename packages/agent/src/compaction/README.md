@@ -451,21 +451,14 @@ UI 在提交前解析 `/compact`；它不接受额外文本。POST 返回后立�
 
 ## 并发与持久化
 
-手工压缩和“发消息 / 启动回合”会竞争同一条 branch。压缩现在是后台流，锁只覆盖启动段，后半个临界区靠流本身占位。这里分三层保护：
+手工压缩和“发消息 / 启动回合”会竞争同一条 branch。压缩现在是后台流，准备段返回后它继续跑，所以这里的串行化只靠占用标记和事务：
 
-| 层       | 机制                                                                        | 防什么                                     |
-| -------- | --------------------------------------------------------------------------- | ------------------------------------------ |
-| 应用层   | `withSessionLock`（[session-lock.ts](../../../server/src/session-lock.ts)） | 压缩计划与回合启动交错，读到过期分支       |
-| 回合占用 | `activeStreamId` + `STREAM_REGISTRY`                                        | 压缩插入运行中的回合；回合插进运行中的压缩 |
-| 数据库   | `insertTurnInBranch` 的事务                                                 | insert / reparent / head 只写了一半        |
+| 层       | 机制                                 | 防什么                                     |
+| -------- | ------------------------------------ | ------------------------------------------ |
+| 回合占用 | `activeStreamId` + `STREAM_REGISTRY` | 压缩插入运行中的回合；回合插进运行中的压缩 |
+| 数据库   | `insertTurnInBranch` 的事务          | insert / reparent / head 只写了一半        |
 
-`withSessionLock` 是按 `sessionId` 分片的内存队列：
-
-- 同一会话的任务 FIFO 执行，不同会话互不阻塞；
-- 前一个任务失败不会卡住队列（`previous.then(task, task)`，链尾用 `catch` 收敛）；
-- 只在单进程内有效，不是数据库锁，也没有超时。
-
-它故意只覆盖两个 handler 的启动段，不覆盖整个回合或压缩执行。一边在跑时由 `STREAM_REGISTRY` 挡住另一边：`createSession` 发现同一会话还有未结束的流就返回 `SESSION_BUSY`，手工压缩同理。已结束但尚未从注册表摘除的条目不算占用，审批恢复因此不会撞上清理 race。
+准备段一开始就检查占用：`createSession` 发现同一会话还有未结束的流就返回 `SESSION_BUSY`，手工压缩同理。已结束但尚未从注册表摘除的条目不算占用，审批恢复因此不会撞上清理 race。检查到流注册之间没有互斥：两个调用同时进入同一会话时都能通过检查，`activeStreamId` 由后写的一方覆盖。
 
 ## 模块地图
 
@@ -525,4 +518,4 @@ vp test packages/agent/tests/compaction packages/agent-client/tests/compaction.t
 - **自动压力压缩每 turn 最多 3 次。** overflow 不受这个上限约束。
 - **`auto: false` 时压力路径完全不进入，包括剪枝。** 自动路径里只有 overflow 还会尝试压缩，手工压缩不受影响。
 - **手工压缩是后台流，但不会续跑。** 页面断开不影响它（和普通回合一样），`stop` 或进程结束会中止摘要；中止走 `compaction.error`，历史不变。
-- **`withSessionLock` 是进程内的。** 多进程/多实例共享同一个 SQLite 时，它不提供跨进程互斥。
+- **`activeStreamId` 的占用检查不是原子的。** 检查和落库之间没有锁，多进程/多实例共享同一个 SQLite 时不提供跨进程互斥。

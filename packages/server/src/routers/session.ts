@@ -65,7 +65,6 @@ import { getSessionDir } from "../config";
 import { ApiError, ErrorMap } from "../errors";
 import { publicProcedure } from "../index";
 import { JOB_REGISTRY } from "../jobs";
-import { withSessionLock } from "../session-lock";
 import {
   getPrimaryProjectDir,
   getProjectDirs,
@@ -264,100 +263,98 @@ const createSession = publicProcedure
       throw new Error("no message.");
     }
 
-    return await withSessionLock(sessionId, async () => {
-      const store = new SQLiteStore();
-      const inbox = new AgentInbox(store);
+    const store = new SQLiteStore();
+    const inbox = new AgentInbox(store);
 
-      // 项目在会话行落库时固定：行已存在就沿用行上的项目，输入值只在首次
-      // 落库时生效。否则刷新后还没读到会话行的发送会把目录退回默认项目。
-      const previousSession = await store.getSessionById(sessionId);
-      const sessionProjectId = previousSession
-        ? (previousSession.projectId ?? undefined)
-        : projectId;
+    // 项目在会话行落库时固定：行已存在就沿用行上的项目，输入值只在首次
+    // 落库时生效。否则刷新后还没读到会话行的发送会把目录退回默认项目。
+    const previousSession = await store.getSessionById(sessionId);
+    const sessionProjectId = previousSession
+      ? (previousSession.projectId ?? undefined)
+      : projectId;
 
-      // 一条流没跑完之前不能再开一条：手工压缩现在也注册成流，在锁释放后
-      // 继续跑，所以这里不能只靠锁来串行化。已经结束但还没从注册表摘掉的
-      // 条目（审批恢复时常见）不算占用。
-      const running = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
-      if (running && !running.isDone()) {
-        throw new ApiError("SESSION_BUSY", {
-          data: { sessionId, reason: "running" },
-        });
-      }
-
-      const previousMessages = await store.getBranchTurns(sessionId, {
-        activeStreamId: previousSession?.activeStreamId ?? undefined,
+    // 一条流没跑完之前不能再开一条：手工压缩也注册成流，在准备段结束后继续
+    // 跑，所以占用要以注册表为准。已经结束但还没从注册表摘掉的条目（审批
+    // 恢复时常见）不算占用。
+    const running = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
+    if (running && !running.isDone()) {
+      throw new ApiError("SESSION_BUSY", {
+        data: { sessionId, reason: "running" },
       });
-      const previousTurns = AgentSession.toAgentTurns(previousMessages);
-      const originalTurns = mostRecentTurn
-        ? [...previousTurns, mostRecentTurn]
-        : previousTurns;
-      const session = new AgentSession({ turns: originalTurns });
-      if (approvals?.length) {
-        const changedTurns = addToolApprovalResponse(session.turns, approvals);
-        for (const turn of changedTurns) {
-          await store.updateTurn(turn.id, turn);
-        }
-        const toolParts = findToolApprovalRequests(session.turns);
-        if (toolParts.length > 0) {
-          return {
-            activeStreamId: null,
-            awaitingToolApprovals: toolParts.length,
-          };
-        }
-      }
+    }
 
-      const agent = await buildSessionAgent({
-        sessionId,
-        aiModel,
-        effort,
-        projectId: sessionProjectId,
-        session,
-        store,
-      });
-
-      const activeStreamId = generateSessionId();
-
-      let stream: Awaited<ReturnType<Agent["stream"]>>;
-      try {
-        stream = await agent.stream({
-          turns: originalTurns,
-          modelId: aiModel.model,
-          streamId: activeStreamId,
-          signal: { type: "turn" },
-          inboxId,
-          onFinish: async (status) => {
-            // 回合结束前没被领走的 next-step 消息不能留在“下一步”上：把它们
-            // 变成下一回合的排队消息，否则它们永远不会被发送。
-            try {
-              await inbox.promoteStale(sessionId);
-            } catch (error) {
-              logger.warn(
-                "[session] failed to promote pending steering messages",
-                error
-              );
-            }
-            STREAM_REGISTRY.unregisterStream(activeStreamId);
-            await store.clearActiveStream(sessionId, activeStreamId, status);
-          },
-        });
-      } catch (error) {
-        if (error instanceof InboxMessageNotFoundError) {
-          throw new ApiError("INBOX_MESSAGE_NOT_FOUND", {
-            data: { sessionId, messageId: error.id },
-          });
-        }
-        throw error;
-      }
-
-      STREAM_REGISTRY.registerStream(activeStreamId, agent, stream);
-      await store.setActiveStream(sessionId, activeStreamId);
-
-      return {
-        activeStreamId,
-        awaitingToolApprovals: 0,
-      };
+    const previousMessages = await store.getBranchTurns(sessionId, {
+      activeStreamId: previousSession?.activeStreamId ?? undefined,
     });
+    const previousTurns = AgentSession.toAgentTurns(previousMessages);
+    const originalTurns = mostRecentTurn
+      ? [...previousTurns, mostRecentTurn]
+      : previousTurns;
+    const session = new AgentSession({ turns: originalTurns });
+    if (approvals?.length) {
+      const changedTurns = addToolApprovalResponse(session.turns, approvals);
+      for (const turn of changedTurns) {
+        await store.updateTurn(turn.id, turn);
+      }
+      const toolParts = findToolApprovalRequests(session.turns);
+      if (toolParts.length > 0) {
+        return {
+          activeStreamId: null,
+          awaitingToolApprovals: toolParts.length,
+        };
+      }
+    }
+
+    const agent = await buildSessionAgent({
+      sessionId,
+      aiModel,
+      effort,
+      projectId: sessionProjectId,
+      session,
+      store,
+    });
+
+    const activeStreamId = generateSessionId();
+
+    let stream: Awaited<ReturnType<Agent["stream"]>>;
+    try {
+      stream = await agent.stream({
+        turns: originalTurns,
+        modelId: aiModel.model,
+        streamId: activeStreamId,
+        signal: { type: "turn" },
+        inboxId,
+        onFinish: async (status) => {
+          // 回合结束前没被领走的 next-step 消息不能留在“下一步”上：把它们
+          // 变成下一回合的排队消息，否则它们永远不会被发送。
+          try {
+            await inbox.promoteStale(sessionId);
+          } catch (error) {
+            logger.warn(
+              "[session] failed to promote pending steering messages",
+              error
+            );
+          }
+          STREAM_REGISTRY.unregisterStream(activeStreamId);
+          await store.clearActiveStream(sessionId, activeStreamId, status);
+        },
+      });
+    } catch (error) {
+      if (error instanceof InboxMessageNotFoundError) {
+        throw new ApiError("INBOX_MESSAGE_NOT_FOUND", {
+          data: { sessionId, messageId: error.id },
+        });
+      }
+      throw error;
+    }
+
+    STREAM_REGISTRY.registerStream(activeStreamId, agent, stream);
+    await store.setActiveStream(sessionId, activeStreamId);
+
+    return {
+      activeStreamId,
+      awaitingToolApprovals: 0,
+    };
   });
 
 /**
@@ -720,90 +717,84 @@ export const compactSession = publicProcedure
       throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
     }
 
-    return await withSessionLock(sessionId, async () => {
-      const store = new SQLiteStore();
-      const inbox = new AgentInbox(store);
-      const session = await store.getSessionById(sessionId);
-      if (!session) {
-        throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
-      }
+    const store = new SQLiteStore();
+    const inbox = new AgentInbox(store);
+    const session = await store.getSessionById(sessionId);
+    if (!session) {
+      throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
+    }
 
-      const running = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
-      if ((running && !running.isDone()) || session.activeStreamId) {
-        throw new ApiError("SESSION_BUSY", {
-          data: { sessionId, reason: "running" },
-        });
-      }
-
-      const branch = await store.getBranchTurns(sessionId);
-      const turns = AgentSession.toAgentTurns(branch);
-      if (
-        findTurnWithoutToolResult(turns) !== null ||
-        findToolApprovalRequests(turns).length > 0
-      ) {
-        throw new ApiError("SESSION_BUSY", {
-          data: { sessionId, reason: "wait_review" },
-        });
-      }
-
-      const agent = await buildSessionAgent({
-        sessionId,
-        aiModel,
-        projectId: session.projectId ?? undefined,
-        session: new AgentSession({ turns }),
-        store,
+    const running = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
+    if ((running && !running.isDone()) || session.activeStreamId) {
+      throw new ApiError("SESSION_BUSY", {
+        data: { sessionId, reason: "running" },
       });
+    }
 
-      const activeStreamId = generateSessionId();
-      // 先落 activeStreamId 再启动流：压缩可能在流注册之前就结束，那时
-      // onFinish 的 compare-and-clear 必须能找到自己这一行。
-      const previousStatus =
-        session.status === "running" ? "error" : session.status;
-      await store.setActiveStream(sessionId, activeStreamId);
+    const branch = await store.getBranchTurns(sessionId);
+    const turns = AgentSession.toAgentTurns(branch);
+    if (
+      findTurnWithoutToolResult(turns) !== null ||
+      findToolApprovalRequests(turns).length > 0
+    ) {
+      throw new ApiError("SESSION_BUSY", {
+        data: { sessionId, reason: "wait_review" },
+      });
+    }
 
-      let stream;
-      try {
-        stream = await agent.stream({
-          turns,
-          modelId: aiModel.model,
-          streamId: activeStreamId,
-          signal: { type: "compaction", trigger: "manual" },
-          onFinish: async () => {
-            try {
-              await inbox.promoteStale(sessionId);
-            } catch (error) {
-              logger.warn(
-                "[session] failed to promote pending steering messages",
-                error
-              );
-            }
-            STREAM_REGISTRY.unregisterStream(activeStreamId);
-            // 压缩只插入一条上下文标记 turn，不是模型回复：成功或失败都不该
-            // 改写会话原来的状态——一条完好的会话不该因为摘要失败被标成
-            // error，也不该平白多出一个未读的 done。
-            await store.clearActiveStream(
-              sessionId,
-              activeStreamId,
-              previousStatus
-            );
-          },
-        });
-      } catch (error) {
-        await store.clearActiveStream(
-          sessionId,
-          activeStreamId,
-          previousStatus
-        );
-        if (error instanceof NothingToCompactError) {
-          throw new ApiError("NOTHING_TO_COMPACT");
-        }
-        throw error;
-      }
-
-      STREAM_REGISTRY.registerStream(activeStreamId, agent, stream);
-
-      return { activeStreamId };
+    const agent = await buildSessionAgent({
+      sessionId,
+      aiModel,
+      projectId: session.projectId ?? undefined,
+      session: new AgentSession({ turns }),
+      store,
     });
+
+    const activeStreamId = generateSessionId();
+    // 先落 activeStreamId 再启动流：压缩可能在流注册之前就结束，那时
+    // onFinish 的 compare-and-clear 必须能找到自己这一行。
+    const previousStatus =
+      session.status === "running" ? "error" : session.status;
+    await store.setActiveStream(sessionId, activeStreamId);
+
+    let stream;
+    try {
+      stream = await agent.stream({
+        turns,
+        modelId: aiModel.model,
+        streamId: activeStreamId,
+        signal: { type: "compaction", trigger: "manual" },
+        onFinish: async () => {
+          try {
+            await inbox.promoteStale(sessionId);
+          } catch (error) {
+            logger.warn(
+              "[session] failed to promote pending steering messages",
+              error
+            );
+          }
+          STREAM_REGISTRY.unregisterStream(activeStreamId);
+          // 压缩只插入一条上下文标记 turn，不是模型回复：成功或失败都不该
+          // 改写会话原来的状态——一条完好的会话不该因为摘要失败被标成
+          // error，也不该平白多出一个未读的 done。
+          await store.clearActiveStream(
+            sessionId,
+            activeStreamId,
+            previousStatus
+          );
+        },
+      });
+    } catch (error) {
+      await store.clearActiveStream(sessionId, activeStreamId, previousStatus);
+      if (error instanceof NothingToCompactError) {
+        throw new ApiError("NOTHING_TO_COMPACT");
+      }
+      throw error;
+    }
+
+    STREAM_REGISTRY.registerStream(activeStreamId, agent, stream);
+
+    return { activeStreamId };
   });
 
 /**
