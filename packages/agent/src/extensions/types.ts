@@ -1,6 +1,8 @@
+import type { AssemblerModule } from "@workspace/agent-client";
 import type { Tool } from "ai";
 
 import type { HookEventName, HookOptions, HooksMap } from "../hooks-manager";
+import type { AgentToolSet } from "../types";
 
 export interface ExtensionAgentInfo {
   name: string;
@@ -45,6 +47,14 @@ export interface ExtensionAPI {
     handler: HooksMap[K],
     options?: HookOptions
   ): void;
+
+  /**
+   * 贡献一段流事件的装配。
+   *
+   * 键只能是 `custom:<kind>`：协议事件由核心模块装配，那是协议的一部分。
+   * 认领之后，这个 kind 不再落成不透明的 custom part。
+   */
+  assembler(module: AssemblerModule<AgentToolSet>): void;
 }
 
 export interface ExtensionOptions {

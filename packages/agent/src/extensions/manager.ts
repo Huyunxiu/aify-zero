@@ -1,3 +1,8 @@
+import type {
+  AssemblerContext,
+  AssemblerModule,
+  AgentStreamEvent,
+} from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 import type { Tool, ToolSet } from "ai";
 
@@ -7,6 +12,7 @@ import type {
   HooksManager,
   HooksMap,
 } from "../hooks-manager";
+import type { AgentToolSet } from "../types";
 import type {
   Extension,
   ExtensionAgentInfo,
@@ -34,6 +40,8 @@ interface RegisteredExtension {
   tools: Map<string, Tool>;
   sections: RegisteredSection[];
   hookOffs: (() => void)[];
+  /** 这个扩展贡献的装配模块，卸载时按顺序移除。 */
+  assemblers: AssemblerModule<AgentToolSet>[];
 }
 
 /**
@@ -45,6 +53,10 @@ interface RegisteredExtension {
 export class ExtensionManager {
   readonly #extensions = new Map<string, RegisteredExtension>();
   readonly #sections: RegisteredSection[] = [];
+  /** 按注册顺序排好的装配模块；每个 turn 开始时注入装配器。 */
+  readonly #assemblers: AssemblerModule<AgentToolSet>[] = [];
+  /** 已被认领的 custom kind → 扩展 id。 */
+  readonly #assemblerKeys = new Map<string, string>();
   readonly #deps: ExtensionManagerDeps;
   #order = 0;
 
@@ -66,6 +78,7 @@ export class ExtensionManager {
       tools: new Map(),
       sections: [],
       hookOffs: [],
+      assemblers: [],
     };
 
     try {
@@ -97,6 +110,16 @@ export class ExtensionManager {
     for (const id of ids) {
       await this.dispose(id);
     }
+  }
+
+  /**
+   * 当前所有装配模块，按注册顺序排好。
+   *
+   * 模块集合在 turn 开始时取一次快照：turn 中途加载或卸载扩展只影响下一个
+   * turn，重放同一个 turn 才能得到同样的 transcript。
+   */
+  listAssemblers(): readonly AssemblerModule<AgentToolSet>[] {
+    return [...this.#assemblers];
   }
 
   /** 当前所有提示片段，已经按执行顺序排好。 */
@@ -149,12 +172,57 @@ export class ExtensionManager {
         // 绑定在管理器上的 off 函数，卸载扩展时一并调用。
         record.hookOffs.push(this.#deps.hooks.on(name, handler, options));
       },
+      assembler: (module) => {
+        const name = `${record.extension.id}/${module.name}`;
+        if (this.#assemblers.some((candidate) => candidate.name === name)) {
+          throw new Error(`assembler "${name}" is already registered`);
+        }
+
+        for (const key of Object.keys(module.events)) {
+          if (!key.startsWith(CUSTOM_EVENT_PREFIX)) {
+            throw new Error(
+              `assembler event "${key}" is not a custom kind; protocol events are assembled by the core modules`
+            );
+          }
+
+          if (key.length === CUSTOM_EVENT_PREFIX.length) {
+            throw new Error(`assembler event "${key}" has an empty kind`);
+          }
+
+          const owner = this.#assemblerKeys.get(key);
+          if (owner) {
+            throw new Error(
+              `assembler event "${key}" is already handled by extension "${owner}"`
+            );
+          }
+        }
+
+        const isolated = isolateAssembler(record.extension.id, {
+          ...module,
+          name,
+        });
+        for (const key of Object.keys(module.events)) {
+          this.#assemblerKeys.set(key, record.extension.id);
+        }
+        record.assemblers.push(isolated);
+        this.#assemblers.push(isolated);
+      },
     };
   }
 
   async #discard(record: RegisteredExtension): Promise<void> {
     for (const entry of record.sections) {
       this.#remove(this.#sections, entry);
+    }
+
+    for (const module of record.assemblers) {
+      this.#remove(this.#assemblers, module);
+      // 只撤自己还持有的键。
+      for (const key of Object.keys(module.events)) {
+        if (this.#assemblerKeys.get(key) === record.extension.id) {
+          this.#assemblerKeys.delete(key);
+        }
+      }
     }
 
     for (const [name, tool] of record.tools) {
@@ -192,4 +260,51 @@ export class ExtensionManager {
       list.splice(index, 1);
     }
   }
+}
+
+/** 扩展自己的事件键前缀。 */
+const CUSTOM_EVENT_PREFIX = "custom:";
+
+/**
+ * 把扩展的 handler 包成失败不打断流的形式。
+ *
+ * 扩展是运行期加载的代码：一个 handler 抛错时，装配器继续装配剩下的 part，
+ * 而不是让整轮对话失败。错误带扩展 id，日志里能定位到来源。
+ */
+function isolateAssembler(
+  extensionId: string,
+  module: AssemblerModule<AgentToolSet>
+): AssemblerModule<AgentToolSet> {
+  const events: Record<string, unknown> = {};
+
+  for (const [key, handler] of Object.entries(module.events)) {
+    if (typeof handler !== "function") {
+      continue;
+    }
+
+    const run = handler as (
+      ctx: AssemblerContext<AgentToolSet>,
+      event: AgentStreamEvent<AgentToolSet>
+    ) => void | Promise<void>;
+
+    events[key] = async (
+      ctx: AssemblerContext<AgentToolSet>,
+      event: AgentStreamEvent<AgentToolSet>
+    ): Promise<void> => {
+      try {
+        await run(ctx, event);
+      } catch (error) {
+        logger.warn(
+          `[extensions] "${extensionId}" assembler failed on ${event.type}`,
+          error
+        );
+      }
+    };
+  }
+
+  return {
+    name: module.name,
+    events: events as unknown as AssemblerModule<AgentToolSet>["events"],
+    ...(module.settle ? { settle: module.settle } : {}),
+  };
 }

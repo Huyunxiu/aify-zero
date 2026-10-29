@@ -1,6 +1,10 @@
+import { AgentTurnAssembler } from "@workspace/agent-client";
+import type { AssemblerContext } from "@workspace/agent-client";
+import { logger } from "@workspace/shared/logger";
 import type { Tool, ToolSet } from "ai";
 import { describe, expect, test, vi } from "vitest";
 
+import { AgentSession } from "../src/agent-session.js";
 import type { ContextFile } from "../src/context-files.js";
 import { ExtensionManager } from "../src/extensions/manager.js";
 import type { ExtensionManagerDeps } from "../src/extensions/manager.js";
@@ -11,6 +15,7 @@ import { HooksManager } from "../src/hooks-manager.js";
 import type { HooksMap } from "../src/hooks-manager.js";
 import type { ContextSource, SkillSource } from "../src/resources/types.js";
 import type { SkillInfo } from "../src/skill/skill-types.js";
+import type { AgentToolSet } from "../src/types.js";
 
 const makeTool = (description: string): Tool =>
   ({ description }) as unknown as Tool;
@@ -403,5 +408,201 @@ describe(ContextExtension, () => {
     );
 
     expect(manager.listSections()).toStrictEqual([]);
+  });
+});
+
+const customEvent = (kind: `${string}.${string}`) =>
+  ({
+    type: "custom",
+    kind,
+    turnId: "turn-1",
+    stepId: "step-1",
+    createdAt: 1,
+  }) as const;
+
+describe("ExtensionManager#assembler", () => {
+  test("collects the modules an extension contributes", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new TestExtension("ext", (api) => {
+        api.assembler({
+          name: "plan",
+          events: { "custom:plan.updated": () => {} },
+        });
+      })
+    );
+
+    expect(manager.listAssemblers().map((module) => module.name)).toStrictEqual(
+      ["ext/plan"]
+    );
+  });
+
+  test("rejects a protocol event the core modules handle", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await expect(
+      manager.add(
+        new TestExtension("ext", (api) => {
+          api.assembler({ name: "text", events: { "text.delta": () => {} } });
+        })
+      )
+    ).rejects.toThrow('assembler event "text.delta" is not a custom kind');
+  });
+
+  test("rejects an empty custom kind", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await expect(
+      manager.add(
+        new TestExtension("ext", (api) => {
+          api.assembler({ name: "empty", events: { "custom:": () => {} } });
+        })
+      )
+    ).rejects.toThrow('assembler event "custom:" has an empty kind');
+  });
+
+  test("rejects a kind another extension claimed", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new TestExtension("first", (api) => {
+        api.assembler({
+          name: "plan",
+          events: { "custom:plan.updated": () => {} },
+        });
+      })
+    );
+
+    await expect(
+      manager.add(
+        new TestExtension("second", (api) => {
+          api.assembler({
+            name: "plan",
+            events: { "custom:plan.updated": () => {} },
+          });
+        })
+      )
+    ).rejects.toThrow(
+      'assembler event "custom:plan.updated" is already handled by extension "first"'
+    );
+  });
+
+  test("removes the module when the extension is disposed", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new TestExtension("ext", (api) => {
+        api.assembler({
+          name: "plan",
+          events: { "custom:plan.updated": () => {} },
+        });
+      })
+    );
+
+    await manager.dispose("ext");
+
+    expect(manager.listAssemblers()).toStrictEqual([]);
+  });
+
+  test("keeps the turn alive when a module handler throws", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
+
+    try {
+      await manager.add(
+        new TestExtension("ext", (api) => {
+          api.assembler({
+            name: "broken",
+            events: {
+              "custom:plan.updated": () => {
+                throw new Error("boom");
+              },
+            },
+          });
+        })
+      );
+
+      const [module] = manager.listAssemblers();
+      const handler = module?.events["custom:plan.updated"];
+
+      await expect(
+        handler?.(
+          {} as AssemblerContext<AgentToolSet>,
+          customEvent("plan.updated")
+        )
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("hands the modules to the assembler a turn starts with", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+    const handler = vi.fn<() => void>();
+
+    await manager.add(
+      new TestExtension("ext", (api) => {
+        api.assembler({
+          name: "plan",
+          events: { "custom:plan.updated": handler },
+        });
+      })
+    );
+
+    const session = new AgentSession({ turns: [] });
+    await session.startTurn({
+      turns: [],
+      assemblers: manager.listAssemblers(),
+    });
+    await session.assembler?.push(customEvent("plan.updated"));
+
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  test("routes a claimed kind through an assembler built from the list", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+    const handler = vi.fn<() => void>();
+
+    await manager.add(
+      new TestExtension("ext", (api) => {
+        api.assembler({
+          name: "plan",
+          events: { "custom:plan.updated": handler },
+        });
+      })
+    );
+
+    const assembler = new AgentTurnAssembler<AgentToolSet>({
+      turns: [],
+      assemblers: manager.listAssemblers(),
+    });
+
+    await assembler.push({
+      type: "turn.start",
+      id: "turn-1",
+      turnType: "assistant",
+      createdAt: 1,
+    });
+    await assembler.push({
+      type: "step.start",
+      id: "step-1",
+      turnId: "turn-1",
+      stepType: "assistant",
+      model: "test-model",
+      createdAt: 2,
+    });
+    await assembler.push(customEvent("plan.updated"));
+
+    expect(handler).toHaveBeenCalledOnce();
   });
 });

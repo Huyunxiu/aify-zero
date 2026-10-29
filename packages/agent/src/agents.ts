@@ -608,6 +608,7 @@ export class Agent {
 
         const turnId = await this.session.startTurn({
           turns: originalTurns,
+          assemblers: this.extensions.listAssemblers(),
         });
 
         const turn = await this.#runTurn({

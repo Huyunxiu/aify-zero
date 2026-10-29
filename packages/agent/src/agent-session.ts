@@ -2,7 +2,11 @@ import {
   AgentTurnAssembler,
   findTurnWithoutToolResult,
 } from "@workspace/agent-client";
-import type { AgentTurn, CompactionRecord } from "@workspace/agent-client";
+import type {
+  AgentTurn,
+  AssemblerModule,
+  CompactionRecord,
+} from "@workspace/agent-client";
 import type { LanguageModelUsage, ModelMessage } from "ai";
 import { addLanguageModelUsage } from "ai/internal";
 
@@ -16,6 +20,13 @@ import { generateTurnId } from "./utils/id-util";
 export type AgentSessionOptions = {
   turns: AgentTurn<AgentToolSet>[];
   assembler?: AgentTurnAssembler<AgentToolSet>;
+  /**
+   * 这个 turn 可用的装配模块。
+   *
+   * 扩展在会话级收集，turn 开始时注入一次：turn 中途变化只影响下一个
+   * turn，重放才有确定的结果。
+   */
+  assemblers?: readonly AssemblerModule<AgentToolSet>[];
 };
 
 export class AgentSession {
@@ -52,10 +63,14 @@ export class AgentSession {
     this.lastUsage = this.projected.usageAnchor;
   }
 
-  async startTurn({ turns }: AgentSessionOptions): Promise<string> {
+  async startTurn({
+    turns,
+    assemblers = [],
+  }: AgentSessionOptions): Promise<string> {
     await this.loadTurns({ turns });
     this.assembler = new AgentTurnAssembler<AgentToolSet>({
       turns: this.turns,
+      assemblers,
     });
     const turn = findTurnWithoutToolResult(this.turns);
     return turn ? turn.id : generateTurnId();
