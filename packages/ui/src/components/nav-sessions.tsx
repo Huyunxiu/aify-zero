@@ -47,7 +47,7 @@ export function NavSessions() {
   } = useInfiniteQuery({
     queryKey: ["list_sessions"],
     queryFn: ({ pageParam }) =>
-      client.session.list({
+      client.session.listSessions({
         cursor: pageParam,
         limit: SESSION_PAGE_SIZE,
         direction: "desc",

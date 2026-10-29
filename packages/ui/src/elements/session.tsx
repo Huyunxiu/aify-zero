@@ -221,7 +221,7 @@ async function openStream(
   sessionId: string,
   abortSignal: AbortSignal
 ): Promise<ReadableStream> {
-  const stream = await client.session.stream(
+  const stream = await client.session.streamSession(
     { sessionId },
     { signal: abortSignal }
   );
@@ -335,7 +335,7 @@ export function Session({
   const getSessionQuery = useQuery({
     queryKey: ["getSession", sessionId],
     queryFn: async () =>
-      await client.session.get({ sessionId: sessionId ?? "" }),
+      await client.session.getSession({ sessionId: sessionId ?? "" }),
     enabled: Boolean(sessionId),
   });
 
@@ -353,7 +353,7 @@ export function Session({
 
   const forkSessionMutation = useMutation({
     mutationFn: async (options: ForkSessionType) =>
-      await client.session.fork(options),
+      await client.session.forkSession(options),
     onSuccess: async ({ sessionId: forkSessionId }) => {
       await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
       await navigate({ to: `/sessions/${forkSessionId}` });
@@ -485,7 +485,7 @@ export function Session({
       const inboxId =
         typeof options.inboxId === "string" ? options.inboxId : undefined;
 
-      const accepted = await client.session.create(
+      const accepted = await client.session.createSession(
         {
           sessionId: options.sessionId,
           turns: options.approvals?.length ? [] : [options.turns.at(-1)!],
@@ -516,18 +516,20 @@ export function Session({
     // Stopping is located by session id, so nothing here has to carry the
     // stream id the POST handed back.
     apiStop: async ({ sessionId: id }) => {
-      await client.session.stop({ sessionId: id });
+      await client.session.stopSession({ sessionId: id });
     },
     apiInbox: {
       list: async ({ sessionId: id }) => {
-        const result = await client.session.listInbox({ sessionId: id });
+        const result = await client.session.listInboxMessages({
+          sessionId: id,
+        });
         return result.messages;
       },
-      enqueue: async (input) => await client.session.enqueueInbox(input),
+      enqueue: async (input) => await client.session.enqueueInboxMessage(input),
       cancel: async ({ sessionId: id, messageId }) =>
-        await client.session.cancelInbox({ sessionId: id, messageId }),
+        await client.session.cancelInboxMessage({ sessionId: id, messageId }),
       clear: async ({ sessionId: id }) =>
-        await client.session.clearInbox({ sessionId: id }),
+        await client.session.clearInboxMessages({ sessionId: id }),
     },
     // 只读的子会话没有 composer：不渲染队列，也不 drain。
     allowSend: !readOnly,
@@ -562,7 +564,7 @@ export function Session({
 
     void (async () => {
       try {
-        await client.session.markRead({ sessionId: id });
+        await client.session.markSessionRead({ sessionId: id });
         await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
       } catch {
         // Marking read is bookkeeping, not the page's work: a session opened
@@ -739,7 +741,7 @@ export function Session({
     }
 
     try {
-      await client.session.compact({ model: modelId, sessionId });
+      await client.session.compactSession({ model: modelId, sessionId });
     } catch (error) {
       // Refused synchronously — busy session, or nothing to compact.
       toastManager.add({

@@ -34,7 +34,7 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
     useInfiniteQuery({
       queryKey: ["list_sessions", "project", projectId],
       queryFn: ({ pageParam }) =>
-        client.session.list({
+        client.session.listSessions({
           cursor: pageParam,
           limit: SESSION_PAGE_SIZE,
           direction: "desc",

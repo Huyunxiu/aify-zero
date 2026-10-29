@@ -47,7 +47,7 @@ export function SessionRenameDialog({
 
   const renameMutation = useMutation({
     mutationFn: (input: { sessionId: string; title: string }) =>
-      client.session.update(input),
+      client.session.updateSession(input),
     onSuccess: async () => {
       // 项目下的会话列表用同一个前缀，一起失效。
       await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
