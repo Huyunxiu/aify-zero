@@ -11,7 +11,7 @@ describe(journaledStepTarget, () => {
   test("writes the step when it finishes", () => {
     expect(
       journaledStepTarget(
-        event({ type: "step.finish", id: "step-1", turnId: "turn-1" })
+        event({ type: "step.finish", stepId: "step-1", turnId: "turn-1" })
       )
     ).toStrictEqual({ turnId: "turn-1", stepId: "step-1" });
   });
@@ -19,7 +19,7 @@ describe(journaledStepTarget, () => {
   test("writes the step when its metadata changes", () => {
     expect(
       journaledStepTarget(
-        event({ type: "step.metadata", id: "step-1", turnId: "turn-1" })
+        event({ type: "step.metadata", stepId: "step-1", turnId: "turn-1" })
       )
     ).toStrictEqual({ turnId: "turn-1", stepId: "step-1" });
   });
@@ -43,7 +43,7 @@ describe(journaledStepTarget, () => {
       )
     ).toBeUndefined();
     expect(
-      journaledStepTarget(event({ type: "turn.start", id: "turn-1" }))
+      journaledStepTarget(event({ type: "turn.start", turnId: "turn-1" }))
     ).toBeUndefined();
   });
 });

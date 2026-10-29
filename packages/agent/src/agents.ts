@@ -692,13 +692,13 @@ export class Agent {
         // compaction.error 会把这个 part（以及只为它存在的 step）撤回。
         await write({
           type: "turn.start",
-          id: turnId,
+          turnId,
           turnType: "compaction",
           createdAt: startedAt,
         });
         await write({
           type: "step.start",
-          id: stepId,
+          stepId,
           turnId,
           stepType: "compaction",
           model: modelId,
@@ -779,7 +779,7 @@ export class Agent {
           createdAt: completedAt,
         });
         await write({
-          id: stepId,
+          stepId,
           turnId,
           type: "step.finish",
           createdAt: completedAt,
@@ -790,7 +790,7 @@ export class Agent {
           status: "done",
         });
         await write({
-          id: turnId,
+          turnId,
           type: "turn.finish",
           createdAt: completedAt,
           usage: ZERO_USAGE,
@@ -851,7 +851,7 @@ export class Agent {
         stepType: "session.title",
         model: modelId,
         turnId,
-        id: stepId,
+        stepId,
         createdAt: Date.now(),
       });
 
@@ -885,7 +885,7 @@ export class Agent {
       });
 
       await this.context.controller?.write({
-        id: stepId,
+        stepId,
         turnId,
         type: "step.finish",
         createdAt: Date.now(),
@@ -993,7 +993,7 @@ export class Agent {
 
     await this.context.controller?.write({
       type: "turn.start",
-      id: turnId,
+      turnId,
       turnType: "assistant",
       createdAt: startedAt,
     });
@@ -1081,7 +1081,7 @@ export class Agent {
     }
 
     await this.context.controller?.write({
-      id: turnId,
+      turnId,
       type: "turn.finish",
       createdAt: Date.now(),
       usage: this.session.usage,
@@ -1228,7 +1228,7 @@ export class Agent {
       stepType: "assistant",
       model: this.context.modelId,
       turnId,
-      id: stepId,
+      stepId,
       createdAt: Date.now(),
     });
 
@@ -1319,7 +1319,7 @@ export class Agent {
           } as StepResultPerformance;
 
           await this.context.controller?.write({
-            id: askedStepId,
+            stepId: askedStepId,
             turnId: askedTurnId,
             type: "step.metadata",
             createdAt: Date.now(),
@@ -1446,7 +1446,7 @@ export class Agent {
       // worth running and cannot be reported as a whole turn either.
       if (finishReason === "error") {
         await this.context.controller?.write({
-          id: stepId,
+          stepId,
           turnId,
           type: "step.finish",
           createdAt: Date.now(),
@@ -1495,7 +1495,7 @@ export class Agent {
       }
 
       await this.context.controller?.write({
-        id: stepId,
+        stepId,
         turnId,
         type: "step.finish",
         createdAt: Date.now(),
@@ -1787,7 +1787,7 @@ export class Agent {
       stepType: "compaction",
       model: this.context.modelId,
       turnId: placement.turnId,
-      id: stepId,
+      stepId,
       createdAt,
     });
     await this.context.controller?.write({
@@ -1842,7 +1842,7 @@ export class Agent {
         createdAt: completedAt,
       });
       await this.context.controller?.write({
-        id: stepId,
+        stepId,
         turnId: placement.turnId,
         type: "step.finish",
         createdAt: completedAt,

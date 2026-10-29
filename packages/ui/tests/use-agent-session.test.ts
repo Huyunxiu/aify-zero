@@ -152,7 +152,7 @@ const pendingTurnStream = (abortSignal: AbortSignal): ReadableStream =>
     start(controller) {
       controller.enqueue({
         type: "turn.start",
-        id: "turn-1",
+        turnId: "turn-1",
         turnType: "assistant",
         createdAt: Date.now(),
       });

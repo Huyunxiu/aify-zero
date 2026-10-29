@@ -17,11 +17,11 @@ import type { AgentToolSet } from "../types";
 export function journaledStepTarget(
   event: AgentStreamEvent<AgentToolSet>
 ): { turnId: string; stepId: string } | undefined {
-  if (event.type === "step.finish" || event.type === "step.metadata") {
-    return { turnId: event.turnId, stepId: event.id };
-  }
-
-  if (event.type === "tool.output-denied") {
+  if (
+    event.type === "step.finish" ||
+    event.type === "step.metadata" ||
+    event.type === "tool.output-denied"
+  ) {
     return { turnId: event.turnId, stepId: event.stepId };
   }
 

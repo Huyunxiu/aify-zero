@@ -31,13 +31,13 @@ describe("AgentTurnAssembler#getStep", () => {
 
     await assembler.push({
       type: "turn.start",
-      id: "turn-1",
+      turnId: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
     await assembler.push({
       type: "step.start",
-      id: "step-1",
+      stepId: "step-1",
       turnId: "turn-1",
       stepType: "assistant",
       model: "test-model",
@@ -60,13 +60,13 @@ describe("AgentTurnAssembler#settle", () => {
 
     await assembler.push({
       type: "turn.start",
-      id: "new-turn",
+      turnId: "new-turn",
       turnType: "assistant",
       createdAt: 2,
     });
     await assembler.push({
       type: "step.start",
-      id: "new-step",
+      stepId: "new-step",
       turnId: "new-turn",
       stepType: "assistant",
       model: "test-model",
@@ -99,7 +99,7 @@ describe("AgentTurnAssembler#turn.steer", () => {
 
     await assembler.push({
       type: "turn.start",
-      id: "turn-1",
+      turnId: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
@@ -124,7 +124,7 @@ describe("AgentTurnAssembler#turn.steer", () => {
 
     await assembler.push({
       type: "turn.start",
-      id: "turn-1",
+      turnId: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
@@ -163,13 +163,13 @@ describe("AgentTurnAssembler#turn.steer", () => {
 const startTurnAndStep = async (assembler: AgentTurnAssembler<ToolSet>) => {
   await assembler.push({
     type: "turn.start",
-    id: "turn-1",
+    turnId: "turn-1",
     turnType: "assistant",
     createdAt: 1,
   });
   await assembler.push({
     type: "step.start",
-    id: "step-1",
+    stepId: "step-1",
     turnId: "turn-1",
     stepType: "assistant",
     model: "test-model",

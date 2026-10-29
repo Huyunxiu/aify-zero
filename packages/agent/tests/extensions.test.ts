@@ -589,13 +589,13 @@ describe("ExtensionManager#assembler", () => {
 
     await assembler.push({
       type: "turn.start",
-      id: "turn-1",
+      turnId: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
     await assembler.push({
       type: "step.start",
-      id: "step-1",
+      stepId: "step-1",
       turnId: "turn-1",
       stepType: "assistant",
       model: "test-model",

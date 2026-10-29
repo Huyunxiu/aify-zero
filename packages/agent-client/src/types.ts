@@ -78,6 +78,14 @@ export interface CompactionRecord {
   createdAt: number;
 }
 
+/**
+ * 事件指向哪条 turn、哪个 step。
+ *
+ * 每个 id 字段都写明它指向哪一层：`turnId`、`stepId`，part 自己的 id 才是
+ * `id`。一个字段名在事件联合里只有一个含义，读事件的人不必先看 `type` 才
+ * 知道 `id` 指的是谁。唯一的例外是 part 事件里的 `id`，它随 AI SDK 的
+ * chunk 透传，改名的收益抵不上一次字段映射。
+ */
 type TextStreamEventBase = {
   turnId: string;
   stepId: string;
@@ -193,11 +201,8 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
     RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
-export type TextStreamStartStepEvent = {
-  id: string;
-  turnId: string;
+export type TextStreamStartStepEvent = TextStreamEventBase & {
   type: "step.start";
-  createdAt: number;
   stepType: AgentStep<any>["type"];
   /**
    * The model the step is about to be produced with. No other part of the
@@ -206,23 +211,25 @@ export type TextStreamStartStepEvent = {
    */
   model: string;
 };
-export type TextStreamFinishStepEvent = AgentStepStatus & {
-  id: string;
-  turnId: string;
-  type: "step.finish";
-  createdAt: number;
-  usage: LanguageModelUsage;
-  finishReason: FinishReason;
-  rawFinishReason: string | undefined;
-  providerMetadata: ProviderMetadata | undefined;
-  metadata?: StepMetadata;
-};
-export type TextStreamStepMetadataEvent = {
-  id: string;
-  turnId: string;
+export type TextStreamFinishStepEvent = AgentStepStatus &
+  TextStreamEventBase & {
+    type: "step.finish";
+    usage: LanguageModelUsage;
+    finishReason: FinishReason;
+    rawFinishReason: string | undefined;
+    providerMetadata: ProviderMetadata | undefined;
+    metadata?: StepMetadata;
+  };
+export type TextStreamStepMetadataEvent = TextStreamEventBase & {
   type: "step.metadata";
-  createdAt: number;
   metadata: StepMetadata;
+};
+/**
+ * turn 级事件的地址：它们没有 step 可指，只带自己的 `turnId`。
+ */
+type TextStreamTurnEventBase = {
+  turnId: string;
+  createdAt: number;
 };
 /**
  * 一条引导消息已插入当前 assistant turn。
@@ -231,24 +238,23 @@ export type TextStreamStepMetadataEvent = {
  * 同时按同一个 id 从待发送队列里移除它。它不开启新的 turn，所以没有
  * `step.start` / `step.finish` 配对。
  */
-export type TextStreamSteerEvent = {
+export type TextStreamSteerEvent = TextStreamTurnEventBase & {
   type: "turn.steer";
-  turnId: string;
+  /**
+   * 整条 step 随事件送达，它的 id 就是 `step.id`；不再另带 `stepId`，免得
+   * 同一个值在消息里出现两次。
+   */
   step: AgentSteeringStep;
-  createdAt: number;
 };
-export type TextStreamStartTurnEvent = {
-  id: string;
-  createdAt: number;
+export type TextStreamStartTurnEvent = TextStreamTurnEventBase & {
   type: "turn.start";
   turnType: AgentTurn<any>["type"];
 };
-export type TextStreamFinishTurnEvent = AgentTurnStatus & {
-  id: string;
-  type: "turn.finish";
-  createdAt: number;
-  usage?: LanguageModelUsage;
-};
+export type TextStreamFinishTurnEvent = AgentTurnStatus &
+  TextStreamTurnEventBase & {
+    type: "turn.finish";
+    usage?: LanguageModelUsage;
+  };
 
 export type TextStreamTitleStartEvent = TextStreamEventBase & {
   id: string;

@@ -6,14 +6,14 @@ import type { AssemblerModule } from "../src/agent-turn-assembler.js";
 
 const startTurn = {
   type: "turn.start",
-  id: "turn-1",
+  turnId: "turn-1",
   turnType: "assistant",
   createdAt: 1,
 } as const;
 
 const startStep = {
   type: "step.start",
-  id: "step-1",
+  stepId: "step-1",
   turnId: "turn-1",
   stepType: "assistant",
   model: "test-model",
@@ -113,7 +113,7 @@ describe("AgentTurnAssembler#registerAssembler", () => {
     await assembler.push(startTurn);
     await assembler.push({
       type: "step.start",
-      id: "step-1",
+      stepId: "step-1",
       turnId: "turn-1",
       stepType: "assistant",
       model: "test-model",

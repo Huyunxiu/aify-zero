@@ -16,11 +16,11 @@ const agentOf = (sessionId: string): Agent =>
 type TestEvent = AgentStreamEvent<AgentToolSet>;
 
 // The entry only reads `event.type`, so the rest of the event is irrelevant.
-const turnStart = (id: string): TestEvent =>
+const turnStart = (turnId: string): TestEvent =>
   ({
     type: "turn.start",
     turnType: "assistant",
-    id,
+    turnId,
     createdAt: 0,
   }) as TestEvent;
 

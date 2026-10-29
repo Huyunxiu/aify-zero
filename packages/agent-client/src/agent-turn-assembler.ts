@@ -481,15 +481,10 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
   /**
    * 事件属于哪条 turn。
    *
-   * `turn.start` 和 `turn.finish` 用 `id` 指它，因为事件本身就是那条 turn 的
-   * 生命周期，不属于别人；其余事件用 `turnId` 带它。`abort` 和 `error` 也带
+   * 每个事件都用 `turnId` 指它。`abort` / `error` / `compaction.error` 也带
    * 一个，但不会改动它，所以返回 `undefined`。
    */
   private eventTurnId(event: AgentStreamEvent<TOOLS>): string | undefined {
-    if (event.type === "turn.start" || event.type === "turn.finish") {
-      return event.id;
-    }
-
     if (
       event.type === "abort" ||
       event.type === "error" ||
@@ -504,16 +499,14 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
   /**
    * 事件改的是哪个 step。
    *
-   * 生命周期事件不指向 step：`turn.*` 只动 turn，`abort` / `error` 什么都不
-   * 改，`compaction.error` 按压缩 id 撤回 part。`turn.steer` 把整条 step 带在
+   * `turn.*` 只动 turn，`abort` / `error` 什么都不改，`compaction.error` 按
+   * 压缩 id 撤回 part，所以它们都不指向 step。`turn.steer` 把整条 step 带在
    * 事件里，其余事件用 `stepId`。
    */
   private eventStepId(event: AgentStreamEvent<TOOLS>): string | undefined {
-    if (event.type === "turn.start" || event.type === "turn.finish") {
-      return undefined;
-    }
-
     if (
+      event.type === "turn.start" ||
+      event.type === "turn.finish" ||
       event.type === "abort" ||
       event.type === "error" ||
       event.type === "compaction.error"
@@ -523,15 +516,6 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
 
     if (event.type === "turn.steer") {
       return event.step.id;
-    }
-
-    // step 的生命周期事件把 step id 放在 `id` 上；其余事件用 `stepId`。
-    if (
-      event.type === "step.start" ||
-      event.type === "step.finish" ||
-      event.type === "step.metadata"
-    ) {
-      return event.id;
     }
 
     return event.stepId;
@@ -688,7 +672,7 @@ function turnModule<TOOLS extends ToolSet>() {
     name: "turn",
     events: {
       "turn.start": (ctx, event) => {
-        const existing = ctx.findTurn(event.id);
+        const existing = ctx.findTurn(event.turnId);
         if (existing) {
           existing.status = "streaming";
           return;
@@ -701,7 +685,7 @@ function turnModule<TOOLS extends ToolSet>() {
       },
 
       "turn.finish": (ctx, event) => {
-        const turn = ctx.findTurn(event.id);
+        const turn = ctx.findTurn(event.turnId);
         if (!turn) {
           return;
         }
@@ -743,7 +727,7 @@ function stepModule<TOOLS extends ToolSet>() {
     name: "step",
     events: {
       "step.start": (ctx, event) => {
-        const existing = ctx.findStep(event.id);
+        const existing = ctx.findStep(event.stepId);
         if (existing) {
           existing.status = "streaming";
           return;
@@ -756,7 +740,7 @@ function stepModule<TOOLS extends ToolSet>() {
       },
 
       "step.finish": (ctx, event) => {
-        const step = ctx.findStep(event.id);
+        const step = ctx.findStep(event.stepId);
         if (!step) {
           return;
         }
@@ -780,7 +764,7 @@ function stepModule<TOOLS extends ToolSet>() {
       // 因审批而挂起的 step 在工具调用执行前就已经结束，耗时是后来才到的，
       // 所以只替换 performance：step 的状态、usage 和结束时间已经是对的。
       "step.metadata": (ctx, event) => {
-        const step = ctx.findStep(event.id);
+        const step = ctx.findStep(event.stepId);
         if (step) {
           step.metadata = { ...step.metadata, ...event.metadata };
         }
@@ -1266,7 +1250,7 @@ function createTurn<TOOLS extends ToolSet>(
     case "user": {
       const turn: AgentUserTurn = {
         type: "user",
-        id: event.id,
+        id: event.turnId,
         createdAt: event.createdAt,
         status: "streaming",
         content: [],
@@ -1276,7 +1260,7 @@ function createTurn<TOOLS extends ToolSet>(
     case "assistant": {
       const turn: AgentAssistantTurn<TOOLS> = {
         type: "assistant",
-        id: event.id,
+        id: event.turnId,
         createdAt: event.createdAt,
         status: "streaming",
         content: [],
@@ -1286,7 +1270,7 @@ function createTurn<TOOLS extends ToolSet>(
     case "compaction": {
       const turn: AgentCompactionTurn = {
         type: "compaction",
-        id: event.id,
+        id: event.turnId,
         createdAt: event.createdAt,
         status: "streaming",
         content: [],
@@ -1309,7 +1293,7 @@ function createStep<TOOLS extends ToolSet>(
     case "user": {
       const step: AgentUserStep = {
         type: "user",
-        id: event.id,
+        id: event.stepId,
         createdAt: event.createdAt,
         status: "streaming",
         content: [],
@@ -1319,7 +1303,7 @@ function createStep<TOOLS extends ToolSet>(
     case "assistant": {
       const step: AgentAssistantStep<TOOLS> = {
         type: "assistant",
-        id: event.id,
+        id: event.stepId,
         createdAt: event.createdAt,
         status: "streaming",
         content: [],
@@ -1330,7 +1314,7 @@ function createStep<TOOLS extends ToolSet>(
     case "compaction": {
       const step: AgentCompactionStep = {
         type: "compaction",
-        id: event.id,
+        id: event.stepId,
         createdAt: event.createdAt,
         status: "streaming",
         content: [],
@@ -1341,7 +1325,7 @@ function createStep<TOOLS extends ToolSet>(
     case "session.title": {
       const step: AgentSessionTitleStep = {
         type: "session.title",
-        id: event.id,
+        id: event.stepId,
         createdAt: event.createdAt,
         status: "streaming",
         content: [],

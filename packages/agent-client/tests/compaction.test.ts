@@ -45,13 +45,13 @@ describe("AgentTurnAssembler compaction markers", () => {
 
     await push(assembler, {
       type: "turn.start",
-      id: "turn-1",
+      turnId: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
     await push(assembler, {
       type: "step.start",
-      id: "step-1",
+      stepId: "step-1",
       turnId: "turn-1",
       stepType: "assistant",
       model: "test-model",
@@ -59,7 +59,7 @@ describe("AgentTurnAssembler compaction markers", () => {
     });
     await push(assembler, {
       type: "step.start",
-      id: "step-2",
+      stepId: "step-2",
       turnId: "turn-1",
       stepType: "compaction",
       model: "test-model",
@@ -96,7 +96,7 @@ describe("AgentTurnAssembler compaction markers", () => {
     });
     await push(assembler, {
       type: "step.finish",
-      id: "step-2",
+      stepId: "step-2",
       turnId: "turn-1",
       status: "done",
       usage,
@@ -126,13 +126,13 @@ describe("AgentTurnAssembler compaction markers", () => {
     const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
     await push(assembler, {
       type: "turn.start",
-      id: "turn-1",
+      turnId: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
     await push(assembler, {
       type: "step.start",
-      id: "step-1",
+      stepId: "step-1",
       turnId: "turn-1",
       stepType: "assistant",
       model: "test-model",
@@ -140,7 +140,7 @@ describe("AgentTurnAssembler compaction markers", () => {
     });
     await push(assembler, {
       type: "step.start",
-      id: "step-2",
+      stepId: "step-2",
       turnId: "turn-1",
       stepType: "compaction",
       model: "test-model",
@@ -170,13 +170,13 @@ describe("AgentTurnAssembler compaction markers", () => {
     const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
     await push(assembler, {
       type: "turn.start",
-      id: "turn-1",
+      turnId: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });
     await push(assembler, {
       type: "step.start",
-      id: "step-1",
+      stepId: "step-1",
       turnId: "turn-1",
       stepType: "assistant",
       model: "test-model",
@@ -184,7 +184,7 @@ describe("AgentTurnAssembler compaction markers", () => {
     });
     await push(assembler, {
       type: "step.start",
-      id: "step-2",
+      stepId: "step-2",
       turnId: "turn-1",
       stepType: "compaction",
       model: "test-model",
@@ -210,7 +210,7 @@ describe("AgentTurnAssembler compaction markers", () => {
     const assembler = new AgentTurnAssembler<ToolSet>({ turns: [] });
     await push(assembler, {
       type: "turn.start",
-      id: "turn-1",
+      turnId: "turn-1",
       turnType: "assistant",
       createdAt: 1,
     });

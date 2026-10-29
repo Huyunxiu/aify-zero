@@ -565,13 +565,13 @@ describe("the synthesized events", () => {
 
     await assembler.push({
       type: "turn.start",
-      id: turnId,
+      turnId,
       turnType: "assistant",
       createdAt: 0,
     });
     await assembler.push({
       type: "step.start",
-      id: stepId,
+      stepId,
       stepType: "assistant",
       model: "test-model",
       turnId,
@@ -669,13 +669,13 @@ describe("the timing on text and reasoning parts", () => {
 
     await assembler.push({
       type: "turn.start",
-      id: turnId,
+      turnId,
       turnType: "assistant",
       createdAt: 0,
     });
     await assembler.push({
       type: "step.start",
-      id: stepId,
+      stepId,
       stepType: "assistant",
       model: "test-model",
       turnId,

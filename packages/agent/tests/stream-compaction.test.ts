@@ -158,7 +158,7 @@ describe("手工压缩的 stream signal", () => {
 
     const turn = inserted!.content;
     expect(turn).toMatchObject({
-      id: start.id,
+      id: start.turnId,
       status: "done",
       type: "compaction",
     });
