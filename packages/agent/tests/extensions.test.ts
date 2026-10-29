@@ -88,7 +88,7 @@ const makeDeps = () => {
 
 const emitSessionStart = (hooks: HooksManager) =>
   hooks.emit(
-    "session_start",
+    "session.start",
     {
       sessionId: "session-1",
       name: "main",
@@ -222,13 +222,13 @@ describe(ExtensionManager, () => {
   test("stops listening to hooks and calls dispose once", async () => {
     const { deps, hooks } = makeDeps();
     const manager = new ExtensionManager(deps);
-    const handler = vi.fn<HooksMap["session_start"]>();
+    const handler = vi.fn<HooksMap["session.start"]>();
     const dispose = vi.fn<() => void>();
 
     await manager.add(
       new TestExtension(
         "owned",
-        (api) => api.on("session_start", handler),
+        (api) => api.on("session.start", handler),
         dispose
       )
     );
@@ -268,13 +268,13 @@ describe(ExtensionManager, () => {
   test("rolls back contributions when init throws", async () => {
     const { deps, tools, hooks } = makeDeps();
     const manager = new ExtensionManager(deps);
-    const handler = vi.fn<HooksMap["session_start"]>();
+    const handler = vi.fn<HooksMap["session.start"]>();
 
     await expect(
       manager.add(
         new TestExtension("broken", (api) => {
           api.tool("broken-tool", makeTool("broken"));
-          api.on("session_start", handler);
+          api.on("session.start", handler);
           api.systemPromptSection({
             id: "broken-section",
             render: (prompt) => prompt,

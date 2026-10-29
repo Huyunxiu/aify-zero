@@ -14,7 +14,7 @@ import type { AgentContext } from "../agent-context";
 import type {
   HookContext,
   HooksManager,
-  ToolBeforeDecision,
+  ToolStartDecision,
 } from "../hooks-manager";
 import { TOOL_DENIED_TEXT } from "../hooks-manager";
 import type { AgentToolSet } from "../types";
@@ -89,7 +89,7 @@ const elapsed = (startedAt: number) =>
  * Hands the SDK a tool set that can only describe tools, not run them.
  *
  * `streamText` executes any tool carrying an `execute`, which would put the
- * calls back out of reach of `tool:before`. Dropping the function leaves the
+ * calls back out of reach of `tool.start`. Dropping the function leaves the
  * schema, the description and `toModelOutput` intact, so the model still sees
  * the same tools and the step still ends with `tool-calls` — the calls are
  * simply left for {@link executeToolCalls} to run.
@@ -108,7 +108,7 @@ export function stripToolExecution(tools: ToolSet): ToolSet {
 /**
  * Runs one step's tool calls, all at once — or holds every one of them back.
  *
- * Each call first goes through `tool:before`, and every handler of it is heard:
+ * Each call first goes through `tool.start`, and every handler of it is heard:
  * a refusal anywhere in the run is the run's answer, so one hook cannot be
  * talked out of it by another that allowed the call. If any call is left
  * answered `ask`, the whole batch is put to the user and nothing runs: the calls
@@ -191,7 +191,7 @@ type ToolRun = {
 };
 
 /**
- * One call together with what `tool:before` said about it.
+ * One call together with what `tool.start` said about it.
  *
  * The hooks have to be asked before anything runs: whether the batch is held is
  * known only once every one of them has answered, and a call that runs anyway
@@ -200,13 +200,13 @@ type ToolRun = {
 type ToolCallPlan = {
   toolCall: AgentToolCall;
   /** The decision, with an approval the user already gave folded in. */
-  decision: ToolBeforeDecision | undefined;
+  decision: ToolStartDecision | undefined;
   /** When the call was picked up, so its wall time still includes the hook. */
   startedAt: number;
 };
 
 /**
- * Folds what every `tool:before` handler said into the one answer the call gets.
+ * Folds what every `tool.start` handler said into the one answer the call gets.
  *
  * The handlers do not outrank one another — they each hold a veto: a refusal
  * anywhere in the run is the run's answer, and no later `allow` talks it out of
@@ -215,9 +215,9 @@ type ToolCallPlan = {
  * ties: the first refusal to have been returned is the one whose reason is
  * reported, and handlers that abstained contribute nothing.
  */
-function resolveToolBeforeDecision(
-  decisions: readonly ToolBeforeDecision[]
-): ToolBeforeDecision | undefined {
+function resolveToolStartDecision(
+  decisions: readonly ToolStartDecision[]
+): ToolStartDecision | undefined {
   const denial = decisions.find((decision) => decision.decision === "deny");
   if (denial) {
     return denial;
@@ -242,7 +242,7 @@ async function planToolCall(
   const startedAt = performance.now();
 
   const decisions = await hooks.emitAsyncHooks(
-    "tool:before",
+    "tool.start",
     {
       sessionId,
       turnId,
@@ -254,7 +254,7 @@ async function planToolCall(
     },
     extensionApi
   );
-  const decision = resolveToolBeforeDecision(decisions);
+  const decision = resolveToolStartDecision(decisions);
 
   if (
     toolCall.toolName === "write-file" ||
@@ -372,7 +372,7 @@ async function runToolCall(
       providerExecuted: false,
     } as AgentStreamEvent<AgentToolSet>);
     await hooks.emit(
-      "tool:after",
+      "tool.end",
       { ...hookEvent, outcome: "denied", durationMs },
       extensionApi
     );
@@ -439,7 +439,7 @@ async function runToolCall(
       providerExecuted: false,
     } as AgentStreamEvent<AgentToolSet>);
     await hooks.emit(
-      "tool:after",
+      "tool.end",
       { ...hookEvent, input: toolInput, outcome: "result", output, durationMs },
       extensionApi
     );
@@ -476,7 +476,7 @@ async function runToolCall(
       error: errorText,
     } as AgentStreamEvent<AgentToolSet>);
     await hooks.emit(
-      "tool:after",
+      "tool.end",
       {
         ...hookEvent,
         input: toolInput,

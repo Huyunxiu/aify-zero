@@ -89,7 +89,7 @@ part 用 `createdAt` / `completedAt` 记录自己的起止时间，界面上的�
 
 `compaction.start` 绑定 placement 决定的 turn/step，`AgentTurnAssembler` 从这一刻起建立 streaming 的 part（[agent-turn-assembler.ts](../../../agent-client/src/agent-turn-assembler.ts#L490-L510)）。摘要失败时 `compaction.error` 按 id 撤回这个 part；step 只用来承载它，part 没了就一起移除。被中止的尝试没有 error 事件，由 `settle` 做同样的清理。这样“开始即可见”和“失败不留标记”可以同时成立。
 
-Hook 侧对应 `compaction:start` 和 `compaction:end`（[hooks-manager.ts](../hooks-manager.ts)）。
+Hook 侧对应 `compaction.start` 和 `compaction.end`（[hooks-manager.ts](../hooks-manager.ts)）。
 
 ## 投影
 
@@ -268,7 +268,7 @@ step.start(compaction)
   → session.applyCompaction(checkpoint + retained tail)
   → 计数器 / no-progress guard
   → pre-turn: store.updateTurn(上一条 assistant turn)
-  → compaction:end hook
+  → compaction.end hook
 ```
 
 - `session.applyCompaction` 把模型消息换成 `[checkpoint, ...messages.slice(regionEnd)]`，并清掉 `lastUsage`：旧的 usage 描述的是已经不存在的 prompt（[agent-session.ts](../agent-session.ts#L58-L82)）。

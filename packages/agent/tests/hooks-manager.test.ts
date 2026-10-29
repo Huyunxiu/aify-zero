@@ -34,8 +34,8 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const handler = mockHook();
 
-      hooks.on("session_start", handler);
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      hooks.on("session.start", handler);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(handler).toHaveBeenCalledExactlyOnceWith(sessionStart("s1"), api);
     });
@@ -43,7 +43,7 @@ describe(HooksManager, () => {
     test("should infer the event type from the event name", () => {
       const hooks = new HooksManager();
 
-      hooks.on("session_start", (event, apiParam) => {
+      hooks.on("session.start", (event, apiParam) => {
         expectTypeOf(event).toEqualTypeOf<SessionStartEvent>();
         expectTypeOf(event.sessionId).toEqualTypeOf<string>();
         expectTypeOf(apiParam).toEqualTypeOf<HookContext>();
@@ -54,13 +54,13 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const order: string[] = [];
 
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => {
         order.push("first");
       });
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => {
         order.push("second");
       });
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(order).toStrictEqual(["first", "second"]);
     });
@@ -69,14 +69,14 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const order: string[] = [];
 
-      hooks.on("session_start", async () => {
+      hooks.on("session.start", async () => {
         await Promise.resolve();
         order.push("slow");
       });
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => {
         order.push("fast");
       });
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(order).toStrictEqual(["slow", "fast"]);
     });
@@ -85,9 +85,9 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const handler = mockHook();
 
-      const off = hooks.on("session_start", handler);
+      const off = hooks.on("session.start", handler);
       off();
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -98,9 +98,9 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const handler = mockHook();
 
-      hooks.once("session_start", handler);
-      await hooks.emit("session_start", sessionStart("s1"), api);
-      await hooks.emit("session_start", sessionStart("s2"), api);
+      hooks.once("session.start", handler);
+      await hooks.emit("session.start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s2"), api);
 
       expect(handler).toHaveBeenCalledExactlyOnceWith(sessionStart("s1"), api);
     });
@@ -111,24 +111,24 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const order: string[] = [];
 
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => {
         order.push("default");
       });
       hooks.on(
-        "session_start",
+        "session.start",
         () => {
           order.push("low");
         },
         { priority: -1 }
       );
       hooks.on(
-        "session_start",
+        "session.start",
         () => {
           order.push("high");
         },
         { priority: 10 }
       );
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(order).toStrictEqual(["high", "default", "low"]);
     });
@@ -138,20 +138,20 @@ describe(HooksManager, () => {
       const order: string[] = [];
 
       hooks.on(
-        "session_start",
+        "session.start",
         () => {
           order.push("first");
         },
         { priority: 5 }
       );
       hooks.on(
-        "session_start",
+        "session.start",
         () => {
           order.push("second");
         },
         { priority: 5 }
       );
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(order).toStrictEqual(["first", "second"]);
     });
@@ -160,17 +160,17 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const order: string[] = [];
 
-      hooks.once("session_start", () => {
+      hooks.once("session.start", () => {
         order.push("low");
       });
       hooks.once(
-        "session_start",
+        "session.start",
         () => {
           order.push("high");
         },
         { priority: 1 }
       );
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(order).toStrictEqual(["high", "low"]);
     });
@@ -180,17 +180,17 @@ describe(HooksManager, () => {
       const order: string[] = [];
 
       hooks.on(
-        "session_start",
+        "session.start",
         () => {
           order.push("first");
         },
         { priority: 1 }
       );
-      await hooks.emit("session_start", sessionStart("s1"), api);
-      hooks.on("session_start", () => {
+      await hooks.emit("session.start", sessionStart("s1"), api);
+      hooks.on("session.start", () => {
         order.push("second");
       });
-      await hooks.emit("session_start", sessionStart("s2"), api);
+      await hooks.emit("session.start", sessionStart("s2"), api);
 
       expect(order).toStrictEqual(["first", "first", "second"]);
     });
@@ -203,13 +203,13 @@ describe(HooksManager, () => {
       const second = mockHook();
       const other = mockHook();
 
-      hooks.on("session_start", first);
-      hooks.on("session_start", second);
-      hooks.on("session_end", other);
-      hooks.off("session_start");
+      hooks.on("session.start", first);
+      hooks.on("session.start", second);
+      hooks.on("session.end", other);
+      hooks.off("session.start");
 
-      await hooks.emit("session_start", sessionStart("s1"), api);
-      await hooks.emit("session_end", { sessionId: "s1" }, api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
+      await hooks.emit("session.end", { sessionId: "s1" }, api);
 
       expect(first).not.toHaveBeenCalled();
       expect(second).not.toHaveBeenCalled();
@@ -221,10 +221,10 @@ describe(HooksManager, () => {
       const first = mockHook();
       const second = mockHook();
 
-      hooks.on("session_start", first);
-      hooks.on("session_start", second);
-      hooks.off("session_start", first);
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      hooks.on("session.start", first);
+      hooks.on("session.start", second);
+      hooks.off("session.start", first);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(first).not.toHaveBeenCalled();
       expect(second).toHaveBeenCalledOnce();
@@ -234,9 +234,9 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const handler = mockHook();
 
-      hooks.on("session_start", handler);
+      hooks.on("session.start", handler);
       hooks.off();
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(handler).not.toHaveBeenCalled();
     });
@@ -245,27 +245,27 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const handler = mockHook();
 
-      hooks.on("session_start", handler);
-      expect(() => hooks.off("session_end")).not.toThrow();
-      expect(() => hooks.off("session_start", mockHook())).not.toThrow();
-      expect(() => hooks.off("session_start", handler)).not.toThrow();
+      hooks.on("session.start", handler);
+      expect(() => hooks.off("session.end")).not.toThrow();
+      expect(() => hooks.off("session.start", mockHook())).not.toThrow();
+      expect(() => hooks.off("session.start", handler)).not.toThrow();
     });
 
     test("should apply an unsubscribe made during an emit to the next emit", async () => {
       const hooks = new HooksManager();
       const handler = mockHook();
 
-      hooks.on("session_start", () => {
-        hooks.off("session_start", handler);
+      hooks.on("session.start", () => {
+        hooks.off("session.start", handler);
       });
-      hooks.on("session_start", handler);
+      hooks.on("session.start", handler);
 
       // The dispatch in flight keeps the handlers it started with...
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
       expect(handler).toHaveBeenCalledOnce();
 
       // ...and the removal lands on the following one.
-      await hooks.emit("session_start", sessionStart("s2"), api);
+      await hooks.emit("session.start", sessionStart("s2"), api);
       expect(handler).toHaveBeenCalledOnce();
     });
   });
@@ -279,14 +279,14 @@ describe(HooksManager, () => {
       const before = mockHook();
       const after = mockHook();
 
-      hooks.on("session_start", before);
-      hooks.on("session_start", () => {
+      hooks.on("session.start", before);
+      hooks.on("session.start", () => {
         throw new Error("boom");
       });
-      hooks.on("session_start", after);
+      hooks.on("session.start", after);
 
       await expect(
-        hooks.emit("session_start", sessionStart("s1"), api)
+        hooks.emit("session.start", sessionStart("s1"), api)
       ).resolves.toBeUndefined();
 
       expect(before).toHaveBeenCalledOnce();
@@ -302,12 +302,12 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
       const after = mockHook();
 
-      hooks.on("session_start", async () => {
+      hooks.on("session.start", async () => {
         await Promise.reject(new Error("boom"));
       });
-      hooks.on("session_start", after);
+      hooks.on("session.start", after);
 
-      await hooks.emit("session_start", sessionStart("s1"), api);
+      await hooks.emit("session.start", sessionStart("s1"), api);
 
       expect(after).toHaveBeenCalledOnce();
       warn.mockRestore();
@@ -317,45 +317,45 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
 
       await expect(
-        hooks.emit("session_start", sessionStart("s1"), api)
+        hooks.emit("session.start", sessionStart("s1"), api)
       ).resolves.toBeUndefined();
     });
 
     test("should resolve with the value of the last handler that returned one", async () => {
       const hooks = new HooksManager();
 
-      hooks.on("session_start", () => "first");
-      hooks.on("session_start", async () => {
+      hooks.on("session.start", () => "first");
+      hooks.on("session.start", async () => {
         await Promise.resolve();
         return "second";
       });
 
       await expect(
-        hooks.emit("session_start", sessionStart("s1"), api)
+        hooks.emit("session.start", sessionStart("s1"), api)
       ).resolves.toBe("second");
     });
 
     test("should keep the previous value when a handler returns nothing", async () => {
       const hooks = new HooksManager();
 
-      hooks.on("session_start", () => "kept");
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => "kept");
+      hooks.on("session.start", () => {
         /* abstains */
       });
 
       await expect(
-        hooks.emit("session_start", sessionStart("s1"), api)
+        hooks.emit("session.start", sessionStart("s1"), api)
       ).resolves.toBe("kept");
     });
 
     test("should keep the previous value when a handler returns null", async () => {
       const hooks = new HooksManager();
 
-      hooks.on("session_start", () => "kept");
-      hooks.on("session_start", () => null);
+      hooks.on("session.start", () => "kept");
+      hooks.on("session.start", () => null);
 
       await expect(
-        hooks.emit("session_start", sessionStart("s1"), api)
+        hooks.emit("session.start", sessionStart("s1"), api)
       ).resolves.toBe("kept");
     });
 
@@ -365,13 +365,13 @@ describe(HooksManager, () => {
       });
       const hooks = new HooksManager();
 
-      hooks.on("session_start", () => "kept");
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => "kept");
+      hooks.on("session.start", () => {
         throw new Error("boom");
       });
 
       await expect(
-        hooks.emit("session_start", sessionStart("s1"), api)
+        hooks.emit("session.start", sessionStart("s1"), api)
       ).resolves.toBe("kept");
       warn.mockRestore();
     });
@@ -379,12 +379,12 @@ describe(HooksManager, () => {
     test("should resolve with undefined when no handler returns a value", async () => {
       const hooks = new HooksManager();
 
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => {
         /* abstains */
       });
 
       await expect(
-        hooks.emit("session_start", sessionStart("s1"), api)
+        hooks.emit("session.start", sessionStart("s1"), api)
       ).resolves.toBeUndefined();
     });
 
@@ -396,7 +396,7 @@ describe(HooksManager, () => {
       ).toEqualTypeOf<Promise<string | undefined>>();
       // An event whose handlers were registered without an `R` keeps `unknown`.
       expectTypeOf(
-        hooks.emit("session_start", sessionStart("s1"), api)
+        hooks.emit("session.start", sessionStart("s1"), api)
       ).toEqualTypeOf<Promise<unknown>>();
 
       hooks.on("custom:result", () => "ok");
@@ -409,28 +409,28 @@ describe(HooksManager, () => {
     test("should resolve with every value the handlers returned, in run order", async () => {
       const hooks = new HooksManager();
 
-      hooks.on("session_start", () => "first");
-      hooks.on("session_start", async () => {
+      hooks.on("session.start", () => "first");
+      hooks.on("session.start", async () => {
         await Promise.resolve();
         return "second";
       });
 
       await expect(
-        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+        hooks.emitAsyncHooks("session.start", sessionStart("s1"), api)
       ).resolves.toStrictEqual(["first", "second"]);
     });
 
     test("should drop the handlers that abstained", async () => {
       const hooks = new HooksManager();
 
-      hooks.on("session_start", () => "kept");
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => "kept");
+      hooks.on("session.start", () => {
         /* abstains */
       });
-      hooks.on("session_start", () => null);
+      hooks.on("session.start", () => null);
 
       await expect(
-        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+        hooks.emitAsyncHooks("session.start", sessionStart("s1"), api)
       ).resolves.toStrictEqual(["kept"]);
     });
 
@@ -440,14 +440,14 @@ describe(HooksManager, () => {
       });
       const hooks = new HooksManager();
 
-      hooks.on("session_start", () => "before");
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => "before");
+      hooks.on("session.start", () => {
         throw new Error("boom");
       });
-      hooks.on("session_start", () => "after");
+      hooks.on("session.start", () => "after");
 
       await expect(
-        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+        hooks.emitAsyncHooks("session.start", sessionStart("s1"), api)
       ).resolves.toStrictEqual(["before", "after"]);
       warn.mockRestore();
     });
@@ -456,7 +456,7 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
 
       await expect(
-        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+        hooks.emitAsyncHooks("session.start", sessionStart("s1"), api)
       ).resolves.toStrictEqual([]);
     });
 
@@ -465,20 +465,20 @@ describe(HooksManager, () => {
       const order: string[] = [];
 
       hooks.on(
-        "session_start",
+        "session.start",
         () => {
           order.push("high");
           return "high";
         },
         { priority: 10 }
       );
-      hooks.on("session_start", () => {
+      hooks.on("session.start", () => {
         order.push("low");
         return "low";
       });
 
       await expect(
-        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+        hooks.emitAsyncHooks("session.start", sessionStart("s1"), api)
       ).resolves.toStrictEqual(["high", "low"]);
       expect(order).toStrictEqual(["high", "low"]);
     });
@@ -491,7 +491,7 @@ describe(HooksManager, () => {
       ).toEqualTypeOf<Promise<string[]>>();
       // An event whose handlers were registered without an `R` keeps `unknown`.
       expectTypeOf(
-        hooks.emitAsyncHooks("session_start", sessionStart("s1"), api)
+        hooks.emitAsyncHooks("session.start", sessionStart("s1"), api)
       ).toEqualTypeOf<Promise<unknown[]>>();
     });
   });

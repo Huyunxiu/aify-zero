@@ -545,7 +545,7 @@ export class Agent {
     this.#startedFromUserTurn = mostRecentTurn.type === "user";
 
     await this.hooks.emit(
-      "session_start",
+      "session.start",
       {
         sessionId: this.sessionId,
         name: this.name,
@@ -636,7 +636,7 @@ export class Agent {
       } finally {
         this.#running = false;
         await this.hooks.emit(
-          "session_end",
+          "session.end",
           { sessionId: this.sessionId },
           this.extensionApi
         );
@@ -713,7 +713,7 @@ export class Agent {
           createdAt: startedAt,
         });
         await this.hooks.emit(
-          "compaction:start",
+          "compaction.start",
           { sessionId: this.sessionId, trigger: signal.trigger },
           this.extensionApi
         );
@@ -810,7 +810,7 @@ export class Agent {
         });
 
         await this.hooks.emit(
-          "compaction:end",
+          "compaction.end",
           { sessionId: this.sessionId, record },
           this.extensionApi
         );
@@ -898,7 +898,7 @@ export class Agent {
       });
 
       await this.hooks.emit(
-        "title_generated",
+        "title.generated",
         { sessionId: this.sessionId, title },
         this.extensionApi
       );
@@ -1238,7 +1238,7 @@ export class Agent {
     // before the model is asked anything, so the history the model is about to
     // read has their results in it.
     //
-    // `tool:before` had its say when the calls were held — the answers are what
+    // `tool.start` had its say when the calls were held — the answers are what
     // decides them now, which is why the approved ids are handed over rather
     // than the hooks being asked the same question twice.
     const { approvedToolApprovals, deniedToolApprovals } =
@@ -1367,7 +1367,7 @@ export class Agent {
         instructions: this.#instructions,
         model,
         // The SDK is given tools it can only describe: an `execute` in this set
-        // would have it run the calls itself, out of `tool:before`'s reach.
+        // would have it run the calls itself, out of `tool.start`'s reach.
         tools: stripToolExecution(this.tools),
         stopWhen: isStepCount(1),
         reasoning: this.context.modelEffort
@@ -1799,7 +1799,7 @@ export class Agent {
       createdAt,
     });
     await this.hooks.emit(
-      "compaction:start",
+      "compaction.start",
       { sessionId: this.sessionId, trigger: input.trigger },
       this.extensionApi
     );
@@ -1886,7 +1886,7 @@ export class Agent {
       }
 
       await this.hooks.emit(
-        "compaction:end",
+        "compaction.end",
         { sessionId: this.sessionId, record: result.record },
         this.extensionApi
       );

@@ -40,7 +40,7 @@ export type CompactionEndEvent = {
 };
 
 /**
- * One tool call, about to run. Shared by the `tool:before` and `tool:after`
+ * One tool call, about to run. Shared by the `tool.start` and `tool.end`
  * events: the fields describing the call are the same either way, and only the
  * outcome of having run it differs.
  */
@@ -51,8 +51,8 @@ export type ToolCallHookEvent = {
   toolCallId: string;
   toolName: string;
   /**
-   * The input the tool is called with. `tool:after` reports the input that was
-   * actually executed, which a `tool:before` handler may have rewritten.
+   * The input the tool is called with. `tool.end` reports the input that was
+   * actually executed, which a `tool.start` handler may have rewritten.
    */
   input: unknown;
   /**
@@ -63,19 +63,19 @@ export type ToolCallHookEvent = {
 };
 
 /**
- * What a `tool:before` handler may return. Returning `undefined` (or `null`)
+ * What a `tool.start` handler may return. Returning `undefined` (or `null`)
  * abstains, so a handler that only cares about side effects leaves the call as
  * it is. Every handler has a veto: a refusal anywhere in the run is the run's
  * answer, an `ask` stands over an `allow` — the user is not asked to overrule a
  * hook — and only a run in which nobody had an opinion leaves the call alone.
- * See `resolveToolBeforeDecision`, which does the folding.
+ * See `resolveToolStartDecision`, which does the folding.
  */
-export type ToolBeforeDecision =
+export type ToolStartDecision =
   | { decision: "allow" }
   | { decision: "deny"; reason?: string }
   | { decision: "ask" };
 
-export type ToolAfterEvent = ToolCallHookEvent & {
+export type ToolEndEvent = ToolCallHookEvent & {
   outcome: "result" | "error" | "denied";
   /** The tool's return value when it produced one. */
   output?: unknown;
@@ -99,24 +99,34 @@ export const TOOL_DENIED_TEXT = "Tool call execution denied.";
  * ```ts
  * declare module "@workspace/agent/hooks-manager" {
  *   interface HooksMap {
- *     "tool_called": HookHandler<{ toolName: string }>;
+ *     "tool.called": HookHandler<{ toolName: string }>;
  *   }
  * }
  * ```
+ *
+ * 命名规则：第一段是主语，第二段是相位。
+ *
+ * - `start` / `end` 圈出主体自己在的一段时间：它开始、它结束。中间发生
+ *   什么不写进名字。
+ * - `generated` 是一个单点事实，没有配对的另一端。
+ *
+ * 相位只回答“什么时候”。处理器能改什么，由它的 `R` 回答。不要再引入
+ * `before` / `after` / `pre` / `post`：它们修饰的是一个动作，而这里的事件
+ * 多数是对象生命周期的边界。
  */
 export interface HooksMap {
-  session_start: HookHandler<SessionStartEvent>;
-  session_end: HookHandler<SessionEndEvent>;
-  title_generated: HookHandler<TitleGeneratedEvent>;
-  "compaction:start": HookHandler<CompactionStartEvent>;
-  "compaction:end": HookHandler<CompactionEndEvent>;
+  "session.start": HookHandler<SessionStartEvent>;
+  "session.end": HookHandler<SessionEndEvent>;
+  "title.generated": HookHandler<TitleGeneratedEvent>;
+  "compaction.start": HookHandler<CompactionStartEvent>;
+  "compaction.end": HookHandler<CompactionEndEvent>;
   /**
    * Raised once per client tool call, before it runs. This is the only place a
    * call can be turned down or its input rewritten: the tools are executed by
    * the agent loop, not by the SDK, precisely so that this point exists.
    */
-  "tool:before": HookHandler<ToolCallHookEvent, ToolBeforeDecision>;
-  "tool:after": HookHandler<ToolAfterEvent>;
+  "tool.start": HookHandler<ToolCallHookEvent, ToolStartDecision>;
+  "tool.end": HookHandler<ToolEndEvent>;
 }
 
 /**
@@ -185,12 +195,12 @@ const DEFAULT_PRIORITY = 0;
  *
  * ```ts
  * const hooks = new HooksManager();
- * const off = hooks.on("session_start", (event, api) => {
+ * const off = hooks.on("session.start", (event, api) => {
  *   console.log(event.sessionId, api);
  * });
  * off(); // unsubscribe
  *
- * await hooks.emit("session_start", event, api); // by the hook owner
+ * await hooks.emit("session.start", event, api); // by the hook owner
  * ```
  *
  * Handlers run sequentially, from the highest priority down, and each one is
