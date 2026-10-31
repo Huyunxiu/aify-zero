@@ -83,11 +83,6 @@ export interface AgentStore {
     options?: { activeStreamId?: string }
   ): Promise<TurnRecord[]>;
 
-  setActiveHead(
-    sessionId: string,
-    messageId: string | undefined
-  ): Promise<number>;
-
   /**
    * Records the stream currently running for the session and moves it to
    * `running`, in one write so the two cannot disagree.
@@ -134,8 +129,14 @@ export interface AgentStore {
    *
    * 带 `inboxId` 时，删除 Inbox 行和写入 turn 在同一个事务里完成：删除 0 行
    * 说明这条消息已被另一个调用者领走，抛 `InboxMessageNotFoundError`。
+   *
+   * 带 `head` 时，同一事务里把这条 turn 设为 branch 的新 head。turn 只追加，
+   * 压缩记录切点而不把自己插进 branch 中间，所以 head 永远指向末尾的那条。
    */
-  saveTurn(turn: TurnWrite, options?: { inboxId?: string }): Promise<number>;
+  saveTurn(
+    turn: TurnWrite,
+    options?: { inboxId?: string; head?: boolean }
+  ): Promise<number>;
 
   /** fork 专用：批量写入 turn 行和 step 行。 */
   saveTurns(turns: TurnWrite[]): Promise<number>;
@@ -166,11 +167,11 @@ export interface AgentStore {
    */
   insertInboxMessage(input: EnqueueInboxInput): Promise<InboxMessage>;
 
-  /** 删除一条待发送消息；返回删除的行数。 */
-  deleteInboxMessage(sessionId: string, id: string): Promise<number>;
-
-  /** 清空会话的待发送消息；返回删除的行数。 */
-  clearInboxMessages(sessionId: string): Promise<number>;
+  /** 删除会话的待发送消息；`ids` 省略时清空。返回删除的行数。 */
+  deleteInboxMessages(
+    sessionId: string,
+    ids?: readonly string[]
+  ): Promise<number>;
 
   /**
    * 原子领取 next-step 消息，并把它们写进指定 assistant turn 的 step 表。
@@ -190,17 +191,6 @@ export interface AgentStore {
   promoteStaleInboxMessages(sessionId: string): Promise<number>;
 
   /**
-   * 追加一条 turn 并把它设为 branch 的新 head。
-   *
-   * 与 `saveTurn` 的区别：这里只管插入和拓扑，不做 upsert；插入和
-   * `activeHeadId` 的更新在同一个事务里完成，失败不会在 branch 上留下孤儿。
-   *
-   * 它只追加，不插入中间：手工压缩的切点记录在 `CompactionRecord` 里，branch
-   * 始终保持线性，客户端本地的 turn 列表因此永远是 branch 的前缀。
-   */
-  insertTurnInBranch({ turn }: { turn: TurnWrite }): Promise<void>;
-
-  /**
    * 回合开始时先把 turn 行写成 `streaming`，并把它设为 branch head。
    *
    * 这一步不写 step：新回合还没有 step，审批恢复的 step 已经在表里。它的价值
@@ -213,21 +203,15 @@ export interface AgentStore {
   beginTurn({ turn }: { turn: TurnWrite }): Promise<void>;
 
   /**
-   * 只更新 turn 行的 status/detail/completedAt，不碰 step。
+   * 更新 turn 行，并按 `stepIds` 指名回写 step 行。
    *
-   * `turn.finish` 之后、收尾循环之前调用：即使进程在两者之间退出，turn 的
-   * 终态也已经落库，不会让一条已经跑完的 turn 被恢复成 `error`。
-   */
-  updateTurnHeader(id: string, turn: AgentTurn): Promise<number>;
-
-  /**
-   * 用内存里的完整 turn 更新已有 turn。
+   * `stepIds` 省略时只写 status/detail/completedAt：`turn.finish` 之后、收尾循环
+   * 之前先落终态，进程在两者之间退出了也不会让一条已经跑完的 turn 被恢复成
+   * `error`。
    *
-   * 更新 status/detail/completedAt 等行字段，并同步它的 step 行。step 的
-   * `seq` 来自它在 content 里的下标；turn 内的 step 只追加，所以下标稳定。
-   *
-   * `stepIds` 限定要回写的 step：已经由 journal 写过的 step 不必再重写一遍，
-   * 回合结束通常只需要补写审批恢复时改动的那一条。省略时回写全部 step。
+   * 传集合时只回写集合里的 step。step 的 `seq` 来自它在 content 里的下标；
+   * turn 内的 step 只追加，所以下标稳定。已经由 journal 写过的 step 不必再写
+   * 一遍，回合结束通常只需要补写审批恢复时改动的那一条。
    *
    * @returns 更新到的 turn 行数；0 表示这条 turn 还没有行。
    */

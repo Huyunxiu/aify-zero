@@ -10,7 +10,7 @@ import type {
   SummarizeFn,
 } from "../src/compaction/types.js";
 import { SkillManager } from "../src/skill/index.js";
-import type { AgentStore } from "../src/storage/index.js";
+import type { AgentStore, TurnWrite } from "../src/storage/index.js";
 import type { AgentToolSet } from "../src/types.js";
 import {
   asTurns,
@@ -31,14 +31,11 @@ const compactableTurns = (): AgentTurn<AgentToolSet>[] =>
 
 /** 只实现压缩路径用到的写入。 */
 class FakeStore {
-  readonly inserted: Parameters<AgentStore["insertTurnInBranch"]>[0]["turn"][] =
-    [];
+  readonly inserted: TurnWrite[] = [];
 
-  insertTurnInBranch(
-    input: Parameters<AgentStore["insertTurnInBranch"]>[0]
-  ): Promise<void> {
-    this.inserted.push(input.turn);
-    return Promise.resolve();
+  saveTurn(turn: TurnWrite): Promise<number> {
+    this.inserted.push(turn);
+    return Promise.resolve(1);
   }
 }
 

@@ -92,18 +92,17 @@ class FakeStore {
     );
   }
 
-  deleteInboxMessage(sessionId: string, id: string): Promise<number> {
+  deleteInboxMessages(
+    sessionId: string,
+    ids?: readonly string[]
+  ): Promise<number> {
     const before = this.messages.length;
     this.messages = this.messages.filter(
-      (message) => !(message.sessionId === sessionId && message.id === id)
-    );
-    return Promise.resolve(before - this.messages.length);
-  }
-
-  clearInboxMessages(sessionId: string): Promise<number> {
-    const before = this.messages.length;
-    this.messages = this.messages.filter(
-      (message) => message.sessionId !== sessionId
+      (message) =>
+        !(
+          message.sessionId === sessionId &&
+          (ids === undefined || ids.includes(message.id))
+        )
     );
     return Promise.resolve(before - this.messages.length);
   }

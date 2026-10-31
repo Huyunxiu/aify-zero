@@ -42,11 +42,11 @@ export class AgentInbox {
   }
 
   cancel(sessionId: string, id: string): Promise<number> {
-    return this.#store.deleteInboxMessage(sessionId, id);
+    return this.#store.deleteInboxMessages(sessionId, [id]);
   }
 
   clear(sessionId: string): Promise<number> {
-    return this.#store.clearInboxMessages(sessionId);
+    return this.#store.deleteInboxMessages(sessionId);
   }
 
   /**

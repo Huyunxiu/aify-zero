@@ -75,10 +75,6 @@ class FakeStore {
     return Promise.resolve(1);
   }
 
-  setActiveHead(): Promise<number> {
-    return Promise.resolve(1);
-  }
-
   beginTurn({ turn }: { turn: unknown }): Promise<void> {
     this.begun.push(turn);
     return Promise.resolve();
@@ -86,10 +82,6 @@ class FakeStore {
 
   saveStep(step: unknown): Promise<number> {
     this.savedSteps.push(step);
-    return Promise.resolve(1);
-  }
-
-  updateTurnHeader(): Promise<number> {
     return Promise.resolve(1);
   }
 

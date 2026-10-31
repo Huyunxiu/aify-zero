@@ -415,7 +415,7 @@ maxOutputTokens = window
 | `recent` | 第一个保留 turn      | 新 turn C 的 parent 是旧 head；`activeHeadId` → C |
 | `full`   | 缺省                 | 同 `recent`；标记之前的内容全部被 checkpoint 替代 |
 
-[`insertTurnInBranch`](../storage/sqlite-store.ts#L216-L243) 只做追加：
+[`saveTurn`](../storage/sqlite-store.ts#L306-L355)（`head: true`）只做追加：
 
 ```text
 insert C (parent = old head)
@@ -456,7 +456,7 @@ UI 在提交前解析 `/compact`；它不接受额外文本。POST 返回后立�
 | 层       | 机制                                 | 防什么                                     |
 | -------- | ------------------------------------ | ------------------------------------------ |
 | 回合占用 | `activeStreamId` + `STREAM_REGISTRY` | 压缩插入运行中的回合；回合插进运行中的压缩 |
-| 数据库   | `insertTurnInBranch` 的事务          | insert / reparent / head 只写了一半        |
+| 数据库   | `saveTurn` 的事务                    | insert / reparent / head 只写了一半        |
 
 准备段一开始就检查占用：`createSession` 发现同一会话还有未结束的流就返回 `SESSION_BUSY`，手工压缩同理。已结束但尚未从注册表摘除的条目不算占用，审批恢复因此不会撞上清理 race。检查到流注册之间没有互斥：两个调用同时进入同一会话时都能通过检查，`activeStreamId` 由后写的一方覆盖。
 

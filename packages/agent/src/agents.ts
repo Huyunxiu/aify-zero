@@ -600,10 +600,9 @@ export class Agent {
           content: mostRecentTurn,
           createdAt: new Date(),
         },
-        { inboxId }
+        { inboxId, head: true }
       );
       lastTurnId = mostRecentTurn.id;
-      await this.store.setActiveHead(this.sessionId, mostRecentTurn.id);
     }
 
     const { stream, write, close, fail } = this.#createEventStream({
@@ -832,8 +831,8 @@ export class Agent {
           status: "done",
         });
 
-        await this.store.insertTurnInBranch({
-          turn: {
+        await this.store.saveTurn(
+          {
             id: turn.id,
             sessionId: this.sessionId,
             type: "compaction",
@@ -842,7 +841,8 @@ export class Agent {
             parentId: plan.parentTurnId,
             createdAt: new Date(turn.createdAt),
           },
-        });
+          { head: true }
+        );
 
         await this.hooks.emit(
           "post_compact",
@@ -1177,7 +1177,7 @@ export class Agent {
     const finishedTurn = this.session.turns.find((turn) => turn.id === turnId);
     if (finishedTurn) {
       try {
-        await this.store.updateTurnHeader(turnId, finishedTurn);
+        await this.store.updateTurn(turnId, finishedTurn);
       } catch (error) {
         logger.warn("[agent] failed to persist turn header", error);
       }
@@ -1217,16 +1217,18 @@ export class Agent {
         stepIds: changedStepIds,
       });
       if (updated === 0) {
-        await this.store.saveTurn({
-          id: changed.id,
-          sessionId: this.sessionId,
-          type: changed.type,
-          metadata: {},
-          content: changed,
-          parentId: input.parentId ?? null,
-          createdAt: new Date(changed.createdAt),
-        });
-        await this.store.setActiveHead(this.sessionId, changed.id);
+        await this.store.saveTurn(
+          {
+            id: changed.id,
+            sessionId: this.sessionId,
+            type: changed.type,
+            metadata: {},
+            content: changed,
+            parentId: input.parentId ?? null,
+            createdAt: new Date(changed.createdAt),
+          },
+          { head: true }
+        );
       }
     }
 
