@@ -59,7 +59,11 @@ import type { ResolvedCompactionPolicy, SummarizeFn } from "./compaction/types";
 import { ExtensionManager } from "./extensions/manager";
 import type { Extension } from "./extensions/types";
 import { HooksManager } from "./hooks-manager";
-import type { HookContext } from "./hooks-manager";
+import type {
+  HookContext,
+  StepEndEvent,
+  StepStartEvent,
+} from "./hooks-manager";
 import { AgentInbox } from "./inbox/agent-inbox";
 import type { AgentStore, SessionEndStatus, TurnRecord } from "./storage";
 import { journaledStepTarget } from "./storage/step-journal";
@@ -545,7 +549,7 @@ export class Agent {
     this.#startedFromUserTurn = mostRecentTurn.type === "user";
 
     await this.hooks.emit(
-      "session.start",
+      "turn_start",
       {
         sessionId: this.sessionId,
         name: this.name,
@@ -636,7 +640,7 @@ export class Agent {
       } finally {
         this.#running = false;
         await this.hooks.emit(
-          "session.end",
+          "turn_end",
           { sessionId: this.sessionId },
           this.extensionApi
         );
@@ -686,6 +690,12 @@ export class Agent {
 
     void (async () => {
       let outcome: SessionEndStatus = "error";
+      const stepEvent: StepStartEvent = {
+        sessionId: this.sessionId,
+        turnId,
+        stepId,
+        stepType: "compaction",
+      };
 
       try {
         // 标记先以 streaming 出现，长摘要期间读者能看到它在进行；失败时
@@ -704,6 +714,7 @@ export class Agent {
           model: modelId,
           createdAt: startedAt,
         });
+        await this.hooks.emit("step_start", stepEvent, this.extensionApi);
         await write({
           type: "compaction.start",
           id: compactionId,
@@ -713,7 +724,7 @@ export class Agent {
           createdAt: startedAt,
         });
         await this.hooks.emit(
-          "compaction.start",
+          "pre_compact",
           { sessionId: this.sessionId, trigger: signal.trigger },
           this.extensionApi
         );
@@ -810,7 +821,7 @@ export class Agent {
         });
 
         await this.hooks.emit(
-          "compaction.end",
+          "post_compact",
           { sessionId: this.sessionId, record },
           this.extensionApi
         );
@@ -826,6 +837,17 @@ export class Agent {
         });
       } finally {
         this.#running = false;
+        await this.hooks.emit(
+          "step_end",
+          {
+            ...stepEvent,
+            status: outcome === "canceled" ? "aborted" : outcome,
+            ...(outcome === "done"
+              ? { usage: ZERO_USAGE, finishReason: "stop" }
+              : {}),
+          },
+          this.extensionApi
+        );
         try {
           // 先落定会话行再关流：读者读到结尾时，branch 和 activeStreamId
           // 都已经是一致的。
@@ -844,8 +866,15 @@ export class Agent {
     modelId: string,
     turn: AgentTurn<AgentToolSet>
   ) {
+    const stepId = generateStepId();
+    const stepEvent: StepStartEvent = {
+      sessionId: this.sessionId,
+      turnId,
+      stepId,
+      stepType: "session.title",
+    };
+
     try {
-      const stepId = generateStepId();
       await this.context.controller?.write({
         type: "step.start",
         stepType: "session.title",
@@ -854,6 +883,7 @@ export class Agent {
         stepId,
         createdAt: Date.now(),
       });
+      await this.hooks.emit("step_start", stepEvent, this.extensionApi);
 
       const eventId = generateEventId();
       await this.context.controller?.write({
@@ -898,12 +928,31 @@ export class Agent {
       });
 
       await this.hooks.emit(
-        "title.generated",
+        "step_end",
+        {
+          ...stepEvent,
+          status: "done",
+          usage: step.usage,
+          finishReason: step.finalStep.finishReason,
+        },
+        this.extensionApi
+      );
+
+      await this.hooks.emit(
+        "session_title_generated",
         { sessionId: this.sessionId, title },
         this.extensionApi
       );
       return title;
     } catch (error) {
+      await this.hooks.emit(
+        "step_end",
+        {
+          ...stepEvent,
+          status: this.context.abortSignal?.aborted ? "aborted" : "error",
+        },
+        this.extensionApi
+      );
       logger.warn("[agent] failed to generate session title", error);
     }
   }
@@ -1210,15 +1259,53 @@ export class Agent {
   }
 
   /**
-   * Runs one step: issues a single `streamText` call, pipes its chunks into the
-   * open UI message, and folds the step's assistant and tool messages back into
-   * the history so the next step sees them.
+   * Runs one step and brackets it with the step hooks.
+   *
+   * `step_start` fires before the step streams; `step_end` fires once the step
+   * has ended — finished, failed or aborted — so every start has its end and a
+   * hook never has to infer from the turn's ending whether a step was cut
+   * short.
+   */
+  async #runStep(input: AgentStepInput): Promise<StepOutcome> {
+    const event: StepStartEvent = {
+      sessionId: this.sessionId,
+      turnId: input.turnId,
+      stepId: input.stepId,
+      stepType: input.stepType,
+    };
+
+    await this.hooks.emit("step_start", event, this.extensionApi);
+
+    const outcome = await this.#runStepCall(input);
+
+    await this.hooks.emit(
+      "step_end",
+      {
+        ...event,
+        status: outcome.ok ? "done" : outcome.reason,
+        ...(outcome.ok
+          ? {
+              usage: outcome.result.usage,
+              finishReason: outcome.result.finishReason,
+            }
+          : {}),
+      },
+      this.extensionApi
+    );
+
+    return outcome;
+  }
+
+  /**
+   * Issues a single `streamText` call, pipes its chunks into the open UI
+   * message, and folds the step's assistant and tool messages back into the
+   * history so the next step sees them.
    *
    * Reports how the step ended rather than failing the stream: an aborted or
    * failed step is an ending the turn has to record, not a reason for the reader
    * to be left without one.
    */
-  async #runStep(input: AgentStepInput): Promise<StepOutcome> {
+  async #runStepCall(input: AgentStepInput): Promise<StepOutcome> {
     const { turnId, stepId } = input;
     const model = this.#getModel();
     const messages = this.session.modelMessages;
@@ -1238,9 +1325,9 @@ export class Agent {
     // before the model is asked anything, so the history the model is about to
     // read has their results in it.
     //
-    // `tool.start` had its say when the calls were held — the answers are what
-    // decides them now, which is why the approved ids are handed over rather
-    // than the hooks being asked the same question twice.
+    // `pre_tool_call` had its say when the calls were held — the answers are
+    // what decides them now, which is why the approved ids are handed over
+    // rather than the hooks being asked the same question twice.
     const { approvedToolApprovals, deniedToolApprovals } =
       collectToolApprovals<AgentToolSet>({ messages });
 
@@ -1367,7 +1454,7 @@ export class Agent {
         instructions: this.#instructions,
         model,
         // The SDK is given tools it can only describe: an `execute` in this set
-        // would have it run the calls itself, out of `tool.start`'s reach.
+        // would have it run the calls itself, out of `pre_tool_call`'s reach.
         tools: stripToolExecution(this.tools),
         stopWhen: isStepCount(1),
         reasoning: this.context.modelEffort
@@ -1782,6 +1869,13 @@ export class Agent {
     const compactionId = generateEventId();
     const stepId = generateStepId();
     const createdAt = Date.now();
+    const stepEvent: StepStartEvent = {
+      sessionId: this.sessionId,
+      turnId: placement.turnId,
+      stepId,
+      stepType: "compaction",
+    };
+    let stepStatus: StepEndEvent["status"] = "error";
     await this.context.controller?.write({
       type: "step.start",
       stepType: "compaction",
@@ -1790,6 +1884,7 @@ export class Agent {
       stepId,
       createdAt,
     });
+    await this.hooks.emit("step_start", stepEvent, this.extensionApi);
     await this.context.controller?.write({
       type: "compaction.start",
       id: compactionId,
@@ -1799,7 +1894,7 @@ export class Agent {
       createdAt,
     });
     await this.hooks.emit(
-      "compaction.start",
+      "pre_compact",
       { sessionId: this.sessionId, trigger: input.trigger },
       this.extensionApi
     );
@@ -1827,6 +1922,7 @@ export class Agent {
           error: "compaction produced no record",
           createdAt: Date.now(),
         });
+        stepStatus = "error";
         return false;
       }
 
@@ -1886,13 +1982,15 @@ export class Agent {
       }
 
       await this.hooks.emit(
-        "compaction.end",
+        "post_compact",
         { sessionId: this.sessionId, record: result.record },
         this.extensionApi
       );
+      stepStatus = "done";
       return true;
     } catch (error) {
       if (this.context.abortSignal?.aborted) {
+        stepStatus = "aborted";
         return false;
       }
       // 摘要/持久化异常作为可恢复的压缩失败记录；不把压力压缩失败升级为 turn 失败。
@@ -1903,7 +2001,20 @@ export class Agent {
         error: getErrorMessage(error),
         createdAt: Date.now(),
       });
+      stepStatus = "error";
       return false;
+    } finally {
+      await this.hooks.emit(
+        "step_end",
+        {
+          ...stepEvent,
+          status: stepStatus,
+          ...(stepStatus === "done"
+            ? { usage: ZERO_USAGE, finishReason: "stop" }
+            : {}),
+        },
+        this.extensionApi
+      );
     }
   }
 }

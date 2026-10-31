@@ -166,6 +166,28 @@ describe("手工压缩的 stream signal", () => {
     expect(finished).toStrictEqual(["done"]);
   });
 
+  test("step hooks 围住压缩 step", async () => {
+    const agent = buildAgent(new FakeStore());
+    const stepHooks: string[] = [];
+    agent.hooks.on("step_start", (event) => {
+      stepHooks.push(`start:${event.stepType}`);
+    });
+    agent.hooks.on("step_end", (event) => {
+      stepHooks.push(`end:${event.status}`);
+    });
+
+    const stream = await agent.stream({
+      turns: compactableTurns(),
+      modelId: "test-model",
+      streamId: "test-stream",
+      signal: { type: "compaction", trigger: "manual" },
+      onFinish: async () => {},
+    });
+    await readAll(stream);
+
+    expect(stepHooks).toStrictEqual(["start:compaction", "end:done"]);
+  });
+
   test("没有可压缩内容时同步失败，不产生流", async () => {
     const store = new FakeStore();
     const agent = buildAgent(store);
@@ -196,6 +218,13 @@ describe("手工压缩的 stream signal", () => {
         })
     );
     const finished: string[] = [];
+    const stepHooks: string[] = [];
+    agent.hooks.on("step_start", (event) => {
+      stepHooks.push(`start:${event.stepType}`);
+    });
+    agent.hooks.on("step_end", (event) => {
+      stepHooks.push(`end:${event.status}`);
+    });
 
     const stream = await agent.stream({
       turns: compactableTurns(),
@@ -215,5 +244,6 @@ describe("手工压缩的 stream signal", () => {
     expect(events.map((event) => event.type)).not.toContain("turn.finish");
     expect(store.inserted).toHaveLength(0);
     expect(finished).toStrictEqual(["canceled"]);
+    expect(stepHooks).toStrictEqual(["start:compaction", "end:aborted"]);
   });
 });

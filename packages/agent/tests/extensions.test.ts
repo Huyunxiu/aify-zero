@@ -86,9 +86,9 @@ const makeDeps = () => {
   return { deps, tools, hooks };
 };
 
-const emitSessionStart = (hooks: HooksManager) =>
+const emitTurnStart = (hooks: HooksManager) =>
   hooks.emit(
-    "session.start",
+    "turn_start",
     {
       sessionId: "session-1",
       name: "main",
@@ -222,24 +222,24 @@ describe(ExtensionManager, () => {
   test("stops listening to hooks and calls dispose once", async () => {
     const { deps, hooks } = makeDeps();
     const manager = new ExtensionManager(deps);
-    const handler = vi.fn<HooksMap["session.start"]>();
+    const handler = vi.fn<HooksMap["turn_start"]>();
     const dispose = vi.fn<() => void>();
 
     await manager.add(
       new TestExtension(
         "owned",
-        (api) => api.on("session.start", handler),
+        (api) => api.on("turn_start", handler),
         dispose
       )
     );
 
-    await emitSessionStart(hooks);
+    await emitTurnStart(hooks);
     expect(handler).toHaveBeenCalledOnce();
 
     await manager.dispose("owned");
     expect(dispose).toHaveBeenCalledOnce();
 
-    await emitSessionStart(hooks);
+    await emitTurnStart(hooks);
     expect(handler).toHaveBeenCalledOnce();
 
     await expect(manager.dispose("owned")).resolves.toBeFalsy();
@@ -268,13 +268,13 @@ describe(ExtensionManager, () => {
   test("rolls back contributions when init throws", async () => {
     const { deps, tools, hooks } = makeDeps();
     const manager = new ExtensionManager(deps);
-    const handler = vi.fn<HooksMap["session.start"]>();
+    const handler = vi.fn<HooksMap["turn_start"]>();
 
     await expect(
       manager.add(
         new TestExtension("broken", (api) => {
           api.tool("broken-tool", makeTool("broken"));
-          api.on("session.start", handler);
+          api.on("turn_start", handler);
           api.systemPromptSection({
             id: "broken-section",
             render: (prompt) => prompt,
@@ -287,7 +287,7 @@ describe(ExtensionManager, () => {
     expect(tools["broken-tool"]).toBeUndefined();
     expect(manager.listSections()).toStrictEqual([]);
 
-    await emitSessionStart(hooks);
+    await emitTurnStart(hooks);
     expect(handler).not.toHaveBeenCalled();
 
     expect(manager.renderSystemPrompt("base")).toBe("base");

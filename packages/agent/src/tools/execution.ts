@@ -89,7 +89,7 @@ const elapsed = (startedAt: number) =>
  * Hands the SDK a tool set that can only describe tools, not run them.
  *
  * `streamText` executes any tool carrying an `execute`, which would put the
- * calls back out of reach of `tool.start`. Dropping the function leaves the
+ * calls back out of reach of `pre_tool_call`. Dropping the function leaves the
  * schema, the description and `toModelOutput` intact, so the model still sees
  * the same tools and the step still ends with `tool-calls` — the calls are
  * simply left for {@link executeToolCalls} to run.
@@ -108,9 +108,9 @@ export function stripToolExecution(tools: ToolSet): ToolSet {
 /**
  * Runs one step's tool calls, all at once — or holds every one of them back.
  *
- * Each call first goes through `tool.start`, and every handler of it is heard:
- * a refusal anywhere in the run is the run's answer, so one hook cannot be
- * talked out of it by another that allowed the call. If any call is left
+ * Each call first goes through `pre_tool_call`, and every handler of it is
+ * heard: a refusal anywhere in the run is the run's answer, so one hook cannot
+ * be talked out of it by another that allowed the call. If any call is left
  * answered `ask`, the whole batch is put to the user and nothing runs: the calls
  * of one step are one action, and half of it must not happen while the user is
  * deciding. What comes back then is
@@ -191,7 +191,7 @@ type ToolRun = {
 };
 
 /**
- * One call together with what `tool.start` said about it.
+ * One call together with what `pre_tool_call` said about it.
  *
  * The hooks have to be asked before anything runs: whether the batch is held is
  * known only once every one of them has answered, and a call that runs anyway
@@ -206,7 +206,8 @@ type ToolCallPlan = {
 };
 
 /**
- * Folds what every `tool.start` handler said into the one answer the call gets.
+ * Folds what every `pre_tool_call` handler said into the one answer the call
+ * gets.
  *
  * The handlers do not outrank one another — they each hold a veto: a refusal
  * anywhere in the run is the run's answer, and no later `allow` talks it out of
@@ -242,7 +243,7 @@ async function planToolCall(
   const startedAt = performance.now();
 
   const decisions = await hooks.emitAsyncHooks(
-    "tool.start",
+    "pre_tool_call",
     {
       sessionId,
       turnId,
@@ -372,7 +373,7 @@ async function runToolCall(
       providerExecuted: false,
     } as AgentStreamEvent<AgentToolSet>);
     await hooks.emit(
-      "tool.end",
+      "post_tool_call",
       { ...hookEvent, outcome: "denied", durationMs },
       extensionApi
     );
@@ -439,7 +440,7 @@ async function runToolCall(
       providerExecuted: false,
     } as AgentStreamEvent<AgentToolSet>);
     await hooks.emit(
-      "tool.end",
+      "post_tool_call",
       { ...hookEvent, input: toolInput, outcome: "result", output, durationMs },
       extensionApi
     );
@@ -476,7 +477,7 @@ async function runToolCall(
       error: errorText,
     } as AgentStreamEvent<AgentToolSet>);
     await hooks.emit(
-      "tool.end",
+      "post_tool_call",
       {
         ...hookEvent,
         input: toolInput,

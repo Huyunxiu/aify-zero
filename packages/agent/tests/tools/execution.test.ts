@@ -265,10 +265,13 @@ describe(executeToolCalls, () => {
     ]);
   });
 
-  describe("tool.start", () => {
+  describe("pre_tool_call", () => {
     test("a denial stops the call and answers the model with one", async () => {
       const hooks = new HooksManager();
-      hooks.on("tool.start", () => ({ decision: "deny", reason: "not now" }));
+      hooks.on("pre_tool_call", () => ({
+        decision: "deny",
+        reason: "not now",
+      }));
 
       // Never expected to run: the denial is what this test is about.
       const execute = vi.fn<(input: { value: string }) => EchoOutput>();
@@ -321,8 +324,8 @@ describe(executeToolCalls, () => {
         decision: "deny",
       }));
 
-      hooks.on("tool.start", lowPriority, { priority: 0 });
-      hooks.on("tool.start", highPriority, { priority: 10 });
+      hooks.on("pre_tool_call", lowPriority, { priority: 0 });
+      hooks.on("pre_tool_call", highPriority, { priority: 10 });
 
       // Never expected to run: the denial is the answer, whatever the ranking.
       const execute = vi.fn<() => EchoOutput>();
@@ -342,8 +345,8 @@ describe(executeToolCalls, () => {
 
     test("a refusal outranks a handler that would have asked", async () => {
       const hooks = new HooksManager();
-      hooks.on("tool.start", () => ({ decision: "ask" }));
-      hooks.on("tool.start", () => ({ decision: "deny" }));
+      hooks.on("pre_tool_call", () => ({ decision: "ask" }));
+      hooks.on("pre_tool_call", () => ({ decision: "deny" }));
 
       const ran: string[] = [];
       const { result, events } = await run(
@@ -370,7 +373,7 @@ describe(executeToolCalls, () => {
 
     test("a handler that abstains leaves the call alone", async () => {
       const hooks = new HooksManager();
-      hooks.on("tool.start", () => {});
+      hooks.on("pre_tool_call", () => {});
 
       const { events } = await run(
         {
@@ -435,7 +438,7 @@ describe(executeToolCalls, () => {
   describe("a call the user has to approve", () => {
     test("answers a refused call without waiting for the user", async () => {
       const hooks = new HooksManager();
-      hooks.on("tool.start", (event) => {
+      hooks.on("pre_tool_call", (event) => {
         if (event.toolName === "refused") {
           return { decision: "deny" };
         }
@@ -471,7 +474,7 @@ describe(executeToolCalls, () => {
 
     test("still refuses a call a hook turns down, approval or not", async () => {
       const hooks = new HooksManager();
-      hooks.on("tool.start", () => ({ decision: "deny" }));
+      hooks.on("pre_tool_call", () => ({ decision: "deny" }));
 
       const ran: string[] = [];
       const { result } = await run(
@@ -525,7 +528,7 @@ describe(executeToolCalls, () => {
 
   test("every call is answered, whatever its outcome", async () => {
     const hooks = new HooksManager();
-    hooks.on("tool.start", (event) =>
+    hooks.on("pre_tool_call", (event) =>
       event.toolName === "denied" ? { decision: "deny" } : undefined
     );
 
@@ -637,7 +640,7 @@ describe("the synthesized events", () => {
 
   test("land a held call in approval-requested", async () => {
     const hooks = new HooksManager();
-    hooks.on("tool.start", () => ({ decision: "ask" }));
+    hooks.on("pre_tool_call", () => ({ decision: "ask" }));
 
     const { events } = await run(
       { echo: echoTool(() => ({ output: "x", code: "ok" as const })) },
@@ -650,7 +653,7 @@ describe("the synthesized events", () => {
 
   test("land a denied call in output-denied", async () => {
     const hooks = new HooksManager();
-    hooks.on("tool.start", () => ({ decision: "deny" }));
+    hooks.on("pre_tool_call", () => ({ decision: "deny" }));
 
     const { events } = await run(
       { echo: echoTool(() => ({ output: "x", code: "ok" as const })) },
