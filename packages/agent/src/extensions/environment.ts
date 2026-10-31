@@ -107,7 +107,7 @@ export class EnvironmentExtension extends Extension {
       this.#info
     );
 
-    api.systemPromptSection({
+    api.instructionsSection({
       id: `${this.id}:environment`,
       priority: this.#sectionPriority,
       render: (prompt) => (prompt ? `${prompt}\n\n${rendered}` : rendered),

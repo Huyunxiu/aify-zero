@@ -58,9 +58,10 @@ import { createSummarizer } from "./compaction/summarizer";
 import type { ResolvedCompactionPolicy, SummarizeFn } from "./compaction/types";
 import { ExtensionManager } from "./extensions/manager";
 import type { Extension } from "./extensions/types";
-import { HooksManager } from "./hooks-manager";
+import { applyRuntimeSettingsPatches, HooksManager } from "./hooks-manager";
 import type {
   HookContext,
+  RuntimeSettings,
   StepEndEvent,
   StepStartEvent,
 } from "./hooks-manager";
@@ -136,7 +137,7 @@ export type AgentOptions = {
   session: AgentSession;
   tools?: ToolSet;
   store: AgentStore;
-  systemPrompt?: string;
+  instructions?: string;
   context: AgentContext;
   hooks?: HooksManager;
   extensionApi?: HookContext;
@@ -254,7 +255,7 @@ type StepOutcome =
 export class Agent {
   name: string;
   sessionId: string;
-  systemPrompt?: string;
+  instructions?: string;
   tools: ToolSet;
 
   store: AgentStore;
@@ -294,7 +295,7 @@ export class Agent {
   constructor(options: AgentOptions) {
     this.name = options.name;
     this.sessionId = options.sessionId;
-    this.systemPrompt = options.systemPrompt;
+    this.instructions = options.instructions;
     this.tools = options.tools ?? {};
     this.store = options.store;
     this.inbox = options.inbox ?? new AgentInbox(options.store);
@@ -374,7 +375,7 @@ export class Agent {
    * 拿到和父一致的片段。
    */
   #syncPromptSections(): void {
-    this.context.systemPromptSections = this.extensions.listSections();
+    this.context.instructionsSections = this.extensions.listSections();
   }
 
   /**
@@ -396,8 +397,12 @@ export class Agent {
     return this.#running ? this.#streamKind : undefined;
   }
 
-  #getModel() {
-    return this.provider.chatModel(this.context.modelId);
+  /** turn / step 的默认运行时设置；hook 补丁在这个对象上合并。 */
+  #runtimeSettings(): RuntimeSettings {
+    return {
+      modelId: this.context.modelId,
+      instructions: this.#instructions ?? "",
+    };
   }
 
   async stream(options: AgentStreamOptions) {
@@ -538,8 +543,8 @@ export class Agent {
     this.session.turns = turns;
     // 提示片段在 turn 开始时拼一次：同一 turn 的每一步看到同一份提示词，
     // 扩展在 turn 中途改数据也不会让后续步骤的缓存失效。
-    this.#instructions = this.extensions.renderSystemPrompt(
-      this.systemPrompt ?? ""
+    this.#instructions = this.extensions.renderInstructions(
+      this.instructions ?? ""
     );
 
     const mostRecentTurn = turns.at(-1);
@@ -548,16 +553,25 @@ export class Agent {
     }
     this.#startedFromUserTurn = mostRecentTurn.type === "user";
 
-    await this.hooks.emit(
-      "turn_start",
-      {
-        sessionId: this.sessionId,
-        name: this.name,
-        projectDirs: this.context.projectDirs,
-        sessionDir: this.context.sessionDir,
-      },
-      this.extensionApi
+    // turn_start 的返回值可以覆盖这个 turn 的模型和系统提示。用
+    // emitAsyncHooks 收集全部补丁：emit 只留最后一个返回值，会丢掉前面
+    // 扩展的贡献。
+    const runtime = applyRuntimeSettingsPatches(
+      this.#runtimeSettings(),
+      await this.hooks.emitAsyncHooks(
+        "turn_start",
+        {
+          sessionId: this.sessionId,
+          name: this.name,
+          projectDirs: this.context.projectDirs,
+          sessionDir: this.context.sessionDir,
+          modelId: this.context.modelId,
+        },
+        this.extensionApi
+      )
     );
+    this.context.modelId = runtime.modelId;
+    this.#instructions = runtime.instructions;
 
     const session = await this.store.getSessionById(this.sessionId);
     if (!session) {
@@ -695,6 +709,7 @@ export class Agent {
         turnId,
         stepId,
         stepType: "compaction",
+        modelId,
       };
 
       try {
@@ -706,15 +721,24 @@ export class Agent {
           turnType: "compaction",
           createdAt: startedAt,
         });
+        const stepStart = await this.hooks.emitAsyncHooks(
+          "step_start",
+          stepEvent,
+          this.extensionApi
+        );
+        const { modelId: stepModelId } = applyRuntimeSettingsPatches(
+          { modelId, instructions: "" },
+          stepStart
+        );
+        stepEvent.modelId = stepModelId;
         await write({
           type: "step.start",
           stepId,
           turnId,
           stepType: "compaction",
-          model: modelId,
+          model: stepModelId,
           createdAt: startedAt,
         });
-        await this.hooks.emit("step_start", stepEvent, this.extensionApi);
         await write({
           type: "compaction.start",
           id: compactionId,
@@ -733,8 +757,8 @@ export class Agent {
           projected: this.session.projected,
           policy,
           trigger: signal.trigger,
-          modelId,
-          summarize: this.#summarize(),
+          modelId: stepModelId,
+          summarize: this.#summarize(stepModelId),
           region: plan.region,
           signal: this.context.abortSignal,
         });
@@ -766,7 +790,7 @@ export class Agent {
               createdAt: startedAt,
               completedAt,
               status: "done",
-              model: modelId,
+              model: stepModelId,
               content: [
                 {
                   type: "compaction",
@@ -872,18 +896,29 @@ export class Agent {
       turnId,
       stepId,
       stepType: "session.title",
+      modelId,
     };
 
     try {
+      const stepStart = await this.hooks.emitAsyncHooks(
+        "step_start",
+        stepEvent,
+        this.extensionApi
+      );
+      const { modelId: stepModelId } = applyRuntimeSettingsPatches(
+        { modelId, instructions: "" },
+        stepStart
+      );
+      stepEvent.modelId = stepModelId;
+
       await this.context.controller?.write({
         type: "step.start",
         stepType: "session.title",
-        model: modelId,
+        model: stepModelId,
         turnId,
         stepId,
         createdAt: Date.now(),
       });
-      await this.hooks.emit("step_start", stepEvent, this.extensionApi);
 
       const eventId = generateEventId();
       await this.context.controller?.write({
@@ -897,7 +932,7 @@ export class Agent {
       const step = await generateText({
         // The turn may be reusing a `context.modelId` that a later call has
         // already replaced, so the model is resolved from the argument.
-        model: this.provider.chatModel(modelId),
+        model: this.provider.chatModel(stepModelId),
         system: TITLE_PROMPT,
         prompt: this.getTextFromUserTurn(turn),
       });
@@ -1272,16 +1307,23 @@ export class Agent {
       turnId: input.turnId,
       stepId: input.stepId,
       stepType: input.stepType,
+      modelId: this.context.modelId,
     };
 
-    await this.hooks.emit("step_start", event, this.extensionApi);
+    // 补丁只作用于这一步：模型和系统提示都不写回 context 与 `#instructions`，
+    // 下一步仍然从 turn 的默认值开始。
+    const runtime: RuntimeSettings = applyRuntimeSettingsPatches(
+      this.#runtimeSettings(),
+      await this.hooks.emitAsyncHooks("step_start", event, this.extensionApi)
+    );
 
-    const outcome = await this.#runStepCall(input);
+    const outcome = await this.#runStepCall(input, runtime);
 
     await this.hooks.emit(
       "step_end",
       {
         ...event,
+        modelId: runtime.modelId,
         status: outcome.ok ? "done" : outcome.reason,
         ...(outcome.ok
           ? {
@@ -1305,15 +1347,18 @@ export class Agent {
    * failed step is an ending the turn has to record, not a reason for the reader
    * to be left without one.
    */
-  async #runStepCall(input: AgentStepInput): Promise<StepOutcome> {
+  async #runStepCall(
+    input: AgentStepInput,
+    runtime: RuntimeSettings
+  ): Promise<StepOutcome> {
     const { turnId, stepId } = input;
-    const model = this.#getModel();
+    const model = this.provider.chatModel(runtime.modelId);
     const messages = this.session.modelMessages;
 
     await this.context.controller?.write({
       type: "step.start",
       stepType: "assistant",
-      model: this.context.modelId,
+      model: runtime.modelId,
       turnId,
       stepId,
       createdAt: Date.now(),
@@ -1451,7 +1496,7 @@ export class Agent {
     let result;
     try {
       result = streamText<ToolSet, AgentRuntimeContext>({
-        instructions: this.#instructions,
+        instructions: runtime.instructions,
         model,
         // The SDK is given tools it can only describe: an `execute` in this set
         // would have it run the calls itself, out of `pre_tool_call`'s reach.
@@ -1679,8 +1724,11 @@ export class Agent {
     return this.context.compaction ?? resolveCompactionPolicy();
   }
 
-  #summarize(): SummarizeFn {
-    return this.context.summarize ?? createSummarizer(this.#getModel());
+  #summarize(modelId = this.context.modelId): SummarizeFn {
+    return (
+      this.context.summarize ??
+      createSummarizer(this.provider.chatModel(modelId))
+    );
   }
 
   #overheadTokens(): number {
@@ -1874,17 +1922,27 @@ export class Agent {
       turnId: placement.turnId,
       stepId,
       stepType: "compaction",
+      modelId: this.context.modelId,
     };
     let stepStatus: StepEndEvent["status"] = "error";
+    const stepStart = await this.hooks.emitAsyncHooks(
+      "step_start",
+      stepEvent,
+      this.extensionApi
+    );
+    const { modelId: stepModelId } = applyRuntimeSettingsPatches(
+      { modelId: this.context.modelId, instructions: "" },
+      stepStart
+    );
+    stepEvent.modelId = stepModelId;
     await this.context.controller?.write({
       type: "step.start",
       stepType: "compaction",
-      model: this.context.modelId,
+      model: stepModelId,
       turnId: placement.turnId,
       stepId,
       createdAt,
     });
-    await this.hooks.emit("step_start", stepEvent, this.extensionApi);
     await this.context.controller?.write({
       type: "compaction.start",
       id: compactionId,
@@ -1908,8 +1966,8 @@ export class Agent {
         },
         policy,
         trigger: input.trigger,
-        modelId: this.context.modelId,
-        summarize: this.#summarize(),
+        modelId: stepModelId,
+        summarize: this.#summarize(stepModelId),
         region: { start, end: regionEnd },
         signal: this.context.abortSignal,
       });

@@ -188,6 +188,33 @@ describe("手工压缩的 stream signal", () => {
     expect(stepHooks).toStrictEqual(["start:compaction", "end:done"]);
   });
 
+  test("step_start 的 modelId 补丁决定摘要模型", async () => {
+    const store = new FakeStore();
+    const agent = buildAgent(store);
+    agent.hooks.on("step_start", (event) =>
+      event.stepType === "compaction"
+        ? { modelId: "compaction-model" }
+        : undefined
+    );
+
+    const stream = await agent.stream({
+      turns: compactableTurns(),
+      modelId: "test-model",
+      streamId: "test-stream",
+      signal: { type: "compaction", trigger: "manual" },
+      onFinish: async () => {},
+    });
+    const events = await readAll(stream);
+
+    // 事件和落库的 step 都报告实际使用的模型，不能还停在请求模型上。
+    const stepStart = events.find((event) => event.type === "step.start");
+    expect(stepStart).toMatchObject({ model: "compaction-model" });
+    expect(store.inserted[0]?.content).toMatchObject({
+      type: "compaction",
+      content: [{ type: "compaction", model: "compaction-model" }],
+    });
+  });
+
   test("没有可压缩内容时同步失败，不产生流", async () => {
     const store = new FakeStore();
     const agent = buildAgent(store);

@@ -3,7 +3,7 @@ import type { AgentStreamEvent } from "@workspace/agent-client";
 import { AgentState } from "./agent-state";
 import type { AgentStateOptions } from "./agent-state";
 import type { ResolvedCompactionPolicy, SummarizeFn } from "./compaction/types";
-import type { SystemPromptSection } from "./extensions/types";
+import type { InstructionsSection } from "./extensions/types";
 import type { JobRegistry } from "./jobs/registry";
 import { SkillManager } from "./skill";
 import type { AgentToolSet } from "./types";
@@ -53,7 +53,7 @@ export type AgentContextOptions = AgentStateOptions & {
    * 启动时注册的系统提示片段。子 agent 从这里继承，保证主会话和子会话
    * 看到同一套说明。
    */
-  systemPromptSections?: readonly SystemPromptSection[];
+  instructionsSections?: readonly InstructionsSection[];
   /**
    * 宿主根据模型窗口和用户设置解析出的上下文压缩策略。测试和不需要压缩的
    * 嵌入调用方可以不传。
@@ -84,7 +84,7 @@ export class AgentContext extends AgentState {
   sessionDir: string;
   projectId?: string;
   skills: SkillManager;
-  systemPromptSections: readonly SystemPromptSection[];
+  instructionsSections: readonly InstructionsSection[];
   compaction?: ResolvedCompactionPolicy;
   summarize?: SummarizeFn;
   modelContextWindows?: Readonly<Record<string, number>>;
@@ -107,7 +107,7 @@ export class AgentContext extends AgentState {
     this.sessionDir = options.sessionDir;
     this.projectId = options.projectId;
     this.skills = options.skills ?? new SkillManager({ dirs: [] });
-    this.systemPromptSections = options.systemPromptSections ?? [];
+    this.instructionsSections = options.instructionsSections ?? [];
     this.compaction = options.compaction;
     this.summarize = options.summarize;
     this.modelContextWindows = options.modelContextWindows;

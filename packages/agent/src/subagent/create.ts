@@ -244,7 +244,7 @@ export async function createSubagent(
     skills: parent.context.skills,
     // 提示片段跟着父上下文走：子 agent 不重新加载资源，看到的就是父所用的
     // 那一套，只是以子 agent 自己的 instructions 作为起点重新渲染。
-    systemPromptSections: parent.context.systemPromptSections,
+    instructionsSections: parent.context.instructionsSections,
     compaction: subagentCompaction(parent.context, resolvedModelId),
     modelContextWindows: parent.context.modelContextWindows,
     // 子 agent 继承父会话的工具集，工具闭包里绑定的是父上下文，所以后台
@@ -252,15 +252,15 @@ export async function createSubagent(
     jobs: parent.context.jobs,
   });
 
-  let systemPrompt = definition.instructions;
-  for (const section of parent.context.systemPromptSections) {
-    systemPrompt = section.render(systemPrompt);
+  let { instructions } = definition;
+  for (const section of parent.context.instructionsSections) {
+    instructions = section.render(instructions);
   }
 
   const agent = new Agent({
     name: `subagent:${definition.name}`,
     sessionId: childSessionId,
-    systemPrompt,
+    instructions,
     context,
     session,
     tools: selectSubagentTools(tools ?? parent.tools, definition),

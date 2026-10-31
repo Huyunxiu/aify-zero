@@ -327,7 +327,7 @@ describe("subagent 继承项目说明", () => {
         sessionDir: "/tmp/sessions/parent-session",
         modelId: "test-model",
         skills: new SkillManager({ dirs: [] }),
-        systemPromptSections: [projectSection],
+        instructionsSections: [projectSection],
       }),
       apiKey: "test-key",
       apiUrl: "http://localhost",
@@ -357,12 +357,12 @@ describe("subagent 继承项目说明", () => {
       }
     );
 
-    expect(child.context.systemPromptSections).toStrictEqual([projectSection]);
-    expect(child.systemPrompt).toContain(
+    expect(child.context.instructionsSections).toStrictEqual([projectSection]);
+    expect(child.instructions).toContain(
       '<project_instructions path="/repo/AGENTS.md">'
     );
-    expect(child.systemPrompt).toContain("Always run the tests.");
-    expect(child.systemPrompt).toContain(definition.instructions);
+    expect(child.instructions).toContain("Always run the tests.");
+    expect(child.instructions).toContain(definition.instructions);
   });
 });
 

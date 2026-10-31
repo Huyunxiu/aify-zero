@@ -94,6 +94,7 @@ const emitTurnStart = (hooks: HooksManager) =>
       name: "main",
       projectDirs: ["/repo"],
       sessionDir: "/sessions/session-1",
+      modelId: "test-model",
     },
     {}
   );
@@ -141,12 +142,12 @@ describe(ExtensionManager, () => {
 
     await manager.add(
       new TestExtension("first", (api) => {
-        api.systemPromptSection({
+        api.instructionsSection({
           id: "late",
           priority: 10,
           render: (prompt) => `${prompt}A`,
         });
-        api.systemPromptSection({
+        api.instructionsSection({
           id: "early",
           priority: 0,
           render: (prompt) => `${prompt}B`,
@@ -155,14 +156,14 @@ describe(ExtensionManager, () => {
     );
     await manager.add(
       new TestExtension("second", (api) =>
-        api.systemPromptSection({
+        api.instructionsSection({
           id: "same-priority",
           render: (prompt) => `${prompt}C`,
         })
       )
     );
 
-    expect(manager.renderSystemPrompt("base")).toBe("baseBCA");
+    expect(manager.renderInstructions("base")).toBe("baseBCA");
     expect(manager.listSections().map((section) => section.id)).toStrictEqual([
       "early",
       "same-priority",
@@ -176,7 +177,7 @@ describe(ExtensionManager, () => {
 
     await manager.add(
       new TestExtension("first", (api) =>
-        api.systemPromptSection({
+        api.instructionsSection({
           id: "shared",
           render: (prompt) => prompt,
         })
@@ -186,13 +187,13 @@ describe(ExtensionManager, () => {
     await expect(
       manager.add(
         new TestExtension("second", (api) =>
-          api.systemPromptSection({
+          api.instructionsSection({
             id: "shared",
             render: (prompt) => prompt,
           })
         )
       )
-    ).rejects.toThrow('system prompt section "shared" is already registered');
+    ).rejects.toThrow('instructions section "shared" is already registered');
   });
 
   test("removes tools and sections when an extension is disposed", async () => {
@@ -203,7 +204,7 @@ describe(ExtensionManager, () => {
     await manager.add(
       new TestExtension("owned", (api) => {
         api.tool("owned-tool", tool);
-        api.systemPromptSection({
+        api.instructionsSection({
           id: "owned-section",
           render: (prompt) => `${prompt}owned`,
         });
@@ -275,7 +276,7 @@ describe(ExtensionManager, () => {
         new TestExtension("broken", (api) => {
           api.tool("broken-tool", makeTool("broken"));
           api.on("turn_start", handler);
-          api.systemPromptSection({
+          api.instructionsSection({
             id: "broken-section",
             render: (prompt) => prompt,
           });
@@ -290,7 +291,7 @@ describe(ExtensionManager, () => {
     await emitTurnStart(hooks);
     expect(handler).not.toHaveBeenCalled();
 
-    expect(manager.renderSystemPrompt("base")).toBe("base");
+    expect(manager.renderInstructions("base")).toBe("base");
   });
 
   test("disposes every extension in reverse registration order", async () => {
@@ -339,7 +340,7 @@ describe(SkillExtension, () => {
     expect(
       extension.manager.listUserAvailableSkills().map((skill) => skill.name)
     ).toStrictEqual(["review"]);
-    expect(manager.renderSystemPrompt("base")).toBe(
+    expect(manager.renderInstructions("base")).toBe(
       "base\n## Available Skills\n- **review**: review description"
     );
   });
@@ -383,7 +384,7 @@ describe(ContextExtension, () => {
       })
     );
 
-    expect(manager.renderSystemPrompt("base")).toBe(
+    expect(manager.renderInstructions("base")).toBe(
       [
         "base",
         "",

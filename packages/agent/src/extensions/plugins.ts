@@ -64,7 +64,7 @@ export class SkillExtension extends Extension {
     const manager = SkillManager.fromSkills(skills, { dirs: this.#dirs });
     this.#manager = manager;
 
-    api.systemPromptSection({
+    api.instructionsSection({
       id: `${this.id}:skills`,
       priority: this.#sectionPriority,
       render: (prompt) => manager.appendPrompt(prompt),
@@ -101,7 +101,7 @@ export class ContextExtension extends Extension {
       return;
     }
 
-    api.systemPromptSection({
+    api.instructionsSection({
       id: `${this.id}:context`,
       priority: this.#sectionPriority,
       render: (prompt) => (prompt ? `${prompt}\n\n${rendered}` : rendered),

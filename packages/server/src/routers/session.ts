@@ -192,7 +192,7 @@ async function buildSessionAgent({
   // 系统提示由扩展注册的片段生成；`load-skill` 工具需要按名字查技能，
   // 所以这里把扩展持有的 manager 交给上下文。
   agentContext.skills = skillsExtension.manager;
-  agent.systemPrompt = appendSubagentPrompt("");
+  agent.instructions = appendSubagentPrompt("");
 
   agent.registerTool(
     "task",

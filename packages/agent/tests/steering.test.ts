@@ -5,7 +5,6 @@ import type {
   InboxMessage,
 } from "@workspace/agent-client";
 import type { SessionModel } from "@workspace/db";
-import { streamText } from "ai";
 import type * as AiModule from "ai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -18,6 +17,11 @@ import { executeToolCalls } from "../src/tools/execution.js";
 import type * as ExecutionModule from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
 import { asTurns, userTurn } from "./compaction/fixtures.js";
+import {
+  script,
+  stepResult,
+  streamTextMock,
+} from "./helpers/stream-harness.js";
 
 // `streamText` is the only place the turn loop talks to a model. The test feeds
 // it scripted steps so the loop's decision table can be exercised without a
@@ -44,54 +48,7 @@ vi.mock(import("../src/tools/execution.js"), async (importOriginal) => {
   };
 });
 
-const streamTextMock = vi.mocked(streamText);
 const executeToolCallsMock = vi.mocked(executeToolCalls);
-
-const usage = (inputTokens = 10) => ({
-  inputTokens,
-  inputTokenDetails: {
-    noCacheTokens: inputTokens,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-  },
-  outputTokens: 5,
-  outputTokenDetails: { textTokens: 5, reasoningTokens: 0 },
-  totalTokens: inputTokens + 5,
-});
-
-const stepResult = (options: {
-  text?: string;
-  toolCalls?: unknown[];
-  responseMessages?: unknown[];
-}) => ({
-  stream: new ReadableStream({
-    start(controller) {
-      controller.close();
-    },
-  }),
-  finalStep: Promise.resolve({
-    finishReason: "stop",
-    rawFinishReason: "stop",
-    usage: usage(),
-    toolCalls: options.toolCalls ?? [],
-    providerMetadata: undefined,
-    performance: { toolExecutionMs: {} },
-  }),
-  responseMessages: Promise.resolve(
-    options.responseMessages ?? [
-      {
-        role: "assistant",
-        content: [{ type: "text", text: options.text ?? "" }],
-      },
-    ]
-  ),
-});
-
-const script = (...steps: ReturnType<typeof stepResult>[]): void => {
-  for (const step of steps) {
-    streamTextMock.mockReturnValueOnce(step as never);
-  }
-};
 
 const sessionRow: SessionModel = {
   id: "session-1",

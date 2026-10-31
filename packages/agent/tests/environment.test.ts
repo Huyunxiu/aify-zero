@@ -46,7 +46,7 @@ class SectionExtension extends Extension {
   }
 
   init(api: ExtensionAPI): void {
-    api.systemPromptSection({
+    api.instructionsSection({
       id: `${this.id}:section`,
       priority: this.#priority,
       render: (prompt) => `${prompt}\n\n${this.#text}`,
@@ -72,7 +72,7 @@ describe(EnvironmentExtension, () => {
       })
     );
 
-    expect(manager.renderSystemPrompt("base")).toBe(
+    expect(manager.renderInstructions("base")).toBe(
       [
         "base",
         "",
@@ -114,7 +114,7 @@ describe(EnvironmentExtension, () => {
     await manager.add(new SectionExtension("project", 0, "project notes"));
     await manager.add(new EnvironmentExtension({ id: "environment" }));
 
-    const prompt = manager.renderSystemPrompt("base");
+    const prompt = manager.renderInstructions("base");
 
     expect(prompt.indexOf("# Environment")).toBeLessThan(
       prompt.indexOf("project notes")

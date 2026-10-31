@@ -17,7 +17,7 @@ import type {
   Extension,
   ExtensionAgentInfo,
   ExtensionAPI,
-  SystemPromptSection,
+  InstructionsSection,
 } from "./types";
 
 export interface ExtensionManagerDeps {
@@ -29,7 +29,7 @@ export interface ExtensionManagerDeps {
 }
 
 interface RegisteredSection {
-  section: SystemPromptSection;
+  section: InstructionsSection;
   /** 同优先级时按注册顺序决定先后。 */
   order: number;
 }
@@ -123,7 +123,7 @@ export class ExtensionManager {
   }
 
   /** 当前所有提示片段，已经按执行顺序排好。 */
-  listSections(): SystemPromptSection[] {
+  listSections(): InstructionsSection[] {
     return [...this.#sections]
       .toSorted(
         (a, b) =>
@@ -134,7 +134,7 @@ export class ExtensionManager {
   }
 
   /** 以 `base` 为起点，依次套用所有提示片段。 */
-  renderSystemPrompt(base = ""): string {
+  renderInstructions(base = ""): string {
     let prompt = base;
     for (const section of this.listSections()) {
       prompt = section.render(prompt);
@@ -153,10 +153,10 @@ export class ExtensionManager {
         this.#deps.registerTool(name, tool);
         record.tools.set(name, tool);
       },
-      systemPromptSection: (section) => {
+      instructionsSection: (section) => {
         if (this.#sections.some((entry) => entry.section.id === section.id)) {
           throw new Error(
-            `system prompt section "${section.id}" is already registered`
+            `instructions section "${section.id}" is already registered`
           );
         }
 

@@ -16,15 +16,17 @@ import type {
  */
 export type HookContext = {};
 
-export type SessionStartEvent = {
+export type TurnStartEvent = {
   sessionId: string;
   name: string;
   /** 项目目录列表，第一项是主目录。 */
   projectDirs: readonly string[];
   sessionDir: string;
+  /** 请求为这个 turn 选择的模型；补丁可以覆盖它。 */
+  modelId: string;
 };
 
-export type SessionEndEvent = {
+export type TurnEndEvent = {
   sessionId: string;
 };
 
@@ -37,6 +39,8 @@ export type StepStartEvent = {
   turnId: string;
   stepId: string;
   stepType: AgentStep<ToolSet>["type"];
+  /** 这一步默认使用的模型；补丁可以覆盖它。 */
+  modelId: string;
 };
 
 /**
@@ -49,6 +53,43 @@ export type StepEndEvent = StepStartEvent & {
   usage?: LanguageModelUsage;
   finishReason?: FinishReason;
 };
+
+/**
+ * 一个字段的补丁：新值，或把当前值映射成新值的函数。
+ */
+export type PatchValue<T> = T | ((current: T) => T);
+
+/**
+ * 一组字段补丁。新增字段只要扩展 `T`，合并函数不需要改。
+ */
+export type Patch<T> = {
+  [K in keyof T]?: PatchValue<T[K]>;
+};
+
+export type PatchRule = {
+  /** 空字符串视为无意见，不覆盖。只对 string 字段生效。 */
+  skipBlank?: boolean;
+};
+
+export type PatchRules<T> = {
+  [K in keyof T]?: PatchRule;
+};
+
+/**
+ * turn / step 调用模型时的运行时设置。新增字段时同步扩展这里和 Agent 的
+ * `#runtimeSettings()`，合并逻辑不需要改。
+ */
+export type RuntimeSettings = {
+  modelId: string;
+  instructions: string;
+};
+
+/**
+ * `turn_start` / `step_start` 处理器能改什么。返回 `undefined`（或 `null`）
+ * 表示无意见；多个处理器都用 {@link HooksManager.emitAsyncHooks} 收集，
+ * 再按注册顺序合并。
+ */
+export type RuntimeSettingsPatch = Patch<RuntimeSettings>;
 
 export type TitleGeneratedEvent = {
   sessionId: string;
@@ -141,9 +182,9 @@ export const TOOL_DENIED_TEXT = "Tool call execution denied.";
  * 名字只回答“什么时候”。处理器能改什么，由它的 `R` 回答。
  */
 export interface HooksMap {
-  turn_start: HookHandler<SessionStartEvent>;
-  turn_end: HookHandler<SessionEndEvent>;
-  step_start: HookHandler<StepStartEvent>;
+  turn_start: HookHandler<TurnStartEvent, RuntimeSettingsPatch>;
+  turn_end: HookHandler<TurnEndEvent>;
+  step_start: HookHandler<StepStartEvent, RuntimeSettingsPatch>;
   step_end: HookHandler<StepEndEvent>;
   session_title_generated: HookHandler<TitleGeneratedEvent>;
   pre_compact: HookHandler<CompactionStartEvent>;
@@ -166,7 +207,7 @@ export interface HooksMap {
 export type HookHandler<T, R = unknown> = (
   event: T,
   api: HookContext
-) => Promise<R> | R | undefined;
+) => Promise<R | null> | R | null | undefined;
 
 export type HookOptions = {
   /**
@@ -178,14 +219,15 @@ export type HookOptions = {
 
 export type HookEventName = keyof HooksMap & string;
 
-/** The payload a handler of `K` receives, e.g. `SessionStartEvent`. */
+/** The payload a handler of `K` receives, e.g. `TurnStartEvent`. */
 export type HookEventOf<K extends HookEventName> = Parameters<HooksMap[K]>[0];
 
 /**
  * The `R` the handlers of `K` return, which is what {@link HooksManager.emit}
- * resolves with. `undefined` is spelled out because a run where no handler
- * produced a value resolves with nothing, and because `HookHandler` may always
- * abstain — writing it here keeps the generic honest to the type checker.
+ * resolves with. `undefined` and `null` are spelled out because a run where no
+ * handler produced a value resolves with nothing, and because `HookHandler`
+ * may always abstain — writing it here keeps the generic honest to the type
+ * checker.
  */
 export type HookResultOf<K extends HookEventName> =
   | Awaited<ReturnType<HooksMap[K]>>
@@ -203,6 +245,70 @@ export type HookResultsOf<K extends HookEventName> = Exclude<
   HookResultOf<K>,
   null | undefined
 >[];
+
+/** `RuntimeSettings` 里空字符串不应覆盖的字段。 */
+const RUNTIME_SETTINGS_PATCH_RULES: PatchRules<RuntimeSettings> = {
+  modelId: { skipBlank: true },
+};
+
+/**
+ * 合并 `turn_start` / `step_start` 补丁。
+ *
+ * 宿主必须用 {@link HooksManager.emitAsyncHooks} 收集补丁。`emit` 只保留最后
+ * 一个有意见的返回值，会把前面扩展的贡献丢掉。
+ */
+export function applyRuntimeSettingsPatches(
+  base: RuntimeSettings,
+  patches: readonly RuntimeSettingsPatch[]
+): RuntimeSettings {
+  return applyPatches(base, patches, RUNTIME_SETTINGS_PATCH_RULES);
+}
+
+/**
+ * 按注册顺序把一个或多个字段补丁合并到 `base`。
+ *
+ * 默认规则是“后值覆盖前值”：字符串/数字等直接替换，函数拿到当前值再返回
+ * 新值。`rules` 可以按字段收紧策略；每个字段的应用互相独立，某个补丁函数
+ * 抛错只告警并保留旧值，不会打断 turn。
+ *
+ * 新增字段只扩展 `T`，这里不需要修改。
+ */
+export function applyPatches<T extends object>(
+  base: T,
+  patches: readonly Patch<T>[],
+  rules: PatchRules<T> = {}
+): T {
+  const next = { ...base };
+
+  for (const patch of patches) {
+    for (const key of Object.keys(patch) as (keyof T)[]) {
+      const value = patch[key];
+      if (value === undefined) {
+        continue;
+      }
+      if (
+        rules[key]?.skipBlank &&
+        typeof value === "string" &&
+        value.trim() === ""
+      ) {
+        continue;
+      }
+
+      try {
+        const current = next[key];
+        const resolved =
+          typeof value === "function"
+            ? (value as (current: T[keyof T]) => T[keyof T])(current)
+            : value;
+        Object.assign(next, { [key]: resolved });
+      } catch (error) {
+        console.warn(`[hooks] "${String(key)}" patch failed:`, error);
+      }
+    }
+  }
+
+  return next;
+}
 
 /**
  * Stored form of a registration: the event type is erased because listeners of

@@ -20,7 +20,7 @@ export interface ExtensionAgentInfo {
  * `priority`（数值小的先执行）和注册顺序依次套用。返回值是同步的：提示词
  * 必须在发起模型调用前就绪。
  */
-export interface SystemPromptSection {
+export interface InstructionsSection {
   /** 唯一 id，重复注册会抛错。 */
   id: string;
   /** 数值越小越先执行，默认 0。 */
@@ -33,14 +33,14 @@ export interface SystemPromptSection {
  *
  * 工具、hook 和提示片段立即生效。技能、上下文文件这类资源由扩展自己加载
  * 并保存在实例里，Agent 不需要知道它们的具体类型，只负责按顺序拼接
- * {@link SystemPromptSection}。
+ * {@link InstructionsSection}。
  */
 export interface ExtensionAPI {
   readonly agent: Readonly<ExtensionAgentInfo>;
 
   tool(name: string, tool: Tool, options?: { override?: boolean }): void;
 
-  systemPromptSection(section: SystemPromptSection): void;
+  instructionsSection(section: InstructionsSection): void;
 
   on<K extends HookEventName>(
     name: K,
