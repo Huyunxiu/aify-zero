@@ -1,5 +1,5 @@
 import type { AgentStreamEvent } from "@workspace/agent-client/types";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import type { Agent } from "../src/agents.js";
 import {
@@ -8,10 +8,10 @@ import {
 } from "../src/stream-registry.js";
 import type { AgentToolSet } from "../src/types.js";
 
-// The lookup only ever reads `agent.sessionId`, so the rest of the agent is
-// irrelevant here.
+// The lookup only ever reads `agent.sessionId`, and unregistering calls
+// `agent.dispose`; the rest of the agent is irrelevant here.
 const agentOf = (sessionId: string): Agent =>
-  ({ sessionId }) as unknown as Agent;
+  ({ sessionId, dispose: () => Promise.resolve() }) as unknown as Agent;
 
 type TestEvent = AgentStreamEvent<AgentToolSet>;
 
@@ -116,7 +116,7 @@ describe(StreamEventRegistry, () => {
     );
   });
 
-  test("drops an entry once it is unregistered", () => {
+  test("drops an entry once it is unregistered", async () => {
     const registry = new StreamEventRegistry();
     registry.registerStream(
       "stream-a",
@@ -124,9 +124,20 @@ describe(StreamEventRegistry, () => {
       new ReadableStream()
     );
 
-    registry.unregisterStream("stream-a");
+    await registry.unregisterStream("stream-a");
 
     expect(registry.getStreamEntryBySession("session-1")).toBeUndefined();
+  });
+
+  test("releases the agent that ran the stream", async () => {
+    const registry = new StreamEventRegistry();
+    const dispose = vi.fn<() => Promise<void>>(() => Promise.resolve());
+    const agent = { sessionId: "session-1", dispose } as unknown as Agent;
+
+    registry.registerStream("stream-a", agent, new ReadableStream());
+    await registry.unregisterStream("stream-a");
+
+    expect(dispose).toHaveBeenCalledOnce();
   });
 });
 

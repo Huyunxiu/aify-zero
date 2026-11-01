@@ -68,7 +68,8 @@ const streamingTool = () =>
 function run(
   tools: ToolSet,
   toolCalls: AgentToolCall[],
-  hooks = new HooksManager()
+  hooks = new HooksManager(),
+  requiresApproval?: (toolName: string) => boolean
 ) {
   const events: AgentStreamEvent<AgentToolSet>[] = [];
 
@@ -82,6 +83,7 @@ function run(
     context,
     hooks,
     extensionApi: {},
+    requiresApproval,
     write: (event) => {
       events.push(event);
       return Promise.resolve();
@@ -500,6 +502,69 @@ describe(executeToolCalls, () => {
       ]);
 
       expect(ran).toStrictEqual(["hi"]);
+      expect(result.awaitingApproval).toBeFalsy();
+    });
+
+    test("does not know tool names on its own", async () => {
+      const ran: string[] = [];
+      const { result } = await run({ "write-file": recordingTool(ran) }, [
+        {
+          toolCallId: "call-1",
+          toolName: "write-file",
+          input: { value: "hi" },
+        },
+      ]);
+
+      // 审批是策略，由扩展声明；内核不应把 `write-file` 当成特例。
+      expect(ran).toStrictEqual(["hi"]);
+      expect(result.awaitingApproval).toBeFalsy();
+    });
+
+    test("asks before a tool the policy names", async () => {
+      const ran: string[] = [];
+      const { result } = await run(
+        { "write-file": recordingTool(ran) },
+        [
+          {
+            toolCallId: "call-1",
+            toolName: "write-file",
+            input: { value: "hi" },
+          },
+        ],
+        new HooksManager(),
+        (name) => name === "write-file"
+      );
+
+      expect(ran).toStrictEqual([]);
+      expect(result.awaitingApproval).toBeTruthy();
+    });
+
+    test("a hook's refusal outranks the policy's ask", async () => {
+      const hooks = new HooksManager();
+      hooks.on("pre_tool_call", () => ({ decision: "deny" }));
+
+      const ran: string[] = [];
+      const { result } = await run(
+        { "write-file": recordingTool(ran) },
+        [
+          {
+            toolCallId: "call-1",
+            toolName: "write-file",
+            input: { value: "hi" },
+          },
+        ],
+        hooks,
+        () => true
+      );
+
+      expect(ran).toStrictEqual([]);
+      expect(result.outcomes).toStrictEqual([
+        {
+          toolCallId: "call-1",
+          type: "denied",
+          durationMs: expect.any(Number),
+        },
+      ]);
       expect(result.awaitingApproval).toBeFalsy();
     });
   });

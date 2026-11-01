@@ -1,11 +1,5 @@
 import type { AgentStep, AgentTurn } from "@workspace/agent-client";
 import type {
-  StepInsertModel,
-  StepModel,
-  TurnInsertModel,
-  TurnModel,
-} from "@workspace/db";
-import type {
   FinishReason,
   LanguageModelUsage,
   ProviderMetadata,
@@ -13,6 +7,15 @@ import type {
 } from "ai";
 
 import type { AgentToolSet } from "../types";
+import type {
+  StepRow,
+  StepWrite,
+  TurnRecord,
+  TurnRow,
+  TurnWrite,
+} from "./types";
+
+export type { TurnRecord, TurnWrite } from "./types";
 
 /**
  * turn 行上除 step 之外的字段。
@@ -28,31 +31,6 @@ export type TurnDetail = {
   providerMetadata?: ProviderMetadata;
   error?: unknown;
   abortReason?: string;
-};
-
-/**
- * 写一条 turn 所需的行字段。
- *
- * `status`/`detail`/`completedAt` 不在这里：它们由 `content` 推导，避免调用方
- * 同时维护两份状态。
- */
-export type TurnWrite = {
-  id: string;
-  sessionId: string;
-  type: TurnModel["type"];
-  metadata?: unknown;
-  parentId?: string | null;
-  createdAt: Date;
-  content: AgentTurn<AgentToolSet>;
-};
-
-/**
- * 一条读出的 turn：数据库行 + 由 step 表拼出的 content。
- *
- * `content` 不再是数据库列；它只在内存里存在，供 agent、server 和 UI 使用。
- */
-export type TurnRecord = TurnModel & {
-  content: AgentTurn<AgentToolSet>;
 };
 
 /** 从完整 turn 中取出要落进 `turn.detail` 的字段；只保留有值的。 */
@@ -85,7 +63,7 @@ export function turnDetailOf(turn: AgentTurn): TurnDetail {
 }
 
 /** 把一条完整 turn 转成 turn 行；status/detail/completedAt 从 content 推导。 */
-export function toTurnRow(turn: TurnWrite): TurnInsertModel {
+export function toTurnRow(turn: TurnWrite): TurnRow {
   return {
     id: turn.id,
     sessionId: turn.sessionId,
@@ -119,19 +97,21 @@ export function toStepRows({
   sessionId: string;
   content: AgentTurn;
   streamId?: string;
-}): StepInsertModel[] {
-  return content.content.map((step, seq) => ({
-    id: step.id,
-    turnId,
-    sessionId,
-    seq,
-    streamId: streamId ?? null,
-    type: step.type,
-    status: step.status,
-    content: step,
-    createdAt: new Date(step.createdAt),
-    updatedAt: new Date(),
-  }));
+}): StepWrite[] {
+  return content.content.map(
+    (step, seq): StepWrite => ({
+      id: step.id,
+      turnId,
+      sessionId,
+      seq,
+      streamId: streamId ?? null,
+      type: step.type,
+      status: step.status,
+      content: step as AgentStep<AgentToolSet>,
+      createdAt: new Date(step.createdAt),
+      updatedAt: new Date(),
+    })
+  );
 }
 
 /**
@@ -142,8 +122,8 @@ export function toStepRows({
  * 一段）必须保留，否则页面刷新会丢掉已经显示过的内容。
  */
 export function hydrateTurn(
-  row: TurnModel,
-  steps: StepModel[],
+  row: TurnRow,
+  steps: StepRow[],
   activeStreamId?: string
 ): TurnRecord {
   const visibleSteps =
@@ -162,7 +142,7 @@ export function hydrateTurn(
     ...compactDetail(row.detail),
     content: [...visibleSteps]
       .toSorted((left, right) => left.seq - right.seq)
-      .map((step) => step.content as AgentStep<AgentToolSet>),
+      .map((step) => step.content),
   } as AgentTurn<AgentToolSet>;
 
   return { ...row, content };

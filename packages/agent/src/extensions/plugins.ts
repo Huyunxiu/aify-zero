@@ -3,6 +3,7 @@ import type { ContextFile } from "../context-files";
 import { loadContextFiles, loadSkills } from "../resources";
 import type { ContextSource, SkillSource } from "../resources/types";
 import { SKILL_DIRS, SkillManager } from "../skill/skill-manager";
+import { createLoadSkillTool } from "../tools/load-skill";
 import type {
   ExtensionAPI,
   ExtensionAgentInfo,
@@ -47,8 +48,10 @@ export class SkillExtension extends Extension {
   }
 
   /**
-   * 这个扩展加载到的技能。`load-skill` 工具需要按名字查技能，所以由宿主
-   * 在注册后取走；系统提示里的技能列表仍由扩展注册的片段生成。
+   * 这个扩展加载到的技能。
+   *
+   * `load-skill` 工具在 `init` 里用同一份 manager 注册；这个 getter 留给需要
+   * 检查加载结果的调用方。
    */
   get manager(): SkillManager {
     if (!this.#manager) {
@@ -63,6 +66,14 @@ export class SkillExtension extends Extension {
     });
     const manager = SkillManager.fromSkills(skills, { dirs: this.#dirs });
     this.#manager = manager;
+
+    api.tool(
+      "load-skill",
+      createLoadSkillTool({
+        skills: manager,
+        primaryProjectDir: api.environment.primaryProjectDir,
+      })
+    );
 
     api.instructionsSection({
       id: `${this.id}:skills`,

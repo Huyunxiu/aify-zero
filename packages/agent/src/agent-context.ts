@@ -2,10 +2,13 @@ import type { AgentStreamEvent } from "@workspace/agent-client";
 
 import { AgentState } from "./agent-state";
 import type { AgentStateOptions } from "./agent-state";
-import type { ResolvedCompactionPolicy, SummarizeFn } from "./compaction/types";
+import type {
+  CompactionPolicyOverrides,
+  ResolvedCompactionPolicy,
+  SummarizeFn,
+} from "./compaction/types";
 import type { InstructionsSection } from "./extensions/types";
 import type { JobRegistry } from "./jobs/registry";
-import { SkillManager } from "./skill";
 import type { AgentToolSet } from "./types";
 
 export interface AgentStreamEventController {
@@ -45,11 +48,6 @@ export type AgentContextOptions = AgentStateOptions & {
    */
   projectId?: string;
   /**
-   * 技能按名字查询用（`load-skill` 工具）：插件加载完由宿主写入，省略时
-   * 是一份空表。系统提示里的技能列表不从这里来。
-   */
-  skills?: SkillManager;
-  /**
    * 启动时注册的系统提示片段。子 agent 从这里继承，保证主会话和子会话
    * 看到同一套说明。
    */
@@ -59,6 +57,11 @@ export type AgentContextOptions = AgentStateOptions & {
    * 嵌入调用方可以不传。
    */
   compaction?: ResolvedCompactionPolicy;
+  /**
+   * 用户设置里的压缩开关。内核把它连同模型窗口一起交给压缩策略，由策略
+   * 算出阈值；宿主要在单个会话上钉死策略时才用上面的 `compaction`。
+   */
+  compactionOverrides?: CompactionPolicyOverrides;
   /**
    * 覆盖默认摘要器；测试在这里注入假实现。
    */
@@ -83,9 +86,9 @@ export class AgentContext extends AgentState {
   sessionId: string;
   sessionDir: string;
   projectId?: string;
-  skills: SkillManager;
   instructionsSections: readonly InstructionsSection[];
   compaction?: ResolvedCompactionPolicy;
+  compactionOverrides?: CompactionPolicyOverrides;
   summarize?: SummarizeFn;
   modelContextWindows?: Readonly<Record<string, number>>;
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
@@ -106,9 +109,9 @@ export class AgentContext extends AgentState {
     this.sessionId = options.sessionId;
     this.sessionDir = options.sessionDir;
     this.projectId = options.projectId;
-    this.skills = options.skills ?? new SkillManager({ dirs: [] });
     this.instructionsSections = options.instructionsSections ?? [];
     this.compaction = options.compaction;
+    this.compactionOverrides = options.compactionOverrides;
     this.summarize = options.summarize;
     this.modelContextWindows = options.modelContextWindows;
     this.jobs = options.jobs;

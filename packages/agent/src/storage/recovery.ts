@@ -1,9 +1,8 @@
 import type { AgentTurn } from "@workspace/agent-client";
-import type { SessionModel } from "@workspace/db";
 import { logger } from "@workspace/shared/logger";
 
-import type { SessionEndStatus } from ".";
 import type { TurnRecord } from "./turn-record";
+import type { SessionEndStatus, SessionRecord } from "./types";
 
 /** 崩溃收尾时写进 turn.error 的固定文案。 */
 export const INTERRUPTED_TURN_ERROR =
@@ -16,7 +15,7 @@ export const INTERRUPTED_TURN_ERROR =
  * step，而不是“当前运行”的可见子集。
  */
 export type RecoveryStore = {
-  listInterruptedSessions(): Promise<SessionModel[]>;
+  listInterruptedSessions(): Promise<SessionRecord[]>;
   getBranchTurns(sessionId: string): Promise<TurnRecord[]>;
   updateTurn(id: string, turn: AgentTurn): Promise<number>;
   clearActiveStream(

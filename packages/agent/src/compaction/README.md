@@ -191,7 +191,12 @@ keepRecent  = min(configuredKeepRecent, floor(threshold * 0.5))
 | `maxSummaryTokens`   | `8192`  | 摘要输出上限                                  |
 | `minSummarizeTokens` | `2000`  | 固定值；region 小于它时没有摘要价值           |
 
-窗口来自 `aiModel.limit.context`。以下情况会关闭自动压力压缩并写入 `disabledReason`：
+策略不是内核的一部分：内核通过 `Capabilities.compaction` 读取
+[CompactionStrategy](../kernel/compaction-strategy.ts)，默认由
+[CompactionExtension](../extensions/builtin/compaction.ts) 提供，输入是模型窗口和用户
+设置里的开关。内核只决定何时检查、如何写回，阈值和摘要提示都归策略。
+
+窗口来自宿主配置的模型表（`context.modelContextWindows`）。以下情况会关闭自动压力压缩并写入 `disabledReason`：
 
 - 配置显式关闭 `auto`；
 - 模型没有配置上下文窗口；
@@ -307,7 +312,8 @@ The model's context window was exceeded. The history has been compacted; retry t
 
 `SummarizeFn` 是流水线唯一的模型调用，注入的目的是让测试不需要 provider，也允许宿主以后换更小的模型（[types.ts](./types.ts#L95-L99)）。
 
-默认实现是一次 `generateText`（[summarizer.ts](./summarizer.ts#L6-L28)）：
+摘要器由压缩策略给出（`CompactionStrategy.summarize`）。默认实现是一次
+`generateText`（[summarizer.ts](./summarizer.ts#L6-L28)）：
 
 - 使用会话模型；
 - `temperature: 0`；

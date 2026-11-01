@@ -6,6 +6,8 @@ import { describe, expect, test, vi } from "vitest";
 
 import { AgentSession } from "../src/agent-session.js";
 import type { ContextFile } from "../src/context-files.js";
+import { ApprovalExtension } from "../src/extensions/approvals.js";
+import { capability } from "../src/extensions/capabilities.js";
 import { ExtensionManager } from "../src/extensions/manager.js";
 import type { ExtensionManagerDeps } from "../src/extensions/manager.js";
 import { ContextExtension, SkillExtension } from "../src/extensions/plugins.js";
@@ -65,12 +67,19 @@ class TestExtension extends Extension {
 
 const makeDeps = () => {
   const tools: ToolSet = {};
+  const approvals = new Set<string>();
   const hooks = new HooksManager();
   const deps: ExtensionManagerDeps = {
     agent: {
       name: "main",
       sessionId: "session-1",
       projectDirs: ["/repo"],
+      sessionDir: "/sessions/session-1",
+    },
+    environment: {
+      sessionId: "session-1",
+      projectDirs: ["/repo"],
+      primaryProjectDir: "/repo",
       sessionDir: "/sessions/session-1",
     },
     tools,
@@ -80,10 +89,16 @@ const makeDeps = () => {
     unregisterTool: (name) => {
       Reflect.deleteProperty(tools, name);
     },
+    registerApproval: (name) => {
+      approvals.add(name);
+    },
+    unregisterApproval: (name) => {
+      approvals.delete(name);
+    },
     hooks,
   };
 
-  return { deps, tools, hooks };
+  return { deps, tools, hooks, approvals };
 };
 
 const emitTurnStart = (hooks: HooksManager) =>
@@ -605,5 +620,72 @@ describe("ExtensionManager#assembler", () => {
     await assembler.push(customEvent("plan.updated"));
 
     expect(handler).toHaveBeenCalledOnce();
+  });
+});
+
+describe(ApprovalExtension, () => {
+  test("declares the tools it names", async () => {
+    const { deps, approvals } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new ApprovalExtension({
+        id: "approvals",
+        tools: ["write-file", "delete-file"],
+      })
+    );
+
+    expect([...approvals]).toStrictEqual(["write-file", "delete-file"]);
+  });
+
+  test("withdraws its declarations when it is disposed", async () => {
+    const { deps, approvals } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new ApprovalExtension({ id: "approvals", tools: ["write-file"] })
+    );
+    await manager.dispose("approvals");
+
+    expect([...approvals]).toStrictEqual([]);
+  });
+});
+
+describe("capabilities", () => {
+  test("seeds the manager with what it was given", async () => {
+    const { deps } = makeDeps();
+    const token = capability<string>("greeting");
+    deps.capabilities = new Map([[token.id, "hi"]]);
+    const manager = new ExtensionManager(deps);
+    let seen: string | undefined;
+
+    await manager.add(
+      new TestExtension("reader", (api) => {
+        seen = api.use(token);
+      })
+    );
+
+    expect(seen).toBe("hi");
+  });
+
+  test("removes a provided capability when its provider is disposed", async () => {
+    const { deps } = makeDeps();
+    const token = capability<string>("greeting");
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new TestExtension("provider", (api) => {
+        api.provide(token, "hi");
+      })
+    );
+    await manager.dispose("provider");
+
+    await expect(
+      manager.add(
+        new TestExtension("reader", (api) => {
+          api.use(token);
+        })
+      )
+    ).rejects.toThrow('capability "greeting" is not provided');
   });
 });

@@ -5,6 +5,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import { resolveToolPath, toolPathDescription } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
@@ -39,7 +40,7 @@ type WriteFileToolOutputMetadata = {
 type WriteFileToolOutput = ToolOutput<string, WriteFileToolOutputMetadata>;
 
 type CreateWriteFileToolProps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 };
 
 const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>

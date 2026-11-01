@@ -1,5 +1,4 @@
 import type { AgentTurn } from "@workspace/agent-client";
-import type { SessionModel } from "@workspace/db";
 import { describe, expect, test } from "vitest";
 
 import type { SessionEndStatus } from "../../src/storage/index.js";
@@ -9,6 +8,7 @@ import {
 } from "../../src/storage/recovery.js";
 import type { RecoveryStore } from "../../src/storage/recovery.js";
 import type { TurnRecord } from "../../src/storage/turn-record.js";
+import type { SessionRecord } from "../../src/storage/types.js";
 import type { AgentToolSet } from "../../src/types.js";
 import {
   assistantStep,
@@ -17,7 +17,7 @@ import {
   userTurn,
 } from "../compaction/fixtures.js";
 
-const session = (overrides: Partial<SessionModel> = {}): SessionModel => ({
+const session = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   id: "session-1",
   title: "test",
   metadata: {},
@@ -75,14 +75,14 @@ class FakeStore implements RecoveryStore {
   readonly promoted: string[] = [];
 
   private readonly options: {
-    sessions: SessionModel[];
+    sessions: SessionRecord[];
     branch: TurnRecord[];
     failUpdate?: boolean;
     failPromote?: boolean;
   };
 
   constructor(options: {
-    sessions: SessionModel[];
+    sessions: SessionRecord[];
     branch: TurnRecord[];
     failUpdate?: boolean;
     failPromote?: boolean;
@@ -90,7 +90,7 @@ class FakeStore implements RecoveryStore {
     this.options = options;
   }
 
-  listInterruptedSessions(): Promise<SessionModel[]> {
+  listInterruptedSessions(): Promise<SessionRecord[]> {
     return Promise.resolve(this.options.sessions);
   }
 

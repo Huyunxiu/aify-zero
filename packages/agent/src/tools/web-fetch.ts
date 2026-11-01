@@ -4,6 +4,7 @@ import type { Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import { convertHtmlToMarkdown, extractTextFromHtml } from "../utils/html";
 import { truncateContent } from "../utils/truncate";
 import type { ToolOutput } from "./types";
@@ -110,7 +111,7 @@ function buildHeaders(format: Format): Record<string, string> {
 // ---------------------------------------------------------------------------
 
 type CreateWebFetchToolProps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 };
 
 const createWebFetchTool = ({

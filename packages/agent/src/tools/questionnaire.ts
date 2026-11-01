@@ -10,7 +10,7 @@ import type { Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
-import type { Agent } from "../agents";
+import type { TranscriptReader } from "../extensions/capabilities";
 import type { ToolOutput } from "./types";
 
 const MAX_QUESTIONS = 10;
@@ -267,11 +267,11 @@ type CreateQuestionnaireToolProps = {
    * approval carries the answer's `data`, but the execution path does not hand
    * it to the tool, and the transcript is where the call and its answer meet.
    */
-  agent: Agent;
+  transcript: TranscriptReader;
 };
 
 const createQuestionnaireTool = ({
-  agent,
+  transcript,
 }: CreateQuestionnaireToolProps): Tool<
   QuestionnaireToolInput,
   QuestionnaireToolOutput,
@@ -282,7 +282,7 @@ const createQuestionnaireTool = ({
     inputSchema: QUESTIONNAIRE_TOOL_INPUT_SCHEMA,
     execute: (input, { toolCallId }) => {
       const location = findToolPartByToolCallId(
-        agent.session.turns,
+        [...transcript.turns()],
         toolCallId
       );
       const part = location?.part;

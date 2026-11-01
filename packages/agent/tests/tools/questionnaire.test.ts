@@ -6,7 +6,7 @@ import {
 import type { AgentTurn, QuestionnaireAnswers } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
-import type { Agent } from "../../src/agents.js";
+import type { TranscriptReader } from "../../src/extensions/capabilities.js";
 import { createQuestionnaireTool } from "../../src/tools/questionnaire.js";
 import type { QuestionnaireToolInput } from "../../src/tools/questionnaire.js";
 import type { AgentToolSet } from "../../src/types.js";
@@ -59,9 +59,9 @@ const input: QuestionnaireToolInput = {
 };
 
 /** A session holding the one questionnaire call the tool is about to execute. */
-const heldAgent = (
+const heldTranscript = (
   data?: ReturnType<typeof createQuestionnaireApprovalData>
-): Agent => {
+): TranscriptReader => {
   const turns: AgentTurn<AgentToolSet>[] = [
     {
       id: "turn-1",
@@ -103,11 +103,11 @@ const heldAgent = (
     },
   ]);
 
-  return { session: { turns } } as unknown as Agent;
+  return { turns: () => turns };
 };
 
-const run = async (agent: Agent): Promise<ToolResult> => {
-  const questionnaireTool = createQuestionnaireTool({ agent });
+const run = async (transcript: TranscriptReader): Promise<ToolResult> => {
+  const questionnaireTool = createQuestionnaireTool({ transcript });
   const { execute } = questionnaireTool;
 
   if (!execute) {
@@ -121,7 +121,9 @@ const run = async (agent: Agent): Promise<ToolResult> => {
 
 describe(createQuestionnaireTool, () => {
   test("offers a freeform answer when allowOther is omitted", async () => {
-    const questionnaireTool = createQuestionnaireTool({ agent: heldAgent() });
+    const questionnaireTool = createQuestionnaireTool({
+      transcript: heldTranscript(),
+    });
     const parsed = await asSchema(questionnaireTool.inputSchema).validate?.({
       questions: [
         {
@@ -143,7 +145,7 @@ describe(createQuestionnaireTool, () => {
 
   test("formats the answers and their labels for the model", async () => {
     const result = await run(
-      heldAgent(
+      heldTranscript(
         createQuestionnaireApprovalData({
           scope: ["session"],
           checks: ["tests", "types"],
@@ -176,7 +178,7 @@ describe(createQuestionnaireTool, () => {
 
   test("prefers a freeform answer over a selected choice for a single-choice question", async () => {
     const result = await run(
-      heldAgent(
+      heldTranscript(
         createQuestionnaireApprovalData({
           scope: ["session", "a different scope"],
           checks: [],
@@ -190,7 +192,7 @@ describe(createQuestionnaireTool, () => {
 
   test("dedupes a multiple-choice answer and drops unknown values", async () => {
     const result = await run(
-      heldAgent(
+      heldTranscript(
         createQuestionnaireApprovalData({
           scope: ["session"],
           checks: ["tests", "tests", "unknown"],
@@ -204,7 +206,7 @@ describe(createQuestionnaireTool, () => {
 
   test("marks unanswered required questions and skipped optional ones", async () => {
     const result = await run(
-      heldAgent(
+      heldTranscript(
         createQuestionnaireApprovalData({
           scope: [],
           checks: [],
@@ -223,7 +225,7 @@ describe(createQuestionnaireTool, () => {
   });
 
   test("reports an approval that carried no answer data", async () => {
-    const result = await run(heldAgent());
+    const result = await run(heldTranscript());
 
     expect(result.code).toBe("error");
     expect(result.metadata).toMatchObject({

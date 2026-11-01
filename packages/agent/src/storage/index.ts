@@ -5,18 +5,31 @@ import type {
   InboxMessage,
   InboxPlacement,
 } from "@workspace/agent-client";
+
 import type {
-  SessionInsertModel,
-  SessionModel,
+  SessionEndStatus,
+  SessionKind,
+  SessionRecord,
+  SessionWrite,
+  StepWrite,
+  TurnRecord,
+  TurnWrite,
+} from "./types";
+
+export type {
+  SessionEndStatus,
+  SessionKind,
+  SessionRecord,
   SessionStatus,
-  StepInsertModel,
-} from "@workspace/db";
-
-import type { TurnRecord, TurnWrite } from "./turn-record";
-
-export type { TurnDetail, TurnRecord, TurnWrite } from "./turn-record";
-
-export type SessionEndStatus = Exclude<SessionStatus, "running">;
+  SessionWrite,
+  StepRow,
+  StepWrite,
+  TurnRecord,
+  TurnRow,
+  TurnStatus,
+  TurnWrite,
+} from "./types";
+export type { TurnDetail } from "./turn-record";
 
 export interface AgentStore {
   /**
@@ -36,10 +49,10 @@ export interface AgentStore {
     cursor?: string;
     limit?: number;
     direction?: "asc" | "desc";
-    kind: SessionModel["kind"];
+    kind: SessionKind;
     /** 按项目收窄；省略时列出所有项目的会话。 */
     projectId?: string;
-  }): Promise<SessionModel[]>;
+  }): Promise<SessionRecord[]>;
 
   /**
    * 找回一次 `task` 调用派生出的子会话。
@@ -54,7 +67,7 @@ export interface AgentStore {
   }: {
     parentSessionId: string;
     toolCallId: string;
-  }): Promise<SessionModel | null>;
+  }): Promise<SessionRecord | null>;
 
   /**
    * 一个会话派生出的全部子会话，按父会话 id 找。
@@ -63,11 +76,11 @@ export interface AgentStore {
    * stop 扫不到；进程被杀时子会话那一行会连着 `activeStreamId` 一起留下，只有
    * 这里能把它们找回来清干净。
    */
-  listChildSessions(parentSessionId: string): Promise<SessionModel[]>;
+  listChildSessions(parentSessionId: string): Promise<SessionRecord[]>;
 
-  saveSession(session: SessionInsertModel): Promise<boolean>;
+  saveSession(session: SessionWrite): Promise<boolean>;
 
-  getSessionById(sessionId: string): Promise<SessionModel | null>;
+  getSessionById(sessionId: string): Promise<SessionRecord | null>;
 
   updateSessionById(sessionId: string, title: string): Promise<number>;
 
@@ -148,7 +161,7 @@ export interface AgentStore {
    * 在这次运行里被 `step.metadata` 或 `tool.output-denied` 更新，它的归属仍是
    * 创建它的那次运行。
    */
-  saveStep(step: StepInsertModel): Promise<number>;
+  saveStep(step: StepWrite): Promise<number>;
 
   /**
    * 按 seq 列出会话的待发送消息，可只取某一种 placement。

@@ -9,7 +9,7 @@ import type { ToolSet } from "ai";
 import { AgentContext } from "../agent-context";
 import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
-import { resolvePolicy } from "../compaction/policy";
+import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { AgentStore } from "../storage";
 import type { AgentToolSet } from "../types";
 import {
@@ -90,6 +90,15 @@ export type SubagentParent = {
   sessionId: string;
   /** 父会话里这次 `task` 调用的 id。和父会话 id 一起唯一确定一个子会话。 */
   toolCallId: string;
+  /**
+   * 父的审批名单。
+   *
+   * 子 agent 不重新注册扩展，但工具集是从父继承的；名单一起继承，危险工具
+   * 才不会换个会话就绕过审批。
+   */
+  approvalRequired: readonly string[];
+  /** 父的压缩策略；子 agent 继承它解析出的策略和摘要器。 */
+  compaction?: CompactionStrategy;
 };
 
 export type CreateSubagentOptions = {
@@ -180,32 +189,29 @@ export type Subagent = {
 };
 
 /**
- * 子 agent 的压缩策略。
+ * 子 agent 的压缩策略与摘要器。
  *
- * 子 agent 可能跑在与父不同的模型上，所以它的窗口从已配置的窗口表解析，
- * 而不是原样继承父的阈值。
+ * 子 agent 可能跑在与父不同的模型上，所以策略用父的那一份、按子自己的窗口
+ * 重新解析；摘要器也用父的，协议事件和提示因此只有一处实现。父显式钉死过
+ * 策略或摘要器时，原样继承。
  */
 function subagentCompaction(
-  context: AgentContext,
+  parent: SubagentParent,
   modelId: string
-): AgentContext["compaction"] {
-  const parent = context.compaction;
-  if (!parent) {
-    return undefined;
+): Pick<AgentContext, "compaction" | "summarize"> {
+  const { context } = parent;
+  const strategy = parent.compaction;
+  if (!strategy) {
+    return { compaction: context.compaction, summarize: context.summarize };
   }
 
-  return resolvePolicy({
-    contextWindow:
-      context.modelContextWindows?.[modelId] ?? parent.contextWindow,
-    overrides: {
-      auto: parent.auto,
-      thresholdRatio: parent.thresholdRatio,
-      reserveTokens: parent.reserveTokens,
-      keepRecentTokens: parent.keepRecentTokens,
-      pruneToolResults: parent.pruneToolResults,
-      maxSummaryTokens: parent.maxSummaryTokens,
-    },
-  });
+  return {
+    compaction: strategy.policy({
+      contextWindow: context.modelContextWindows?.[modelId],
+      overrides: context.compactionOverrides,
+    }),
+    summarize: strategy.summarize(modelId),
+  };
 }
 
 export async function createSubagent(
@@ -241,11 +247,10 @@ export async function createSubagent(
     projectId: parent.context.projectId,
     modelId: resolvedModelId,
     modelEffort: parent.context.modelEffort,
-    skills: parent.context.skills,
     // 提示片段跟着父上下文走：子 agent 不重新加载资源，看到的就是父所用的
     // 那一套，只是以子 agent 自己的 instructions 作为起点重新渲染。
     instructionsSections: parent.context.instructionsSections,
-    compaction: subagentCompaction(parent.context, resolvedModelId),
+    ...subagentCompaction(parent, resolvedModelId),
     modelContextWindows: parent.context.modelContextWindows,
     // 子 agent 继承父会话的工具集，工具闭包里绑定的是父上下文，所以后台
     // 任务同样归父会话所有。
@@ -274,6 +279,7 @@ export async function createSubagent(
     // 要等这个子 agent 跑完才返回——父的 `#runStep` 卡在 `executeToolCalls` 上，
     // 而 task 的 generator 正 `await entry.whenFinished()`。
     abortSignal: parent.context.abortSignal,
+    approvalRequired: parent.approvalRequired,
   });
 
   return { agent, turns };

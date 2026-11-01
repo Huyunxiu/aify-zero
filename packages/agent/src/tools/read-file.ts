@@ -7,6 +7,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import {
   getFileTypeFromBuffer,
   isBinaryFile,
@@ -342,7 +343,7 @@ type ReadFileToolOutput = ToolOutput<string, ReadFileToolOutputMetadata> & {
 };
 
 type CreateReadFileToolProps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 };
 
 const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>

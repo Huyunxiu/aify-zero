@@ -1,5 +1,4 @@
 import type { AgentTurn } from "@workspace/agent-client";
-import type { SessionInsertModel, SessionModel } from "@workspace/db";
 import { describe, expect, test } from "vitest";
 
 import { AgentContext } from "../src/agent-context.js";
@@ -7,8 +6,8 @@ import { AgentSession } from "../src/agent-session.js";
 import { Agent } from "../src/agents.js";
 import type { ContextFile } from "../src/context-files.js";
 import { renderProjectContext } from "../src/context-files.js";
-import { SkillManager } from "../src/skill/index.js";
 import type { AgentStore, TurnRecord } from "../src/storage/index.js";
+import type { SessionRecord, SessionWrite } from "../src/storage/types.js";
 import {
   buildPromptTurn,
   createSubagent,
@@ -26,8 +25,8 @@ import type { AgentToolSet } from "../src/types.js";
  * libsql 测试基建不划算。其余方法用不到，所以不实现。
  */
 class FakeStore {
-  readonly saved: SessionInsertModel[] = [];
-  readonly #byParentToolCall = new Map<string, SessionModel>();
+  readonly saved: SessionWrite[] = [];
+  readonly #byParentToolCall = new Map<string, SessionRecord>();
   readonly #turns = new Map<string, TurnRecord[]>();
 
   /** 预置一个"已经派生过"的子会话，模拟父 turn 被 resume 时的场景。 */
@@ -39,7 +38,7 @@ class FakeStore {
     const id = `child-${this.#byParentToolCall.size}`;
     this.#byParentToolCall.set(`${parentSessionId}/${toolCallId}`, {
       id,
-    } as SessionModel);
+    } as SessionRecord);
     this.#turns.set(
       id,
       turns.map((turn) => ({ content: turn }) as TurnRecord)
@@ -53,13 +52,13 @@ class FakeStore {
   }: {
     parentSessionId: string;
     toolCallId: string;
-  }): Promise<SessionModel | null> {
+  }): Promise<SessionRecord | null> {
     return Promise.resolve(
       this.#byParentToolCall.get(`${parentSessionId}/${toolCallId}`) ?? null
     );
   }
 
-  saveSession(session: SessionInsertModel): Promise<boolean> {
+  saveSession(session: SessionWrite): Promise<boolean> {
     this.saved.push(session);
     return Promise.resolve(true);
   }
@@ -242,7 +241,6 @@ describe("subagent 的 abort scope", () => {
         projectDirs: ["/tmp"],
         sessionDir: "/tmp/sessions/parent-session",
         modelId: "test-model",
-        skills: new SkillManager({ dirs: [] }),
       }),
       apiKey: "test-key",
       apiUrl: "http://localhost",
@@ -262,6 +260,7 @@ describe("subagent 的 abort scope", () => {
         },
         sessionId: parent.sessionId,
         toolCallId: "call-1",
+        approvalRequired: [],
       },
       {
         definition,
@@ -305,6 +304,38 @@ describe("subagent 的 abort scope", () => {
   });
 });
 
+describe("subagent 继承审批名单", () => {
+  test("父声明过的工具在子 agent 里仍然要问", async () => {
+    const { agent: child } = await createSubagent(
+      {
+        context: new AgentContext({
+          sessionId: "parent-session",
+          projectDirs: ["/tmp"],
+          sessionDir: "/tmp/sessions/parent-session",
+          modelId: "test-model",
+        }),
+        tools: {},
+        credentials: {
+          apiKey: "test-key",
+          apiUrl: "http://localhost",
+          providerId: "test-provider",
+        },
+        sessionId: "parent-session",
+        toolCallId: "call-1",
+        approvalRequired: ["write-file"],
+      },
+      {
+        definition,
+        prompt: "Find the thing.",
+        store: asStore(new FakeStore()),
+        description: taskLabel,
+      }
+    );
+
+    expect(child.approvalRequired).toStrictEqual(["write-file"]);
+  });
+});
+
 describe("subagent 继承项目说明", () => {
   const parentContextFiles: ContextFile[] = [
     { path: "/repo/AGENTS.md", content: "Always run the tests." },
@@ -326,7 +357,6 @@ describe("subagent 继承项目说明", () => {
         projectDirs: ["/tmp"],
         sessionDir: "/tmp/sessions/parent-session",
         modelId: "test-model",
-        skills: new SkillManager({ dirs: [] }),
         instructionsSections: [projectSection],
       }),
       apiKey: "test-key",
@@ -348,6 +378,7 @@ describe("subagent 继承项目说明", () => {
         },
         sessionId: parent.sessionId,
         toolCallId: "call-1",
+        approvalRequired: [],
       },
       {
         definition,

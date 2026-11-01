@@ -10,9 +10,9 @@ import type {
 import type { LanguageModelUsage, ModelMessage } from "ai";
 import { addLanguageModelUsage } from "ai/internal";
 
-import type { AgentStepResult } from "./agents";
 import { projectHistory } from "./compaction/project";
 import type { ProjectedHistory, UsageAnchor } from "./compaction/types";
+import type { AgentStepResult } from "./kernel/step-runner";
 import type { TurnRecord } from "./storage/turn-record";
 import type { AgentToolSet } from "./types";
 import { generateTurnId } from "./utils/id-util";
@@ -109,18 +109,11 @@ export class AgentSession {
 
   finishStep(stepResult: AgentStepResult) {
     this.modelMessages = stepResult.messages;
-
-    if (this.usage === undefined) {
-      this.usage = stepResult.usage;
-    } else {
-      this.usage = stepResult.usage;
-    }
-
-    if (this.totalUsage === undefined) {
-      this.totalUsage = this.usage;
-    } else if (this.usage) {
-      this.totalUsage = addLanguageModelUsage(this.totalUsage, this.usage);
-    }
+    this.usage = stepResult.usage;
+    this.totalUsage =
+      this.totalUsage === undefined
+        ? this.usage
+        : addLanguageModelUsage(this.totalUsage, this.usage);
   }
 
   finishTurn({ turn }: { turn: AgentTurn<AgentToolSet> | undefined }) {

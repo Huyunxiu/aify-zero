@@ -1,5 +1,4 @@
 import type { AgentTurn } from "@workspace/agent-client";
-import type { StepModel, TurnModel } from "@workspace/db";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -7,12 +6,13 @@ import {
   toStepRows,
   toTurnRow,
 } from "../../src/storage/turn-record.js";
+import type { StepRow, TurnRow, TurnWrite } from "../../src/storage/types.js";
 import type { AgentToolSet } from "../../src/types.js";
 import { assistantStep, assistantTurn } from "../compaction/fixtures.js";
 
 const { usage } = assistantStep("usage-step", { inputTokens: 7 });
 
-const write = (turn: AgentTurn<AgentToolSet>) => ({
+const write = (turn: AgentTurn<AgentToolSet>): TurnWrite => ({
   id: turn.id,
   sessionId: "session-1",
   type: turn.type,
@@ -25,8 +25,8 @@ const write = (turn: AgentTurn<AgentToolSet>) => ({
 const stepRow = (
   id: string,
   seq: number,
-  options: { streamId?: string | null; status?: StepModel["status"] } = {}
-): StepModel => ({
+  options: { streamId?: string | null; status?: StepRow["status"] } = {}
+): StepRow => ({
   id,
   turnId: "a1",
   sessionId: "session-1",
@@ -39,7 +39,7 @@ const stepRow = (
   updatedAt: new Date(2),
 });
 
-const turnRow = (overrides: Partial<TurnModel> = {}): TurnModel => ({
+const turnRow = (overrides: Partial<TurnRow> = {}): TurnRow => ({
   id: "a1",
   sessionId: "session-1",
   type: "assistant",

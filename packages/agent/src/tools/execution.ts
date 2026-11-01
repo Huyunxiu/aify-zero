@@ -58,6 +58,12 @@ export type ExecuteToolCallsInput = {
   abortSignal?: AbortSignal;
   /** Publishes a protocol event onto the turn's stream. */
   write: (event: AgentStreamEvent<AgentToolSet>) => Promise<void>;
+  /**
+   * 这个工具名是否要求用户先确认。
+   *
+   * 名单由扩展声明，内核只按名字询问；子 agent 继承父的名单。
+   */
+  requiresApproval?: (toolName: string) => boolean;
   skipApproval?: boolean;
 };
 
@@ -257,23 +263,16 @@ async function planToolCall(
   );
   const decision = resolveToolStartDecision(decisions);
 
+  // A hook's refusal is final. Otherwise a tool the policy names is put to the
+  // user, whether or not any hook had an opinion.
   if (
-    toolCall.toolName === "write-file" ||
-    toolCall.toolName === "delete-file" ||
-    toolCall.toolName === "questionnaire"
+    decision?.decision === "deny" ||
+    !input.requiresApproval?.(toolCall.toolName)
   ) {
-    return {
-      toolCall,
-      decision: { decision: "ask" },
-      startedAt,
-    };
+    return { toolCall, decision, startedAt };
   }
 
-  return {
-    toolCall,
-    decision,
-    startedAt,
-  };
+  return { toolCall, decision: { decision: "ask" }, startedAt };
 }
 
 /**

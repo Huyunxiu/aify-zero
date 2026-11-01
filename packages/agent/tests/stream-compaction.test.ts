@@ -9,7 +9,6 @@ import type {
   ResolvedCompactionPolicy,
   SummarizeFn,
 } from "../src/compaction/types.js";
-import { SkillManager } from "../src/skill/index.js";
 import type { AgentStore, TurnWrite } from "../src/storage/index.js";
 import type { AgentToolSet } from "../src/types.js";
 import {
@@ -70,7 +69,6 @@ const buildAgent = (
       projectDirs: ["/tmp"],
       sessionDir: "/tmp/sessions/session-1",
       modelId: "test-model",
-      skills: new SkillManager({ dirs: [] }),
       compaction: policy(),
       summarize,
     }),

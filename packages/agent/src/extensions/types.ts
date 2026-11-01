@@ -3,6 +3,7 @@ import type { Tool } from "ai";
 
 import type { HookEventName, HookOptions, HooksMap } from "../hooks-manager";
 import type { AgentToolSet } from "../types";
+import type { CapabilityToken, ToolEnvironment } from "./capabilities";
 
 export interface ExtensionAgentInfo {
   name: string;
@@ -37,8 +38,38 @@ export interface InstructionsSection {
  */
 export interface ExtensionAPI {
   readonly agent: Readonly<ExtensionAgentInfo>;
+  /** 工具构造需要的路径与会话身份。 */
+  readonly environment: Readonly<ToolEnvironment>;
 
   tool(name: string, tool: Tool, options?: { override?: boolean }): void;
+
+  /**
+   * 声明一个调用前必须由用户确认的工具。
+   *
+   * 内核只保存名字并按名字询问；名单由扩展决定。子 agent 继承父的工具集时
+   * 也继承这份名单，危险工具不会因为换了会话就绕过审批。
+   */
+  approvalRequired(name: string): void;
+
+  /**
+   * 读取一个 capability。
+   *
+   * 工具需要的历史、子会话入口这类服务由内核提供；缺失时直接抛错，而不是
+   * 让扩展拿到 undefined 之后在调用点失败。
+   */
+  use<T>(token: CapabilityToken<T>): T;
+
+  /**
+   * 提供一个 capability。
+   *
+   * 同一个 id 只能有一个提供者；传 `override` 可以接替前面的提供者（例如
+   * 宿主用自己的压缩策略换掉默认的）。
+   */
+  provide<T>(
+    token: CapabilityToken<T>,
+    value: T,
+    options?: { override?: boolean }
+  ): void;
 
   instructionsSection(section: InstructionsSection): void;
 

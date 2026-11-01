@@ -6,6 +6,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import {
   isBinaryFile,
   getFileTypeFromBuffer,
@@ -72,7 +73,7 @@ type EditFileOutputMetadata = {
 type EditFileOutput = ToolOutput<string, EditFileOutputMetadata>;
 
 type CreateEditFileToolProps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 };
 
 const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>

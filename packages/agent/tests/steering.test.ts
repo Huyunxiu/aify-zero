@@ -4,7 +4,6 @@ import type {
   AgentTurn,
   InboxMessage,
 } from "@workspace/agent-client";
-import type { SessionModel } from "@workspace/db";
 import type * as AiModule from "ai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -13,6 +12,7 @@ import { AgentSession } from "../src/agent-session.js";
 import { Agent } from "../src/agents.js";
 import type { AgentInbox } from "../src/inbox/agent-inbox.js";
 import type { AgentStore } from "../src/storage/index.js";
+import type { SessionRecord } from "../src/storage/types.js";
 import { executeToolCalls } from "../src/tools/execution.js";
 import type * as ExecutionModule from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
@@ -50,7 +50,7 @@ vi.mock(import("../src/tools/execution.js"), async (importOriginal) => {
 
 const executeToolCallsMock = vi.mocked(executeToolCalls);
 
-const sessionRow: SessionModel = {
+const sessionRow: SessionRecord = {
   id: "session-1",
   title: "Test session",
   metadata: {},
@@ -73,7 +73,7 @@ class FakeStore {
   readonly begun: unknown[] = [];
   readonly updated: { id: string; stepIds: ReadonlySet<string> }[] = [];
 
-  getSessionById(): Promise<SessionModel> {
+  getSessionById(): Promise<SessionRecord> {
     return Promise.resolve(sessionRow);
   }
 

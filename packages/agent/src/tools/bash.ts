@@ -1,4 +1,4 @@
-import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import { MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES } from "./shell/output";
 import { bashArgv, defaultBashShell } from "./shell/resolve";
 import { createShellTool } from "./shell/tool";
@@ -28,7 +28,7 @@ const DESCRIPTION = `Execute a bash command (\`bash -c\`) in the working directo
 export const createBashTool = ({
   agentContext,
 }: {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 }) =>
   createShellTool({
     description: DESCRIPTION,

@@ -7,6 +7,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { SkillManager } from "../skill/skill-manager";
 import {
   getFileTypeFromBuffer,
   isBinaryFile,
@@ -345,15 +346,18 @@ type LoadSkillToolOutput = ToolOutput<string, LoadSkillToolOutputMetadata> & {
 };
 
 type LoadSkillToolProps = {
-  agentContext: AgentContext;
+  skills: SkillManager;
+  primaryProjectDir: string;
 };
 
-const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
+const createLoadSkillTool = ({
+  skills,
+  primaryProjectDir,
+}: LoadSkillToolProps) =>
   tool<LoadSkillToolInput, LoadSkillToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: LOAD_SKILL_TOOL_INPUT_SCHEMA,
     execute: async (input) => {
-      const context = agentContext;
       const { skill, offset, limit } = input;
       let { path: filepath } = input;
 
@@ -362,7 +366,7 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
 
       // Resolve skill by name or id
       let skillContent: string | undefined;
-      const skillInfo = agentContext.skills.getByName(skill);
+      const skillInfo = skills.getByName(skill);
       if (skillInfo) {
         skillContent = skillInfo.content;
         if (!filepath) {
@@ -390,7 +394,7 @@ const createLoadSkillTool = ({ agentContext }: LoadSkillToolProps) =>
         };
       }
 
-      filepath = resolveToolPath(filepath, context.primaryProjectDir).absolute;
+      filepath = resolveToolPath(filepath, primaryProjectDir).absolute;
 
       // If skill was resolved by name, return its content directly
       if (skillContent) {

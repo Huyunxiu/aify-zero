@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import type { JobRegistry } from "../jobs/registry";
 import { publicJob, renderJobRead, statusLine } from "../jobs/render";
 import type { PublicJob } from "../jobs/render";
@@ -18,7 +19,7 @@ const JOB_ID_DESCRIPTION =
   "Job id returned by the tool that started the background work.";
 
 type JobToolDeps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 };
 
 /**
@@ -26,7 +27,7 @@ type JobToolDeps = {
  * 宿主装错了，直接报错比让模型看见一个永远失败的工具好。
  */
 const requireJobs = (
-  agentContext: AgentContext
+  agentContext: ToolEnvironment
 ): { jobs: JobRegistry; sessionId: string } => {
   const { jobs, sessionId } = agentContext;
   if (jobs === undefined) {

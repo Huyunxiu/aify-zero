@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveInboxPlacement } from "../src/routers/session.schema";
+import { resolveInboxPlacement } from "../src/routers/session/session.schema";
 
 describe(resolveInboxPlacement, () => {
   test("sends steering to the next step while a turn is running", () => {

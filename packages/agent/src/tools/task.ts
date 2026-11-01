@@ -4,19 +4,17 @@ import type { Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
-import type { Agent } from "../agents";
-import { STREAM_REGISTRY } from "../stream-registry";
-import { createSubagent, readSubagentResult } from "../subagent/create";
-import {
-  DEFAULT_SUBAGENT_NAME,
-  getSubagentDefinition,
-} from "../subagent/definitions";
+import type {
+  SubagentFactory,
+  TranscriptReader,
+} from "../extensions/capabilities";
+import { DEFAULT_SUBAGENT_NAME } from "../subagent/definitions";
 import type { SubagentDefinition } from "../subagent/definitions";
 import type { ToolOutput } from "./types";
 
 export type TaskToolRuntime = {
-  agent: Agent;
-  agentContext: AgentContext;
+  transcript: TranscriptReader;
+  subagents: SubagentFactory;
   definitions: readonly SubagentDefinition[];
 };
 
@@ -54,10 +52,15 @@ type TaskToolOutput = ToolOutput<string, TaskToolMetadata>;
  * final result and a reloaded page still has to find the child.
  */
 export const createTaskTool = ({
-  agent,
+  transcript,
+  subagents,
   definitions,
 }: TaskToolRuntime): Tool<TaskToolInput, TaskToolOutput, AgentContext> => {
   const names = definitions.map((definition) => definition.name).join(", ");
+
+  const resolveDefinition = (name: string): SubagentDefinition | undefined =>
+    definitions.find((definition) => definition.name === name) ??
+    definitions.find((definition) => definition.name === DEFAULT_SUBAGENT_NAME);
 
   const description = `Delegate a self-contained task to a subagent, which runs with its own context and reports back a final answer.
 
@@ -95,9 +98,7 @@ Usage:
       { subagent_type, description: label, prompt },
       { toolCallId }
     ) {
-      const definition =
-        getSubagentDefinition(subagent_type) ??
-        getSubagentDefinition(DEFAULT_SUBAGENT_NAME);
+      const definition = resolveDefinition(subagent_type);
 
       if (!definition) {
         yield {
@@ -113,8 +114,10 @@ Usage:
       // The part carries whatever an earlier run of this call produced. Absent
       // on a first run; on a resumed one it is the transcript to carry on from.
       // The turn and step it sits in are where its events are published.
-      const parentTurns = agent.session.turns;
-      const location = findToolPartByToolCallId(parentTurns, toolCallId);
+      const location = findToolPartByToolCallId(
+        [...transcript.turns()],
+        toolCallId
+      );
 
       if (!location) {
         // The call is not in the transcript the parent handed over, so there is
@@ -130,58 +133,12 @@ Usage:
         return;
       }
 
-      const { store } = agent;
-
-      // What the child inherits: the parent's environment, its tools, its
-      // credentials, and enough of the parent's identity for its own session
-      // row to point back here. Not the agent itself — the session and
-      // transcript the subagent is meant to be sealed off from live on there.
-      const { agent: subagent, turns } = await createSubagent(
-        {
-          context: agent.context,
-          tools: agent.tools,
-          credentials: {
-            apiKey: agent.apiKey,
-            apiUrl: agent.apiUrl,
-            providerId: agent.providerId,
-          },
-          sessionId: agent.sessionId,
-          toolCallId,
-        },
-        { definition, prompt, store, description: label }
-      );
-
-      // Registered under the subagent's own session id rather than the
-      // parent's, so a reader holding the call can follow the transcript it
-      // produced and stopping or reading the parent's session does not walk
-      // into it.
-      const activeStreamId = subagent.sessionId;
-
-      // 子会话的行和父会话一样要维护状态。这一笔写在 stream 之前：子流可能
-      // 在 setActiveStream 落库之前就跑完，那时 onFinish 里的 clearActiveStream
-      // 会认不出自己的 streamId 而直接返回，行就永远卡在 running。
-      await store.setActiveStream(subagent.sessionId, activeStreamId);
-
-      const stream = await subagent.stream({
-        turns,
-        modelId: subagent.context.modelId,
-        streamId: activeStreamId,
-        signal: { type: "turn" },
-        onFinish: async (status) => {
-          STREAM_REGISTRY.unregisterStream(activeStreamId);
-          await store.clearActiveStream(
-            subagent.sessionId,
-            activeStreamId,
-            status
-          );
-        },
+      const run = await subagents.start({
+        definition,
+        prompt,
+        description: label,
+        toolCallId,
       });
-
-      const entry = STREAM_REGISTRY.registerStream(
-        activeStreamId,
-        subagent,
-        stream
-      );
 
       // 到这里子会话才是真的能读：行、activeStream 和流都写好了。id 就是
       // 在这一刻报出去的，所以客户端拿到它去读时读到的不是空会话，也不必
@@ -191,16 +148,14 @@ Usage:
         code: "ok",
         metadata: {
           status: "running",
-          sessionId: subagent.sessionId,
+          sessionId: run.sessionId,
         },
       };
 
       // The call does not return until the subagent has ended, because what the
       // parent's next step does with this answer is read it: handing it a
       // half-written one would be handing it nothing to act on.
-      await entry.whenFinished();
-
-      const { report, status } = readSubagentResult(subagent.session.turns);
+      const { report, status } = await run.wait();
 
       yield {
         output:
@@ -209,7 +164,7 @@ Usage:
         code: status === "done" ? "ok" : "error",
         metadata: {
           status,
-          sessionId: subagent.sessionId,
+          sessionId: run.sessionId,
         },
       };
     },

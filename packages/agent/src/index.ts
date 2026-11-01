@@ -1,4 +1,5 @@
 export * from "./agents";
+export * from "./agent-factory";
 export * from "./compaction";
 export * from "./context-files";
 export * from "./extensions";

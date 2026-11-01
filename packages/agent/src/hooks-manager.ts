@@ -26,6 +26,20 @@ export type TurnStartEvent = {
   modelId: string;
 };
 
+/**
+ * turn 已经落库、`turn.start` 已经写出。
+ *
+ * 它比 `turn_start` 晚一步：那时还只有请求，这里已经有 turn id 和一行
+ * streaming 记录。后台任务（标题生成）从这里开始，因为它们的协议事件要挂在
+ * 这个 turn 上。
+ */
+export type TurnCreatedEvent = {
+  sessionId: string;
+  turnId: string;
+  /** 这个 turn 的模型；`turn_start` 的补丁已经生效。 */
+  modelId: string;
+};
+
 export type TurnEndEvent = {
   sessionId: string;
 };
@@ -183,6 +197,7 @@ export const TOOL_DENIED_TEXT = "Tool call execution denied.";
  */
 export interface HooksMap {
   turn_start: HookHandler<TurnStartEvent, RuntimeSettingsPatch>;
+  turn_created: HookHandler<TurnCreatedEvent>;
   turn_end: HookHandler<TurnEndEvent>;
   step_start: HookHandler<StepStartEvent, RuntimeSettingsPatch>;
   step_end: HookHandler<StepEndEvent>;

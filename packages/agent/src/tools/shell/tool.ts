@@ -5,6 +5,7 @@ import type { Tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../../agent-context";
+import type { ToolEnvironment } from "../../extensions/capabilities";
 import type { JobOutcome } from "../../jobs/types";
 import { resolveToolPath } from "../../utils/fs-util";
 import type { ToolOutput } from "../types";
@@ -26,7 +27,7 @@ export interface ShellProgram {
 
 export interface ShellToolOptions {
   description: string;
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
   /** 生产方种类，也是后台任务 id 的前缀（`bash`、`powershell`）。 */
   kind: string;
   /** Resolved lazily so a missing executable reports on the call, not on load. */
@@ -68,7 +69,7 @@ type ShellToolInput = {
   run_in_background?: boolean;
 };
 
-const createShellToolSchema = (agentContext: AgentContext) => {
+const createShellToolSchema = (agentContext: ToolEnvironment) => {
   const schema = z.object({
     command: z.string().trim().min(1).describe("The shell command to execute"),
     timeout: z
@@ -210,7 +211,7 @@ export const createShellTool = ({
   });
 
 type BackgroundCommandProps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
   kind: string;
   command: string;
   cwd: string;

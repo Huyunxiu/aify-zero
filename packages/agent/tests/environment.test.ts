@@ -23,6 +23,12 @@ const makeManager = (): ExtensionManager => {
       projectDirs: [projectDir],
       sessionDir,
     },
+    environment: {
+      sessionId: "session-1",
+      projectDirs: [projectDir],
+      primaryProjectDir: projectDir,
+      sessionDir,
+    },
     tools,
     registerTool: (name, tool) => {
       tools[name] = tool;
@@ -30,6 +36,8 @@ const makeManager = (): ExtensionManager => {
     unregisterTool: (name) => {
       Reflect.deleteProperty(tools, name);
     },
+    registerApproval: () => {},
+    unregisterApproval: () => {},
     hooks: new HooksManager(),
   });
 };

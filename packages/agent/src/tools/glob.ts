@@ -5,6 +5,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import {
   normalizePath,
   resolveToolPath,
@@ -153,7 +154,7 @@ function translateGlobToFindPattern(pattern: string): string {
 // ---------------------------------------------------------------------------
 
 type CreateGlobToolProps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 };
 
 const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>

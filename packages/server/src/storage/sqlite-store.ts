@@ -7,6 +7,22 @@ import type {
   InboxPlacement,
   InboxPayload,
 } from "@workspace/agent-client";
+import { InboxMessageNotFoundError } from "@workspace/agent/inbox/errors";
+import type {
+  AgentStore,
+  SessionEndStatus,
+} from "@workspace/agent/storage/index";
+import {
+  hydrateTurn,
+  toStepRows,
+  toTurnRow,
+  turnDetailOf,
+} from "@workspace/agent/storage/turn-record";
+import type {
+  TurnRecord,
+  TurnWrite,
+} from "@workspace/agent/storage/turn-record";
+import type { StepRow } from "@workspace/agent/storage/types";
 import {
   inbox_message_table,
   session_table,
@@ -33,16 +49,6 @@ import {
   lt,
   max,
 } from "drizzle-orm";
-
-import type { AgentStore, SessionEndStatus } from ".";
-import { InboxMessageNotFoundError } from "../inbox/errors";
-import {
-  hydrateTurn,
-  toStepRows,
-  toTurnRow,
-  turnDetailOf,
-} from "./turn-record";
-import type { TurnRecord, TurnWrite } from "./turn-record";
 
 /** drizzle 事务回调拿到的句柄；批量写 step 的辅助函数需要它。 */
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -299,7 +305,11 @@ export class SQLiteStore implements AgentStore {
     }
 
     return branch.map((turn) =>
-      hydrateTurn(turn, stepsByTurn.get(turn.id) ?? [], options?.activeStreamId)
+      hydrateTurn(
+        turn,
+        (stepsByTurn.get(turn.id) ?? []) as StepRow[],
+        options?.activeStreamId
+      )
     );
   }
 

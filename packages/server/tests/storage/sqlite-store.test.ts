@@ -3,15 +3,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { EnqueueInboxInput } from "@workspace/agent-client";
+import { InboxMessageNotFoundError } from "@workspace/agent/inbox/errors";
+import type { AgentStore, TurnWrite } from "@workspace/agent/storage/index";
 import { beforeAll, describe, expect, test } from "vitest";
 
-import { InboxMessageNotFoundError } from "../../src/inbox/errors.js";
-import type { AgentStore, TurnWrite } from "../../src/storage/index.js";
 import {
   assistantStep,
   assistantTurn,
   userTurn,
-} from "../compaction/fixtures.js";
+} from "../helpers/compaction-fixtures.js";
 
 // `@workspace/db` 在导入时就按 `DATABASE_URL` 建连接，所以选库必须发生在它
 // 被加载之前；这里先设环境变量，再在 `beforeAll` 里动态导入。
@@ -150,4 +150,53 @@ describe("SQLiteStore", () => {
       ).rejects.toBeInstanceOf(InboxMessageNotFoundError);
     });
   });
+
+  describe("并发写", () => {
+    test("事务打开时到达的写排队等待，而不是 SQLITE_BUSY", async () => {
+      const { db, session_table } = await import("@workspace/db");
+      const { eq } = await import("drizzle-orm");
+
+      await store.saveSession({
+        id: "session-busy",
+        title: "",
+        metadata: {},
+        projectId: null,
+      });
+
+      const opened = deferred();
+      const finish = deferred();
+
+      // 用 drizzle 开一个事务：libsql 会为之后到达的查询另开一条连接，没有
+      // 排队时它立刻以 SQLITE_BUSY 失败。
+      const transaction = db.transaction(async (tx) => {
+        await tx
+          .update(session_table)
+          .set({ status: "running" })
+          .where(eq(session_table.id, "session-busy"));
+        opened.resolve();
+        await finish.promise;
+      });
+
+      await opened.promise;
+
+      const write = store.setActiveStream("session-busy", "stream-1").then(
+        (rowsAffected) => ({ ok: true as const, rowsAffected }),
+        (error: unknown) => ({ ok: false as const, error })
+      );
+
+      finish.resolve();
+      await transaction;
+
+      await expect(write).resolves.toStrictEqual({ ok: true, rowsAffected: 1 });
+    });
+  });
 });
+
+/** 手动可控的 promise，用来把事务卡在中间。 */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, resolve: release };
+}

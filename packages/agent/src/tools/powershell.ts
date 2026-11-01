@@ -1,4 +1,4 @@
-import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import { MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES } from "./shell/output";
 import { defaultPowerShell, powerShellArgv } from "./shell/resolve";
 import { createShellTool } from "./shell/tool";
@@ -29,7 +29,7 @@ const DESCRIPTION = `Execute a PowerShell command (\`pwsh -Command\`) in the wor
 export const createPowerShellTool = ({
   agentContext,
 }: {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 }) =>
   createShellTool({
     description: DESCRIPTION,

@@ -1,4 +1,5 @@
 import type { AgentStreamEvent } from "@workspace/agent-client/types";
+import { logger } from "@workspace/shared/logger";
 import type { ToolSet } from "ai";
 
 import type { Agent } from "./agents";
@@ -46,8 +47,27 @@ export class StreamEventRegistry<TOOLS extends ToolSet> {
     return found;
   }
 
-  unregisterStream(streamId: string): boolean {
-    return this.#store.delete(streamId);
+  /**
+   * Removes a finished stream and releases the agent that ran it.
+   *
+   * 注册表在请求结束后仍然持有 agent，所以它也负责收尾：扩展、定时器和文件
+   * 监听都在这里释放。dispose 被 await，调用方可以相信清理已经发生。
+   */
+  async unregisterStream(streamId: string): Promise<boolean> {
+    const entry = this.#store.get(streamId);
+    if (!entry) {
+      return false;
+    }
+
+    this.#store.delete(streamId);
+
+    try {
+      await entry.agent.dispose();
+    } catch (error) {
+      logger.warn("[stream-registry] failed to dispose the agent", error);
+    }
+
+    return true;
   }
 }
 

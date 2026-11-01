@@ -5,6 +5,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import { resolveToolPath, toolPathDescription } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
@@ -36,7 +37,7 @@ type DeleteFileToolOutputMetadata = {
 type DeleteFileToolOutput = ToolOutput<string, DeleteFileToolOutputMetadata>;
 
 type CreateDeleteFileToolProps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 };
 
 const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>

@@ -5,6 +5,7 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import type { ToolEnvironment } from "../extensions/capabilities";
 import {
   resolveToolPath,
   shellQuote,
@@ -206,7 +207,7 @@ function buildPosixGrepCommand(input: BuildCommandInput): string {
 }
 
 type CreateGrepToolProps = {
-  agentContext: AgentContext;
+  agentContext: ToolEnvironment;
 };
 
 const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>

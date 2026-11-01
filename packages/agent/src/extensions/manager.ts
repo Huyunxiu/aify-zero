@@ -13,6 +13,7 @@ import type {
   HooksMap,
 } from "../hooks-manager";
 import type { AgentToolSet } from "../types";
+import type { CapabilityToken, ToolEnvironment } from "./capabilities";
 import type {
   Extension,
   ExtensionAgentInfo,
@@ -22,9 +23,14 @@ import type {
 
 export interface ExtensionManagerDeps {
   agent: ExtensionAgentInfo;
+  environment: ToolEnvironment;
+  /** 内核预先提供的 capability，例如 transcript。 */
+  capabilities?: ReadonlyMap<string, unknown>;
   tools: ToolSet;
   registerTool(name: string, tool: Tool): void;
   unregisterTool(name: string): void;
+  registerApproval(name: string): void;
+  unregisterApproval(name: string): void;
   hooks: HooksManager;
 }
 
@@ -42,6 +48,10 @@ interface RegisteredExtension {
   hookOffs: (() => void)[];
   /** 这个扩展贡献的装配模块，卸载时按顺序移除。 */
   assemblers: AssemblerModule<AgentToolSet>[];
+  /** 这个扩展声明需要审批的工具名。 */
+  approvals: Set<string>;
+  /** 这个扩展提供的 capability id。 */
+  capabilities: Set<string>;
 }
 
 /**
@@ -57,11 +67,17 @@ export class ExtensionManager {
   readonly #assemblers: AssemblerModule<AgentToolSet>[] = [];
   /** 已被认领的 custom kind → 扩展 id。 */
   readonly #assemblerKeys = new Map<string, string>();
+  /** 审批工具名 → 声明它的扩展 id。 */
+  readonly #approvalOwners = new Map<string, string>();
+  /** capability id → 提供它的扩展 id；内核预置的没有所有者。 */
+  readonly #capabilityOwners = new Map<string, string>();
+  readonly #capabilities: Map<string, unknown>;
   readonly #deps: ExtensionManagerDeps;
   #order = 0;
 
   constructor(deps: ExtensionManagerDeps) {
     this.#deps = deps;
+    this.#capabilities = new Map(deps.capabilities);
   }
 
   /**
@@ -79,6 +95,8 @@ export class ExtensionManager {
       sections: [],
       hookOffs: [],
       assemblers: [],
+      approvals: new Set(),
+      capabilities: new Set(),
     };
 
     try {
@@ -122,6 +140,16 @@ export class ExtensionManager {
     return [...this.#assemblers];
   }
 
+  /**
+   * 读取一个已经提供的 capability，没有时返回 undefined。
+   *
+   * 这是给内核用的：`use` 是扩展的入口，缺失就抛错；内核只是想知道某个
+   * 能力有没有被装上。
+   */
+  capability<T>(token: CapabilityToken<T>): T | undefined {
+    return this.#capabilities.get(token.id) as T | undefined;
+  }
+
   /** 当前所有提示片段，已经按执行顺序排好。 */
   listSections(): InstructionsSection[] {
     return [...this.#sections]
@@ -146,12 +174,47 @@ export class ExtensionManager {
     // 全部用箭头函数，让回调里的 this 仍然指向管理器。
     return {
       agent: this.#deps.agent,
+      environment: this.#deps.environment,
       tool: (name, tool, options) => {
         if (name in this.#deps.tools && !options?.override) {
           throw new Error(`tool "${name}" is already registered`);
         }
         this.#deps.registerTool(name, tool);
         record.tools.set(name, tool);
+      },
+      approvalRequired: (name) => {
+        const owner = this.#approvalOwners.get(name);
+        if (owner && owner !== record.extension.id) {
+          throw new Error(
+            `approval for "${name}" is already declared by extension "${owner}"`
+          );
+        }
+
+        this.#approvalOwners.set(name, record.extension.id);
+        this.#deps.registerApproval(name);
+        record.approvals.add(name);
+      },
+      use: <T>(token: CapabilityToken<T>): T => {
+        const value = this.#capabilities.get(token.id);
+        if (value === undefined) {
+          throw new Error(`capability "${token.id}" is not provided`);
+        }
+        return value as T;
+      },
+      provide: <T>(
+        token: CapabilityToken<T>,
+        value: T,
+        options?: { override?: boolean }
+      ): void => {
+        const owner = this.#capabilityOwners.get(token.id);
+        if (owner !== undefined && !options?.override) {
+          throw new Error(
+            `capability "${token.id}" is already provided by extension "${owner}"`
+          );
+        }
+        this.#capabilities.set(token.id, value);
+        this.#capabilityOwners.set(token.id, record.extension.id);
+        record.capabilities.add(token.id);
       },
       instructionsSection: (section) => {
         if (this.#sections.some((entry) => entry.section.id === section.id)) {
@@ -230,6 +293,22 @@ export class ExtensionManager {
       // 工具一起带走。
       if (this.#deps.tools[name] === tool) {
         this.#deps.unregisterTool(name);
+      }
+    }
+
+    for (const name of record.approvals) {
+      // 只撤自己仍然持有的审批声明。
+      if (this.#approvalOwners.get(name) === record.extension.id) {
+        this.#approvalOwners.delete(name);
+        this.#deps.unregisterApproval(name);
+      }
+    }
+
+    for (const id of record.capabilities) {
+      // 只撤自己仍然持有的 capability。
+      if (this.#capabilityOwners.get(id) === record.extension.id) {
+        this.#capabilities.delete(id);
+        this.#capabilityOwners.delete(id);
       }
     }
 

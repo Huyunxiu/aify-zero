@@ -1,135 +1,37 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { OpenAICompatibleProvider } from "@ai-sdk/openai-compatible";
-import {
-  findToolPartByToolCallId,
-  findTurnWithoutToolResult,
-} from "@workspace/agent-client";
-import type {
-  AgentCompactionTurn,
-  AgentRuntimeContext,
-  AgentStep,
-  AgentStreamEvent,
-  AgentTurn,
-  AgentTurnStatus,
-  CompactionRecord,
-} from "@workspace/agent-client";
-import type { StepInsertModel } from "@workspace/db";
-import { ModelEffort } from "@workspace/shared/constants";
-import { getErrorMessage } from "@workspace/shared/errors";
-import { logger } from "@workspace/shared/logger";
-import {
-  APICallError,
-  generateText,
-  isStepCount,
-  registerTelemetry,
-  streamText,
-} from "ai";
-import type {
-  FinishReason,
-  LanguageModelUsage,
-  ModelMessage,
-  StepResultPerformance,
-  TextStreamPart,
-  Tool,
-  ToolContent,
-  ToolSet,
-} from "ai";
-import { collectToolApprovals } from "ai/internal";
+import type { ModelEffort } from "@workspace/shared/constants";
+import { registerTelemetry } from "ai";
+import type { Tool, ToolSet } from "ai";
 
 import type { AgentContext } from "./agent-context";
 import type { AgentSession } from "./agent-session";
-import { CompactionError, compactHistory } from "./compaction/compact";
-import { estimateMessagesTokens, estimateTokens } from "./compaction/estimate";
-import { createCompactionStep } from "./compaction/marker";
-import { isContextOverflowError } from "./compaction/overflow";
-import {
-  resolvePolicy as resolveCompactionPolicy,
-  shouldCompact,
-} from "./compaction/policy";
-import { pruneOlderToolResults } from "./compaction/prune";
-import {
-  findEndPlacement,
-  findPreTurnPlacement,
-  measureContext,
-  planManualCompaction,
-} from "./compaction/select";
-import { createSummarizer } from "./compaction/summarizer";
-import type { ResolvedCompactionPolicy, SummarizeFn } from "./compaction/types";
+import { Capabilities } from "./extensions/capabilities";
+import type {
+  EventWriter,
+  SubagentFactory,
+  ToolEnvironment,
+  TranscriptReader,
+} from "./extensions/capabilities";
 import { ExtensionManager } from "./extensions/manager";
 import type { Extension } from "./extensions/types";
-import { applyRuntimeSettingsPatches, HooksManager } from "./hooks-manager";
-import type {
-  HookContext,
-  RuntimeSettings,
-  StepEndEvent,
-  StepStartEvent,
-} from "./hooks-manager";
+import type { HookContext } from "./hooks-manager";
+import { HooksManager } from "./hooks-manager";
 import { AgentInbox } from "./inbox/agent-inbox";
-import type { AgentStore, SessionEndStatus, TurnRecord } from "./storage";
-import { journaledStepTarget } from "./storage/step-journal";
-import { executeToolCalls, stripToolExecution } from "./tools/execution";
-import type { AgentToolSet } from "./types";
-import { convertStepToModelMessages } from "./utils/convert-to-model-message";
-import {
-  generateEventId,
-  generateStepId,
-  generateTurnId,
-} from "./utils/id-util";
-import { toAgentEvent } from "./utils/to-agent-stream-event";
+import { CompactionController } from "./kernel/compaction-controller";
+import type { ModelGateway } from "./kernel/model-gateway";
+import { RunController } from "./kernel/run-controller";
+import type { AgentStreamOptions, AgentStreamSignal } from "./kernel/run-types";
+import { StepRunner } from "./kernel/step-runner";
+import { TranscriptJournal } from "./kernel/transcript-journal";
+import { TurnRunner } from "./kernel/turn-runner";
+import { createOpenAICompatibleGateway } from "./model/gateway";
+import type { AgentStore } from "./storage";
+
+export type { AgentStreamOptions, AgentStreamSignal } from "./kernel/run-types";
+export { NothingToCompactError } from "./kernel/run-types";
+export type { AgentStepResult, StepOutcome } from "./kernel/step-runner";
 
 registerTelemetry(DevToolsTelemetry());
-
-const MAX_COMPACTIONS_PER_TURN = 3;
-
-const ZERO_USAGE: LanguageModelUsage = {
-  inputTokens: 0,
-  inputTokenDetails: {
-    noCacheTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-  },
-  outputTokens: 0,
-  outputTokenDetails: {
-    textTokens: 0,
-    reasoningTokens: 0,
-  },
-  totalTokens: 0,
-};
-
-export const TITLE_PROMPT = `Generate a very short session title (2-5 words max) based on the user's message.
-Rules:
-- Maximum 30 characters
-- No quotes, colons, hashtags, or markdown
-- Just the topic/intent, not a full sentence
-- If the message is a greeting like "hi" or "hello", respond with just "New conversation"
-- Be concise: "Weather in NYC" not "User asking about the weather in New York City"`;
-
-// Maps effort levels to the AI SDK's reasoning levels.
-const MODEL_EFFORT_TO_REASONING = {
-  [ModelEffort.Default]: "provider-default",
-  [ModelEffort.Off]: "none",
-  [ModelEffort.Low]: "low",
-  [ModelEffort.Medium]: "medium",
-  [ModelEffort.High]: "high",
-  [ModelEffort.Ultra]: "xhigh",
-} as const;
-
-// A session row borrows the ending the turn already recorded — `aborted` is the
-// turn's word for a stop, `canceled` is the session's. `streaming` is listed
-// only so this stays exhaustive over `AgentTurnStatus`; a turn is never read
-// here before its finish.
-//
-// The session's `done` is not the turn's `done` flattened out: it also says the
-// user has not looked yet, which is what the sidebar draws. Reading the session
-// is what clears it back to `idle`.
-const TURN_END_TO_SESSION_STATUS = {
-  done: "done",
-  wait_review: "wait_review",
-  aborted: "canceled",
-  error: "error",
-  streaming: "error",
-} as const satisfies Record<AgentTurnStatus["status"], SessionEndStatus>;
 
 export type AgentOptions = {
   name: string;
@@ -155,102 +57,26 @@ export type AgentOptions = {
    * 会话待发送消息的入口。默认用同一个 store 构造；测试可以注入替身。
    */
   inbox?: AgentInbox;
-};
-
-/**
- * What a stream is asked to run.
- *
- * A turn is the ordinary case: a user turn is in `turns` and the model drives it
- * to an ending. A compaction is the same stream machinery applied to the manual
- * `/compact` path: there is no model turn to run, the agent folds the history
- * itself and writes the marker, and the stream reports it like any other turn.
- * The union is what keeps both behind one entry point — a caller sends the
- * signal, the agent decides what that means.
- */
-export type AgentStreamSignal =
-  | { readonly type: "turn" }
-  | { readonly type: "compaction"; readonly trigger: "manual" };
-
-export type AgentStreamOptions = {
-  modelId: string;
-  turns: AgentTurn<AgentToolSet>[];
   /**
-   * 这次运行的 id；就是会话行上的 `activeStreamId`。
+   * 调用前必须由用户确认的工具名。
    *
-   * step 行把它记进 `step.stream_id`。读取时用它区分“当前运行刚写下的
-   * step”和上一次运行留下的 step，避免页面中途加载后又被流重放一遍。
+   * 扩展在 `init` 里声明；子 agent 从父继承这份名单，避免危险工具换个会话
+   * 就绕过审批。
    */
-  streamId: string;
-  /** What this stream runs; see {@link AgentStreamSignal}. */
-  signal: AgentStreamSignal;
+  approvalRequired?: readonly string[];
   /**
-   * How the run ended, so the caller can settle the session it belongs to. The
-   * outcome is only known here, once the run has finished.
-   */
-  onFinish: (status: SessionEndStatus) => Promise<void>;
-  /**
-   * 这条 user turn 来自 Inbox 的哪一行。
+   * 由组合根注入的子会话工厂。
    *
-   * 给了就要求保存 turn 时原子删除该行；行不存在说明已经被另一个调用者领走，
-   * 本次启动会失败，而不是写出一条重复的 user turn。
+   * 子 agent 不允许再派生，所以它不传这个选项；没有工厂时 `subagents`
+   * capability 也不存在，`task` 扩展会在 `use` 时直接报错。
    */
-  inboxId?: string;
-};
-
-/** 手工压缩被要求压缩一段没有可压缩内容的历史。 */
-export class NothingToCompactError extends Error {
-  override readonly name = "NothingToCompactError";
-}
-
-type AgentTurnInput = {
-  readonly title?: string;
-  readonly turnType: AgentTurn<AgentToolSet>["type"];
-  readonly turnId: string;
-  readonly parentId?: string;
-};
-
-type AgentStepInput = AgentTurnInput & {
-  readonly stepId: string;
-  readonly stepType: AgentStep<AgentToolSet>["type"];
-};
-
-/** What one completed step of the model loop reported back. */
-export type AgentStepResult = {
-  /** The step's history, including its own assistant and tool messages. */
-  readonly messages: ModelMessage[];
-  /** This step's usage alone; {@link Agent.#runTurn} totals it across steps. */
-  readonly usage: LanguageModelUsage;
-  readonly finishReason: FinishReason;
-  readonly rawFinishReason: string | undefined;
+  subagentFactory?: (agent: Agent) => SubagentFactory;
   /**
-   * Whether every client tool call this step issued came back with a result —
-   * the loop's continuation rule.
+   * 覆盖模型网关。默认按 `apiKey` / `apiUrl` / `providerId` 构造 OpenAI 兼容
+   * 适配器；测试在这里注入替身。
    */
-  readonly toolCallsResolved: boolean;
-  /** 这一步是否发起了 client 工具调用。 */
-  readonly hadClientToolCalls: boolean;
-  /**
-   * 是否有非法或没有返回结果的 client 工具调用。
-   *
-   * 这类 step 的历史不完整，不能在上面追加引导消息；回合在这里结束，残留的
-   * next-step 消息由收尾逻辑提升为 next-turn。
-   */
-  readonly unresolvedToolCalls: boolean;
-  /**
-   * Whether the step's calls were held for the user to approve. The turn ends
-   * on this rather than continuing: there is nothing for the model to read
-   * until the user answers, and the answers arrive on the next stream.
-   */
-  readonly awaitingApproval: boolean;
+  gateway?: ModelGateway;
 };
-
-/** What one call of {@link Agent.#runStep} reported back to the turn loop. */
-type StepOutcome =
-  | { readonly ok: true; readonly result: AgentStepResult }
-  /** The turn was aborted: nothing failed, the caller stopped it. */
-  | { readonly ok: false; readonly reason: "aborted" }
-  /** The model call failed, or the model ended the step with an error. */
-  | { readonly ok: false; readonly reason: "error"; readonly error: unknown };
 
 export class Agent {
   name: string;
@@ -266,7 +92,8 @@ export class Agent {
   apiKey: string;
   apiUrl: string;
   providerId: string;
-  provider: OpenAICompatibleProvider;
+  /** 模型调用的端口；具体协议由适配器决定。 */
+  readonly gateway: ModelGateway;
 
   context: AgentContext;
   session: AgentSession;
@@ -277,20 +104,18 @@ export class Agent {
    * 资源由扩展持有，Agent 不关心。
    */
   readonly extensions: ExtensionManager;
-  /** 同一个 agent 同时只跑一个 turn。 */
-  #running = false;
-  /** 本 turn 拼接好的系统提示；turn 开始前算一次，turn 内保持稳定。 */
-  #instructions?: string;
-  /** 当前 turn 的压缩记账。 */
-  #compactionsThisTurn = 0;
-  #currentTurnId?: string;
-  /** 本次运行的 id；step 行用它区分当前运行与历史。 */
-  #streamId?: string;
-  /** 这次运行是普通回合还是手工压缩；服务端据此判断能否 steer。 */
-  #streamKind?: AgentStreamSignal["type"];
-  #lastCompactionGuard?: { messageCount: number; tokens: number };
-  /** 是否追加了新的 user turn；只有这种情况下才允许回合开始前的压缩。 */
-  #startedFromUserTurn = false;
+  /** turn / step 的落库记账。 */
+  readonly #journal: TranscriptJournal;
+  /** 单步模型调用与工具执行。 */
+  readonly #stepRunner: StepRunner;
+  /** turn 内部循环、压缩与 steering。 */
+  readonly #turnRunner: TurnRunner;
+  /** 一次运行的生命周期：流、锁、onFinish。 */
+  readonly #runController: RunController;
+  /** 调用前必须由用户确认的工具名；由扩展声明，子 agent 继承。 */
+  readonly #approvalRequired: Set<string>;
+  /** 压缩策略与摘要器。 */
+  readonly #compaction: CompactionController;
 
   constructor(options: AgentOptions) {
     this.name = options.name;
@@ -315,6 +140,59 @@ export class Agent {
       ? AbortSignal.any([options.abortSignal, this.#abortController.signal])
       : this.#abortController.signal;
     this.session = options.session;
+    this.#approvalRequired = new Set(options.approvalRequired);
+    // 扩展只拿到工具需要的环境，拿不到完整的 context。路径在会话内不变，
+    // 所以在构造时取一次快照。
+    const environment: ToolEnvironment = {
+      sessionId: this.sessionId,
+      projectDirs: this.context.projectDirs,
+      primaryProjectDir: this.context.primaryProjectDir,
+      sessionDir: this.context.sessionDir,
+      ...(this.context.projectId === undefined
+        ? {}
+        : { projectId: this.context.projectId }),
+      ...(this.context.jobs === undefined ? {} : { jobs: this.context.jobs }),
+    };
+
+    this.gateway =
+      options.gateway ??
+      createOpenAICompatibleGateway({
+        apiKey: this.apiKey,
+        baseURL: this.apiUrl,
+        name: this.providerId,
+      });
+
+    this.#journal = new TranscriptJournal({
+      store: this.store,
+      session: this.session,
+      sessionId: this.sessionId,
+      streamId: () => this.#runController.streamId,
+    });
+
+    // transcript 是内核自己的状态；子会话工厂由组合根注入，子 agent 不传。
+    const transcript: TranscriptReader = { turns: () => this.session.turns };
+    // 后台任务可能在流关闭后才写事件，那时没有读者，写入被丢弃。
+    const events: EventWriter = {
+      write: async (event) => {
+        await this.context.controller?.write(event);
+      },
+    };
+    const capabilities = new Map<string, unknown>([
+      [Capabilities.transcript.id, transcript],
+      [Capabilities.model.id, this.gateway],
+      [Capabilities.store.id, this.store],
+      [Capabilities.events.id, events],
+      [Capabilities.hooks.id, this.hooks],
+      [Capabilities.abortSignal.id, () => this.context.abortSignal],
+    ]);
+
+    if (options.subagentFactory) {
+      capabilities.set(
+        Capabilities.subagents.id,
+        options.subagentFactory(this)
+      );
+    }
+
     this.extensions = new ExtensionManager({
       agent: {
         name: this.name,
@@ -322,6 +200,8 @@ export class Agent {
         projectDirs: this.context.projectDirs,
         sessionDir: this.context.sessionDir,
       },
+      environment,
+      capabilities,
       tools: this.tools,
       registerTool: (name, tool) => {
         this.registerTool(name, tool);
@@ -329,12 +209,67 @@ export class Agent {
       unregisterTool: (name) => {
         this.unregisterTool(name);
       },
+      registerApproval: (name) => {
+        this.#approvalRequired.add(name);
+      },
+      unregisterApproval: (name) => {
+        this.#approvalRequired.delete(name);
+      },
       hooks: this.hooks,
     });
-    this.provider = createOpenAICompatible({
-      apiKey: this.apiKey,
-      baseURL: this.apiUrl,
-      name: this.providerId,
+
+    this.#compaction = new CompactionController({
+      store: this.store,
+      session: this.session,
+      context: this.context,
+      hooks: this.hooks,
+      extensionApi: this.extensionApi,
+      strategy: () => this.extensions.capability(Capabilities.compaction),
+      journal: this.#journal,
+      instructions: () => this.#runController.instructions(),
+    });
+
+    this.#stepRunner = new StepRunner({
+      gateway: this.gateway,
+      tools: this.tools,
+      session: this.session,
+      context: this.context,
+      hooks: this.hooks,
+      extensionApi: this.extensionApi,
+      sessionId: this.sessionId,
+      journal: this.#journal,
+      runtimeSettings: () => this.#runController.runtimeSettings(),
+      requiresApproval: (name) => this.#approvalRequired.has(name),
+      handleOverflow: (error, turnId) =>
+        this.#compaction.handleOverflow(error, turnId),
+    });
+
+    this.#turnRunner = new TurnRunner({
+      session: this.session,
+      context: this.context,
+      inbox: this.inbox,
+      sessionId: this.sessionId,
+      stepRunner: this.#stepRunner,
+      compaction: this.#compaction,
+      journal: this.#journal,
+      hooks: this.hooks,
+      extensionApi: this.extensionApi,
+      streamId: () => this.#runController.streamId,
+    });
+
+    this.#runController = new RunController({
+      name: this.name,
+      sessionId: this.sessionId,
+      session: this.session,
+      context: this.context,
+      store: this.store,
+      hooks: this.hooks,
+      extensionApi: this.extensionApi,
+      extensions: this.extensions,
+      turnRunner: this.#turnRunner,
+      compaction: this.#compaction,
+      journal: this.#journal,
+      baseInstructions: () => this.instructions,
     });
   }
 
@@ -394,1687 +329,20 @@ export class Agent {
    * 消息，手工压缩没有。
    */
   get streamKind(): AgentStreamSignal["type"] | undefined {
-    return this.#running ? this.#streamKind : undefined;
+    return this.#runController.streamKind;
   }
 
-  /** turn / step 的默认运行时设置；hook 补丁在这个对象上合并。 */
-  #runtimeSettings(): RuntimeSettings {
-    return {
-      modelId: this.context.modelId,
-      instructions: this.#instructions ?? "",
-    };
+  /**
+   * 调用前必须由用户确认的工具名。
+   *
+   * 子 agent 派生时从这里继承：它不重新注册扩展，但工具集和审批名单要跟
+   * 父保持一致。
+   */
+  get approvalRequired(): readonly string[] {
+    return [...this.#approvalRequired];
   }
 
   async stream(options: AgentStreamOptions) {
-    if (this.#running) {
-      throw new Error("agent is already running");
-    }
-    this.#running = true;
-    this.#streamId = options.streamId;
-    this.#streamKind = options.signal.type;
-    try {
-      return await this.#startStream(options);
-    } catch (error) {
-      // turn 还没交给后台任务就失败了，把锁还回去。
-      this.#running = false;
-      throw error;
-    }
-  }
-
-  async #startStream(options: AgentStreamOptions) {
-    if (options.signal.type === "compaction") {
-      return await this.#startCompactionStream(options);
-    }
-    return await this.#startTurnStream(options);
-  }
-
-  /**
-   * Builds the stream a run produces into, with the writes the run needs.
-   *
-   * `start` runs synchronously when the stream is constructed, so `write` is
-   * usable as soon as this returns. Every write also feeds the turn assembler
-   * when there is one; the compaction run and the turn run both report through
-   * the same channel, which is what lets one reader follow either.
-   */
-  #createEventStream({
-    persistSteps = false,
-  }: { persistSteps?: boolean } = {}): {
-    stream: ReadableStream<AgentStreamEvent<AgentToolSet>>;
-    write: (event: AgentStreamEvent<AgentToolSet>) => Promise<void>;
-    close: () => void;
-    fail: (error: unknown) => void;
-  } {
-    let controller!: ReadableStreamDefaultController<
-      AgentStreamEvent<AgentToolSet>
-    >;
-
-    const stream = new ReadableStream<AgentStreamEvent<AgentToolSet>>({
-      start(controllerArg) {
-        controller = controllerArg;
-      },
-    });
-
-    return {
-      stream,
-      write: async (event) => {
-        try {
-          await this.session.assembler?.push(event);
-          if (persistSteps) {
-            await this.#persistStepEvent(event);
-          }
-          controller.enqueue(event);
-        } catch {
-          // suppress errors when the stream has been closed
-        }
-      },
-      close: () => {
-        try {
-          controller.close();
-        } catch {
-          // suppress errors when the stream has been closed
-        }
-      },
-      fail: (error) => {
-        try {
-          controller.error(error);
-        } catch {
-          // suppress errors when the stream has been closed
-        }
-      },
-    };
-  }
-
-  /**
-   * 在 step 到达终态、或被终态更新时写一行 step。
-   *
-   * 只处理 `journaledStepTarget` 认可的事件；其余事件不写库。写失败只告警，
-   * 不打断流——回合本身仍然可以正常收尾。
-   */
-  async #persistStepEvent(
-    event: AgentStreamEvent<AgentToolSet>
-  ): Promise<void> {
-    const target = journaledStepTarget(event);
-    if (!target) {
-      return;
-    }
-
-    const step = this.session.assembler?.getStep(target.stepId);
-    const turn = this.session.turns.find(
-      (candidate) => candidate.id === target.turnId
-    );
-    if (!step || !turn) {
-      return;
-    }
-
-    const seq = turn.content.findIndex((candidate) => candidate.id === step.id);
-    if (seq === -1) {
-      return;
-    }
-
-    const row: StepInsertModel = {
-      id: step.id,
-      turnId: target.turnId,
-      sessionId: this.sessionId,
-      seq,
-      streamId: this.#streamId ?? null,
-      type: step.type,
-      status: step.status,
-      content: step,
-      createdAt: new Date(step.createdAt),
-      updatedAt: new Date(),
-    };
-
-    try {
-      await this.store.saveStep(row);
-      // 写成功才清账：失败时留着，回合结束的兜底写入会重试。
-      this.session.assembler?.markStepPersisted(step.id);
-    } catch (error) {
-      logger.warn("[agent] failed to persist step", error);
-    }
-  }
-
-  async #startTurnStream({
-    turns,
-    modelId,
-    onFinish,
-    inboxId,
-  }: AgentStreamOptions) {
-    this.context.modelId = modelId;
-    this.session.turns = turns;
-    // 提示片段在 turn 开始时拼一次：同一 turn 的每一步看到同一份提示词，
-    // 扩展在 turn 中途改数据也不会让后续步骤的缓存失效。
-    this.#instructions = this.extensions.renderInstructions(
-      this.instructions ?? ""
-    );
-
-    const mostRecentTurn = turns.at(-1);
-    if (!mostRecentTurn) {
-      throw new Error("no message.");
-    }
-    this.#startedFromUserTurn = mostRecentTurn.type === "user";
-
-    // turn_start 的返回值可以覆盖这个 turn 的模型和系统提示。用
-    // emitAsyncHooks 收集全部补丁：emit 只留最后一个返回值，会丢掉前面
-    // 扩展的贡献。
-    const runtime = applyRuntimeSettingsPatches(
-      this.#runtimeSettings(),
-      await this.hooks.emitAsyncHooks(
-        "turn_start",
-        {
-          sessionId: this.sessionId,
-          name: this.name,
-          projectDirs: this.context.projectDirs,
-          sessionDir: this.context.sessionDir,
-          modelId: this.context.modelId,
-        },
-        this.extensionApi
-      )
-    );
-    this.context.modelId = runtime.modelId;
-    this.#instructions = runtime.instructions;
-
-    const session = await this.store.getSessionById(this.sessionId);
-    if (!session) {
-      // The title stays empty until the AI-generated one lands; the UI
-      // renders a localized placeholder for empty titles, so no hardcoded
-      // (language-specific) default is stored here.
-      await this.store.saveSession({
-        id: this.sessionId,
-        title: "",
-        metadata: {},
-        projectId: this.context.projectId,
-      });
-    }
-
-    const originalTurns = turns;
-    let lastTurnId = turns.at(-2)?.id;
-
-    if (mostRecentTurn?.type === "user") {
-      await this.store.saveTurn(
-        {
-          id: mostRecentTurn.id,
-          sessionId: this.sessionId,
-          type: "user",
-          metadata: {},
-          parentId: lastTurnId,
-          content: mostRecentTurn,
-          createdAt: new Date(),
-        },
-        { inboxId, head: true }
-      );
-      lastTurnId = mostRecentTurn.id;
-    }
-
-    const { stream, write, close, fail } = this.#createEventStream({
-      persistSteps: true,
-    });
-
-    // Started, not awaited: the turn runs as a producer into `stream` while the
-    // caller begins reading it. Awaiting here would run the whole turn to
-    // completion first — the stream's queue never blocks, so every chunk would
-    // sit buffered until the last one had already been produced.
-    void (async () => {
-      // Anything else that ends the turn — a throw out of `#runTurn`, a turn
-      // that never produced a record — is a failure the session should show.
-      let outcome: SessionEndStatus = "error";
-
-      try {
-        this.context.controller = {
-          write,
-          close,
-          error: fail,
-        };
-
-        const turnId = await this.session.startTurn({
-          turns: originalTurns,
-          assemblers: this.extensions.listAssemblers(),
-        });
-
-        const turn = await this.#runTurn({
-          turnType: "assistant",
-          title: session?.title,
-          turnId,
-          parentId: lastTurnId,
-        });
-
-        this.session.finishTurn({ turn });
-
-        if (turn) {
-          outcome = TURN_END_TO_SESSION_STATUS[turn.status];
-        }
-
-        this.context.controller?.close();
-      } catch (error) {
-        // A step reports its own ending through the turn's finish event; this
-        // covers the rest of the turn — the store writes around it in
-        // particular — which would otherwise reject unobserved and leave the
-        // reader waiting for a stream that never ends.
-        fail(error);
-      } finally {
-        this.#running = false;
-        await this.hooks.emit(
-          "turn_end",
-          { sessionId: this.sessionId },
-          this.extensionApi
-        );
-        onFinish(outcome);
-      }
-    })();
-
-    return stream;
-  }
-
-  /**
-   * Runs a manual compaction as a stream of its own.
-   *
-   * It is the same producer/consumer shape as a turn: the caller gets a stream
-   * back at once, the summary runs in the background, and the marker is written
-   * before the stream closes — so a reader that reaches the end can fetch the
-   * branch and find it. The plan is made before the stream exists, which is what
-   * lets a caller answer "nothing to compact" synchronously and keep the lock
-   * until the run has actually started.
-   *
-   * The turn the stream reports is an independent `compaction` turn. It is
-   * always appended and becomes the active head; `recent` records its cut
-   * point in the record instead of splicing itself into the middle of the
-   * branch, so the stored turn list stays linear.
-   */
-  async #startCompactionStream(options: AgentStreamOptions) {
-    const { turns, modelId, signal, onFinish } = options;
-    if (signal.type !== "compaction") {
-      throw new Error("not a compaction signal");
-    }
-
-    this.context.modelId = modelId;
-    await this.session.loadTurns({ turns });
-
-    const policy = this.#policy();
-    const plan = planManualCompaction(turns, this.session.projected, policy);
-    if (!plan?.parentTurnId) {
-      throw new NothingToCompactError();
-    }
-
-    const turnId = generateTurnId();
-    const stepId = generateStepId();
-    const compactionId = generateEventId();
-    const startedAt = Date.now();
-    const { stream, write, close, fail } = this.#createEventStream();
-    this.context.controller = { write, close, error: fail };
-
-    void (async () => {
-      let outcome: SessionEndStatus = "error";
-      const stepEvent: StepStartEvent = {
-        sessionId: this.sessionId,
-        turnId,
-        stepId,
-        stepType: "compaction",
-        modelId,
-      };
-
-      try {
-        // 标记先以 streaming 出现，长摘要期间读者能看到它在进行；失败时
-        // compaction.error 会把这个 part（以及只为它存在的 step）撤回。
-        await write({
-          type: "turn.start",
-          turnId,
-          turnType: "compaction",
-          createdAt: startedAt,
-        });
-        const stepStart = await this.hooks.emitAsyncHooks(
-          "step_start",
-          stepEvent,
-          this.extensionApi
-        );
-        const { modelId: stepModelId } = applyRuntimeSettingsPatches(
-          { modelId, instructions: "" },
-          stepStart
-        );
-        stepEvent.modelId = stepModelId;
-        await write({
-          type: "step.start",
-          stepId,
-          turnId,
-          stepType: "compaction",
-          model: stepModelId,
-          createdAt: startedAt,
-        });
-        await write({
-          type: "compaction.start",
-          id: compactionId,
-          trigger: signal.trigger,
-          turnId,
-          stepId,
-          createdAt: startedAt,
-        });
-        await this.hooks.emit(
-          "pre_compact",
-          { sessionId: this.sessionId, trigger: signal.trigger },
-          this.extensionApi
-        );
-
-        const result = await compactHistory({
-          projected: this.session.projected,
-          policy,
-          trigger: signal.trigger,
-          modelId: stepModelId,
-          summarize: this.#summarize(stepModelId),
-          region: plan.region,
-          signal: this.context.abortSignal,
-        });
-        if (!result) {
-          throw new CompactionError("compaction produced no record");
-        }
-
-        // 手工压缩的 part 与记录共用一个 id：时间线上的这个标记只有一个身份。
-        // 切点写进记录，压缩 turn 本身只做线性追加。
-        const record: CompactionRecord = {
-          ...result.record,
-          id: compactionId,
-          ...(plan.retainedFromTurnId
-            ? { retainedFromTurnId: plan.retainedFromTurnId }
-            : {}),
-        };
-        const completedAt = Date.now();
-
-        const turn: AgentCompactionTurn = {
-          id: turnId,
-          type: "compaction",
-          createdAt: startedAt,
-          completedAt,
-          status: "done",
-          content: [
-            {
-              id: stepId,
-              type: "compaction",
-              createdAt: startedAt,
-              completedAt,
-              status: "done",
-              model: stepModelId,
-              content: [
-                {
-                  type: "compaction",
-                  id: compactionId,
-                  state: "done",
-                  createdAt: startedAt,
-                  completedAt,
-                  record,
-                },
-              ],
-            },
-          ],
-        };
-
-        await write({
-          type: "compaction.end",
-          id: compactionId,
-          turnId,
-          stepId,
-          record,
-          createdAt: completedAt,
-        });
-        await write({
-          stepId,
-          turnId,
-          type: "step.finish",
-          createdAt: completedAt,
-          usage: ZERO_USAGE,
-          finishReason: "stop",
-          rawFinishReason: "stop",
-          providerMetadata: undefined,
-          status: "done",
-        });
-        await write({
-          turnId,
-          type: "turn.finish",
-          createdAt: completedAt,
-          usage: ZERO_USAGE,
-          status: "done",
-        });
-
-        await this.store.saveTurn(
-          {
-            id: turn.id,
-            sessionId: this.sessionId,
-            type: "compaction",
-            metadata: {},
-            content: turn,
-            parentId: plan.parentTurnId,
-            createdAt: new Date(turn.createdAt),
-          },
-          { head: true }
-        );
-
-        await this.hooks.emit(
-          "post_compact",
-          { sessionId: this.sessionId, record },
-          this.extensionApi
-        );
-        outcome = "done";
-      } catch (error) {
-        outcome = this.context.abortSignal?.aborted ? "canceled" : "error";
-        // 历史没有改，标记也不该留下：撤回到 start 之前的样子。
-        await write({
-          type: "compaction.error",
-          id: compactionId,
-          error: getErrorMessage(error),
-          createdAt: Date.now(),
-        });
-      } finally {
-        this.#running = false;
-        await this.hooks.emit(
-          "step_end",
-          {
-            ...stepEvent,
-            status: outcome === "canceled" ? "aborted" : outcome,
-            ...(outcome === "done"
-              ? { usage: ZERO_USAGE, finishReason: "stop" }
-              : {}),
-          },
-          this.extensionApi
-        );
-        try {
-          // 先落定会话行再关流：读者读到结尾时，branch 和 activeStreamId
-          // 都已经是一致的。
-          await onFinish(outcome);
-        } finally {
-          close();
-        }
-      }
-    })();
-
-    return stream;
-  }
-
-  async generateSessionTitle(
-    turnId: string,
-    modelId: string,
-    turn: AgentTurn<AgentToolSet>
-  ) {
-    const stepId = generateStepId();
-    const stepEvent: StepStartEvent = {
-      sessionId: this.sessionId,
-      turnId,
-      stepId,
-      stepType: "session.title",
-      modelId,
-    };
-
-    try {
-      const stepStart = await this.hooks.emitAsyncHooks(
-        "step_start",
-        stepEvent,
-        this.extensionApi
-      );
-      const { modelId: stepModelId } = applyRuntimeSettingsPatches(
-        { modelId, instructions: "" },
-        stepStart
-      );
-      stepEvent.modelId = stepModelId;
-
-      await this.context.controller?.write({
-        type: "step.start",
-        stepType: "session.title",
-        model: stepModelId,
-        turnId,
-        stepId,
-        createdAt: Date.now(),
-      });
-
-      const eventId = generateEventId();
-      await this.context.controller?.write({
-        id: eventId,
-        type: "session.title.start",
-        turnId,
-        stepId,
-        createdAt: Date.now(),
-      });
-
-      const step = await generateText({
-        // The turn may be reusing a `context.modelId` that a later call has
-        // already replaced, so the model is resolved from the argument.
-        model: this.provider.chatModel(stepModelId),
-        system: TITLE_PROMPT,
-        prompt: this.getTextFromUserTurn(turn),
-      });
-      const title = step.text;
-
-      await this.store.updateSessionById(this.sessionId, title);
-
-      await this.context.controller?.write({
-        id: eventId,
-        type: "session.title.end",
-        title,
-        turnId,
-        stepId,
-        createdAt: Date.now(),
-      });
-
-      await this.context.controller?.write({
-        stepId,
-        turnId,
-        type: "step.finish",
-        createdAt: Date.now(),
-        usage: step.usage,
-        finishReason: step.finalStep.finishReason,
-        rawFinishReason: step.finalStep.rawFinishReason,
-        providerMetadata: step.finalStep.providerMetadata,
-        status: "done",
-        metadata: { performance: step.finalStep.performance },
-      });
-
-      await this.hooks.emit(
-        "step_end",
-        {
-          ...stepEvent,
-          status: "done",
-          usage: step.usage,
-          finishReason: step.finalStep.finishReason,
-        },
-        this.extensionApi
-      );
-
-      await this.hooks.emit(
-        "session_title_generated",
-        { sessionId: this.sessionId, title },
-        this.extensionApi
-      );
-      return title;
-    } catch (error) {
-      await this.hooks.emit(
-        "step_end",
-        {
-          ...stepEvent,
-          status: this.context.abortSignal?.aborted ? "aborted" : "error",
-        },
-        this.extensionApi
-      );
-      logger.warn("[agent] failed to generate session title", error);
-    }
-  }
-
-  getTextFromUserTurn(turn: AgentTurn<AgentToolSet>): string {
-    return turn.content
-      .filter((step) => step.type === "user")
-      .flatMap((step) => step.content.filter((e) => e.type === "text"))
-      .map((part) => part.text)
-      .join("");
-  }
-
-  toAgentTurns(turns: TurnRecord[]): AgentTurn<AgentToolSet>[] {
-    return turns.map((e) => e.content);
-  }
-
-  /**
-   * Drives one assistant turn: repeated `#runStep` calls until the model stops
-   * asking for tools, the step budget runs out, or a step is aborted or fails.
-   *
-   * The loop is driven by hand: each step issues its own `streamText` call, so
-   * tool execution and approval handling stay outside the SDK's step loop and
-   * every step sees the history the loop has built so far.
-   *
-   * Every step streams into the single UI message started by
-   * {@link Agent.stream}; the finish is written once, by `#finishTurn`, because
-   * only after the last step is "last" known.
-   */
-  /**
-   * 在 `turn.start` 之前把 turn 行写成 `streaming`。
-   *
-   * 新回合插入一条空 turn；审批恢复复用内存里已有的 turn（它可能已经带
-   * step），只把 status 拉回 streaming。parentId 和 createdAt 由 store 的
-   * upsert 保留，所以同一次审批恢复仍然落在原来的 branch 节点上。
-   */
-  async #beginTurn(
-    turnId: string,
-    input: AgentTurnInput,
-    startedAt: number
-  ): Promise<void> {
-    const resumed = this.session.turns.find((turn) => turn.id === turnId);
-    if (resumed) {
-      resumed.status = "streaming";
-      resumed.completedAt = undefined;
-    }
-
-    const content: AgentTurn<AgentToolSet> = resumed ?? {
-      id: turnId,
-      type: "assistant",
-      createdAt: startedAt,
-      status: "streaming",
-      content: [],
-    };
-
-    await this.store.beginTurn({
-      turn: {
-        id: turnId,
-        sessionId: this.sessionId,
-        type: content.type,
-        metadata: {},
-        parentId: input.parentId ?? null,
-        createdAt: new Date(content.createdAt),
-        content,
-      },
-    });
-  }
-
-  async #runTurn(
-    input: AgentTurnInput
-  ): Promise<AgentTurn<AgentToolSet> | undefined> {
-    const { turnId, title } = input;
-
-    this.#compactionsThisTurn = 0;
-    this.#lastCompactionGuard = undefined;
-    this.#currentTurnId = turnId;
-
-    // 在 assistant turn 打开之前执行，让标记落在上一条回复末尾：新的用户消息
-    // 保持原文。
-    if (this.#startedFromUserTurn) {
-      await this.#maybeCompact({ trigger: "pressure", mode: "before-turn" });
-    }
-
-    // 先把 turn 行写成 streaming 再发 turn.start：这一行是崩溃标记，必须在
-    // 任何 step 事件之前就存在。
-    const startedAt = Date.now();
-    await this.#beginTurn(turnId, input, startedAt);
-
-    await this.context.controller?.write({
-      type: "turn.start",
-      turnId,
-      turnType: "assistant",
-      createdAt: startedAt,
-    });
-
-    // Start title generation in the background (never awaited)
-    if (!title) {
-      const userTurn = this.session.turns.findLast((e) => e.type === "user");
-      if (userTurn) {
-        this.generateSessionTitle(turnId, this.context.modelId, userTurn);
-      }
-    }
-
-    let status: AgentTurnStatus = { status: "done" };
-    let ending: AgentTurnStatus | undefined;
-    // 上一步是否留下了可以继续的完整历史。只有这种边界才允许把引导消息
-    // 插进当前 turn。
-    let steeringAllowed = false;
-    let firstStep = true;
-    while (true) {
-      if (!firstStep) {
-        await this.#maybeCompact({ trigger: "pressure", mode: "end" });
-      }
-
-      // 先把 next-step 消息插进当前 turn，再开下一步。纯文本步默认要结束，
-      // 但如果这里领到了引导消息，ending 被清掉，循环继续跑下一步。
-      if (!firstStep && steeringAllowed && (await this.#applySteering())) {
-        ending = undefined;
-        steeringAllowed = false;
-      } else if (ending) {
-        status = ending;
-        break;
-      }
-
-      firstStep = false;
-
-      const stepId = generateStepId();
-
-      const outcome = await this.#runStep({
-        ...input,
-        stepId,
-        stepType: "assistant",
-      });
-
-      if (!outcome.ok) {
-        if (outcome.reason === "aborted") {
-          status = { status: "aborted" };
-        } else {
-          status = { status: "error", error: outcome.error };
-          status.error =
-            status.error instanceof APICallError
-              ? status.error.responseBody
-              : getErrorMessage(status.error);
-        }
-        break;
-      }
-
-      this.session.finishStep(outcome.result);
-
-      // The step asked the user for something, so the turn stops here rather
-      // than with it: a step is what the loop continues from, and it cannot
-      // continue past a call nobody has answered yet.
-      if (outcome.result.awaitingApproval) {
-        ending = { status: "wait_review" };
-        steeringAllowed = false;
-        continue;
-      }
-
-      // 非法/没有结果的工具调用让历史不完整，不能在上面追加 user 消息；
-      // 回合在这里结束，残留的 next-step 由收尾逻辑提升为 next-turn。
-      if (outcome.result.unresolvedToolCalls) {
-        ending = { status: "done" };
-        steeringAllowed = false;
-        continue;
-      }
-
-      // 工具调用全部完成：照旧让模型读结果，下一步前会检查引导消息。
-      if (outcome.result.toolCallsResolved) {
-        steeringAllowed = true;
-        continue;
-      }
-
-      // 纯文本步：默认收尾；若引导消息在下一轮顶部被领到，就继续。
-      ending = { status: "done" };
-      steeringAllowed = true;
-    }
-
-    await this.context.controller?.write({
-      turnId,
-      type: "turn.finish",
-      createdAt: Date.now(),
-      usage: this.session.usage,
-      ...status,
-    });
-
-    // 终态先单独落一行：收尾循环还要 settle 并同步 step，进程在两者之间退出
-    // 时 turn 行不应该还停在 streaming。写失败只告警，收尾循环会再写一次。
-    const finishedTurn = this.session.turns.find((turn) => turn.id === turnId);
-    if (finishedTurn) {
-      try {
-        await this.store.updateTurn(turnId, finishedTurn);
-      } catch (error) {
-        logger.warn("[agent] failed to persist turn header", error);
-      }
-    }
-
-    // An aborted or failed step returns from `#runStep` before its
-    // `step.finish`, so the step and its parts are still pending here; the
-    // `turn.finish` above only clears the turn. Settling first keeps the copy
-    // persisted below from carrying a `"streaming"` step forever. A `"done"`
-    // turn is skipped so a still-streaming background title is not marked —
-    // and so is one held for approval, whose step did reach its own end.
-    if (status.status === "aborted" || status.status === "error") {
-      this.session.assembler?.settle(status.status);
-    }
-
-    // Every turn the stream changed is written back, not just the one that
-    // finished: a stream that resumes a held call runs that call and reports
-    // its result against the turn that asked for it — a turn that ended turns
-    // ago — so writing back only the ending would leave the store holding the
-    // unanswered state of a call that has since been answered.
-    //
-    // Only the step rows still carrying a change are written. Everything else
-    // was journaled when it reached its end, so the usual turn ends with no
-    // step write at all; what remains is the resumed call's old step and any
-    // step whose journal write failed.
-    const changedTurns = this.session.assembler?.changedTurns ?? [];
-    const changedStepIds = new Set(
-      (this.session.assembler?.changedSteps ?? []).map(
-        (changed) => changed.stepId
-      )
-    );
-
-    for (const changed of changedTurns) {
-      // `rowsAffected` doubles as the existence check: 0 means the turn row was
-      // never written, which is the one case that needs an insert.
-      const updated = await this.store.updateTurn(changed.id, changed, {
-        stepIds: changedStepIds,
-      });
-      if (updated === 0) {
-        await this.store.saveTurn(
-          {
-            id: changed.id,
-            sessionId: this.sessionId,
-            type: changed.type,
-            metadata: {},
-            content: changed,
-            parentId: input.parentId ?? null,
-            createdAt: new Date(changed.createdAt),
-          },
-          { head: true }
-        );
-      }
-    }
-
-    // The turn this run drove, which is the one whose ending the session
-    // reports — not simply the last one changed, because an earlier turn can be
-    // touched after it.
-    return changedTurns.findLast((changed) => changed.id === turnId);
-  }
-
-  /**
-   * 把 Inbox 里待应用的引导消息插进当前 assistant turn。
-   *
-   * 只在步边界调用，而且调用方必须先确认上一步留下了完整历史。事务里删除
-   * Inbox 行并写入 steering step；随后发 `turn.steer` 事件，再把对应的 user
-   * 消息追加到模型历史。它不开启新的 turn，也不改 `#currentTurnId`。
-   *
-   * @returns 是否应用了至少一条消息。
-   */
-  async #applySteering(): Promise<boolean> {
-    if (this.context.abortSignal?.aborted) {
-      return false;
-    }
-
-    const turnId = this.#currentTurnId;
-    const streamId = this.#streamId;
-    if (!turnId || !streamId) {
-      return false;
-    }
-
-    const pending = await this.inbox.listSteering(this.sessionId);
-    if (pending.length === 0) {
-      return false;
-    }
-
-    // 只有仍然存在于表里的 id 会被领取；被取消或并发领走的行不会变成 step。
-    const steps = await this.inbox.applySteeringSteps({
-      sessionId: this.sessionId,
-      turnId,
-      streamId,
-      messageIds: pending.map((message) => message.id),
-    });
-    if (steps.length === 0) {
-      return false;
-    }
-
-    for (const step of steps) {
-      await this.context.controller?.write({
-        type: "turn.steer",
-        turnId,
-        step,
-        createdAt: Date.now(),
-      });
-
-      // `applySteeringSteps` 在领取消息的同一个事务里写好了这条 step 行，
-      // 事件只是把它带进内存；回合结束不必再写一次。
-      this.session.assembler?.markStepPersisted(step.id);
-
-      // 模型在下一步读到的就是这条 user 消息，位置在上一 step 的工具结果之后。
-      this.session.modelMessages.push(
-        ...(await convertStepToModelMessages(step))
-      );
-    }
-
-    return true;
-  }
-
-  /**
-   * Runs one step and brackets it with the step hooks.
-   *
-   * `step_start` fires before the step streams; `step_end` fires once the step
-   * has ended — finished, failed or aborted — so every start has its end and a
-   * hook never has to infer from the turn's ending whether a step was cut
-   * short.
-   */
-  async #runStep(input: AgentStepInput): Promise<StepOutcome> {
-    const event: StepStartEvent = {
-      sessionId: this.sessionId,
-      turnId: input.turnId,
-      stepId: input.stepId,
-      stepType: input.stepType,
-      modelId: this.context.modelId,
-    };
-
-    // 补丁只作用于这一步：模型和系统提示都不写回 context 与 `#instructions`，
-    // 下一步仍然从 turn 的默认值开始。
-    const runtime: RuntimeSettings = applyRuntimeSettingsPatches(
-      this.#runtimeSettings(),
-      await this.hooks.emitAsyncHooks("step_start", event, this.extensionApi)
-    );
-
-    const outcome = await this.#runStepCall(input, runtime);
-
-    await this.hooks.emit(
-      "step_end",
-      {
-        ...event,
-        modelId: runtime.modelId,
-        status: outcome.ok ? "done" : outcome.reason,
-        ...(outcome.ok
-          ? {
-              usage: outcome.result.usage,
-              finishReason: outcome.result.finishReason,
-            }
-          : {}),
-      },
-      this.extensionApi
-    );
-
-    return outcome;
-  }
-
-  /**
-   * Issues a single `streamText` call, pipes its chunks into the open UI
-   * message, and folds the step's assistant and tool messages back into the
-   * history so the next step sees them.
-   *
-   * Reports how the step ended rather than failing the stream: an aborted or
-   * failed step is an ending the turn has to record, not a reason for the reader
-   * to be left without one.
-   */
-  async #runStepCall(
-    input: AgentStepInput,
-    runtime: RuntimeSettings
-  ): Promise<StepOutcome> {
-    const { turnId, stepId } = input;
-    const model = this.provider.chatModel(runtime.modelId);
-    const messages = this.session.modelMessages;
-
-    await this.context.controller?.write({
-      type: "step.start",
-      stepType: "assistant",
-      model: runtime.modelId,
-      turnId,
-      stepId,
-      createdAt: Date.now(),
-    });
-
-    // 处理工具调用
-    // A stream that carries approvals is a resumption: a previous turn's step
-    // stopped with calls the user has now answered, and those calls run here,
-    // before the model is asked anything, so the history the model is about to
-    // read has their results in it.
-    //
-    // `pre_tool_call` had its say when the calls were held — the answers are
-    // what decides them now, which is why the approved ids are handed over
-    // rather than the hooks being asked the same question twice.
-    const { approvedToolApprovals, deniedToolApprovals } =
-      collectToolApprovals<AgentToolSet>({ messages });
-
-    if (approvedToolApprovals.length > 0 || deniedToolApprovals.length > 0) {
-      const toolCallId =
-        approvedToolApprovals[0]?.toolCall.toolCallId ||
-        deniedToolApprovals[0]?.toolCall.toolCallId;
-      const result = findToolPartByToolCallId(this.session.turns, toolCallId);
-      const askedTurnId = result?.turn.id ?? turnId;
-      const askedStepId = result?.step.id ?? stepId;
-
-      const localDeniedToolApprovals = deniedToolApprovals.filter(
-        (toolApproval) => toolApproval.toolCall.providerExecuted !== true
-      );
-      const localDeniedToolApprovalsWithoutResults =
-        localDeniedToolApprovals.filter(
-          (toolApproval) => toolApproval.existingToolResult === undefined
-        );
-      const deniedProviderExecutedToolApprovals = deniedToolApprovals.filter(
-        (toolApproval) => toolApproval.toolCall.providerExecuted === true
-      );
-
-      for (const toolApproval of [
-        ...localDeniedToolApprovals,
-        ...deniedProviderExecutedToolApprovals,
-      ]) {
-        await this.context.controller?.write({
-          type: "tool.output-denied",
-          turnId: askedTurnId,
-          stepId: askedStepId,
-          createdAt: Date.now(),
-          toolCallId: toolApproval.toolCall.toolCallId,
-          toolName: toolApproval.toolCall.toolName,
-          providerExecuted: false,
-        } as AgentStreamEvent<AgentToolSet>);
-      }
-
-      const localApprovedToolApprovals = approvedToolApprovals.filter(
-        (toolApproval) => toolApproval.toolCall.providerExecuted !== true
-      );
-      const localToolContent: ToolContent = [];
-
-      if (localApprovedToolApprovals.length > 0) {
-        const execution = await executeToolCalls({
-          tools: this.tools,
-          toolCalls: localApprovedToolApprovals.map(
-            (toolApproval) => toolApproval.toolCall
-          ),
-          sessionId: this.sessionId,
-          turnId: askedTurnId,
-          stepId: askedStepId,
-          messages,
-          context: this.context,
-          hooks: this.hooks,
-          extensionApi: this.extensionApi,
-          abortSignal: this.context.abortSignal,
-          write: (event) =>
-            this.context.controller?.write(event) ?? Promise.resolve(),
-          skipApproval: true,
-        });
-
-        for (const message of execution.toolMessages) {
-          if (message.role === "tool") {
-            localToolContent.push(...message.content);
-          }
-        }
-
-        if (result) {
-          const previousPerformance = result?.step.metadata?.performance;
-          const performance = {
-            ...previousPerformance,
-            toolExecutionMs: {
-              ...previousPerformance?.toolExecutionMs,
-              ...execution.toolExecutionMs,
-            },
-          } as StepResultPerformance;
-
-          await this.context.controller?.write({
-            stepId: askedStepId,
-            turnId: askedTurnId,
-            type: "step.metadata",
-            createdAt: Date.now(),
-            metadata: { performance },
-          });
-        }
-      }
-
-      // A refusal the user gave is reported to the model as an execution that
-      // was turned down, which is what the SDK's own loop would have written.
-      for (const toolApproval of localDeniedToolApprovalsWithoutResults) {
-        localToolContent.push({
-          type: "tool-result",
-          toolCallId: toolApproval.toolCall.toolCallId,
-          toolName: toolApproval.toolCall.toolName,
-          output: {
-            type: "execution-denied",
-            reason: toolApproval.approvalResponse.reason,
-          },
-        });
-      }
-
-      if (localToolContent.length > 0) {
-        messages.push({
-          role: "tool",
-          content: localToolContent,
-        });
-      }
-
-      // 工具结果写回的是当初挂起调用的旧 step，journal 不覆盖跨 turn 的回写，
-      // 所以这里先落一次，进程在下一步之前退出也不会丢掉结果。只写这条 step：
-      // 整条 turn 重写会把同一 turn 里早已落库的其他 step 也带上一遍。
-      const turn = this.session.turns.find((e) => e.id === askedTurnId);
-      if (turn) {
-        await this.store.updateTurn(turn.id, turn, {
-          stepIds: new Set([askedStepId]),
-        });
-      }
-    }
-
-    // 大模型调用
-    let result;
-    try {
-      result = streamText<ToolSet, AgentRuntimeContext>({
-        instructions: runtime.instructions,
-        model,
-        // The SDK is given tools it can only describe: an `execute` in this set
-        // would have it run the calls itself, out of `pre_tool_call`'s reach.
-        tools: stripToolExecution(this.tools),
-        stopWhen: isStepCount(1),
-        reasoning: this.context.modelEffort
-          ? MODEL_EFFORT_TO_REASONING[this.context.modelEffort]
-          : undefined,
-        messages,
-        abortSignal: this.context.abortSignal,
-        include: {
-          requestBody: true,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "agent#runStep streamText error.",
-        this.context.abortSignal?.aborted,
-        error
-      );
-      return await this.#stepFailure(error);
-    }
-
-    // A provider that fails mid-stream reports it as an `error` chunk, which the
-    // protocol forwards as a part; keeping the last one lets the turn carry the
-    // reason, which is known nowhere else.
-    let streamError: unknown;
-
-    // 大模型流处理
-    const reader = result.stream.getReader();
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) {
-          break;
-        }
-        if (value.type === "error") {
-          streamError = value.error;
-          console.error(
-            "agent#runStep stream event error",
-            this.context.abortSignal?.aborted,
-            value.error
-          );
-        }
-        // `streamText` is called with the plain `ToolSet`, so its chunks are
-        // typed that way; the protocol wants them as the agent's own tool set.
-        const event = toAgentEvent<AgentToolSet>(
-          turnId,
-          stepId,
-          value as TextStreamPart<AgentToolSet>
-        );
-        if (event) {
-          await this.context.controller?.write(event);
-        }
-      }
-    } catch (error) {
-      console.error(
-        "agent#runStep reader error.",
-        this.context.abortSignal?.aborted,
-        streamError,
-        error
-      );
-      // An abort surfaces here as the stream is torn down.
-      return this.context.abortSignal?.aborted
-        ? { ok: false, reason: "aborted" }
-        : await this.#stepFailure(streamError ?? error);
-    } finally {
-      reader.releaseLock();
-    }
-
-    try {
-      const [step, responseMessages] = await Promise.all([
-        result.finalStep,
-        result.responseMessages,
-      ]);
-      const { finishReason, rawFinishReason, usage, toolCalls } = step;
-
-      // The step did end, but a step the model ended with `error` has no calls
-      // worth running and cannot be reported as a whole turn either.
-      if (finishReason === "error") {
-        await this.context.controller?.write({
-          stepId,
-          turnId,
-          type: "step.finish",
-          createdAt: Date.now(),
-          usage: step.usage,
-          finishReason: step.finishReason,
-          rawFinishReason: step.rawFinishReason,
-          providerMetadata: step.providerMetadata,
-          status: "done",
-          metadata: { performance: step.performance },
-        });
-
-        return await this.#stepFailure(
-          streamError ?? new Error("The model stream failed.")
-        );
-      }
-
-      // The calls this loop owns. A provider-executed call arrives with its
-      // result already attached, and one the model got wrong is the SDK's to
-      // report: it emits a `tool.error` of its own for those, but no matching
-      // tool message, which is why they can never count as answered below.
-      const clientToolCalls = toolCalls.filter(
-        (call) => call.providerExecuted !== true
-      );
-
-      const execution = await executeToolCalls({
-        tools: this.tools,
-        toolCalls: clientToolCalls.filter((call) => call.invalid !== true),
-        sessionId: this.sessionId,
-        turnId,
-        stepId,
-        messages,
-        context: this.context,
-        hooks: this.hooks,
-        extensionApi: this.extensionApi,
-        abortSignal: this.context.abortSignal,
-        write: (event) =>
-          this.context.controller?.write(event) ?? Promise.resolve(),
-      });
-
-      // A stop during the calls is the turn's ending, not a step's: the run
-      // returns the way the reader loop's abort does, leaving the step pending
-      // for `settle` to close. The events above have already been sent, so the
-      // calls that did finish are on the reader's screen.
-      if (this.context.abortSignal?.aborted) {
-        return { ok: false, reason: "aborted" };
-      }
-
-      await this.context.controller?.write({
-        stepId,
-        turnId,
-        type: "step.finish",
-        createdAt: Date.now(),
-        usage: step.usage,
-        // The SDK times only the tools it runs itself, and these are no longer
-        // among them, so the durations come from the loop that ran them.
-        finishReason: step.finishReason,
-        rawFinishReason: step.rawFinishReason,
-        providerMetadata: step.providerMetadata,
-        status: "done",
-        metadata: {
-          performance: {
-            ...step.performance,
-            toolExecutionMs: {
-              ...step.performance.toolExecutionMs,
-              ...execution.toolExecutionMs,
-            },
-          },
-        },
-      });
-
-      // What the SDK feeds its own next step: the assistant message for this
-      // step, then a tool message for whatever the loop executed.
-      const promptMessageCount = messages.length;
-      messages.push(...responseMessages, ...execution.toolMessages);
-      this.session.noteStepUsage(usage, promptMessageCount);
-
-      const executableToolCalls = clientToolCalls.filter(
-        (call) => call.invalid !== true
-      );
-      const hadClientToolCalls = clientToolCalls.length > 0;
-      // 等待审批不是“历史坏了”：调用被挂起，答案会从下一次流回来。其余
-      // 情况里，非法或没有结果的调用会让历史不完整。
-      const unresolvedToolCalls =
-        !execution.awaitingApproval &&
-        (executableToolCalls.length !== clientToolCalls.length ||
-          execution.outcomes.length !== executableToolCalls.length);
-
-      // The step ends here either way — everything it streamed is on the wire —
-      // but a held step ends the turn with it: the model has no results to read
-      // and the user still has the calls to answer, which is the next stream.
-      if (execution.awaitingApproval) {
-        return {
-          ok: true,
-          result: {
-            messages,
-            usage,
-            finishReason,
-            rawFinishReason,
-            toolCallsResolved: false,
-            hadClientToolCalls,
-            unresolvedToolCalls: false,
-            awaitingApproval: true,
-          },
-        };
-      }
-
-      // The continuation rule, read off our own outcomes now that the SDK no
-      // longer reports them: keep going only while every client tool call came
-      // back. A denial is an answer — the model is told the call was refused —
-      // but a call the model got wrong is not, and continuing there would send
-      // an assistant tool call with no matching tool message.
-      const toolCallsResolved = hadClientToolCalls && !unresolvedToolCalls;
-
-      return {
-        ok: true,
-        result: {
-          messages,
-          usage,
-          finishReason,
-          rawFinishReason,
-          toolCallsResolved,
-          hadClientToolCalls,
-          unresolvedToolCalls,
-          awaitingApproval: false,
-        },
-      };
-    } catch (error) {
-      console.error(
-        "agent#runStep stream final error.",
-        this.context.abortSignal?.aborted,
-        streamError,
-        error
-      );
-      // The stream can fail before any step is recorded, which rejects the two
-      // promises above instead of ending the reader loop.
-      return this.context.abortSignal?.aborted
-        ? { ok: false, reason: "aborted" }
-        : await this.#stepFailure(streamError ?? error);
-    }
-  }
-
-  #policy(): ResolvedCompactionPolicy {
-    return this.context.compaction ?? resolveCompactionPolicy();
-  }
-
-  #summarize(modelId = this.context.modelId): SummarizeFn {
-    return (
-      this.context.summarize ??
-      createSummarizer(this.provider.chatModel(modelId))
-    );
-  }
-
-  #overheadTokens(): number {
-    // usage 锚点已经覆盖 instructions 和工具 schema；这个估算只在第一步回报
-    // 真实数量之前有意义。
-    return estimateTokens(this.#instructions ?? "") + 2000;
-  }
-
-  /** 历史中是否存在尚未返回结果的工具调用。 */
-  #hasUnresolvedToolCall(messages: readonly ModelMessage[]): boolean {
-    const calls = new Set<string>();
-    const results = new Set<string>();
-
-    for (const message of messages) {
-      if (typeof message.content === "string") {
-        continue;
-      }
-      for (const part of message.content) {
-        if (part.type === "tool-call") {
-          calls.add(part.toolCallId);
-        } else if (part.type === "tool-result") {
-          results.add(part.toolCallId);
-        }
-      }
-    }
-
-    for (const id of calls) {
-      if (!results.has(id)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  async #stepFailure(error: unknown): Promise<StepOutcome> {
-    if (this.context.abortSignal?.aborted) {
-      return { ok: false, reason: "aborted" };
-    }
-
-    if (await this.#handleOverflow(error)) {
-      return {
-        ok: false,
-        reason: "error",
-        error: new Error(
-          "The model's context window was exceeded. The history has been compacted; retry the request."
-        ),
-      };
-    }
-
-    return { ok: false, reason: "error", error };
-  }
-
-  async #handleOverflow(error: unknown): Promise<boolean> {
-    if (!isContextOverflowError(error)) {
-      return false;
-    }
-
-    try {
-      return await this.#maybeCompact({
-        trigger: "overflow",
-        mode: "end",
-      });
-    } catch (compactionError) {
-      logger.warn("[agent] overflow compaction failed", compactionError);
-      return false;
-    }
-  }
-
-  /**
-   * 尝试缩短当前会话的模型历史：先按策略剪枝旧工具结果，必要时再摘要压缩历史。
-   *
-   * `pressure` 表示常规的上下文压力检查：仅在启用自动压缩、达到压缩阈值且本 turn
-   * 未超过重试上限时继续。`overflow` 表示模型调用已遇到上下文溢出，不受自动压缩
-   * 开关和每 turn 次数上限限制，但仍须通过工具调用完整性、可压缩区间等检查。
-   *
-   * `before-turn` 将当前历史中最近 user turn 之前的消息作为摘要候选区间，并把压缩
-   * 标记放在新 turn 之前；`end` 则将当前 turn 末尾作为候选区间和标记插入位置。
-   * 两种模式都会保留候选区间之后的消息，让下一次模型请求使用 checkpoint 加保留段。
-   *
-   * 成功时把压缩记录写回会话、替换模型侧历史，并更新本 turn 的计数和防重复压缩
-   * 标记。失败或不满足条件时返回 `false`；但剪枝发生在摘要尝试之前，因此即使后续
-   * 不压缩，已经剪掉工具结果的 `modelMessages` 也会保留。压力压缩是优化，不应仅因
-   * 无法压缩而中断当前 turn。
-   *
-   * @param input 压缩触发原因，以及压缩标记相对于当前 turn 的放置模式。
-   * @returns 是否成功完成并应用了摘要压缩。
-   */
-  async #maybeCompact(input: {
-    trigger: "pressure" | "overflow";
-    mode: "before-turn" | "end";
-  }): Promise<boolean> {
-    const policy = this.#policy();
-    // 压力压缩可由配置关闭；溢出恢复则仍然尝试，避免失去恢复上下文的机会。
-    if (input.trigger === "pressure" && !policy.auto) {
-      return false;
-    }
-    // 同一 turn 设上限，防止压缩后仍触发压力检查时不断重复摘要。
-    if (
-      input.trigger === "pressure" &&
-      this.#compactionsThisTurn >= MAX_COMPACTIONS_PER_TURN
-    ) {
-      return false;
-    }
-
-    let messages = this.session.modelMessages;
-    if (policy.pruneToolResults) {
-      // 先移除/截短较旧的工具结果；若产生新数组，立即同步模型侧会话历史。
-      const pruned = pruneOlderToolResults(messages, {
-        keepRecentTokens: policy.keepRecentTokens,
-        thresholdChars: policy.pruneThresholdChars,
-        headChars: policy.pruneHeadChars,
-        tailChars: policy.pruneTailChars,
-      });
-      if (pruned !== messages) {
-        messages = pruned;
-        this.session.modelMessages = pruned;
-      }
-    }
-
-    // 使用最新的 provider usage（若尚无则估算），并把 instructions 等固定开销计入。
-    const measurement = measureContext({
-      messages,
-      usage: this.session.lastUsage,
-      overheadTokens: this.#overheadTokens(),
-    });
-    // 常规压力触发必须达到阈值；overflow 触发即使尚未达到估算阈值也继续恢复。
-    if (
-      input.trigger === "pressure" &&
-      !shouldCompact(measurement.tokens, policy)
-    ) {
-      return false;
-    }
-    // 如果历史长度没有增长、但压缩后仍超阈值，跳过重复的无进展压缩。
-    if (
-      input.trigger === "pressure" &&
-      this.#lastCompactionGuard !== undefined &&
-      messages.length <= this.#lastCompactionGuard.messageCount &&
-      measurement.tokens >= (policy.thresholdTokens ?? Number.POSITIVE_INFINITY)
-    ) {
-      return false;
-    }
-    // 不能在工具调用尚未返回结果时改写历史，否则会留下不完整的工具交互。
-    if (
-      this.#hasUnresolvedToolCall(messages) ||
-      findTurnWithoutToolResult(this.session.turns) !== null
-    ) {
-      return false;
-    }
-
-    let placement: { turnId: string; stepIndex: number };
-    let regionEnd: number;
-    if (input.mode === "before-turn") {
-      // 找到下一个 turn 前可写入压缩 step 的位置；只摘要最近 user turn 之前的历史。
-      const found = findPreTurnPlacement(this.session.turns);
-      const { lastUserTurn } = this.session.projected;
-      if (!found || !lastUserTurn) {
-        return false;
-      }
-      placement = found;
-      regionEnd = lastUserTurn.messageIndex;
-    } else {
-      // turn 收尾或 overflow 恢复时，将压缩标记挂到当前 assistant turn 的末尾。
-      if (!this.#currentTurnId) {
-        return false;
-      }
-      const found = findEndPlacement(this.session.turns, this.#currentTurnId);
-      if (!found) {
-        return false;
-      }
-      placement = found;
-      regionEnd = messages.length;
-    }
-
-    // checkpoint 本身位于消息 0，不纳入新摘要；否则重复压缩可能摘要已有摘要。
-    const start = this.session.projected.checkpoint ? 1 : 0;
-    if (
-      estimateMessagesTokens(messages.slice(start, regionEnd)) <
-      policy.minSummarizeTokens
-    ) {
-      return false;
-    }
-
-    // 先开出 compaction step 与 part，再调用压缩流水线；后者拿到精确的候选区间
-    // 和取消信号。part 从 start 起就以 streaming 存在，摘要失败时由
-    // compaction.error 把它和这个 step 一起撤回。
-    const compactionId = generateEventId();
-    const stepId = generateStepId();
-    const createdAt = Date.now();
-    const stepEvent: StepStartEvent = {
-      sessionId: this.sessionId,
-      turnId: placement.turnId,
-      stepId,
-      stepType: "compaction",
-      modelId: this.context.modelId,
-    };
-    let stepStatus: StepEndEvent["status"] = "error";
-    const stepStart = await this.hooks.emitAsyncHooks(
-      "step_start",
-      stepEvent,
-      this.extensionApi
-    );
-    const { modelId: stepModelId } = applyRuntimeSettingsPatches(
-      { modelId: this.context.modelId, instructions: "" },
-      stepStart
-    );
-    stepEvent.modelId = stepModelId;
-    await this.context.controller?.write({
-      type: "step.start",
-      stepType: "compaction",
-      model: stepModelId,
-      turnId: placement.turnId,
-      stepId,
-      createdAt,
-    });
-    await this.context.controller?.write({
-      type: "compaction.start",
-      id: compactionId,
-      trigger: input.trigger,
-      turnId: placement.turnId,
-      stepId,
-      createdAt,
-    });
-    await this.hooks.emit(
-      "pre_compact",
-      { sessionId: this.sessionId, trigger: input.trigger },
-      this.extensionApi
-    );
-
-    try {
-      const result = await compactHistory({
-        projected: {
-          ...this.session.projected,
-          messages,
-          usageAnchor: this.session.lastUsage,
-        },
-        policy,
-        trigger: input.trigger,
-        modelId: stepModelId,
-        summarize: this.#summarize(stepModelId),
-        region: { start, end: regionEnd },
-        signal: this.context.abortSignal,
-      });
-      if (!result) {
-        // 区间在进入流水线前已经校验过，理论上不会走到这里；真到了就把刚开出的
-        // part 撤回，避免留下一个永远 streaming 的标记。
-        await this.context.controller?.write({
-          type: "compaction.error",
-          id: compactionId,
-          error: "compaction produced no record",
-          createdAt: Date.now(),
-        });
-        stepStatus = "error";
-        return false;
-      }
-
-      // 记录写到 start 时开出的 step/part 上，让存储和 turn assembler 都能重建该标记。
-      // 结束时间要重新读：step.start 的 createdAt 早于摘要调用，不能拿它当耗时终点。
-      const completedAt = Date.now();
-      await this.context.controller?.write({
-        type: "compaction.end",
-        id: compactionId,
-        turnId: placement.turnId,
-        stepId,
-        record: result.record,
-        createdAt: completedAt,
-      });
-      await this.context.controller?.write({
-        stepId,
-        turnId: placement.turnId,
-        type: "step.finish",
-        createdAt: completedAt,
-        usage: ZERO_USAGE,
-        finishReason: "stop",
-        rawFinishReason: "stop",
-        providerMetadata: undefined,
-        status: "done",
-      });
-
-      // assembler 通常会因上述事件追加 step；无 controller 时也显式更新 turn，保持测试
-      // 和其他轻量调用方看到的会话状态一致。
-      const turn = this.session.turns.find(
-        (candidate) => candidate.id === placement.turnId
-      );
-      if (
-        turn?.type === "assistant" &&
-        !turn.content.some((step) => step.id === stepId)
-      ) {
-        turn.content.push(createCompactionStep(result.record));
-      }
-
-      // checkpoint 替代被摘要区间，区间之后的消息原样保留。
-      const nextMessages = [result.checkpoint, ...messages.slice(regionEnd)];
-      this.session.applyCompaction({
-        checkpoint: result.record,
-        messages: nextMessages,
-      });
-      this.#compactionsThisTurn += 1;
-      this.#lastCompactionGuard = {
-        messageCount: nextMessages.length,
-        tokens: result.record.tokensAfter,
-      };
-
-      // before-turn 的压缩 step 不一定属于当前正在构建的 turn，因此显式持久化更新。
-      // 只写这条 step：它前面的 step 早已落库，整条 turn 重写没有必要。
-      if (input.mode === "before-turn" && turn) {
-        await this.store.updateTurn(turn.id, turn, {
-          stepIds: new Set([stepId]),
-        });
-      }
-
-      await this.hooks.emit(
-        "post_compact",
-        { sessionId: this.sessionId, record: result.record },
-        this.extensionApi
-      );
-      stepStatus = "done";
-      return true;
-    } catch (error) {
-      if (this.context.abortSignal?.aborted) {
-        stepStatus = "aborted";
-        return false;
-      }
-      // 摘要/持久化异常作为可恢复的压缩失败记录；不把压力压缩失败升级为 turn 失败。
-      logger.warn("[agent] compaction failed", error);
-      await this.context.controller?.write({
-        type: "compaction.error",
-        id: compactionId,
-        error: getErrorMessage(error),
-        createdAt: Date.now(),
-      });
-      stepStatus = "error";
-      return false;
-    } finally {
-      await this.hooks.emit(
-        "step_end",
-        {
-          ...stepEvent,
-          status: stepStatus,
-          ...(stepStatus === "done"
-            ? { usage: ZERO_USAGE, finishReason: "stop" }
-            : {}),
-        },
-        this.extensionApi
-      );
-    }
+    return await this.#runController.stream(options);
   }
 }

@@ -11,7 +11,6 @@ import type { Server } from "node:http";
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
 import { recoverInterruptedRuns } from "@workspace/agent/storage/recovery";
-import { SQLiteStore } from "@workspace/agent/storage/sqlite-store";
 import { closeDb, migrateDb } from "@workspace/db";
 import {
   formatOrigin,
@@ -25,6 +24,7 @@ import {
 import { logger } from "@workspace/shared/logger";
 
 import { app } from "./app";
+import { SQLiteStore } from "./storage/sqlite-store";
 
 /** 监听地址：显式参数优先，其次环境变量，最后回落到 loopback + 18086。 */
 export interface ListenAddress {
