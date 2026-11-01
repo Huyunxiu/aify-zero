@@ -36,8 +36,6 @@ const makeManager = (): ExtensionManager => {
     unregisterTool: (name) => {
       Reflect.deleteProperty(tools, name);
     },
-    registerApproval: () => {},
-    unregisterApproval: () => {},
     hooks: new HooksManager(),
   });
 };

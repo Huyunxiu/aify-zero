@@ -12,3 +12,4 @@ export * from "./jobs";
 export type * from "./types";
 export * from "./stream-registry";
 export * from "./subagent";
+export * from "./tool-approval";

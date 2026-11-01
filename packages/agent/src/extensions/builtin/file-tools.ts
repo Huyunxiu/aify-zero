@@ -31,10 +31,5 @@ export class FileToolsExtension extends Extension {
     api.tool("edit-file", createEditFileTool({ agentContext: environment }));
     api.tool("grep", createGrepTool({ agentContext: environment }));
     api.tool("glob", createGlobTool({ agentContext: environment }));
-
-    // 写和删会改用户文件，调用前交给用户确认。策略跟着工具走，宿主不用
-    // 再维护一份名单。
-    api.approvalRequired("write-file");
-    api.approvalRequired("delete-file");
   }
 }

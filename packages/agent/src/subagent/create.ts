@@ -11,6 +11,7 @@ import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { AgentStore } from "../storage";
+import type { ToolApprovalPattern } from "../tool-approval";
 import type { AgentToolSet } from "../types";
 import {
   generateSessionId,
@@ -91,12 +92,13 @@ export type SubagentParent = {
   /** 父会话里这次 `task` 调用的 id。和父会话 id 一起唯一确定一个子会话。 */
   toolCallId: string;
   /**
-   * 父的审批名单。
+   * 父的工具审批函数。
    *
-   * 子 agent 不重新注册扩展，但工具集是从父继承的；名单一起继承，危险工具
-   * 才不会换个会话就绕过审批。
+   * 子 agent 不重新注册扩展，但工具集是从父继承的；函数一起继承，危险工具
+   * 才不会换个会话就绕过审批。扩展的 `pre_tool_call` 只作用于注册它的
+   * agent，不随工具集复制给子 agent。
    */
-  approvalRequired: readonly string[];
+  toolApprovalPattern?: ToolApprovalPattern;
   /** 父的压缩策略；子 agent 继承它解析出的策略和摘要器。 */
   compaction?: CompactionStrategy;
 };
@@ -279,8 +281,13 @@ export async function createSubagent(
     // 要等这个子 agent 跑完才返回——父的 `#runStep` 卡在 `executeToolCalls` 上，
     // 而 task 的 generator 正 `await entry.whenFinished()`。
     abortSignal: parent.context.abortSignal,
-    approvalRequired: parent.approvalRequired,
   });
+
+  // 子 agent 不重新注册扩展，审批函数一起继承；父之后再注册的函数不会
+  // 出现在子 agent 里。
+  if (parent.toolApprovalPattern) {
+    agent.registerToolApprovalPattern(parent.toolApprovalPattern);
+  }
 
   return { agent, turns };
 }

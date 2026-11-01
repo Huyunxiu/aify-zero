@@ -6,7 +6,6 @@ import { describe, expect, test, vi } from "vitest";
 
 import { AgentSession } from "../src/agent-session.js";
 import type { ContextFile } from "../src/context-files.js";
-import { ApprovalExtension } from "../src/extensions/approvals.js";
 import { capability } from "../src/extensions/capabilities.js";
 import { ExtensionManager } from "../src/extensions/manager.js";
 import type { ExtensionManagerDeps } from "../src/extensions/manager.js";
@@ -67,7 +66,6 @@ class TestExtension extends Extension {
 
 const makeDeps = () => {
   const tools: ToolSet = {};
-  const approvals = new Set<string>();
   const hooks = new HooksManager();
   const deps: ExtensionManagerDeps = {
     agent: {
@@ -89,16 +87,10 @@ const makeDeps = () => {
     unregisterTool: (name) => {
       Reflect.deleteProperty(tools, name);
     },
-    registerApproval: (name) => {
-      approvals.add(name);
-    },
-    unregisterApproval: (name) => {
-      approvals.delete(name);
-    },
     hooks,
   };
 
-  return { deps, tools, hooks, approvals };
+  return { deps, tools, hooks };
 };
 
 const emitTurnStart = (hooks: HooksManager) =>
@@ -623,31 +615,39 @@ describe("ExtensionManager#assembler", () => {
   });
 });
 
-describe(ApprovalExtension, () => {
-  test("declares the tools it names", async () => {
-    const { deps, approvals } = makeDeps();
+describe("tool permissions", () => {
+  const call = {
+    sessionId: "session-1",
+    turnId: "turn-1",
+    stepId: "step-1",
+    toolCallId: "call-1",
+    toolName: "write-file",
+    input: { path: "notes.md" },
+    messages: [],
+  };
+
+  test("an extension decides through pre_tool_call and can be disposed", async () => {
+    const { deps, hooks } = makeDeps();
     const manager = new ExtensionManager(deps);
 
     await manager.add(
-      new ApprovalExtension({
-        id: "approvals",
-        tools: ["write-file", "delete-file"],
+      new TestExtension("policy", (api) => {
+        api.on("pre_tool_call", (event) =>
+          event.toolName === "write-file" ? { decision: "ask" } : undefined
+        );
       })
     );
 
-    expect([...approvals]).toStrictEqual(["write-file", "delete-file"]);
-  });
+    await expect(hooks.emit("pre_tool_call", call, {})).resolves.toStrictEqual({
+      decision: "ask",
+    });
 
-  test("withdraws its declarations when it is disposed", async () => {
-    const { deps, approvals } = makeDeps();
-    const manager = new ExtensionManager(deps);
+    await manager.dispose("policy");
 
-    await manager.add(
-      new ApprovalExtension({ id: "approvals", tools: ["write-file"] })
-    );
-    await manager.dispose("approvals");
-
-    expect([...approvals]).toStrictEqual([]);
+    // 卸载后扩展不再参与决策，内核也没有留下按名字询问的名单。
+    await expect(
+      hooks.emit("pre_tool_call", call, {})
+    ).resolves.toBeUndefined();
   });
 });
 

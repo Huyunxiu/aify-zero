@@ -18,6 +18,9 @@ import {
 import type { SubagentDefinition } from "../src/subagent/definitions.js";
 import type { AgentToolSet } from "../src/types.js";
 
+/** 父注册的审批函数；子 agent 应当原样继承。 */
+const askPattern = () => ({ decision: "ask" as const });
+
 /**
  * 只实现 resolveSubagentSession 真正用到的那三个方法。
  *
@@ -260,7 +263,6 @@ describe("subagent 的 abort scope", () => {
         },
         sessionId: parent.sessionId,
         toolCallId: "call-1",
-        approvalRequired: [],
       },
       {
         definition,
@@ -304,8 +306,8 @@ describe("subagent 的 abort scope", () => {
   });
 });
 
-describe("subagent 继承审批名单", () => {
-  test("父声明过的工具在子 agent 里仍然要问", async () => {
+describe("subagent 继承审批函数", () => {
+  test("父的函数在子 agent 里仍然生效", async () => {
     const { agent: child } = await createSubagent(
       {
         context: new AgentContext({
@@ -322,7 +324,7 @@ describe("subagent 继承审批名单", () => {
         },
         sessionId: "parent-session",
         toolCallId: "call-1",
-        approvalRequired: ["write-file"],
+        toolApprovalPattern: askPattern,
       },
       {
         definition,
@@ -332,7 +334,7 @@ describe("subagent 继承审批名单", () => {
       }
     );
 
-    expect(child.approvalRequired).toStrictEqual(["write-file"]);
+    expect(child.toolApprovalPattern).toBe(askPattern);
   });
 });
 
@@ -378,7 +380,6 @@ describe("subagent 继承项目说明", () => {
         },
         sessionId: parent.sessionId,
         toolCallId: "call-1",
-        approvalRequired: [],
       },
       {
         definition,

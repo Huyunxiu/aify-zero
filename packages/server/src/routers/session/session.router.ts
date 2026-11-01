@@ -144,15 +144,14 @@ const createSession = publicProcedure
   });
 
 /**
- * Reads the turn a session is running.
+ * 读取会话正在运行的回合。
  *
- * Located by session rather than by stream id: the id a client holds is the
- * session's, and the stream id names one particular turn.
+ * 按会话定位，而不是按 stream id 定位：客户端持有的是会话 id，而 stream id 只
+ * 命名某一个回合。
  *
- * A reader that attaches part-way through gets the turn from its start — the
- * entry replays what it has buffered — so a page that reloaded can pick the
- * turn up rather than join it mid-sentence. Several readers may do this at
- * once; each gets its own stream.
+ * 中途接入的读取方会从回合开头读起——入口会重放已缓冲的内容——所以刷新过的
+ * 页面能重新接上这个回合，而不是从句中接入。多个读取方可以同时这样做，每个
+ * 读取方拿到自己的流。
  */
 export const streamSession = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/stream" })
@@ -172,26 +171,22 @@ export const streamSession = publicProcedure
   });
 
 /**
- * Stops the turn a session is running.
+ * 停止会话正在运行的回合。
  *
- * Nothing else can, now that a turn outlives its request: closing the window
- * that asked for it leaves it running on purpose. Absent a running turn this is
- * a no-op rather than an error — the caller asked for the turn to not be
- * running, and it is not.
+ * 现在只有这个入口能停：回合的生命周期长于它的请求，关闭发起请求的窗口后，
+ * 回合会按设计继续运行。没有正在运行的回合时，这里不做任何事，也不报错——
+ * 调用方要求的就是「没有回合在跑」，而事实就是这样。
  *
- * Answers only once the turn has ended, so a caller that stops and then reads
- * the session finds the aborted turn rather than racing its write.
+ * 回合结束后才返回，所以先停止、再读会话的调用方能读到已中止的回合，而不会
+ * 和它的写入抢先后。
  *
- * A session left marked as running with no turn behind it — one that ended with
- * the process, or that finished just before the lookup — has that marker
- * cleared, so a reloaded client is not left trying to resume a turn that is
- * gone. That is also why the marker is cleared here rather than left to the
- * turn's own finish: this one runs behind a hook and a store write, and the
- * stop should answer with the session already settled.
+ * 会话被标记为运行中、背后却没有回合时——回合随进程一起结束，或在查找前一刻
+ * 刚好结束——这里会清掉该标记，免得刷新后的客户端去恢复一个已经不存在的回合。
+ * 标记在这里清、而不是留给回合自己结束时清，也是这个原因：这条路径跑在 hook
+ * 和一次存储写入之后，停止应当在会话已经落定后才作答。
  *
- * Both paths settle the session to `canceled`: the turn the caller asked to
- * stop is one that did not run to completion, whether this call ended it or
- * found it already gone.
+ * 两条路径都把会话落定为 `canceled`：调用方要求停止的回合没有跑完，无论这次
+ * 调用是结束了它，还是发现它早已结束。
  *
  * 子会话的行也在这里收尾。父一停，子 agent 的 signal 跟着停（见
  * `createSubagent`），它自己会把行清掉——但那要等它跑完，而进程被杀时根本不会

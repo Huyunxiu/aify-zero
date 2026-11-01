@@ -158,6 +158,36 @@ export type ToolStartDecision =
   | { decision: "deny"; reason?: string }
   | { decision: "ask" };
 
+/**
+ * Folds what every `pre_tool_call` handler said — and what the agent's own
+ * approval function said — into the one answer the call gets.
+ *
+ * The handlers do not outrank one another — they each hold a veto: a refusal
+ * anywhere in the run is the run's answer, and no later `allow` talks it out of
+ * one. An `ask` stands the same way, since a user answering over a hook's
+ * objection is exactly what a refusal is meant to prevent. Priority only breaks
+ * ties: the first refusal to have been returned is the one whose reason is
+ * reported, and handlers that abstained contribute nothing.
+ */
+export function resolveToolStartDecision(
+  decisions: readonly ToolStartDecision[]
+): ToolStartDecision | undefined {
+  const denial = decisions.find((decision) => decision.decision === "deny");
+  if (denial) {
+    return denial;
+  }
+
+  if (decisions.some((decision) => decision.decision === "ask")) {
+    return { decision: "ask" };
+  }
+
+  if (decisions.some((decision) => decision.decision === "allow")) {
+    return { decision: "allow" };
+  }
+
+  return undefined;
+}
+
 export type ToolEndEvent = ToolCallHookEvent & {
   outcome: "result" | "error" | "denied";
   /** The tool's return value when it produced one. */

@@ -24,6 +24,8 @@ import type {
   HooksManager,
   RuntimeSettings,
   StepStartEvent,
+  ToolCallHookEvent,
+  ToolStartDecision,
 } from "../hooks-manager";
 import { applyRuntimeSettingsPatches } from "../hooks-manager";
 import { executeToolCalls, stripToolExecution } from "../tools/execution";
@@ -87,8 +89,10 @@ export interface StepRunnerDeps {
   journal: TranscriptJournal;
   /** turn / step 的默认运行时设置。 */
   runtimeSettings(): RuntimeSettings;
-  /** 这个工具名是否要求用户先确认。 */
-  requiresApproval(toolName: string): boolean;
+  /** 求这次调用的审批决策；由 Agent 注册的函数提供。 */
+  decideToolApproval(
+    request: ToolCallHookEvent
+  ): Promise<ToolStartDecision | undefined>;
   /** 模型报告上下文溢出时，交给压缩策略处理；返回是否已恢复。 */
   handleOverflow(error: unknown, turnId: string): Promise<boolean>;
 }
@@ -443,7 +447,7 @@ export class StepRunner {
         hooks,
         extensionApi,
         abortSignal: context.abortSignal,
-        requiresApproval: (name) => this.#deps.requiresApproval(name),
+        decideToolApproval: (request) => this.#deps.decideToolApproval(request),
         write: (event) => context.controller?.write(event) ?? Promise.resolve(),
       });
 

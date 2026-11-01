@@ -29,8 +29,6 @@ export interface ExtensionManagerDeps {
   tools: ToolSet;
   registerTool(name: string, tool: Tool): void;
   unregisterTool(name: string): void;
-  registerApproval(name: string): void;
-  unregisterApproval(name: string): void;
   hooks: HooksManager;
 }
 
@@ -48,8 +46,6 @@ interface RegisteredExtension {
   hookOffs: (() => void)[];
   /** 这个扩展贡献的装配模块，卸载时按顺序移除。 */
   assemblers: AssemblerModule<AgentToolSet>[];
-  /** 这个扩展声明需要审批的工具名。 */
-  approvals: Set<string>;
   /** 这个扩展提供的 capability id。 */
   capabilities: Set<string>;
 }
@@ -67,8 +63,6 @@ export class ExtensionManager {
   readonly #assemblers: AssemblerModule<AgentToolSet>[] = [];
   /** 已被认领的 custom kind → 扩展 id。 */
   readonly #assemblerKeys = new Map<string, string>();
-  /** 审批工具名 → 声明它的扩展 id。 */
-  readonly #approvalOwners = new Map<string, string>();
   /** capability id → 提供它的扩展 id；内核预置的没有所有者。 */
   readonly #capabilityOwners = new Map<string, string>();
   readonly #capabilities: Map<string, unknown>;
@@ -95,7 +89,6 @@ export class ExtensionManager {
       sections: [],
       hookOffs: [],
       assemblers: [],
-      approvals: new Set(),
       capabilities: new Set(),
     };
 
@@ -181,18 +174,6 @@ export class ExtensionManager {
         }
         this.#deps.registerTool(name, tool);
         record.tools.set(name, tool);
-      },
-      approvalRequired: (name) => {
-        const owner = this.#approvalOwners.get(name);
-        if (owner && owner !== record.extension.id) {
-          throw new Error(
-            `approval for "${name}" is already declared by extension "${owner}"`
-          );
-        }
-
-        this.#approvalOwners.set(name, record.extension.id);
-        this.#deps.registerApproval(name);
-        record.approvals.add(name);
       },
       use: <T>(token: CapabilityToken<T>): T => {
         const value = this.#capabilities.get(token.id);
@@ -293,14 +274,6 @@ export class ExtensionManager {
       // 工具一起带走。
       if (this.#deps.tools[name] === tool) {
         this.#deps.unregisterTool(name);
-      }
-    }
-
-    for (const name of record.approvals) {
-      // 只撤自己仍然持有的审批声明。
-      if (this.#approvalOwners.get(name) === record.extension.id) {
-        this.#approvalOwners.delete(name);
-        this.#deps.unregisterApproval(name);
       }
     }
 

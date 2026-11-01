@@ -37,7 +37,7 @@ async function startSubagent(
   store: AgentStore,
   request: SubagentRequest
 ): Promise<SubagentRun> {
-  // 父的审批名单在 start 时读：扩展在 init 里声明，构造工厂时可能还没声明完。
+  // 父的审批函数在 start 时读：组合根在构造之后才注册，构造工厂时可能还没注册完。
   const parent: SubagentParent = {
     context: agent.context,
     tools: agent.tools,
@@ -48,7 +48,7 @@ async function startSubagent(
     },
     sessionId: agent.sessionId,
     toolCallId: request.toolCallId,
-    approvalRequired: agent.approvalRequired,
+    toolApprovalPattern: agent.toolApprovalPattern,
     compaction: agent.extensions.capability(Capabilities.compaction),
   };
 

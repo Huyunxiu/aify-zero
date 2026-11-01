@@ -26,6 +26,8 @@ import { TranscriptJournal } from "./kernel/transcript-journal";
 import { TurnRunner } from "./kernel/turn-runner";
 import { createOpenAICompatibleGateway } from "./model/gateway";
 import type { AgentStore } from "./storage";
+import { evaluateToolApproval } from "./tool-approval";
+import type { ToolApprovalPattern } from "./tool-approval";
 
 export type { AgentStreamOptions, AgentStreamSignal } from "./kernel/run-types";
 export { NothingToCompactError } from "./kernel/run-types";
@@ -57,13 +59,6 @@ export type AgentOptions = {
    * 会话待发送消息的入口。默认用同一个 store 构造；测试可以注入替身。
    */
   inbox?: AgentInbox;
-  /**
-   * 调用前必须由用户确认的工具名。
-   *
-   * 扩展在 `init` 里声明；子 agent 从父继承这份名单，避免危险工具换个会话
-   * 就绕过审批。
-   */
-  approvalRequired?: readonly string[];
   /**
    * 由组合根注入的子会话工厂。
    *
@@ -112,8 +107,8 @@ export class Agent {
   readonly #turnRunner: TurnRunner;
   /** 一次运行的生命周期：流、锁、onFinish。 */
   readonly #runController: RunController;
-  /** 调用前必须由用户确认的工具名；由扩展声明，子 agent 继承。 */
-  readonly #approvalRequired: Set<string>;
+  /** 按调用入参决定 deny / ask / allow 的函数；子 agent 继承。 */
+  #toolApprovalPattern: ToolApprovalPattern | undefined;
   /** 压缩策略与摘要器。 */
   readonly #compaction: CompactionController;
 
@@ -140,7 +135,6 @@ export class Agent {
       ? AbortSignal.any([options.abortSignal, this.#abortController.signal])
       : this.#abortController.signal;
     this.session = options.session;
-    this.#approvalRequired = new Set(options.approvalRequired);
     // 扩展只拿到工具需要的环境，拿不到完整的 context。路径在会话内不变，
     // 所以在构造时取一次快照。
     const environment: ToolEnvironment = {
@@ -209,12 +203,6 @@ export class Agent {
       unregisterTool: (name) => {
         this.unregisterTool(name);
       },
-      registerApproval: (name) => {
-        this.#approvalRequired.add(name);
-      },
-      unregisterApproval: (name) => {
-        this.#approvalRequired.delete(name);
-      },
       hooks: this.hooks,
     });
 
@@ -239,7 +227,8 @@ export class Agent {
       sessionId: this.sessionId,
       journal: this.#journal,
       runtimeSettings: () => this.#runController.runtimeSettings(),
-      requiresApproval: (name) => this.#approvalRequired.has(name),
+      decideToolApproval: (request) =>
+        evaluateToolApproval(this.#toolApprovalPattern, request),
       handleOverflow: (error, turnId) =>
         this.#compaction.handleOverflow(error, turnId),
     });
@@ -280,6 +269,22 @@ export class Agent {
   unregisterTool(name: string) {
     // oxlint-disable-next-line typescript/no-dynamic-delete
     delete this.tools[name];
+  }
+
+  /**
+   * 注册工具审批函数：按调用入参决定 deny / ask / allow。
+   *
+   * 重复注册会替换前一个函数。它和扩展的 `pre_tool_call` 决策一起折叠，
+   * deny 最优先；返回的函数把注册撤掉。
+   */
+  registerToolApprovalPattern(pattern: ToolApprovalPattern): () => void {
+    this.#toolApprovalPattern = pattern;
+
+    return () => {
+      if (this.#toolApprovalPattern === pattern) {
+        this.#toolApprovalPattern = undefined;
+      }
+    };
   }
 
   /**
@@ -333,13 +338,13 @@ export class Agent {
   }
 
   /**
-   * 调用前必须由用户确认的工具名。
+   * 当前的工具审批函数。
    *
-   * 子 agent 派生时从这里继承：它不重新注册扩展，但工具集和审批名单要跟
+   * 子 agent 派生时从这里继承：它不重新注册扩展，但工具集和审批函数要跟
    * 父保持一致。
    */
-  get approvalRequired(): readonly string[] {
-    return [...this.#approvalRequired];
+  get toolApprovalPattern(): ToolApprovalPattern | undefined {
+    return this.#toolApprovalPattern;
   }
 
   async stream(options: AgentStreamOptions) {

@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { AgentContext } from "../../src/agent-context.js";
 import type { ToolStartDecision } from "../../src/hooks-manager.js";
 import { HooksManager, TOOL_DENIED_TEXT } from "../../src/hooks-manager.js";
+import type { ToolApprovalPattern } from "../../src/tool-approval.js";
 import type { AgentToolCall } from "../../src/tools/execution.js";
 import {
   executeToolCalls,
@@ -69,7 +70,7 @@ function run(
   tools: ToolSet,
   toolCalls: AgentToolCall[],
   hooks = new HooksManager(),
-  requiresApproval?: (toolName: string) => boolean
+  decideToolApproval?: ToolApprovalPattern
 ) {
   const events: AgentStreamEvent<AgentToolSet>[] = [];
 
@@ -83,7 +84,7 @@ function run(
     context,
     hooks,
     extensionApi: {},
-    requiresApproval,
+    decideToolApproval,
     write: (event) => {
       events.push(event);
       return Promise.resolve();
@@ -97,6 +98,17 @@ const recordingTool = (ran: string[]) =>
     ran.push(value);
     return { output: value, code: "ok" as const };
   });
+
+/** Asks only for the value "secret", so the call's input decides the answer. */
+const decideByValue: ToolApprovalPattern = (request) => {
+  if (request.toolName !== "write-file") {
+    return;
+  }
+
+  return (request.input as { value: string }).value === "secret"
+    ? { decision: "ask" }
+    : { decision: "allow" };
+};
 
 describe(stripToolExecution, () => {
   test("drops execute and leaves everything else, original included", () => {
@@ -520,7 +532,7 @@ describe(executeToolCalls, () => {
       expect(result.awaitingApproval).toBeFalsy();
     });
 
-    test("asks before a tool the policy names", async () => {
+    test("asks when the policy says so", async () => {
       const ran: string[] = [];
       const { result } = await run(
         { "write-file": recordingTool(ran) },
@@ -532,11 +544,93 @@ describe(executeToolCalls, () => {
           },
         ],
         new HooksManager(),
-        (name) => name === "write-file"
+        ({ toolName }) =>
+          toolName === "write-file" ? { decision: "ask" } : undefined
       );
 
       expect(ran).toStrictEqual([]);
       expect(result.awaitingApproval).toBeTruthy();
+    });
+
+    test("decides by the call's input", async () => {
+      const ran: string[] = [];
+      const allowed = await run(
+        { "write-file": recordingTool(ran) },
+        [
+          {
+            toolCallId: "call-1",
+            toolName: "write-file",
+            input: { value: "notes" },
+          },
+        ],
+        new HooksManager(),
+        decideByValue
+      );
+
+      expect(ran).toStrictEqual(["notes"]);
+      expect(allowed.result.awaitingApproval).toBeFalsy();
+
+      const asked = await run(
+        { "write-file": recordingTool(ran) },
+        [
+          {
+            toolCallId: "call-2",
+            toolName: "write-file",
+            input: { value: "secret" },
+          },
+        ],
+        new HooksManager(),
+        decideByValue
+      );
+
+      expect(ran).toStrictEqual(["notes"]);
+      expect(asked.result.awaitingApproval).toBeTruthy();
+    });
+
+    test("a hook's ask outranks the policy's allow", async () => {
+      const hooks = new HooksManager();
+      hooks.on("pre_tool_call", () => ({ decision: "ask" }));
+
+      const ran: string[] = [];
+      const { result } = await run(
+        { "write-file": recordingTool(ran) },
+        [
+          {
+            toolCallId: "call-1",
+            toolName: "write-file",
+            input: { value: "hi" },
+          },
+        ],
+        hooks,
+        () => ({ decision: "allow" })
+      );
+
+      expect(ran).toStrictEqual([]);
+      expect(result.awaitingApproval).toBeTruthy();
+    });
+
+    test("the policy's deny outranks a hook's allow", async () => {
+      const hooks = new HooksManager();
+      hooks.on("pre_tool_call", () => ({ decision: "allow" }));
+
+      const ran: string[] = [];
+      const { result } = await run(
+        { "write-file": recordingTool(ran) },
+        [
+          {
+            toolCallId: "call-1",
+            toolName: "write-file",
+            input: { value: "hi" },
+          },
+        ],
+        hooks,
+        () => ({ decision: "deny" })
+      );
+
+      expect(ran).toStrictEqual([]);
+      expect(result.outcomes.map((outcome) => outcome.type)).toStrictEqual([
+        "denied",
+      ]);
     });
 
     test("a hook's refusal outranks the policy's ask", async () => {
@@ -554,7 +648,7 @@ describe(executeToolCalls, () => {
           },
         ],
         hooks,
-        () => true
+        () => ({ decision: "ask" })
       );
 
       expect(ran).toStrictEqual([]);

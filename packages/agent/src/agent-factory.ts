@@ -4,7 +4,6 @@ import { AgentContext } from "./agent-context";
 import type { AgentSession } from "./agent-session";
 import { Agent } from "./agents";
 import type { CompactionPolicyOverrides } from "./compaction/types";
-import { ApprovalExtension } from "./extensions/approvals";
 import {
   CompactionExtension,
   FileToolsExtension,
@@ -21,6 +20,35 @@ import type { JobRegistry } from "./jobs/registry";
 import type { AgentStore } from "./storage";
 import { appendSubagentPrompt } from "./subagent/definitions";
 import { createSubagentFactory } from "./subagent/factory";
+import type { ToolApprovalPattern } from "./tool-approval";
+
+/** 默认在调用前询问用户的工具。 */
+const DEFAULT_TOOL_APPROVAL_TOOLS = new Set([
+  "write-file",
+  "delete-file",
+  "questionnaire",
+]);
+
+/**
+ * 组合宿主的函数和默认规则。
+ *
+ * 宿主函数先回答；它没有意见时，默认工具才要求用户确认。这样宿主可以按
+ * 入参放行某些调用（例如项目内写入），其余情况仍会询问。
+ */
+function createToolApprovalPattern(
+  host: ToolApprovalPattern | undefined
+): ToolApprovalPattern {
+  return async (request) => {
+    const decision = await host?.(request);
+    if (decision) {
+      return decision;
+    }
+
+    return DEFAULT_TOOL_APPROVAL_TOOLS.has(request.toolName)
+      ? { decision: "ask" }
+      : undefined;
+  };
+}
 
 export interface SessionModel {
   id: string;
@@ -48,10 +76,12 @@ export interface SessionAgentOptions {
   modelContextWindows?: Readonly<Record<string, number>>;
   jobs?: JobRegistry;
   /**
-   * 宿主工具自己的审批名单。默认工具（write-file、delete-file、
-   * questionnaire）由各自的扩展声明，不要在这里重复列。
+   * 宿主自己的工具审批函数：按调用入参决定 deny / ask / allow。
+   *
+   * 返回 undefined 表示没有意见；此时默认工具（write-file、delete-file、
+   * questionnaire）仍会询问用户。子 agent 继承组合后的函数。
    */
-  approvalRequired?: readonly string[];
+  toolApprovalPattern?: ToolApprovalPattern;
   /** 系统提示的起点；子 agent 说明会追加在后面。 */
   instructions?: string;
   /** 宿主扩展，在默认扩展之后注册。 */
@@ -96,15 +126,10 @@ export async function createSessionAgent(
   });
 
   try {
-    // 默认工具自己声明审批；这里只补宿主额外要求的名字。
-    if (options.approvalRequired && options.approvalRequired.length > 0) {
-      await agent.registerExtension(
-        new ApprovalExtension({
-          id: "approvals",
-          tools: options.approvalRequired,
-        })
-      );
-    }
+    // 宿主函数和默认规则合成一个审批函数；扩展不再声明审批。
+    agent.registerToolApprovalPattern(
+      createToolApprovalPattern(options.toolApprovalPattern)
+    );
 
     await agent.registerExtension(
       new EnvironmentExtension({ id: "environment" })

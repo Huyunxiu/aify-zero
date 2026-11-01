@@ -9,8 +9,10 @@ import { resolvePolicy } from "../src/compaction/policy.js";
 import { Capabilities } from "../src/extensions/capabilities.js";
 import type { ExtensionAPI } from "../src/extensions/types.js";
 import { Extension } from "../src/extensions/types.js";
+import type { ToolCallHookEvent } from "../src/hooks-manager.js";
 import type { CompactionStrategy } from "../src/kernel/compaction-strategy.js";
 import type { AgentStore } from "../src/storage/index.js";
+import { evaluateToolApproval } from "../src/tool-approval.js";
 
 const makeAgent = (
   options: Partial<Parameters<typeof createSessionAgent>[0]> = {}
@@ -37,12 +39,35 @@ const markerTool = (): Tool =>
     execute: () => ({ ok: true }),
   });
 
-/** 一个只注册工具和审批声明的宿主扩展。 */
+/** 一个只注册工具的宿主扩展。 */
 class HostExtension extends Extension {
   init(api: ExtensionAPI): void {
     api.tool("host-tool", markerTool());
   }
 }
+
+const approvalRequest = (
+  toolName: string,
+  input: unknown = {}
+): ToolCallHookEvent => ({
+  sessionId: "session-1",
+  turnId: "turn-1",
+  stepId: "step-1",
+  toolCallId: "call-1",
+  toolName,
+  input,
+  messages: [],
+});
+
+const decide = async (
+  agent: Awaited<ReturnType<typeof createSessionAgent>>,
+  toolName: string,
+  input: unknown = {}
+) =>
+  await evaluateToolApproval(
+    agent.toolApprovalPattern,
+    approvalRequest(toolName, input)
+  );
 
 describe(createSessionAgent, () => {
   test("registers the default tool extensions", async () => {
@@ -58,16 +83,50 @@ describe(createSessionAgent, () => {
       ])
     );
 
-    // 写、删和问卷的审批由各自的工具扩展声明。
-    expect(agent.approvalRequired).toStrictEqual(
-      expect.arrayContaining(["write-file", "delete-file", "questionnaire"])
-    );
+    // 写、删和问卷的默认策略由组合根注册。
+    await expect(decide(agent, "write-file")).resolves.toStrictEqual({
+      decision: "ask",
+    });
+    await expect(decide(agent, "delete-file")).resolves.toStrictEqual({
+      decision: "ask",
+    });
+    await expect(decide(agent, "questionnaire")).resolves.toStrictEqual({
+      decision: "ask",
+    });
+    await expect(decide(agent, "read-file")).resolves.toBeUndefined();
   });
 
-  test("turns the host approval list into declarations", async () => {
-    const agent = await makeAgent({ approvalRequired: ["host-tool"] });
+  test("asks the host function before the default rule", async () => {
+    const agent = await makeAgent({
+      toolApprovalPattern: ({ toolName, input }) =>
+        toolName === "write-file" &&
+        (input as { path: string }).path === "notes.md"
+          ? { decision: "allow" }
+          : undefined,
+    });
 
-    expect(agent.approvalRequired).toContain("host-tool");
+    // 宿主放行时默认 ask 不再追加；宿主没有意见时默认规则仍然询问。
+    await expect(
+      decide(agent, "write-file", { path: "notes.md" })
+    ).resolves.toStrictEqual({ decision: "allow" });
+    await expect(
+      decide(agent, "write-file", { path: "/etc/passwd" })
+    ).resolves.toStrictEqual({ decision: "ask" });
+    await expect(decide(agent, "delete-file")).resolves.toStrictEqual({
+      decision: "ask",
+    });
+  });
+
+  test("registers host rules for its own tools", async () => {
+    const agent = await makeAgent({
+      toolApprovalPattern: ({ toolName }) =>
+        toolName === "host-tool" ? { decision: "deny" } : undefined,
+    });
+
+    await expect(decide(agent, "host-tool")).resolves.toStrictEqual({
+      decision: "deny",
+    });
+    await expect(decide(agent, "read-file")).resolves.toBeUndefined();
   });
 
   test("adds host extensions after the defaults", async () => {

@@ -35,6 +35,9 @@ export interface InstructionsSection {
  * 工具、hook 和提示片段立即生效。技能、上下文文件这类资源由扩展自己加载
  * 并保存在实例里，Agent 不需要知道它们的具体类型，只负责按顺序拼接
  * {@link InstructionsSection}。
+ *
+ * 工具的权限模式（deny / ask / allow）只能通过 `pre_tool_call` 决定；扩展
+ * 不保存审批名单，也不按工具名询问。
  */
 export interface ExtensionAPI {
   readonly agent: Readonly<ExtensionAgentInfo>;
@@ -42,14 +45,6 @@ export interface ExtensionAPI {
   readonly environment: Readonly<ToolEnvironment>;
 
   tool(name: string, tool: Tool, options?: { override?: boolean }): void;
-
-  /**
-   * 声明一个调用前必须由用户确认的工具。
-   *
-   * 内核只保存名字并按名字询问；名单由扩展决定。子 agent 继承父的工具集时
-   * 也继承这份名单，危险工具不会因为换了会话就绕过审批。
-   */
-  approvalRequired(name: string): void;
 
   /**
    * 读取一个 capability。
