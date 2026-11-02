@@ -42,6 +42,11 @@ contextBridge.exposeInMainWorld("aifyDesktop", {
   offServerStatus: (id: number): void => {
     serverStatusListeners.delete(id);
   },
+  // 应用通道的地址。桌面文档源是 aify-app://，WebSocket 没有对应的 scheme，
+  // 所以地址由主进程拼好。地址里不带令牌：升级请求的凭据由主进程在发出前
+  // 注入，渲染端拿不到它。
+  channelUrl: (): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHANNEL_URL) as Promise<string>,
 });
 
 window.addEventListener("message", (event) => {

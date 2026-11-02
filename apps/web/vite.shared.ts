@@ -28,12 +28,20 @@ const devPort = Number(process.env.AIFY_WEB_PORT ?? DEFAULT_WEB_PORT);
 /**
  * API 现在要求 bearer token，而浏览器不应该持有它。Vite 代理在服务端注入，
  * 和 Electron 主进程的转发保持同一条规则。
+ *
+ * 普通请求和升级请求是两个不同的事件，令牌两处都要注入：WebSocket 握手也是
+ * 一条 HTTP 请求，只是浏览器不让我们自己设这个头。
  */
 const createApiProxy = (target: string): Record<string, ProxyOptions> => {
   const entry = (): ProxyOptions => ({
     target,
+    // `/api/ws` 的升级请求也要转发，否则页面只能拿到 HTTP。
+    ws: true,
     configure: (proxy) => {
       proxy.on("proxyReq", (request) => {
+        request.setHeader("authorization", `Bearer ${resolveApiToken()}`);
+      });
+      proxy.on("proxyReqWs", (request) => {
         request.setHeader("authorization", `Bearer ${resolveApiToken()}`);
       });
     },

@@ -5,14 +5,19 @@ import util from "node:util";
 import { resolveApiEndpoint } from "@workspace/shared/api-endpoint";
 import type { ApiServerStatus } from "@workspace/shared/api-status";
 import { resolveApiToken } from "@workspace/shared/api-token";
-import { APP_SCHEME, APP_URL, isAppUrl } from "@workspace/shared/app-url";
+import {
+  APP_ORIGIN,
+  APP_SCHEME,
+  APP_URL,
+  isAppUrl,
+} from "@workspace/shared/app-url";
 import {
   IPC_CHANNELS,
   inDevelopment,
   RIPGREP_PATH_ENV,
 } from "@workspace/shared/constants";
 import { logger as Logger } from "@workspace/shared/logger";
-import { app, BrowserWindow, dialog, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, protocol, session, shell } from "electron";
 import {
   installExtension,
   REACT_DEVELOPER_TOOLS,
@@ -347,6 +352,143 @@ const setupBundledRipgrep = () => {
 };
 
 /**
+ * 这个文档源能不能借主进程的凭据发一次升级。
+ *
+ * 自己的 `aify-app://` 文档当然可以；开发期把 `AIFY_APP_PROTOCOL` 关掉时
+ * 文档来自 Vite，回环地址也算自己的。别的来源一律不发。
+ *
+ * @param documentOrigin - 升级请求带的 `Origin`。
+ * @returns 可以注入凭据时为 true。
+ */
+const borrowsCredential = (documentOrigin: string | undefined): boolean => {
+  if (documentOrigin === undefined) {
+    return false;
+  }
+
+  if (documentOrigin === APP_ORIGIN) {
+    return true;
+  }
+
+  try {
+    return isLoopbackOrigin(documentOrigin);
+  } catch {
+    // 不是合法 URL 的 Origin 没有资格。
+    return false;
+  }
+};
+
+/**
+ * 把应用通道的地址交给渲染端，并给这条通道配上凭据。
+ *
+ * 桌面的文档源是 `aify-app://`，WebSocket 没有对应的 scheme，所以渲染端需要
+ * 一个真实的 `ws://` 地址。但地址里**不带**令牌：升级请求的凭据由
+ * `onBeforeSendHeaders` 在发出前注入，和 HTTP 转发注入的是同一个 bearer
+ * token。渲染端既不持有令牌，也不会把它写进 URL。
+ *
+ * @param apiToken - 当前进程持有的 bearer token。
+ * @param window - 唯一持有这份凭据的窗口。
+ * @param waitForOrigin - 等 server 就绪；应用启动时渲染端会比 server 先问到。
+ */
+const installChannelIpc = (
+  apiToken: string,
+  window: BrowserWindow,
+  waitForOrigin: () => Promise<string | undefined>
+): void => {
+  const senderId = window.webContents.id;
+
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    {
+      // 只拦回环地址上的 WebSocket：远程 server 由 AIFY_API_ORIGIN 配置，
+      // 这里不给它注入凭据。
+      urls: [
+        "ws://127.0.0.1/*",
+        "wss://127.0.0.1/*",
+        "ws://localhost/*",
+        "wss://localhost/*",
+      ],
+    },
+    (details, callback) => {
+      const { origin } = server;
+
+      if (origin === undefined || details.webContentsId !== senderId) {
+        callback({});
+
+        return;
+      }
+
+      const target = new URL(origin);
+      const requested = new URL(details.url);
+      const expectedProtocol = target.protocol === "https:" ? "wss:" : "ws:";
+
+      // 只处理指向当前 API server 的升级；其余（例如开发期 Vite 的 HMR）
+      // 原样放行。
+      if (
+        requested.host !== target.host ||
+        requested.protocol !== expectedProtocol
+      ) {
+        callback({});
+
+        return;
+      }
+
+      const headers = Object.fromEntries(
+        Object.entries(details.requestHeaders).map(([name, value]) => [
+          name.toLowerCase(),
+          value,
+        ])
+      );
+
+      // 只有我们自己的文档源能借这份凭据。开发期 `AIFY_APP_PROTOCOL=0` 时
+      // 文档来自 Vite，也放行。
+      if (!borrowsCredential(headers.origin)) {
+        callback({});
+
+        return;
+      }
+
+      callback({
+        requestHeaders: {
+          ...headers,
+          authorization: `Bearer ${apiToken}`,
+          origin: target.origin,
+          "sec-fetch-site": "same-origin",
+        },
+      });
+    }
+  );
+
+  ipcMain.handle(IPC_CHANNELS.CHANNEL_URL, async (event) => {
+    const frame = event.senderFrame;
+
+    if (
+      frame === null ||
+      frame !== event.sender.mainFrame ||
+      !isTrustedDocument(frame.url)
+    ) {
+      throw new Error(
+        "Rejected channel URL request from an untrusted renderer"
+      );
+    }
+
+    // 窗口一出来渲染端就会问地址，通常比 server 就绪早。这里等它，而不是让
+    // 渲染端拿着一个错误反复重试。
+    const origin = server.origin ?? (await waitForOrigin());
+
+    if (origin === undefined) {
+      // 真的没起来：启动失败会走 onElectronReady 的弹窗，这里只回一次错，
+      // partysocket 随后按退避再来问。
+      throw new Error("The API server is not ready");
+    }
+
+    const url = new URL("/api/ws", origin);
+
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+
+    return url.href;
+  });
+};
+
+/**
  * 运行时切换 API server。现在还没有设置界面，但先把入口留好：渲染端调用
  * `aifyDesktop.useServer(origin)` 就会停掉内置子进程、把转发目标换成外部
  * server，并重载文档。
@@ -481,6 +623,7 @@ const onElectronReady = async () => {
   const mainWindow = buildWindow();
   await setupIpcServer();
   installServerSelectionIpc();
+  installChannelIpc(apiToken, mainWindow, waitForOrigin);
   showWindow(mainWindow);
   logger.info(`[startup] window shown in ${Date.now() - readyStartedAt}ms`);
 

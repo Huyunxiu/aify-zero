@@ -13,12 +13,13 @@ import {
 } from "@workspace/ui/components/toast";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { LayoutProvider } from "@workspace/ui/elements/layout-provider";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
 import "@workspace/ui/styles/globals.css";
 import { queryClient } from "./lib/orpc";
 import { routeTree } from "./routeTree.gen";
+import { useChannelStore } from "./stores/channel";
 
 export const router = createRouter({
   defaultPendingMinMs: 0,
@@ -30,6 +31,15 @@ export const router = createRouter({
 });
 
 export default function App() {
+  // 整个应用只有一条通道：启动时建连，之后任何地方都用 useChannelStore 取。
+  useEffect(() => {
+    const { connect, disconnect } = useChannelStore.getState();
+
+    connect();
+
+    return disconnect;
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ServerStatusBanner />

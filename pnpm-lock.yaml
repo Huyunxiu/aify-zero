@@ -129,6 +129,9 @@ catalogs:
     '@types/turndown':
       specifier: ^5.0.6
       version: 5.0.6
+    '@types/ws':
+      specifier: ^8.18.1
+      version: 8.18.1
     '@typescript/native-preview':
       specifier: 7.0.0-dev.20260328.1
       version: 7.0.0-dev.20260328.1
@@ -189,6 +192,9 @@ catalogs:
     nanoid:
       specifier: ^5.1.16
       version: 5.1.16
+    partysocket:
+      specifier: ^1.3.0
+      version: 1.3.0
     pele:
       specifier: ^1.10.0
       version: 1.10.0
@@ -237,6 +243,9 @@ catalogs:
     vite-plus:
       specifier: ^0.1.21
       version: 0.1.24
+    ws:
+      specifier: ^8.21.1
+      version: 8.21.1
     zod:
       specifier: ^4.5.4
       version: 4.5.4
@@ -606,10 +615,16 @@ importers:
       nanoid:
         specifier: 'catalog:'
         version: 5.1.16
+      ws:
+        specifier: 'catalog:'
+        version: 8.21.1
       zod:
         specifier: 'catalog:'
         version: 4.5.4
     devDependencies:
+      '@types/ws':
+        specifier: 'catalog:'
+        version: 8.18.1
       '@workspace/config':
         specifier: workspace:*
         version: link:../config
@@ -736,6 +751,9 @@ importers:
       nanoid:
         specifier: 'catalog:'
         version: 5.1.16
+      partysocket:
+        specifier: 'catalog:'
+        version: 1.3.0(react@19.2.8)
       pele:
         specifier: 'catalog:'
         version: 1.10.0
@@ -4838,6 +4856,9 @@ packages:
     resolution: {integrity: sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==}
     engines: {node: '>= 0.6'}
 
+  event-target-polyfill@0.0.4:
+    resolution: {integrity: sha512-Gs6RLjzlLRdT8X9ZipJdIZI/Y6/HhRLyq9RdDlCsnpxr/+Nn6bU2EFGuC94GjxqhM+Nmij2Vcq98yoHrU8uNFQ==}
+
   eventemitter3@5.0.4:
     resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
 
@@ -6529,6 +6550,14 @@ packages:
   parseurl@1.3.3:
     resolution: {integrity: sha512-CiyeOxFT/JZyN5m0z9PfXw4SCBJ6Sygz1Dpl0wqjlhDEGGBP1GnsUVEL0p63hoG1fcj3fHynXi9NYO4nWOL+qQ==}
     engines: {node: '>= 0.8'}
+
+  partysocket@1.3.0:
+    resolution: {integrity: sha512-1zToNyolZFK/7nuAw/K2bZrNzFqaZyRoCEkS+9vG6WSC5ikrN6qWRe96q6ImU51uptz2r+dAwSkwhJVdQi4LiA==}
+    peerDependencies:
+      react: '>=17'
+    peerDependenciesMeta:
+      react:
+        optional: true
 
   path-browserify@1.0.1:
     resolution: {integrity: sha512-b7uo2UCUOYZcnF/3ID0lulOJi/bafxa1xPe7ZPsammBSpjSWQkjNxlt635YGS2MiR9GjvuXCtz2emr3jbsz98g==}
@@ -12021,6 +12050,8 @@ snapshots:
 
   etag@1.8.1: {}
 
+  event-target-polyfill@0.0.4: {}
+
   eventemitter3@5.0.4: {}
 
   events@3.3.0: {}
@@ -14096,6 +14127,12 @@ snapshots:
       entities: 4.3.0
 
   parseurl@1.3.3: {}
+
+  partysocket@1.3.0(react@19.2.8):
+    dependencies:
+      event-target-polyfill: 0.0.4
+    optionalDependencies:
+      react: 19.2.8
 
   path-browserify@1.0.1: {}
 

@@ -25,6 +25,7 @@ import { logger } from "@workspace/shared/logger";
 
 import { app } from "./app";
 import { SQLiteStore } from "./storage/sqlite-store";
+import { attachWebSocket } from "./ws";
 
 /** 监听地址：显式参数优先，其次环境变量，最后回落到 loopback + 18086。 */
 export interface ListenAddress {
@@ -120,6 +121,9 @@ export async function startServer(
     console.error("[api] server error", error);
   });
 
+  // 升级事件由 WebSocket 通道独占：别的路径在这里就被断开，不会漏给下一个人。
+  const closeWebSocket = attachWebSocket(server as unknown as Server);
+
   const address = server.address();
 
   if (address === null || typeof address === "string") {
@@ -128,23 +132,29 @@ export async function startServer(
 
   let closing: Promise<void> | undefined;
 
+  const close = async (): Promise<void> => {
+    const http = server as unknown as Server;
+
+    // WebSocket 要先退干净：它自己会等连接收起，而 closeAllConnections() 是硬断。
+    await closeWebSocket();
+    // SSE / 长连接会拖住 close()，先掐掉空闲和已建立的连接。
+    http.closeIdleConnections();
+    http.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      http.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  };
+
   return {
     close: () => {
-      closing ??= new Promise<void>((resolve, reject) => {
-        const http = server as unknown as Server;
-
-        // SSE / 长连接会拖住 close()，先掐掉空闲和已建立的连接。
-        http.closeIdleConnections();
-        http.closeAllConnections();
-        http.close((error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
+      closing ??= close();
 
       return closing;
     },

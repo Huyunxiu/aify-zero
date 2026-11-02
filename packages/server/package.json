@@ -23,9 +23,11 @@
     "@workspace/shared": "workspace:*",
     "hono": "catalog:",
     "nanoid": "catalog:",
+    "ws": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@types/ws": "catalog:",
     "@workspace/config": "workspace:*",
     "typescript": "catalog:"
   }
