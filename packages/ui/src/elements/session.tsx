@@ -454,6 +454,11 @@ export function Session({
     [sessionId]
   );
 
+  // 本页自己打开过的运行只挂一个读者：`apiStream` 和 `/compact` 打开流时登记
+  // stream id，下面的 effect 就不会因为 `getSession` 稍后返回同一个 id 再挂
+  // 第二个读者。第二个读者会把同一个流重放一遍，文本 part 因此重复。
+  const attachedStreamRef = React.useRef<string | null>(null);
+
   const {
     turns,
     pendingMessages,
@@ -463,6 +468,7 @@ export function Session({
     clearPending,
     error: sessionError,
     status,
+    isReading,
     stop,
     resume,
     addToolApprovalResponse,
@@ -511,7 +517,15 @@ export function Session({
       if (!accepted?.activeStreamId) {
         throw new Error("The chat did not accept the message.");
       }
-      return await openStream(options.sessionId, options.abortSignal);
+      // 这次流的读者就是本页：先登记 id，查询稍后返回同一个 id 时不要重挂。
+      attachedStreamRef.current = accepted.activeStreamId;
+      try {
+        return await openStream(options.sessionId, options.abortSignal);
+      } catch (error) {
+        // 流没打开就没有读者；清掉登记，让查询回来后还能重试。
+        attachedStreamRef.current = null;
+        throw error;
+      }
     },
     // Stopping is located by session id, so nothing here has to carry the
     // stream id the POST handed back.
@@ -616,24 +630,21 @@ export function Session({
   const contentRef = React.useRef<HTMLDivElement>(null);
   const hasOutline = outlineSections.length > 1;
 
-  // Attach to a turn that is still running, once for that turn. The lookup can
-  // be repeated — a refetch answers with the same stream id — but a store has
-  // to attach to a given turn only once.
-  const resumedStreamRef = React.useRef<string | null>(null);
-
-  // Attach to a run that is still going, once for that run. The lookup can be
-  // repeated — a refetch answers with the same stream id — but a store has to
-  // attach to a given run only once.
+  // Attach to a run that is still going, but only when this store has no reader.
+  // A send or a compaction started by this page already registered its stream in
+  // `attachedStreamRef`; a refetch that answers with the same id must not attach
+  // a second reader. The server replays a run from `turn.start`, so a second
+  // reader would append every text part twice.
   React.useEffect(() => {
-    if (!sessionId || !activeStreamId) {
+    if (!sessionId || !activeStreamId || isReading()) {
       return;
     }
 
-    if (resumedStreamRef.current === activeStreamId) {
+    if (attachedStreamRef.current === activeStreamId) {
       return;
     }
 
-    resumedStreamRef.current = activeStreamId;
+    attachedStreamRef.current = activeStreamId;
 
     const id = sessionId;
     const controller = new AbortController();
@@ -649,7 +660,7 @@ export function Session({
     })();
 
     return () => controller.abort();
-  }, [activeStreamId, resume, sessionId]);
+  }, [activeStreamId, isReading, resume, sessionId]);
 
   const tokenUsage =
     turns.findLast((turn) => turn.usage)?.usage || defaultTokenUsage;
@@ -740,8 +751,13 @@ export function Session({
       return;
     }
 
+    let compactionStreamId: string;
     try {
-      await client.session.compactSession({ model: modelId, sessionId });
+      ({ activeStreamId: compactionStreamId } =
+        await client.session.compactSession({
+          model: modelId,
+          sessionId,
+        }));
     } catch (error) {
       // Refused synchronously — busy session, or nothing to compact.
       toastManager.add({
@@ -752,6 +768,9 @@ export function Session({
       return;
     }
 
+    // 这次流的读者就是本页：先登记 id，`getSession` 稍后返回同一个 id 时
+    // 下面的 effect 不会重挂。
+    attachedStreamRef.current = compactionStreamId;
     const controller = new AbortController();
 
     try {
@@ -760,6 +779,7 @@ export function Session({
     } catch {
       // The run can end between the POST and the attach; the transcript already
       // has everything the stream would have replayed.
+      attachedStreamRef.current = null;
     }
 
     // The marker is in the branch now; refresh the row and the cached branch so

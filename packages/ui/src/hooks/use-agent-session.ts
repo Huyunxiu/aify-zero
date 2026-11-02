@@ -147,6 +147,8 @@ export type UseAgentSessionResponse = {
   stop: () => Promise<void>;
   error: Error | undefined;
   status: AgentSessionStatus;
+  /** 这个 store 是否正在读一条流。 */
+  isReading: () => boolean;
 };
 
 type SendTurnsOptions = {
@@ -224,6 +226,8 @@ type AgentSessionStore = {
   subscribe: (onStoreChange: () => void) => () => void;
   getTurns: () => AgentTurn<AgentToolSet>[];
   getStatus: () => AgentSessionStatus;
+  /** 这个 store 是否正在读一条流。 */
+  isReading: () => boolean;
   getError: () => Error | undefined;
   getInbox: () => InboxMessage[];
   submit: (options: SubmitOptions) => Promise<void>;
@@ -390,6 +394,7 @@ export function createAgentSessionStore({
 
   const getTurns = (): AgentTurn<AgentToolSet>[] => currentTurns;
   const getStatus = (): AgentSessionStatus => status;
+  const isReading = (): boolean => active !== null;
   const getError = (): Error | undefined => currentError;
   const getInbox = (): InboxMessage[] => inbox;
 
@@ -1030,6 +1035,7 @@ export function createAgentSessionStore({
     subscribe,
     getTurns,
     getStatus,
+    isReading,
     getError,
     getInbox,
     submit,
@@ -1117,5 +1123,6 @@ export function useAgentSession({
     stop: store.stop,
     error,
     status,
+    isReading: store.isReading,
   };
 }

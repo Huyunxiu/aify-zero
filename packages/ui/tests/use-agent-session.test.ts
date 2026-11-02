@@ -162,6 +162,34 @@ const pendingTurnStream = (abortSignal: AbortSignal): ReadableStream =>
     },
   });
 
+describe("isReading", () => {
+  test("is true only while a stream is being read", async () => {
+    const store = createAgentSessionStore({
+      id: "session-1",
+      apiStream: ({ abortSignal }) =>
+        Promise.resolve(pendingTurnStream(abortSignal)),
+      apiStop: () => Promise.resolve(),
+      throttleMs: 0,
+      turns: [],
+      emit: () => {},
+    });
+
+    expect(store.isReading()).toBeFalsy();
+
+    const send = store.sendTurns({
+      turns: [],
+      abortSignal: new AbortController().signal,
+    });
+
+    await flush();
+    expect(store.isReading()).toBeTruthy();
+
+    await store.stop();
+    await send;
+    expect(store.isReading()).toBeFalsy();
+  });
+});
+
 describe("stop", () => {
   test("aborts the local read, tells the server, and settles the turn", async () => {
     const stops: { sessionId: string }[] = [];
