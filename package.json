@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "ready": "vp check && vp run -r test && vp run -r build",
+    "dev": "vp run --filter @workspace/server-app --filter web --parallel dev",
     "dev:server": "vp run @workspace/server-app#dev",
     "dev:api": "vp run @workspace/server-app#dev",
     "dev:web": "vp run web#dev",

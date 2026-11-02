@@ -24,7 +24,13 @@ vp run -r test
 vp run -r build
 ```
 
-- Run the development servers (each in its own terminal):
+- Run the API and the browser UI together in one terminal:
+
+```bash
+vp run dev
+```
+
+- Run the development servers separately (each in its own terminal):
 
 ```bash
 vp run dev:server   # standalone Hono API on 127.0.0.1:18086 (apps/server)

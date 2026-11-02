@@ -24,7 +24,13 @@ vp run -r test
 vp run -r build
 ```
 
-- 启动开发服务器（每个都在各自的终端中运行）：
+- 在同一个终端里同时启动 API 和浏览器 UI：
+
+```bash
+vp run dev
+```
+
+- 分别启动各个开发服务器（每个都在各自的终端中运行）：
 
 ```bash
 vp run dev:server   # 独立的 Hono API，监听 127.0.0.1:18086（apps/server）
