@@ -46,7 +46,7 @@ const sessionRow = {
 /** 只实现 turn 循环会碰到的写入，并把它们记下来供断言。 */
 class FakeStore {
   readonly begun: unknown[] = [];
-  readonly savedSteps: { id: string; seq: number; status: string }[] = [];
+  readonly savedSteps: { stepId: string; seq: number; status: string }[] = [];
   readonly updated: { id: string; stepIds: ReadonlySet<string> }[] = [];
 
   getSessionById(): Promise<typeof sessionRow> {
@@ -66,12 +66,17 @@ class FakeStore {
     return Promise.resolve();
   }
 
-  saveStep(step: { id: string; seq: number; status: string }): Promise<number> {
+  saveStep(step: {
+    stepId: string;
+    seq: number;
+    status: string;
+  }): Promise<number> {
     this.savedSteps.push(step);
     return Promise.resolve(1);
   }
 
   updateTurn(
+    _sessionId: string,
     id: string,
     _turn: unknown,
     { stepIds }: { stepIds?: ReadonlySet<string> } = {}

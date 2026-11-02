@@ -27,6 +27,7 @@ export type {
   TurnRecord,
   TurnRow,
   TurnStatus,
+  TurnTableRow,
   TurnWrite,
 } from "./types";
 export type { TurnDetail } from "./turn-record";
@@ -226,9 +227,13 @@ export interface AgentStore {
    * turn 内的 step 只追加，所以下标稳定。已经由 journal 写过的 step 不必再写
    * 一遍，回合结束通常只需要补写审批恢复时改动的那一条。
    *
+   * `sessionId` 是必填的：业务 id 只在会话内唯一，fork 之后两个会话会有相同
+   * 的 turn id。少了它，一次写入会同时命中两份副本。
+   *
    * @returns 更新到的 turn 行数；0 表示这条 turn 还没有行。
    */
   updateTurn(
+    sessionId: string,
     id: string,
     turn: AgentTurn,
     options?: { stepIds?: ReadonlySet<string> }

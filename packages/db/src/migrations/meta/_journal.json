@@ -57,6 +57,13 @@
       "when": 1793204426542,
       "tag": "0007_mushy_vulcan",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793636174688,
+      "tag": "0008_session_scoped_ids",
+      "breakpoints": true
     }
   ]
 }

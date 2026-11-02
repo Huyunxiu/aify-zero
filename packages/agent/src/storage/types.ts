@@ -53,10 +53,10 @@ export type TurnStatus =
   | "aborted"
   | "error";
 
-/** 一条 turn 行；`content` 由 step 表拼出，不在行里。 */
+/** 一条 turn 行的领域字段；物理 `rowId` 由存储适配器生成，不在这里。 */
 export type TurnRow = {
-  id: string;
-  sessionId: string | null;
+  turnId: string;
+  sessionId: string;
   type: string;
   metadata: unknown;
   parentId: string | null;
@@ -69,6 +69,7 @@ export type TurnRow = {
 
 /** 写一条 turn 所需的行字段；status/detail/completedAt 由 content 推导。 */
 export type TurnWrite = {
+  /** 业务 turn id；只在会话内唯一，fork 复制时保持不变。 */
   id: string;
   sessionId: string;
   type: string;
@@ -78,14 +79,20 @@ export type TurnWrite = {
   content: AgentTurn<AgentToolSet>;
 };
 
+/** 从存储读出的 turn 行；`rowId` 是物理自增主键，不进领域对象。 */
+export type TurnTableRow = TurnRow & { rowId: number };
+
 /** 一条读出的 turn：turn 行 + 由 step 表拼出的 content。 */
-export type TurnRecord = TurnRow & {
+export type TurnRecord = Omit<TurnTableRow, "rowId" | "turnId"> & {
+  /** 业务 turn id，与 `content.id` 相同。 */
+  id: string;
   content: AgentTurn<AgentToolSet>;
 };
 
-/** 一行 step；`seq` 是它在 turn 内的下标。 */
-export type StepRow = {
-  id: string;
+/** 写一条 step 行；物理 `rowId` 由存储适配器生成，不在这里。 */
+export type StepWrite = {
+  /** 业务 step id；只在会话内唯一。 */
+  stepId: string;
   turnId: string;
   sessionId: string;
   seq: number;
@@ -97,5 +104,5 @@ export type StepRow = {
   updatedAt: Date;
 };
 
-/** 写一条 step 行。 */
-export type StepWrite = StepRow;
+/** 一行 step；`rowId` 是物理自增主键。 */
+export type StepRow = StepWrite & { rowId: number };

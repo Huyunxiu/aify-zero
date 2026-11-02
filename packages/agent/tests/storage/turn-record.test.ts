@@ -6,7 +6,11 @@ import {
   toStepRows,
   toTurnRow,
 } from "../../src/storage/turn-record.js";
-import type { StepRow, TurnRow, TurnWrite } from "../../src/storage/types.js";
+import type {
+  StepRow,
+  TurnTableRow,
+  TurnWrite,
+} from "../../src/storage/types.js";
 import type { AgentToolSet } from "../../src/types.js";
 import { assistantStep, assistantTurn } from "../compaction/fixtures.js";
 
@@ -27,7 +31,8 @@ const stepRow = (
   seq: number,
   options: { streamId?: string | null; status?: StepRow["status"] } = {}
 ): StepRow => ({
-  id,
+  rowId: seq + 1,
+  stepId: id,
   turnId: "a1",
   sessionId: "session-1",
   seq,
@@ -39,8 +44,9 @@ const stepRow = (
   updatedAt: new Date(2),
 });
 
-const turnRow = (overrides: Partial<TurnRow> = {}): TurnRow => ({
-  id: "a1",
+const turnRow = (overrides: Partial<TurnTableRow> = {}): TurnTableRow => ({
+  rowId: 1,
+  turnId: "a1",
   sessionId: "session-1",
   type: "assistant",
   metadata: {},
@@ -65,7 +71,7 @@ describe(toTurnRow, () => {
 
     const row = toTurnRow(write(turn));
 
-    expect(row.id).toBe("a1");
+    expect(row.turnId).toBe("a1");
     expect(row.status).toBe("error");
     expect(row.completedAt?.getTime()).toBe(123);
     expect(row.detail).toMatchObject({ error: "boom", usage });
@@ -97,7 +103,7 @@ describe(toStepRows, () => {
     });
 
     expect(rows.map((row) => row.seq)).toStrictEqual([0, 1]);
-    expect(rows.map((row) => row.id)).toStrictEqual(["s0", "s1"]);
+    expect(rows.map((row) => row.stepId)).toStrictEqual(["s0", "s1"]);
     expect(rows[0]).toMatchObject({
       turnId: "a1",
       sessionId: "session-1",

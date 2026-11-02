@@ -17,7 +17,7 @@ export const INTERRUPTED_TURN_ERROR =
 export type RecoveryStore = {
   listInterruptedSessions(): Promise<SessionRecord[]>;
   getBranchTurns(sessionId: string): Promise<TurnRecord[]>;
-  updateTurn(id: string, turn: AgentTurn): Promise<number>;
+  updateTurn(sessionId: string, id: string, turn: AgentTurn): Promise<number>;
   clearActiveStream(
     sessionId: string,
     streamId: string,
@@ -79,7 +79,7 @@ export async function recoverInterruptedRuns(
           completedAt,
         } as AgentTurn;
 
-        await store.updateTurn(turn.id, settled);
+        await store.updateTurn(session.id, turn.id, settled);
         settledTurnId = turn.id;
       }
 

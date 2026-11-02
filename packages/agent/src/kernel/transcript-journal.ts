@@ -113,7 +113,7 @@ export class TranscriptJournal {
     }
 
     const row: StepRow = {
-      id: step.id,
+      stepId: step.id,
       turnId: target.turnId,
       sessionId: this.#deps.sessionId,
       seq,
@@ -151,7 +151,11 @@ export class TranscriptJournal {
     );
     if (finishedTurn) {
       try {
-        await this.#deps.store.updateTurn(turnId, finishedTurn);
+        await this.#deps.store.updateTurn(
+          this.#deps.sessionId,
+          turnId,
+          finishedTurn
+        );
       } catch (error) {
         logger.warn("[agent] failed to persist turn header", error);
       }
@@ -187,9 +191,12 @@ export class TranscriptJournal {
     for (const changed of changedTurns) {
       // `rowsAffected` doubles as the existence check: 0 means the turn row was
       // never written, which is the one case that needs an insert.
-      const updated = await this.#deps.store.updateTurn(changed.id, changed, {
-        stepIds: changedStepIds,
-      });
+      const updated = await this.#deps.store.updateTurn(
+        this.#deps.sessionId,
+        changed.id,
+        changed,
+        { stepIds: changedStepIds }
+      );
       if (updated === 0) {
         await this.#deps.store.saveTurn(
           {
@@ -224,7 +231,7 @@ export class TranscriptJournal {
       return;
     }
 
-    await this.#deps.store.updateTurn(turn.id, turn, {
+    await this.#deps.store.updateTurn(this.#deps.sessionId, turn.id, turn, {
       stepIds: new Set([stepId]),
     });
   }

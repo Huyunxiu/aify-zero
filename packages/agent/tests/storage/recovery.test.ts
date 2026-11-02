@@ -98,7 +98,7 @@ class FakeStore implements RecoveryStore {
     return Promise.resolve(this.options.branch);
   }
 
-  updateTurn(id: string, turn: AgentTurn): Promise<number> {
+  updateTurn(_sessionId: string, id: string, turn: AgentTurn): Promise<number> {
     if (this.options.failUpdate) {
       return Promise.reject(new Error("db down"));
     }

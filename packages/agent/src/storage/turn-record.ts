@@ -12,6 +12,7 @@ import type {
   StepWrite,
   TurnRecord,
   TurnRow,
+  TurnTableRow,
   TurnWrite,
 } from "./types";
 
@@ -65,7 +66,7 @@ export function turnDetailOf(turn: AgentTurn): TurnDetail {
 /** 把一条完整 turn 转成 turn 行；status/detail/completedAt 从 content 推导。 */
 export function toTurnRow(turn: TurnWrite): TurnRow {
   return {
-    id: turn.id,
+    turnId: turn.id,
     sessionId: turn.sessionId,
     type: turn.type,
     metadata: turn.metadata ?? {},
@@ -100,7 +101,7 @@ export function toStepRows({
 }): StepWrite[] {
   return content.content.map(
     (step, seq): StepWrite => ({
-      id: step.id,
+      stepId: step.id,
       turnId,
       sessionId,
       seq,
@@ -122,7 +123,7 @@ export function toStepRows({
  * 一段）必须保留，否则页面刷新会丢掉已经显示过的内容。
  */
 export function hydrateTurn(
-  row: TurnRow,
+  row: TurnTableRow,
   steps: StepRow[],
   activeStreamId?: string
 ): TurnRecord {
@@ -132,7 +133,7 @@ export function hydrateTurn(
       : steps;
 
   const content = {
-    id: row.id,
+    id: row.turnId,
     type: row.type,
     createdAt: row.createdAt.getTime(),
     status: row.status,
@@ -145,7 +146,20 @@ export function hydrateTurn(
       .map((step) => step.content),
   } as AgentTurn<AgentToolSet>;
 
-  return { ...row, content };
+  // rowId 与 turnId 都是存储身份：前者是物理主键，后者已经映射成领域 id。
+  const record: Omit<TurnTableRow, "rowId" | "turnId"> = {
+    sessionId: row.sessionId,
+    type: row.type,
+    metadata: row.metadata,
+    parentId: row.parentId,
+    status: row.status,
+    detail: row.detail,
+    completedAt: row.completedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+
+  return { ...record, id: row.turnId, content };
 }
 
 /**

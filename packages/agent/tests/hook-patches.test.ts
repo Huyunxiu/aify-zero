@@ -86,6 +86,7 @@ class FakeStore {
   }
 
   updateTurn(
+    _sessionId: string,
     id: string,
     _turn: unknown,
     { stepIds }: { stepIds?: ReadonlySet<string> } = {}

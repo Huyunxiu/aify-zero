@@ -11,11 +11,7 @@ import type {
 } from "@workspace/agent-client";
 import { AgentSession } from "@workspace/agent/agent-session";
 import type { TurnWrite } from "@workspace/agent/storage/index";
-import {
-  generateSessionId,
-  generateStepId,
-  generateTurnId,
-} from "@workspace/agent/utils/id-util";
+import { generateSessionId } from "@workspace/agent/utils/id-util";
 import type { ModelEffort } from "@workspace/shared/constants";
 import { logger } from "@workspace/shared/logger";
 
@@ -135,7 +131,7 @@ export class SessionLifecycle {
       // 工具结果也带上，回写量随 turn 大小线性增长。
       const stepIds = new Set(approvals.map((approval) => approval.stepId));
       for (const turn of changedTurns) {
-        await store.updateTurn(turn.id, turn, { stepIds });
+        await store.updateTurn(sessionId, turn.id, turn, { stepIds });
       }
       const toolParts = findToolApprovalRequests(session.turns);
       if (toolParts.length > 0) {
@@ -343,25 +339,18 @@ export class SessionLifecycle {
     }
 
     const newSessionId = generateSessionId();
-    // Copy rows with fresh ids: message.id and step.id are global primary keys,
-    // and the fork must be self-contained — later edits in either session must
-    // not affect the other.
-    const idMap = new Map<string, string>();
-    const copies: TurnWrite[] = prefix.map((message) => {
-      const newTurnId = generateTurnId();
-      idMap.set(message.id, newTurnId);
-      return {
-        id: newTurnId,
-        sessionId: newSessionId,
-        type: message.type,
-        metadata: message.metadata,
-        content: cloneTurnContent(message.content, newTurnId, idMap),
-        parentId: message.parentId
-          ? (idMap.get(message.parentId) ?? null)
-          : null,
-        createdAt: message.createdAt,
-      };
-    });
+    // 业务 id 只在会话内唯一，所以 fork 只换会话，不换 turn/step 的 id。
+    // 内容里的 parentId、retainedFromTurnId 都指向这些业务 id，原样复制即可；
+    // 只有 branch 根不继承源会话的 parentId，避免新会话指向复制范围之外。
+    const copies: TurnWrite[] = prefix.map((turn, index) => ({
+      id: turn.id,
+      sessionId: newSessionId,
+      type: turn.type,
+      metadata: turn.metadata,
+      content: turn.content,
+      parentId: index === 0 ? null : turn.parentId,
+      createdAt: turn.createdAt,
+    }));
 
     await store.saveSession({
       id: newSessionId,
@@ -397,44 +386,6 @@ export class SessionLifecycle {
       }
     }
   }
-}
-
-/**
- * 复制一条 turn，并给它的 step 换新的 id。
- *
- * turn id 和 step id 都是全局主键，fork 必须重新生成。压缩记录里的
- * `retainedFromTurnId` 也指向 turn id，必须映射到新会话里的对应 turn，否则
- * 投影在 fork 里找不到保留段，会把已有历史整段丢掉。
- */
-function cloneTurnContent(
-  turn: AgentTurn<AgentToolSet>,
-  newTurnId: string,
-  idMap: Map<string, string>
-): AgentTurn<AgentToolSet> {
-  const steps = turn.content.map((step) => {
-    const id = generateStepId();
-
-    if (step.type !== "compaction") {
-      return { ...step, id };
-    }
-
-    const content = step.content.map((part) => {
-      if (part.type !== "compaction" || !part.record?.retainedFromTurnId) {
-        return part;
-      }
-
-      const { retainedFromTurnId: previous, ...record } = part.record;
-      const retainedFromTurnId = idMap.get(previous);
-      return {
-        ...part,
-        record: retainedFromTurnId ? { ...record, retainedFromTurnId } : record,
-      };
-    });
-
-    return { ...step, id, content };
-  });
-
-  return { ...turn, id: newTurnId, content: steps } as AgentTurn<AgentToolSet>;
 }
 
 /** 默认依赖：真实的 store、inbox、注册表和装配函数；测试可以逐个覆盖。 */

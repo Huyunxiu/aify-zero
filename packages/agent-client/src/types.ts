@@ -70,6 +70,9 @@ export interface CompactionRecord {
    * 切点写在记录里而不是靠 compaction turn 在 branch 中的位置表达，因此手工
    * 压缩的 turn 可以线性追加到 branch 末尾。缺省表示全量压缩（marker 之前全部
    * 被 checkpoint 替代）。
+   *
+   * 它指向同一会话里的业务 turn id；fork 复制 branch 时 id 不变，所以这个
+   * 引用也不需要重写。
    */
   retainedFromTurnId?: string;
   /** 摘要调用自身的 usage；绝不是会话的 usage。 */
@@ -806,13 +809,15 @@ export type StepMetadata = Record<string, any> & {
  * Identity and wall-clock bounds, held by both steps and turns: each level
  * starts at a known time, may still be running, and is addressable by id.
  *
- * `id` is unique within its own level — a step's id is never the id of the
+ * `id` is unique within its own session — a step's id is never the id of the
  * turn containing it. A user turn wraps exactly one user step, so those two
- * ids sit next to each other and are easy to mix up.
+ * ids sit next to each other and are easy to mix up. The same id can appear in
+ * two sessions after a fork; always address a turn or step together with its
+ * session.
  */
 export type AgentStepBase = AgentStepStatus & {
   /**
-   * A unique identifier for the step (or turn).
+   * A unique identifier within the step's session.
    */
   id: string;
 
@@ -842,7 +847,7 @@ export type AgentStepBase = AgentStepStatus & {
 
 export type AgentTurnBase = AgentTurnStatus & {
   /**
-   * A unique identifier for the step (or turn).
+   * A unique identifier within the turn's session.
    */
   id: string;
 

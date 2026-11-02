@@ -1,4 +1,8 @@
-import type { TurnRecord } from "@workspace/agent/storage/index";
+import type {
+  AgentCompactionTurn,
+  CompactionRecord,
+} from "@workspace/agent-client";
+import type { TurnRecord, TurnWrite } from "@workspace/agent/storage/index";
 import type { SessionRecord } from "@workspace/agent/storage/types";
 import { describe, expect, test } from "vitest";
 
@@ -67,17 +71,57 @@ describe(SessionLifecycle, () => {
     ]);
   });
 
-  test("fork copies turns with fresh ids and remaps parents", async () => {
+  test("fork copies turns without rewriting ids", async () => {
+    const compactionRecord: CompactionRecord = {
+      version: 1,
+      id: "c1-part",
+      trigger: "manual",
+      summary: "summary",
+      tokensBefore: 10,
+      tokensAfter: 5,
+      shadowedTokens: 5,
+      shadowedTurns: 1,
+      shadowedSteps: 1,
+      model: "test-model",
+      retainedFromTurnId: "u1",
+      createdAt: 2,
+    };
+    const compactionTurn: AgentCompactionTurn = {
+      id: "c1",
+      type: "compaction",
+      createdAt: 2,
+      status: "done",
+      content: [
+        {
+          id: "c1-step",
+          type: "compaction",
+          createdAt: 2,
+          status: "done",
+          model: "test-model",
+          content: [
+            {
+              type: "compaction",
+              id: "c1-part",
+              state: "done",
+              createdAt: 2,
+              record: compactionRecord,
+            },
+          ],
+        },
+      ],
+    };
+
     const turns = [
       userTurn("u1", "Hi."),
       assistantTurn("a1", [assistantStep("s1", { text: "Hello." })]),
+      compactionTurn,
     ];
     const branch: TurnRecord[] = turns.map((turn, index) => ({
       id: turn.id,
       sessionId: "s1",
       type: turn.type,
       metadata: {},
-      parentId: index === 0 ? null : (turns[0]?.id ?? null),
+      parentId: index === 0 ? null : (turns[index - 1]?.id ?? null),
       status: "done",
       detail: {},
       completedAt: null,
@@ -87,7 +131,7 @@ describe(SessionLifecycle, () => {
     }));
 
     const savedSessions: unknown[] = [];
-    const savedTurns: unknown[] = [];
+    const savedTurns: TurnWrite[] = [];
 
     const lifecycle = makeLifecycle({
       getSessionById: () => Promise.resolve(sessionRow()),
@@ -104,28 +148,31 @@ describe(SessionLifecycle, () => {
 
     const result = await lifecycle.fork({ sessionId: "s1" });
 
-    const [first, second] = savedTurns as {
-      id: string;
-      parentId: string | null;
-      content: { id: string; content: { id: string }[] };
-    }[];
+    // 压缩记录的切点也原样保留：它指向同一条被复制过来的 turn。
+    const compactionStep = savedTurns[2]?.content.content[0];
+    const compactionPart =
+      compactionStep?.type === "compaction"
+        ? compactionStep.content[0]
+        : undefined;
 
     expect({
       savedSessions: savedSessions.length,
-      savedTurns: savedTurns.length,
-      first: first?.id,
-      second: second?.id,
-      parentRemapped: second?.parentId === first?.id,
-      stepIdChanged: first?.content.content[0]?.id !== "u1-step",
-      newSession: result.sessionId !== "s1",
+      turnIds: savedTurns.map((turn) => turn.id),
+      parentIds: savedTurns.map((turn) => turn.parentId),
+      allInNewSession: savedTurns.every(
+        (turn) => turn.sessionId === result.sessionId
+      ),
+      userStepId: savedTurns[0]?.content.content[0]?.id,
+      assistantStepId: savedTurns[1]?.content.content[0]?.id,
+      retainedFromTurnId: compactionPart?.record?.retainedFromTurnId,
     }).toStrictEqual({
       savedSessions: 1,
-      savedTurns: 2,
-      first: expect.any(String),
-      second: expect.any(String),
-      parentRemapped: true,
-      stepIdChanged: true,
-      newSession: true,
+      turnIds: ["u1", "a1", "c1"],
+      parentIds: [null, "u1", "a1"],
+      allInNewSession: true,
+      userStepId: "u1-step",
+      assistantStepId: "s1",
+      retainedFromTurnId: "u1",
     });
   });
 });

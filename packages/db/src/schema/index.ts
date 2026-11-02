@@ -146,10 +146,24 @@ export type SessionStatus = SessionModel["status"];
 export const turn_table = sqliteTable(
   "turn",
   {
-    id: text("id", { length: 36 })
-      .primaryKey()
-      .$defaultFn(() => randomUUID()),
-    sessionId: text("session_id"),
+    /**
+     * 物理行 id。
+     *
+     * 只用于存储：自增主键让聚簇索引按插入顺序增长，二级索引也比 UUID 主键小。
+     * SQLite 用 `INTEGER PRIMARY KEY`；换 MySQL 时同一位置用
+     * `BIGINT AUTO_INCREMENT`。领域身份是 `turnId`；它只在会话内唯一，fork
+     * 复制时保持不变。不要把 `rowId` 放进 `AgentTurn`、事件或客户端协议。
+     */
+    rowId: integer("id").primaryKey({ autoIncrement: true }),
+    /**
+     * turn 的业务 id。
+     *
+     * 会话内唯一。fork 复制 branch 时原样保留，因此内容里的引用
+     * （`parentId`、`CompactionRecord.retainedFromTurnId`）不需要重写。
+     */
+    turnId: text("turn_id").notNull(),
+    /** 所属会话。每个 turn 必须属于一个会话。 */
+    sessionId: text("session_id").notNull(),
     type: text("type").notNull(),
     metadata: text("metadata", { mode: "json" }),
     parentId: text("parent_id"),
@@ -175,8 +189,8 @@ export const turn_table = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
-    index("idx_sessionid").on(table.sessionId),
-    index("idx_turn_parent").on(table.parentId),
+    // 业务身份只在会话内唯一；写入和按 id 读取都以这个唯一键定位。
+    uniqueIndex("idx_turn_session_turn").on(table.sessionId, table.turnId),
     index("idx_turn_session_parent").on(table.sessionId, table.parentId),
   ]
 );
@@ -191,13 +205,18 @@ export type TurnInsertModel = InferInsertModel<typeof turn_table>;
  * 序号，从 0 开始、只追加、不重排；`streamId` 记录产生该 step 的那次运行，
  * 读取时用它隐藏“当前运行”的 step，避免和流重放重复。
  *
+ * `stepId` 是业务 id，只在会话内唯一；`rowId` 是物理自增主键，理由与 `turn`
+ * 相同。`turnId` 指向同一会话里的 turn，所以 `(sessionId, turnId)` 就是它的
+ * 父键，不需要额外的行 id。
+ *
  * `content` 存完整 `AgentStep` JSON；`type` / `status` 是供查询用的冗余列，
  * 与 `content` 里的同名字段保持一致。
  */
 export const step_table = sqliteTable(
   "step",
   {
-    id: text("id").primaryKey(),
+    rowId: integer("id").primaryKey({ autoIncrement: true }),
+    stepId: text("step_id").notNull(),
     turnId: text("turn_id").notNull(),
     sessionId: text("session_id").notNull(),
     seq: integer("seq").notNull(),
@@ -215,7 +234,12 @@ export const step_table = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
-    uniqueIndex("idx_step_turn_seq").on(table.turnId, table.seq),
+    uniqueIndex("idx_step_session_step").on(table.sessionId, table.stepId),
+    uniqueIndex("idx_step_turn_seq").on(
+      table.sessionId,
+      table.turnId,
+      table.seq
+    ),
     index("idx_step_session_created").on(table.sessionId, table.createdAt),
   ]
 );

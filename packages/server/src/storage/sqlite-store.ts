@@ -11,6 +11,7 @@ import { InboxMessageNotFoundError } from "@workspace/agent/inbox/errors";
 import type {
   AgentStore,
   SessionEndStatus,
+  StepWrite,
 } from "@workspace/agent/storage/index";
 import {
   hydrateTurn,
@@ -34,7 +35,6 @@ import type {
   InboxMessageModel,
   SessionInsertModel,
   SessionModel,
-  StepInsertModel,
   StepModel,
   TurnModel,
 } from "@workspace/db";
@@ -56,13 +56,12 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /**
  * step 行在冲突时可变的列。
  *
- * 不含 `stream_id`：一个 step 可能在上一次运行里创建、在这次运行里被
+ * 不含 `step_id` / `session_id` / `turn_id`：业务身份和所属 turn 在创建时就固定。
+ * 也不含 `stream_id`：一个 step 可能在上一次运行里创建、在这次运行里被
  * `step.metadata` 或 `tool.output-denied` 更新，它的归属仍是创建它的那次运行。
  */
-function stepRowPatch(step: StepInsertModel) {
+function stepRowPatch(step: StepWrite) {
   return {
-    turnId: step.turnId,
-    sessionId: step.sessionId,
     seq: step.seq,
     type: step.type,
     status: step.status,
@@ -71,17 +70,17 @@ function stepRowPatch(step: StepInsertModel) {
   };
 }
 
-/** 按 id upsert 一组 step 行。 */
+/** 按会话内业务 id upsert 一组 step 行。 */
 async function upsertStepRows(
   tx: Transaction,
-  steps: StepInsertModel[]
+  steps: StepWrite[]
 ): Promise<void> {
   for (const step of steps) {
     await tx
       .insert(step_table)
       .values(step)
       .onConflictDoUpdate({
-        target: step_table.id,
+        target: [step_table.sessionId, step_table.stepId],
         set: stepRowPatch(step),
       });
   }
@@ -273,14 +272,15 @@ export class SQLiteStore implements AgentStore {
       .select()
       .from(turn_table)
       .where(eq(turn_table.sessionId, sessionId))
-      .orderBy(asc(turn_table.createdAt), asc(turn_table.id));
-    const turnsMap = new Map(turns.map((turn) => [turn.id, turn]));
+      .orderBy(asc(turn_table.createdAt), asc(turn_table.turnId));
+    // branch 的父指针指向业务 turn id，只在会话内唯一。
+    const turnsMap = new Map(turns.map((turn) => [turn.turnId, turn]));
 
     const branch: TurnModel[] = [];
     let current = turnsMap.get(session.activeHeadId);
     while (current) {
       branch.unshift(current);
-      turnsMap.delete(current.id);
+      turnsMap.delete(current.turnId);
       current = current.parentId ? turnsMap.get(current.parentId) : undefined;
     }
     if (branch.length === 0) {
@@ -307,7 +307,7 @@ export class SQLiteStore implements AgentStore {
     return branch.map((turn) =>
       hydrateTurn(
         turn,
-        (stepsByTurn.get(turn.id) ?? []) as StepRow[],
+        (stepsByTurn.get(turn.turnId) ?? []) as StepRow[],
         options?.activeStreamId
       )
     );
@@ -343,7 +343,7 @@ export class SQLiteStore implements AgentStore {
         .insert(turn_table)
         .values(row)
         .onConflictDoUpdate({
-          target: turn_table.id,
+          target: [turn_table.sessionId, turn_table.turnId],
           set: {
             type: row.type,
             metadata: row.metadata,
@@ -421,14 +421,14 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async saveStep(step: StepInsertModel): Promise<number> {
+  async saveStep(step: StepWrite): Promise<number> {
     // upsert 不覆盖 stream_id：step 的归属永远是创建它的那次运行，后来的
     // step.metadata / tool.output-denied 只改内容。
     const result = await db
       .insert(step_table)
       .values(step)
       .onConflictDoUpdate({
-        target: step_table.id,
+        target: [step_table.sessionId, step_table.stepId],
         set: stepRowPatch(step),
       });
     return result.rowsAffected;
@@ -511,7 +511,12 @@ export class SQLiteStore implements AgentStore {
       const [head] = await tx
         .select({ lastSeq: max(step_table.seq) })
         .from(step_table)
-        .where(eq(step_table.turnId, turnId));
+        .where(
+          and(
+            eq(step_table.sessionId, sessionId),
+            eq(step_table.turnId, turnId)
+          )
+        );
       let seq = (head?.lastSeq ?? -1) + 1;
 
       const steps: AgentSteeringStep[] = [];
@@ -529,7 +534,7 @@ export class SQLiteStore implements AgentStore {
         };
 
         await tx.insert(step_table).values({
-          id: step.id,
+          stepId: step.id,
           turnId,
           sessionId,
           seq,
@@ -578,7 +583,7 @@ export class SQLiteStore implements AgentStore {
         .insert(turn_table)
         .values(row)
         .onConflictDoUpdate({
-          target: turn_table.id,
+          target: [turn_table.sessionId, turn_table.turnId],
           set: {
             type: row.type,
             status: row.status,
@@ -588,9 +593,7 @@ export class SQLiteStore implements AgentStore {
           },
         });
 
-      if (turn.sessionId) {
-        await setHeadIn(tx, turn.sessionId, turn.id);
-      }
+      await setHeadIn(tx, turn.sessionId, turn.id);
     });
   }
 
@@ -608,25 +611,24 @@ export class SQLiteStore implements AgentStore {
    * @returns 更新到的 turn 行数；0 表示这条 turn 还没有行。
    */
   async updateTurn(
+    sessionId: string,
     id: string,
     turn: AgentTurn,
     { stepIds }: { stepIds?: ReadonlySet<string> } = {}
   ): Promise<number> {
     const row = turnRowPatch(turn);
+    const turnWhere = and(
+      eq(turn_table.sessionId, sessionId),
+      eq(turn_table.turnId, id)
+    );
 
     if (!stepIds) {
-      const header = await db
-        .update(turn_table)
-        .set(row)
-        .where(eq(turn_table.id, id));
+      const header = await db.update(turn_table).set(row).where(turnWhere);
       return header.rowsAffected;
     }
 
     return await db.transaction(async (tx) => {
-      const header = await tx
-        .update(turn_table)
-        .set(row)
-        .where(eq(turn_table.id, id));
+      const header = await tx.update(turn_table).set(row).where(turnWhere);
 
       const now = new Date();
       for (const [seq, step] of turn.content.entries()) {
@@ -643,7 +645,12 @@ export class SQLiteStore implements AgentStore {
             content: step,
             updatedAt: now,
           })
-          .where(eq(step_table.id, step.id));
+          .where(
+            and(
+              eq(step_table.sessionId, sessionId),
+              eq(step_table.stepId, step.id)
+            )
+          );
       }
 
       return header.rowsAffected;
