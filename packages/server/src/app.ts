@@ -22,6 +22,8 @@ import { requestId } from "hono/request-id";
 import { bearerAuth } from "./auth";
 import { createContext } from "./context";
 import { appRouter } from "./routers/index";
+import { serveWorkspaceFile } from "./routers/workspace/workspace.file-route";
+import { resolveSessionWorkspace } from "./routers/workspace/workspace.router";
 
 /**
  * `language` is narrowed from the `string` Hono's own `ContextVariableMap`
@@ -117,6 +119,12 @@ export const createApp = ({
   // Auth sits after the logger, so rejected requests still reach the access log,
   // and before the oRPC handler, so no route can accidentally opt out.
   app.use(bearerAuth(apiToken));
+
+  // 工作区文件的字节通道：`<img src>` 和下载都要一条普通 GET，而 RPC 只走
+  // JSON。放在 oRPC 兜底之前，这类请求不必先经过一次 handler 匹配。
+  app.get("/api/workspace/file", (c) =>
+    serveWorkspaceFile(c.req.raw, { resolveRoots: resolveSessionWorkspace })
+  );
 
   // 没有 CORS 中间件：浏览器永远经同源代理（Vite 或 aify-app:// 转发）访问
   // 这个进程，跨源读取本来就不该被允许。桌面转发和 Vite 代理都在服务端发起

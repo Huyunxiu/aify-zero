@@ -23,6 +23,7 @@
     "@fontsource-variable/geist": "^5.2.8",
     "@oreo-design/avatar": "catalog:",
     "@pierre/diffs": "catalog:",
+    "@pierre/trees": "catalog:",
     "@radix-ui/react-use-controllable-state": "catalog:",
     "@shadcn/react": "catalog:",
     "@streamdown/cjk": "catalog:",

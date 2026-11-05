@@ -56,7 +56,6 @@ export const useChannelStore = create<ChannelState>((set) => ({
           set({ status: "open" });
         },
       });
-      console.log(999);
     } catch (error) {
       logger.error("[channel] not opened", error);
     }

@@ -192,5 +192,24 @@
   "steering": {
     "marker": "引导消息"
   },
+  "panel": {
+    "close": "关闭面板",
+    "closeTab": "关闭 {{name}} 标签",
+    "tabs": {
+      "files": "文件"
+    }
+  },
+  "files": {
+    "empty": "这个项目还没有文件。",
+    "closeFile": "关闭文件",
+    "hideTree": "隐藏目录",
+    "showTree": "显示目录",
+    "unavailable": "无法显示这个文件。",
+    "refused": {
+      "not-regular-file": "该路径不是普通文件，无法读取内容。",
+      "not-text": "该格式文件暂时无法预览",
+      "too-large": "文件超出预览上限，请换一种方式查看。"
+    }
+  },
   "requestFailed": "请求失败"
 }

@@ -7,6 +7,7 @@ import { project } from "./project/project.router";
 import { session } from "./session/session.router";
 import { setting } from "./settings/settings.router";
 import { skill } from "./skill/skill.router";
+import { workspace } from "./workspace/workspace.router";
 
 export const appRouter = {
   agent,
@@ -14,6 +15,7 @@ export const appRouter = {
   skill,
   session,
   setting,
+  workspace,
   healthCheck: publicProcedure.handler(() => "OK"),
   // Answers with the name of the language it was asked in — a round trip that
   // says which language the server just read off the request.

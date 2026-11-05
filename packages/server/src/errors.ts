@@ -88,6 +88,44 @@ export const ErrorMap = {
     message: "The context could not be compacted. The history is unchanged.",
     data: z.object({ reason: z.string() }),
   },
+
+  // 工作区文件：路径不存在、越界、类型不符、内容超限。
+  WORKSPACE_NOT_FOUND: {
+    status: 404,
+    message: "The requested file or directory was not found.",
+    data: z.object({ path: z.string() }),
+  },
+  WORKSPACE_OUTSIDE: {
+    status: 403,
+    message: "The path is outside the workspace.",
+    data: z.object({ path: z.string() }),
+  },
+  WORKSPACE_NOT_TEXT: {
+    status: 415,
+    message: "The file is not UTF-8 text.",
+    data: z.object({ path: z.string() }),
+  },
+  WORKSPACE_NOT_REGULAR_FILE: {
+    status: 400,
+    message: "The path is not a regular file.",
+    data: z.object({
+      path: z.string(),
+      kind: z.enum(["directory", "symlink", "other"]),
+    }),
+  },
+  WORKSPACE_NOT_DIRECTORY: {
+    status: 400,
+    message: "The path is not a directory.",
+    data: z.object({
+      path: z.string(),
+      kind: z.enum(["file", "symlink", "other"]),
+    }),
+  },
+  WORKSPACE_TOO_LARGE: {
+    status: 413,
+    message: "The response would exceed the size limit.",
+    data: z.object({ path: z.string(), limit: z.number() }),
+  },
 } satisfies ErrorMapType;
 
 /** Every code above, i.e. the whole set a throw site may use. */

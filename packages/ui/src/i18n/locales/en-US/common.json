@@ -192,5 +192,24 @@
   "steering": {
     "marker": "Steering message"
   },
+  "panel": {
+    "close": "Close the panel",
+    "closeTab": "Close the {{name}} tab",
+    "tabs": {
+      "files": "Files"
+    }
+  },
+  "files": {
+    "empty": "This project has no files yet.",
+    "closeFile": "Close the file",
+    "hideTree": "Hide the directory tree",
+    "showTree": "Show the directory tree",
+    "unavailable": "This file cannot be shown.",
+    "refused": {
+      "not-regular-file": "This path is not a regular file, so it has no content to read.",
+      "not-text": "This file format cannot be previewed yet.",
+      "too-large": "This file is larger than the preview limit."
+    }
+  },
   "requestFailed": "Request failed"
 }

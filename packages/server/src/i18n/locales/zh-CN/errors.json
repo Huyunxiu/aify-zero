@@ -28,5 +28,11 @@
   "INBOX_MESSAGE_NOT_FOUND": "这条排队消息已被发送或移除。",
   "SESSION_BUSY": "会话正在运行或等待审批，请等当前回合结束后再压缩。",
   "NOTHING_TO_COMPACT": "当前没有足够的历史可以压缩。",
-  "COMPACTION_FAILED": "上下文压缩失败，历史未发生变化。"
+  "COMPACTION_FAILED": "上下文压缩失败，历史未发生变化。",
+  "WORKSPACE_NOT_FOUND": "未找到该文件或目录，请检查后重试。",
+  "WORKSPACE_OUTSIDE": "该路径不在工作区内。",
+  "WORKSPACE_NOT_TEXT": "该文件不是 UTF-8 文本，无法按文本预览。",
+  "WORKSPACE_NOT_REGULAR_FILE": "该路径不是普通文件，无法读取内容。",
+  "WORKSPACE_NOT_DIRECTORY": "该路径不是目录，无法列出内容。",
+  "WORKSPACE_TOO_LARGE": "文件内容超出大小上限，请换一种方式查看。"
 }

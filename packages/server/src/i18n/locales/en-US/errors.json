@@ -28,5 +28,11 @@
   "INBOX_MESSAGE_NOT_FOUND": "This queued message was already sent or removed.",
   "SESSION_BUSY": "This chat is busy. Wait for the current turn to finish and try again.",
   "NOTHING_TO_COMPACT": "There is not enough history to compact yet.",
-  "COMPACTION_FAILED": "The context could not be compacted. The history is unchanged."
+  "COMPACTION_FAILED": "The context could not be compacted. The history is unchanged.",
+  "WORKSPACE_NOT_FOUND": "The requested file or directory was not found.",
+  "WORKSPACE_OUTSIDE": "That path is outside the workspace.",
+  "WORKSPACE_NOT_TEXT": "That file is not UTF-8 text, so it cannot be previewed as text.",
+  "WORKSPACE_NOT_REGULAR_FILE": "That path is not a regular file, so it has no content to read.",
+  "WORKSPACE_NOT_DIRECTORY": "That path is not a directory, so it has no entries to list.",
+  "WORKSPACE_TOO_LARGE": "The content is larger than the size limit. Please use another way to view it."
 }
