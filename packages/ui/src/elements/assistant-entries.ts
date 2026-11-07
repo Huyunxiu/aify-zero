@@ -1,10 +1,12 @@
 import type { AgentToolSet } from "@workspace/agent";
+import { isAgentTextPart } from "@workspace/agent-client";
 import type {
   AgentAssistantStep,
   AgentAssistantTurn,
   AgentCompactionStep,
   AgentPart,
   AgentSteeringStep,
+  AgentTextPart,
 } from "@workspace/agent-client";
 
 import type { StepRow } from "./tool-step";
@@ -21,6 +23,13 @@ export type AssistantEntry =
 const isPartEntry = (
   entry: AssistantEntry
 ): entry is Extract<AssistantEntry, { kind: "part" }> => entry.kind === "part";
+
+/** 一行文本 part：只有它可能承担“答案”。 */
+const isTextEntry = (
+  entry: AssistantEntry
+): entry is Extract<AssistantEntry, { kind: "part" }> & {
+  part: AgentTextPart;
+} => entry.kind === "part" && isAgentTextPart(entry.part);
 
 /**
  * Splits a turn into the steps that led to its answer and the answer itself.
@@ -50,14 +59,13 @@ export const splitAssistantMessageSteps = (
     }
   );
 
-  const lastEntry = entries.at(-1);
-  // 只有最后一条仍是 assistant 文本时才是“答案”。若尾部是 steering step，
-  // 说明回合在这里被切住，保持原顺序，不把任何内容提到链外。
-  const answerPart =
-    lastEntry?.kind === "part" && lastEntry.part.type === "text"
-      ? lastEntry.part
-      : undefined;
-  const chainEntries = answerPart ? entries.slice(0, -1) : entries;
+  // 答案取最后一条 assistant 文本：它后面可能还跟着工具调用或 steering，
+  // 那些行留在链里，文本本身提到链外单独渲染。
+  const lastEntry = entries.findLast(isTextEntry);
+  const answerPart = lastEntry?.part;
+  const chainEntries = lastEntry
+    ? entries.filter((entry) => entry !== lastEntry)
+    : entries;
 
   return {
     entries: chainEntries,

@@ -3,6 +3,7 @@ import type {
   AgentAssistantStep,
   AgentAssistantTurn,
   AgentCompactionStep,
+  AgentAssistantPart,
   AgentSteeringStep,
 } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
@@ -20,14 +21,31 @@ const assistantStep = (
   id: string,
   text: string,
   createdAt = 1
+): AgentAssistantStep<AgentToolSet> =>
+  assistantStepWith(id, [textPart(text, createdAt)], createdAt);
+
+const assistantStepWith = (
+  id: string,
+  content: AgentAssistantStep<AgentToolSet>["content"],
+  createdAt = 1
 ): AgentAssistantStep<AgentToolSet> => ({
   id,
   type: "assistant",
   model: "test-model",
   createdAt,
   status: "done",
-  content: [textPart(text, createdAt)],
+  content,
 });
+
+/** 一个已经排队的工具调用：它不承担答案，但会占住链的尾部。 */
+const toolPart = (): AgentAssistantPart<AgentToolSet> =>
+  ({
+    type: "tool-bash",
+    toolCallId: "call-1",
+    rawInput: "",
+    state: "input-available",
+    input: {},
+  }) as AgentAssistantPart<AgentToolSet>;
 
 const steeringStep = (
   id: string,
@@ -76,7 +94,7 @@ describe(splitAssistantMessageSteps, () => {
     expect(split.parts.map((row) => row.part.type)).toStrictEqual(["text"]);
   });
 
-  test("does not lift a text out of the chain when the turn ends with steering", () => {
+  test("keeps the last text as the answer when the turn ends with steering", () => {
     const split = splitAssistantMessageSteps(
       assistantTurn([
         assistantStep("s1", "before"),
@@ -84,10 +102,21 @@ describe(splitAssistantMessageSteps, () => {
       ])
     );
 
-    expect(split.answerPart).toBeUndefined();
+    expect(split.answerPart).toMatchObject({ type: "text", text: "before" });
     expect(split.entries.map((entry) => entry.kind)).toStrictEqual([
-      "part",
       "steering",
+    ]);
+  });
+
+  test("takes the text as the answer when a tool call follows it", () => {
+    const split = splitAssistantMessageSteps(
+      assistantTurn([assistantStepWith("s1", [textPart("answer"), toolPart()])])
+    );
+
+    expect(split.answerPart).toMatchObject({ type: "text", text: "answer" });
+    expect(split.entries.map((entry) => entry.kind)).toStrictEqual(["part"]);
+    expect(split.parts.map((row) => row.part.type)).toStrictEqual([
+      "tool-bash",
     ]);
   });
 
