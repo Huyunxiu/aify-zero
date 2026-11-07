@@ -20,8 +20,6 @@ import {
 import type { WorkspaceRoots } from "./workspace.paths";
 
 // ── 上限 ────────────────────────────────────────────────────────────────────
-
-/** 容量上限；取值与 deepseek-harness 对齐，后续按实测调整。 */
 export interface WorkspaceLimits {
   /** 单页文本或单次字节窗口的上限。 */
   readonly maxBytes: number;
@@ -214,10 +212,10 @@ export type WorkspaceTextRefusal =
 export type WorkspaceTextResult =
   | ({ readonly kind: "text" } & WorkspaceTextPage)
   | {
-      readonly kind: "refused";
-      readonly path: string;
-      readonly reason: WorkspaceTextRefusal;
-    };
+    readonly kind: "refused";
+    readonly path: string;
+    readonly reason: WorkspaceTextRefusal;
+  };
 
 /** 文本里不允许出现的字节：出现即视为二进制。 */
 const NUL = String.fromCodePoint(0);

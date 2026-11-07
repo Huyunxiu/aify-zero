@@ -48,7 +48,7 @@ type MarkdownLinkProps = ComponentProps<"a"> & {
 
 /** 文件链接的正文样式；和正文链接保持一致。 */
 const FILE_LINK_CLASS =
-  "cursor-pointer underline underline-offset-2 break-words";
+  "cursor-pointer underline-offset-2 break-words text-primary hover:underline";
 
 /**
  * 把不可达的分支变成编译错误。
@@ -89,7 +89,7 @@ export function MarkdownLink({
     case "file": {
       if (openFile === undefined) {
         return (
-          <a className={className} href={href} {...props}>
+          <a className={cn(FILE_LINK_CLASS, className)} href={href} {...props}>
             {children}
           </a>
         );
@@ -97,7 +97,7 @@ export function MarkdownLink({
 
       return (
         <FileLinkButton
-          className={className}
+          className={cn(FILE_LINK_CLASS, className)}
           openFile={openFile}
           target={target}
         >
@@ -108,7 +108,7 @@ export function MarkdownLink({
     case "external": {
       return (
         <a
-          className={className}
+          className={cn(FILE_LINK_CLASS, className)}
           href={target.href}
           {...props}
           rel="noopener noreferrer"
@@ -120,7 +120,11 @@ export function MarkdownLink({
     }
     case "plain": {
       return (
-        <a className={className} href={target.href} {...props}>
+        <a
+          className={cn(FILE_LINK_CLASS, className)}
+          href={target.href}
+          {...props}
+        >
           {children}
         </a>
       );

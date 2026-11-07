@@ -33,7 +33,8 @@ describe("Markdown link rendering", () => {
   test("degrades to an anchor without a session scope", () => {
     const html = render("src/a.ts", false);
 
-    expect(html).toContain('<a href="src/a.ts"');
+    expect(html).toContain('href="src/a.ts"');
+    expect(html).toContain("<a ");
   });
 
   test("opens external links in a new tab", () => {
@@ -47,7 +48,8 @@ describe("Markdown link rendering", () => {
   test("keeps in-page anchors as plain links", () => {
     const html = render("#section");
 
-    expect(html).toContain('<a href="#section"');
+    expect(html).toContain('href="#section"');
+    expect(html).toContain("<a ");
   });
 
   test("does not link an unsafe destination", () => {
