@@ -17,6 +17,7 @@ import {
   TabsContent,
 } from "@workspace/ui/components/tabs";
 import { TitleBar } from "@workspace/ui/elements/title-bar";
+import type { TFunction } from "i18next";
 import { PanelRightIcon, PlusIcon, SquareTerminalIcon } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -44,22 +45,48 @@ export type SessionPanelProps = {
   readonly openRequest?: FileOpenTarget;
 };
 
+/** 一个标签的图标、标题和关闭提示。 */
+type TabDescription = {
+  readonly closeLabel: string;
+  readonly icon: React.ReactNode;
+  readonly label: string;
+};
+
 /**
- * 标签的图标：新标签页用加号，视图用各自的图标。
+ * 一个标签的三样显示内容。
+ *
+ * 三样都出自同一次判断：新增视图时只改这一处。
  *
  * @param tab - 标签值。
- * @returns 图标元素。
+ * @param filesLabel - 文件标签的标题；它跟着打开的文件变，所以由调用方算好传入。
+ * @param t - 翻译函数。
+ * @returns 图标、标题和关闭提示。
  */
-function iconOf(tab: PanelTabValue): React.ReactNode {
+function describeTab(
+  tab: PanelTabValue,
+  filesLabel: string,
+  t: TFunction
+): TabDescription {
   if (tab === NEW_TAB) {
-    return <PlusIcon size={14} />;
+    return {
+      closeLabel: t("panel.closeNewTab"),
+      icon: <PlusIcon size={14} />,
+      label: t("panel.tabs.new"),
+    };
   }
 
-  return tab === "files" ? (
-    <FolderIcon size={14} />
-  ) : (
-    <SquareTerminalIcon size={14} />
-  );
+  const label = tab === "files" ? filesLabel : t("panel.tabs.terminal");
+
+  return {
+    closeLabel: t("panel.closeTab", { name: label }),
+    icon:
+      tab === "files" ? (
+        <FolderIcon size={14} />
+      ) : (
+        <SquareTerminalIcon size={14} />
+      ),
+    label,
+  };
 }
 
 /**
@@ -97,19 +124,6 @@ export function SessionPanel({
     activeFile === null
       ? (rootName ?? t("panel.tabs.files"))
       : activeFile.slice(activeFile.lastIndexOf("/") + 1);
-
-  const labelOf = (tab: PanelTabValue): string => {
-    if (tab === NEW_TAB) {
-      return t("panel.tabs.new");
-    }
-
-    return tab === "files" ? filesLabel : t("panel.tabs.terminal");
-  };
-
-  const closeLabelOf = (tab: PanelTabValue): string =>
-    tab === NEW_TAB
-      ? t("panel.closeNewTab")
-      : t("panel.closeTab", { name: labelOf(tab) });
 
   /** 增加一个新标签页；已经有一个时只切过去。 */
   const addTab = (): void => {
@@ -165,19 +179,23 @@ export function SessionPanel({
     >
       <TitleBar className="sticky top-0 flex h-12 shrink-0 items-center gap-1 border-b pl-2 pr-4">
         <TabStripList className="[-webkit-app-region:no-drag]">
-          {tabs.map((tab) => (
-            <TabStripTrigger
-              closeLabel={closeLabelOf(tab)}
-              icon={iconOf(tab)}
-              key={tab}
-              onClose={() => {
-                closeTab(tab);
-              }}
-              value={tab}
-            >
-              {labelOf(tab)}
-            </TabStripTrigger>
-          ))}
+          {tabs.map((tab) => {
+            const { closeLabel, icon, label } = describeTab(tab, filesLabel, t);
+
+            return (
+              <TabStripTrigger
+                closeLabel={closeLabel}
+                icon={icon}
+                key={tab}
+                onClose={() => {
+                  closeTab(tab);
+                }}
+                value={tab}
+              >
+                {label}
+              </TabStripTrigger>
+            );
+          })}
           <Button
             aria-label={t("panel.addTab")}
             className="[-webkit-app-region:no-drag] shrink-0"
