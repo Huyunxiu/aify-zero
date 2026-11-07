@@ -51,6 +51,15 @@ const FILE_LINK_CLASS =
   "cursor-pointer underline underline-offset-2 break-words";
 
 /**
+ * 把不可达的分支变成编译错误。
+ *
+ * 分类结果新增 kind 时，`switch` 会漏掉一种，这里的参数类型先报错。
+ */
+function assertNever(value: never): never {
+  throw new Error(`unhandled markdown target: ${String(value)}`);
+}
+
+/**
  * `a` 标签的替身。
  *
  * 文件链接渲染成按钮：浏览器不该为它做导航，中键也不该开出无效的新标签页。
@@ -70,6 +79,11 @@ export function MarkdownLink({
   }
 
   const target = classifyMarkdownHref(href);
+
+  // 不安全或无法解码的目标不渲染成链接，只留下文字。
+  if (target.kind === "blocked") {
+    return <span className={className}>{children}</span>;
+  }
 
   switch (target.kind) {
     case "file": {
@@ -111,12 +125,8 @@ export function MarkdownLink({
         </a>
       );
     }
-    case "blocked": {
-      // 不安全或无法解码的目标不渲染成链接，只留下文字。
-      return <span className={className}>{children}</span>;
-    }
     default: {
-      return <span className={className}>{children}</span>;
+      return assertNever(target);
     }
   }
 }
