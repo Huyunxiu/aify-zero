@@ -4,7 +4,7 @@
 2. Write code comments in Chinese too, but keep log messages in English.
 3. Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
 4. Fix a bug at its cause, reasoning from first principles and established best practice. Do not patch over the symptom.
-5. Always talk in ASD-STE100 Simplified Technical English. Always read CONTEXT.md files, and use their ubiquitous language.
+5. Always talk in ASD-STE100 Simplified Technical English. Always read GLOSSARY.md files, and use their ubiquitous language.
 
 <!--VITE PLUS START-->
 
@@ -22,3 +22,17 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 - [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
 
 <!--VITE PLUS END-->
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in Linear, workspace `Aify0`, team `AIFY0`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles. Four map to same-named Linear labels; `wontfix` means state `Canceled`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context: a root `GLOSSARY-MAP.md` points at one `GLOSSARY.md` per app and package. See `docs/agents/domain.md`.
