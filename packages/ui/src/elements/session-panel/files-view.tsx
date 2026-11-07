@@ -29,11 +29,16 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { usePanelRef } from "react-resizable-panels";
 
+import type { FileOpenTarget } from "../markdown-link";
+import { ancestorDirectories, treePathOf } from "./reveal-path";
+
 export type FilesViewProps = {
   /** 当前打开的文件，路径相对工作区根。 */
   readonly activeFile: string | null;
   readonly onActiveFileChange: (path: string | null) => void;
   readonly onRootNameChange: (name: string) => void;
+  /** 来自聊天文件链接的定位请求；只负责在树里展开并选中。 */
+  readonly reveal?: FileOpenTarget | undefined;
   /** 工作区根的目录名；没有打开文件时标签显示它。 */
   readonly rootName: string | null;
   readonly sessionId: string;
@@ -134,6 +139,7 @@ export function FilesView({
   activeFile,
   onActiveFileChange,
   onRootNameChange,
+  reveal,
   rootName,
   sessionId,
 }: FilesViewProps) {
@@ -168,40 +174,57 @@ export function FilesView({
 
   // 已列出和正在列出的目录：同一目录只请求一次，展开和选中不会叠加请求。
   const loaded = React.useRef(new Set<string>());
-  const pending = React.useRef(new Set<string>());
+  // 同一目录只发一次请求，并且让后来的调用等到同一个结果；否则「逐层展开」
+  // 可能抢在根目录列完之前跑，树里还没有父目录，定位就落空。
+  const pending = React.useRef(new Map<string, Promise<void>>());
 
   const loadDirectory = React.useCallback(
-    async (input: string) => {
+    async (input: string): Promise<void> => {
       const directory = directoryKey(input);
-      if (loaded.current.has(directory) || pending.current.has(directory)) {
+
+      if (loaded.current.has(directory)) {
         return;
       }
-      pending.current.add(directory);
+
+      const inFlight = pending.current.get(directory);
+
+      if (inFlight !== undefined) {
+        await inFlight;
+        return;
+      }
+
+      const load = (async (): Promise<void> => {
+        try {
+          const listing = await client.workspace.list({
+            sessionId,
+            path: apiPathOf(directory),
+          });
+          const paths = listing.entries.map((entry) =>
+            childPath(directory, entry.name, entry.type === "directory")
+          );
+          if (paths.length > 0) {
+            model.batch(paths.map((path) => ({ path, type: "add" as const })));
+            // 目录要有子项，树才认为它可以展开；这正是用户刚点开的那个目录。
+            const item = model.getItem(directory);
+            if (item !== null && "expand" in item) {
+              item.expand();
+            }
+          }
+          loaded.current.add(directory);
+          setLoadError(null);
+          if (directory === "") {
+            setEntryCount(listing.entries.length);
+            onRootNameChange(listing.rootName);
+          }
+        } catch (error) {
+          setLoadError(getErrorMessage(error) ?? null);
+        }
+      })();
+
+      pending.current.set(directory, load);
 
       try {
-        const listing = await client.workspace.list({
-          sessionId,
-          path: apiPathOf(directory),
-        });
-        const paths = listing.entries.map((entry) =>
-          childPath(directory, entry.name, entry.type === "directory")
-        );
-        if (paths.length > 0) {
-          model.batch(paths.map((path) => ({ path, type: "add" as const })));
-          // 目录要有子项，树才认为它可以展开；这正是用户刚点开的那个目录。
-          const item = model.getItem(directory);
-          if (item !== null && "expand" in item) {
-            item.expand();
-          }
-        }
-        loaded.current.add(directory);
-        setLoadError(null);
-        if (directory === "") {
-          setEntryCount(listing.entries.length);
-          onRootNameChange(listing.rootName);
-        }
-      } catch (error) {
-        setLoadError(getErrorMessage(error) ?? null);
+        await load;
       } finally {
         pending.current.delete(directory);
       }
@@ -213,6 +236,64 @@ export function FilesView({
   React.useEffect(() => {
     void loadDirectory("");
   }, [loadDirectory]);
+
+  // 聊天里的文件链接：逐层列出父目录、展开，再选中文件。树只认根相对路径，
+  // 绝对路径和带 `..` 的路径只交给预览，不在这里猜。
+  React.useEffect(() => {
+    if (reveal === undefined) {
+      return;
+    }
+
+    const treePath = treePathOf(reveal.path);
+
+    if (treePath === null) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const open = async (): Promise<void> => {
+      // 根目录先列：没有它，第一层父目录还不存在。
+      for (const directory of ["", ...ancestorDirectories(treePath)]) {
+        await loadDirectory(directory);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (directory === "") {
+          continue;
+        }
+
+        const item = model.getItem(directory);
+
+        // 目录要先有子项，树才认为它可以展开。
+        if (item !== null && "expand" in item) {
+          item.expand();
+        }
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      const item = model.getItem(treePath);
+
+      if (item === null) {
+        return;
+      }
+
+      item.select();
+      model.focusPath(treePath);
+      model.scrollToPath(treePath, { offset: "nearest" });
+    };
+
+    void open();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reveal, loadDirectory, model]);
 
   // 展开一个目录时补它的直接子项：此时树里还没有这些路径。
   React.useEffect(
@@ -271,6 +352,7 @@ export function FilesView({
               {activeFile === null ? null : (
                 <FilePreview
                   key={activeFile}
+                  line={reveal?.path === activeFile ? reveal.line : undefined}
                   path={activeFile}
                   sessionId={sessionId}
                 />
@@ -319,19 +401,29 @@ export function FilesView({
 type FilePreviewProps = {
   readonly sessionId: string;
   readonly path: string;
+  /** 链接里写的行号；读够这一行并高亮它。 */
+  readonly line?: number | undefined;
 };
 
+/** 一页文本的上限；带行号时按行号往上加，但不超过服务端的单页上限。 */
+const PREVIEW_LIMIT = 400;
+const MAX_PREVIEW_LIMIT = 5000;
+
 /** 文件预览：图片直接给地址，文本取第一页。 */
-function FilePreview({ sessionId, path }: FilePreviewProps) {
+function FilePreview({ sessionId, path, line }: FilePreviewProps) {
   const { t } = useTranslation();
   const isDark = useIsDark();
   const [imageFailed, setImageFailed] = React.useState(false);
   const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
   const isImage = IMAGE_EXTENSIONS.has(extension);
+  // 行号只影响到读取窗口，不改变行号本身：仍然从第 1 行读起，编号才和文件一致。
+  const limit =
+    line === undefined
+      ? PREVIEW_LIMIT
+      : Math.min(MAX_PREVIEW_LIMIT, Math.max(PREVIEW_LIMIT, line + 50));
   const read = useQuery({
-    queryKey: ["workspace-file", sessionId, path],
-    queryFn: () =>
-      client.workspace.read({ sessionId, path, offset: 1, limit: 400 }),
+    queryKey: ["workspace-file", sessionId, path, limit],
+    queryFn: () => client.workspace.read({ sessionId, path, offset: 1, limit }),
     enabled: !isImage,
     retry: false,
   });
@@ -399,5 +491,9 @@ function FilePreview({ sessionId, path }: FilePreviewProps) {
     );
   }
 
-  return <DiffFile file={file} options={options} />;
+  // 只高亮读到的范围：行号超过这一页时，画了也没有内容对应。
+  const highlight =
+    line === undefined || line > limit ? undefined : { end: line, start: line };
+
+  return <DiffFile file={file} options={options} selectedLines={highlight} />;
 }

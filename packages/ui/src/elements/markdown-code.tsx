@@ -16,6 +16,7 @@ import type { Components, ExtraProps } from "streamdown";
 import { useIsCodeFenceIncomplete } from "streamdown";
 
 import { Button } from "../components/button";
+import { MarkdownLink } from "./markdown-link";
 
 // 围栏代码的 children 通常是字符串；插件可能把它包成元素，这里一并处理。
 function getCodeText(children: React.ReactNode) {
@@ -164,4 +165,7 @@ function MarkdownCode({
   );
 }
 
-export const markdownComponents: Components = { code: MarkdownCode };
+export const markdownComponents: Components = {
+  a: MarkdownLink,
+  code: MarkdownCode,
+};
