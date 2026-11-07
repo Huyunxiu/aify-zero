@@ -24,13 +24,16 @@ import {
   ResizablePanelGroup,
 } from "@workspace/ui/components/resizable";
 import { client } from "@workspace/ui/lib/orpc";
+import {
+  ancestorDirectories,
+  treePathOf,
+} from "@workspace/ui/lib/workspace-path";
 import { FolderTreeIcon } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { usePanelRef } from "react-resizable-panels";
 
 import type { FileOpenTarget } from "../markdown-link";
-import { ancestorDirectories, treePathOf } from "./reveal-path";
 
 export type FilesViewProps = {
   /** 当前打开的文件，路径相对工作区根。 */
@@ -277,15 +280,23 @@ export function FilesView({
         return;
       }
 
-      const item = model.getItem(treePath);
+      // 链接路径不带结尾 `/`；树里的目录带结尾 `/`。先按文件找，找不到再按目录找。
+      const item = model.getItem(treePath) ?? model.getItem(`${treePath}/`);
 
       if (item === null) {
         return;
       }
 
+      const nodePath = item.getPath();
+
       item.select();
-      model.focusPath(treePath);
-      model.scrollToPath(treePath, { offset: "nearest" });
+      model.focusPath(nodePath);
+      model.scrollToPath(nodePath, { offset: "nearest" });
+
+      // 目录没有内容可预览：清掉打开的文件，只留下树里的选中。
+      if (item.isDirectory()) {
+        onActiveFileChange(null);
+      }
     };
 
     void open();
@@ -293,7 +304,7 @@ export function FilesView({
     return () => {
       cancelled = true;
     };
-  }, [openRequest, loadDirectory, model]);
+  }, [openRequest, loadDirectory, model, onActiveFileChange]);
 
   // 展开一个目录时补它的直接子项：此时树里还没有这些路径。
   React.useEffect(

@@ -10,6 +10,7 @@
  * - `plain`：页内锚点和带查询串的目标，保持浏览器默认行为。
  * - `blocked`：`javascript:` 之类不安全的协议，以及无法安全解码的目标，只显示文字。
  */
+import { linkPathOf } from "@workspace/ui/lib/workspace-path";
 
 /** 一个本地文件链接的目标：路径，以及可选的第一个行号。 */
 export interface FileOpenTarget {
@@ -30,9 +31,6 @@ const SCHEME = /^[a-z][a-z0-9+.-]*:/iu;
 
 /** Windows 盘符路径要先于协议判断，否则 `C:` 会被当成一个协议。 */
 const DRIVE = /^[a-z]:[\\/]/iu;
-
-/** 用反斜杠表示层级的路径：盘符、UNC，或整串都没有正斜杠。 */
-const WINDOWS_PREFIX = /^(?:[a-z]:[\\/]|\\\\)/iu;
 
 /** 可以交给浏览器的协议；其余带协议的目标一律不渲染成链接。 */
 const EXTERNAL_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
@@ -55,27 +53,6 @@ const LINE_SUFFIX = /:(\d+)(?::\d+|-(\d+))?$/u;
 
 /** 片段行号：`#L24`、`#L24-L30`。 */
 const LINE_FRAGMENT = /^L(\d+)(?:-L(\d+))?$/u;
-
-/** 是否是反斜杠写法的路径。 */
-function isWindowsShaped(value: string): boolean {
-  return (
-    WINDOWS_PREFIX.test(value) || (value.includes("\\") && !value.includes("/"))
-  );
-}
-
-/**
- * 统一成树里用的写法：正斜杠，去掉开头的 `./` 和结尾的 `/`。
- *
- * 目录链接也走同一条路：结尾的斜杠去掉后，服务端会按普通文件拒绝它，
- * 预览区给出对应的说明，标签页也还能显示目录名。
- */
-function normalizePath(value: string): string {
-  const slashed = isWindowsShaped(value) ? value.replaceAll("\\", "/") : value;
-  const trimmed = slashed.replace(/^(?:\.\/)+/u, "");
-
-  // 根目录本身保留斜杠，否则会变成空串。
-  return trimmed === "/" ? trimmed : trimmed.replace(/\/+$/u, "");
-}
 
 /**
  * 解析行号，并拒绝不合法的范围。
@@ -156,7 +133,7 @@ export function parseFileLink(destination: string): FileOpenTarget | null {
     const suffix = LINE_SUFFIX.exec(head);
 
     if (suffix !== null) {
-      const path = normalizePath(
+      const path = linkPathOf(
         decoded.slice(0, decoded.length - suffix[0].length)
       );
 
@@ -170,7 +147,7 @@ export function parseFileLink(destination: string): FileOpenTarget | null {
     }
   }
 
-  const path = normalizePath(decoded);
+  const path = linkPathOf(decoded);
 
   if (path === "") {
     return null;
