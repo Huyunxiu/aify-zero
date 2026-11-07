@@ -41,7 +41,7 @@ export type SessionPanelProps = {
    *
    * 每点一次链接都是一个新对象，所以重复点同一个文件也会重新定位。
    */
-  readonly openRequest?: FileOpenTarget | null;
+  readonly openRequest?: FileOpenTarget;
 };
 
 /**
@@ -83,7 +83,7 @@ export function SessionPanel({
   // 聊天里的文件链接要面板做什么：切到文件标签、展开、定位。展开面板本身
   // 由会话层负责，这里只管标签和当前文件。
   React.useEffect(() => {
-    if (openRequest === undefined || openRequest === null) {
+    if (openRequest === undefined) {
       return;
     }
 
@@ -213,7 +213,7 @@ export function SessionPanel({
             activeFile={activeFile}
             onActiveFileChange={setActiveFile}
             onRootNameChange={setRootName}
-            reveal={openRequest ?? undefined}
+            openRequest={openRequest}
             rootName={rootName}
             sessionId={sessionId}
           />

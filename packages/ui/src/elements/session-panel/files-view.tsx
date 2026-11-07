@@ -37,8 +37,8 @@ export type FilesViewProps = {
   readonly activeFile: string | null;
   readonly onActiveFileChange: (path: string | null) => void;
   readonly onRootNameChange: (name: string) => void;
-  /** 来自聊天文件链接的定位请求；只负责在树里展开并选中。 */
-  readonly reveal?: FileOpenTarget | undefined;
+  /** 来自聊天文件链接的打开请求；只负责在树里展开并选中。 */
+  readonly openRequest?: FileOpenTarget;
   /** 工作区根的目录名；没有打开文件时标签显示它。 */
   readonly rootName: string | null;
   readonly sessionId: string;
@@ -139,7 +139,7 @@ export function FilesView({
   activeFile,
   onActiveFileChange,
   onRootNameChange,
-  reveal,
+  openRequest,
   rootName,
   sessionId,
 }: FilesViewProps) {
@@ -240,11 +240,11 @@ export function FilesView({
   // 聊天里的文件链接：逐层列出父目录、展开，再选中文件。树只认根相对路径，
   // 绝对路径和带 `..` 的路径只交给预览，不在这里猜。
   React.useEffect(() => {
-    if (reveal === undefined) {
+    if (openRequest === undefined) {
       return;
     }
 
-    const treePath = treePathOf(reveal.path);
+    const treePath = treePathOf(openRequest.path);
 
     if (treePath === null) {
       return;
@@ -293,7 +293,7 @@ export function FilesView({
     return () => {
       cancelled = true;
     };
-  }, [reveal, loadDirectory, model]);
+  }, [openRequest, loadDirectory, model]);
 
   // 展开一个目录时补它的直接子项：此时树里还没有这些路径。
   React.useEffect(
@@ -352,7 +352,11 @@ export function FilesView({
               {activeFile === null ? null : (
                 <FilePreview
                   key={activeFile}
-                  line={reveal?.path === activeFile ? reveal.line : undefined}
+                  line={
+                    openRequest?.path === activeFile
+                      ? openRequest.line
+                      : undefined
+                  }
                   path={activeFile}
                   sessionId={sessionId}
                 />

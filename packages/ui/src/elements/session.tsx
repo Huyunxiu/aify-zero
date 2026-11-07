@@ -402,7 +402,7 @@ export function Session({
   const [panelOpen, setPanelOpen] = React.useState(false);
   // 聊天里文件链接要打开的目标；每点一次换一个新对象，重复点同一个也会重放。
   const [fileOpenRequest, setFileOpenRequest] =
-    React.useState<FileOpenTarget | null>(null);
+    React.useState<FileOpenTarget>();
   const panelRef = usePanelRef();
 
   // 文件链接：展开面板，再把请求交给面板。会话还没有 id 时面板不存在，
