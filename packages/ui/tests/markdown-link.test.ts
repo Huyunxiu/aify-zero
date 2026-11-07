@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 
 import { FileLinkProvider, MarkdownLink } from "../src/elements/markdown-link";
+import type { FileOpenTarget } from "../src/elements/markdown-link";
 
 /** 拆开写，避免 lint 把测试里的字符串当成真的脚本地址。 */
 const SCRIPT_HREF = ["java", "script:alert(1)"].join("");
@@ -11,7 +12,7 @@ const SCRIPT_HREF = ["java", "script:alert(1)"].join("");
 function render(href: string, withProvider = true): string {
   const link = createElement(MarkdownLink, { href }, "source");
 
-  const openFile = vi.fn<(path: string, line?: number) => void>();
+  const openFile = vi.fn<(target: FileOpenTarget) => void>();
 
   return renderToStaticMarkup(
     withProvider ? createElement(FileLinkProvider, { openFile }, link) : link

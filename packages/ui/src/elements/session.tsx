@@ -408,12 +408,12 @@ export function Session({
   // 文件链接：展开面板，再把请求交给面板。会话还没有 id 时面板不存在，
   // 链接点不动就好。
   const openFileInPanel = React.useCallback(
-    (path: string, line?: number) => {
+    (target: FileOpenTarget) => {
       if (!sessionId) {
         return;
       }
 
-      setFileOpenRequest(line === undefined ? { path } : { line, path });
+      setFileOpenRequest(target);
       setPanelOpen(true);
     },
     [sessionId]

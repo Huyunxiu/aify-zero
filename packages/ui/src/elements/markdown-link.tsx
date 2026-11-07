@@ -13,8 +13,8 @@ import type { FileOpenTarget } from "./file-link";
 
 export type { FileOpenTarget } from "./file-link";
 
-/** 打开一个本地文件；可选行号用于定位。 */
-export type FileOpener = (path: string, line?: number) => void;
+/** 打开一个本地文件；目标自带路径和可选行号。 */
+export type FileOpener = (target: FileOpenTarget) => void;
 
 const FileLinkContext = React.createContext<FileOpener | undefined>(undefined);
 
@@ -140,7 +140,7 @@ function FileLinkButton({
       className={cn(FILE_LINK_CLASS, className)}
       data-file-link=""
       onClick={() => {
-        openFile(target.path, target.line);
+        openFile(target);
       }}
       title={target.path}
       type="button"
