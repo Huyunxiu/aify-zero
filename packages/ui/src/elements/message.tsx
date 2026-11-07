@@ -36,7 +36,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Streamdown } from "streamdown";
+import { defaultRehypePlugins, Streamdown } from "streamdown";
 
 import { markdownComponents } from "./markdown-code";
 
@@ -368,6 +368,10 @@ export const MessageResponse = memo(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
+      rehypePlugins={[
+        defaultRehypePlugins.raw!,
+        defaultRehypePlugins.sanitize!,
+      ]}
       components={markdownComponents}
       plugins={streamdownPlugins}
       {...props}
