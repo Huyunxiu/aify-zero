@@ -30,7 +30,9 @@ const config: ForgeConfig = {
     new MakerDeb({}),
   ],
   packagerConfig: {
-    asar: true,
+    // `spawn-helper` 不是 `.node` 文件，AutoUnpackNativesPlugin 不会解包它；
+    // 整个 `@lydell` 目录一起解包，node-pty 才能 exec 这个辅助程序。
+    asar: { unpack: "**/node_modules/@lydell/**" },
     // `../../packages/db/src/migrations` is copied to Resources/migrations
     // and applied by the packaged main process on startup.
     extraResource: ["./resources", "../../packages/db/src/migrations"],
@@ -88,7 +90,7 @@ const config: ForgeConfig = {
     prePackage: copyRipgrep,
     preStart: copyRipgrep,
     async packageAfterCopy(_forgeConfig, buildPath) {
-      const requiredNativePackages = ["@libsql"];
+      const requiredNativePackages = ["@libsql", "@lydell"];
       const sourceNodeModulesPath = path.resolve(
         import.meta.dirname,
         "..",

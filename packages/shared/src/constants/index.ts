@@ -75,6 +75,8 @@ export const IPC_CHANNELS = {
   USE_SERVER: "use-server",
   /** 渲染端取应用通道的 WebSocket 地址（桌面文档源没有 ws scheme）。 */
   CHANNEL_URL: "channel-url",
+  /** 渲染端取终端通道的 WebSocket 地址。 */
+  TERMINAL_URL: "terminal-url",
 };
 
 /**

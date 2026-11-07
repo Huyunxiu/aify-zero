@@ -47,6 +47,9 @@ contextBridge.exposeInMainWorld("aifyDesktop", {
   // 注入，渲染端拿不到它。
   channelUrl: (): Promise<string> =>
     ipcRenderer.invoke(IPC_CHANNELS.CHANNEL_URL) as Promise<string>,
+  // 终端通道和通道走同一套鉴权与注入逻辑，只是路径不同。
+  terminalUrl: (): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_URL) as Promise<string>,
 });
 
 window.addEventListener("message", (event) => {

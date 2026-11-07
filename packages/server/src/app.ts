@@ -23,7 +23,7 @@ import { bearerAuth } from "./auth";
 import { createContext } from "./context";
 import { appRouter } from "./routers/index";
 import { serveWorkspaceFile } from "./routers/workspace/workspace.file-route";
-import { resolveSessionWorkspace } from "./routers/workspace/workspace.router";
+import { resolveSessionWorkspace } from "./routers/workspace/workspace.service";
 
 /**
  * `language` is narrowed from the `string` Hono's own `ContextVariableMap`

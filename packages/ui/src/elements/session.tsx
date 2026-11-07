@@ -1289,7 +1289,7 @@ export function Session({
             defaultSize="50%"
             id="session-panel"
             maxSize="80%"
-            minSize="40%"
+            minSize="50%"
             panelRef={panelRef}
           >
             {/* 收起时只折叠，不卸载：里面的状态要留到下次打开。 */}
@@ -1297,6 +1297,7 @@ export function Session({
               <SessionPanel
                 key={sessionId}
                 onClose={() => setPanelOpen(false)}
+                open={panelOpen}
                 sessionId={sessionId}
               />
             </div>

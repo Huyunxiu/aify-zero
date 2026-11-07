@@ -457,35 +457,40 @@ const installChannelIpc = (
     }
   );
 
-  ipcMain.handle(IPC_CHANNELS.CHANNEL_URL, async (event) => {
-    const frame = event.senderFrame;
+  const registerSocketUrl = (channel: string, pathname: string): void => {
+    ipcMain.handle(channel, async (event) => {
+      const frame = event.senderFrame;
 
-    if (
-      frame === null ||
-      frame !== event.sender.mainFrame ||
-      !isTrustedDocument(frame.url)
-    ) {
-      throw new Error(
-        "Rejected channel URL request from an untrusted renderer"
-      );
-    }
+      if (
+        frame === null ||
+        frame !== event.sender.mainFrame ||
+        !isTrustedDocument(frame.url)
+      ) {
+        throw new Error(
+          "Rejected socket URL request from an untrusted renderer"
+        );
+      }
 
-    // 窗口一出来渲染端就会问地址，通常比 server 就绪早。这里等它，而不是让
-    // 渲染端拿着一个错误反复重试。
-    const origin = server.origin ?? (await waitForOrigin());
+      // 窗口一出来渲染端就会问地址，通常比 server 就绪早。这里等它，而不是
+      // 让渲染端拿着一个错误反复重试。
+      const origin = server.origin ?? (await waitForOrigin());
 
-    if (origin === undefined) {
-      // 真的没起来：启动失败会走 onElectronReady 的弹窗，这里只回一次错，
-      // partysocket 随后按退避再来问。
-      throw new Error("The API server is not ready");
-    }
+      if (origin === undefined) {
+        // 真的没起来：启动失败会走 onElectronReady 的弹窗，这里只回一次错，
+        // 客户端随后按退避再来问。
+        throw new Error("The API server is not ready");
+      }
 
-    const url = new URL("/api/ws", origin);
+      const url = new URL(pathname, origin);
 
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
 
-    return url.href;
-  });
+      return url.href;
+    });
+  };
+
+  registerSocketUrl(IPC_CHANNELS.CHANNEL_URL, "/api/ws");
+  registerSocketUrl(IPC_CHANNELS.TERMINAL_URL, "/api/terminal");
 };
 
 /**

@@ -193,10 +193,14 @@
     "marker": "引导消息"
   },
   "panel": {
+    "addTab": "添加标签页",
     "close": "关闭面板",
+    "closeNewTab": "关闭新标签页",
     "closeTab": "关闭 {{name}} 标签",
     "tabs": {
-      "files": "文件"
+      "files": "文件",
+      "new": "新标签页",
+      "terminal": "终端"
     }
   },
   "files": {
@@ -211,5 +215,15 @@
       "too-large": "文件超出预览上限，请换一种方式查看。"
     }
   },
-  "requestFailed": "请求失败"
+  "requestFailed": "请求失败",
+  "terminal": {
+    "label": "会话终端",
+    "connecting": "正在连接…",
+    "closed": "连接已断开",
+    "exited": "Shell 已退出（{{code}}）",
+    "error": "终端出错",
+    "restart": "重启终端",
+    "connectionFailed": "终端连接失败。",
+    "inputBufferFull": "输入没有发出：缓冲区已满。"
+  }
 }

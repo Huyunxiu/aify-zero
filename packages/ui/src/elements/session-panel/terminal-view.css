@@ -1,0 +1,12 @@
+.terminal-view .wterm {
+  --term-bg: var(--background);
+  --term-fg: var(--foreground);
+  --term-cursor: var(--foreground);
+  --term-font-family:
+    ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  padding: 8px;
+  border-radius: 0;
+  box-shadow: none;
+}
