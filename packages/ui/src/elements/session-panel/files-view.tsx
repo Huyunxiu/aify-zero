@@ -8,8 +8,9 @@
  * 目录是懒加载的：展开或选中一个目录时才请求它的直接子项。左边是正文，
  * 右边是树；没有打开文件时正文留空，区域不收起，布局就不会跳。
  */
-import { File as DiffFile } from "@pierre/diffs/react";
-import type { FileContents, FileOptions } from "@pierre/diffs/react";
+import type { CodeViewItem, FileContents } from "@pierre/diffs";
+import { CodeView } from "@pierre/diffs/react";
+import type { CodeViewHandle, CodeViewReactOptions } from "@pierre/diffs/react";
 import {
   FileTree,
   useFileTree,
@@ -34,10 +35,9 @@ import { useTranslation } from "react-i18next";
 import { usePanelRef } from "react-resizable-panels";
 
 import type { FileOpenTarget } from "../markdown-link";
+import { selectOnlyPath } from "./file-tree-selection";
 
 export type FilesViewProps = {
-  /** 当前打开的文件，路径相对工作区根。 */
-  readonly activeFile: string | null;
   readonly onActiveFileChange: (path: string | null) => void;
   readonly onRootNameChange: (name: string) => void;
   /** 来自聊天文件链接的打开请求；只负责在树里展开并选中。 */
@@ -45,6 +45,8 @@ export type FilesViewProps = {
   /** 工作区根的目录名；没有打开文件时标签显示它。 */
   readonly rootName: string | null;
   readonly sessionId: string;
+  /** 当前打开的文件和高亮区间；路径相对工作区根。 */
+  readonly target: FileOpenTarget | null;
 };
 
 /** 图片交给浏览器渲染，其余按文本读。 */
@@ -139,13 +141,14 @@ function useIsDark(): boolean {
  * @param props.sessionId - 决定可访问的根；换会话时由调用方重新挂载。
  */
 export function FilesView({
-  activeFile,
   onActiveFileChange,
   onRootNameChange,
   openRequest,
   rootName,
   sessionId,
+  target,
 }: FilesViewProps) {
+  const activeFile = target?.path ?? null;
   const { t } = useTranslation();
   const isDark = useIsDark();
   const { model } = useFileTree({
@@ -289,7 +292,8 @@ export function FilesView({
 
       const nodePath = item.getPath();
 
-      item.select();
+      // 句柄的 select() 会往选择集合里加；先清掉上一次跳转留下的选中。
+      selectOnlyPath(model, nodePath);
       model.focusPath(nodePath);
       model.scrollToPath(nodePath, { offset: "nearest" });
 
@@ -363,11 +367,8 @@ export function FilesView({
               {activeFile === null ? null : (
                 <FilePreview
                   key={activeFile}
-                  line={
-                    openRequest?.path === activeFile
-                      ? openRequest.line
-                      : undefined
-                  }
+                  endLine={target?.endLine}
+                  line={target?.line}
                   path={activeFile}
                   sessionId={sessionId}
                 />
@@ -389,7 +390,7 @@ export function FilesView({
         >
           <div className="flex h-full min-w-0 flex-col" inert={!showTree}>
             {loadError === null ? null : (
-              <p className="px-3 pb-2 text-destructive text-xs">{loadError}</p>
+              <p className="px-3 py-2 text-destructive text-xs">{loadError}</p>
             )}
             {entryCount === 0 ? (
               <p className="px-3 text-muted-foreground text-xs">
@@ -416,7 +417,9 @@ export function FilesView({
 type FilePreviewProps = {
   readonly sessionId: string;
   readonly path: string;
-  /** 链接里写的行号；读够这一行并高亮它。 */
+  /** 链接里写的结束行；区间链接才有。 */
+  readonly endLine?: number | undefined;
+  /** 链接里写的起始行；读够这一行、高亮它，并滚动过去。 */
   readonly line?: number | undefined;
 };
 
@@ -424,18 +427,44 @@ type FilePreviewProps = {
 const PREVIEW_LIMIT = 400;
 const MAX_PREVIEW_LIMIT = 5000;
 
+/** 预览区自己滚动，撑满面板剩下的高度。 */
+const CODE_VIEW_STYLE = { height: "100%", overflow: "auto" } as const;
+
+/**
+ * 文本内容的版本号。
+ *
+ * `CodeView` 用 id 认条目、用 version 认内容变化；同一个文件在磁盘上变了，
+ * 光换 `file` 对象不够，要让 version 跟着变。内容不多，直接算一个廉价指纹。
+ *
+ * @param contents - 预览的文本。
+ * @returns 无符号 32 位指纹。
+ */
+function contentVersion(contents: string): number {
+  let hash = 0x81_1c_9d_c5;
+
+  for (let index = 0; index < contents.length; index += 1) {
+    hash ^= contents.codePointAt(index) ?? 0;
+    hash = Math.imul(hash, 0x01_00_01_93);
+  }
+
+  return Math.abs(hash);
+}
+
 /** 文件预览：图片直接给地址，文本取第一页。 */
-function FilePreview({ sessionId, path, line }: FilePreviewProps) {
+function FilePreview({ sessionId, path, line, endLine }: FilePreviewProps) {
   const { t } = useTranslation();
   const isDark = useIsDark();
   const [imageFailed, setImageFailed] = React.useState(false);
+  const viewerRef = React.useRef<CodeViewHandle<undefined, undefined>>(null);
   const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
   const isImage = IMAGE_EXTENSIONS.has(extension);
+  // 区间要读到结束行；只给起始行时，也可以只读它后面一小段。
+  const lastLine = endLine ?? line;
   // 行号只影响到读取窗口，不改变行号本身：仍然从第 1 行读起，编号才和文件一致。
   const limit =
-    line === undefined
+    lastLine === undefined
       ? PREVIEW_LIMIT
-      : Math.min(MAX_PREVIEW_LIMIT, Math.max(PREVIEW_LIMIT, line + 50));
+      : Math.min(MAX_PREVIEW_LIMIT, Math.max(PREVIEW_LIMIT, lastLine + 50));
   const read = useQuery({
     queryKey: ["workspace-file", sessionId, path, limit],
     queryFn: () => client.workspace.read({ sessionId, path, offset: 1, limit }),
@@ -443,14 +472,22 @@ function FilePreview({ sessionId, path, line }: FilePreviewProps) {
     retry: false,
   });
 
-  // 高亮只关心文件名和文本；两者不变时不要重建输入，省掉一次重新解析。
+  // 条目只关心文件名和文本；两者不变时不要重建输入，省掉一次重新解析。
   const name = fileNameOf(path);
   const contents = read.data?.kind === "text" ? read.data.text : "";
-  const file = React.useMemo<FileContents>(
-    () => ({ name, contents }),
-    [name, contents]
+  const id = `file:${path}`;
+  const items = React.useMemo<CodeViewItem<undefined>[]>(
+    () => [
+      {
+        file: { contents, name } satisfies FileContents,
+        id,
+        type: "file",
+        version: contentVersion(contents),
+      },
+    ],
+    [contents, id, name]
   );
-  const options = React.useMemo<FileOptions<undefined, undefined>>(
+  const options = React.useMemo<CodeViewReactOptions<undefined, undefined>>(
     () => ({
       theme: { dark: "pierre-dark", light: "pierre-light" },
       themeType: isDark ? "dark" : "light",
@@ -463,6 +500,40 @@ function FilePreview({ sessionId, path, line }: FilePreviewProps) {
     }),
     [isDark]
   );
+
+  // 行号是一条滚动目标：预览换行或换内容后再跳一次，位置随实测高度走。
+  // 区间交给 range 目标，让整段落在视野里，和只给起始行时一样。
+  React.useEffect(() => {
+    if (line === undefined) {
+      return;
+    }
+
+    const viewer = viewerRef.current;
+
+    if (viewer === null) {
+      return;
+    }
+
+    if (endLine !== undefined && endLine > line) {
+      viewer.scrollTo({
+        align: "center",
+        behavior: "instant",
+        id,
+        range: { end: endLine, start: line },
+        type: "range",
+      });
+
+      return;
+    }
+
+    viewer.scrollTo({
+      align: "center",
+      behavior: "instant",
+      id,
+      lineNumber: line,
+      type: "line",
+    });
+  }, [contents, endLine, id, line]);
 
   if (isImage) {
     return (
@@ -506,9 +577,24 @@ function FilePreview({ sessionId, path, line }: FilePreviewProps) {
     );
   }
 
-  // 只高亮读到的范围：行号超过这一页时，画了也没有内容对应。
+  // 高亮始终受控：没有区间时传 null。传 undefined 会让 CodeView 保留上一次
+  // 的内部选区，换文件后旧高亮就留在屏幕上了。
   const highlight =
-    line === undefined || line > limit ? undefined : { end: line, start: line };
+    line === undefined || line > limit
+      ? null
+      : {
+          id,
+          range: { end: Math.min(endLine ?? line, limit), start: line },
+        };
 
-  return <DiffFile file={file} options={options} selectedLines={highlight} />;
+  return (
+    <CodeView
+      className="h-full"
+      items={items}
+      options={options}
+      ref={viewerRef}
+      selectedLines={highlight}
+      style={CODE_VIEW_STYLE}
+    />
+  );
 }

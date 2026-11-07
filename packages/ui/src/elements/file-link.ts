@@ -5,18 +5,20 @@
  * 服务端决定，和 agent 工具用的是同一个根，所以前端不必知道工作区在哪。
  *
  * 分类结果决定渲染方式：
- * - `file`：交给当前会话在右侧面板打开，可带行号。
+ * - `file`：交给当前会话在右侧面板打开，可带行号或行号区间。
  * - `external`：HTTP(S)、`mailto:`、`tel:`，新窗口打开。
  * - `plain`：页内锚点和带查询串的目标，保持浏览器默认行为。
  * - `blocked`：`javascript:` 之类不安全的协议，以及无法安全解码的目标，只显示文字。
  */
 import { linkPathOf } from "@workspace/ui/lib/workspace-path";
 
-/** 一个本地文件链接的目标：路径，以及可选的第一个行号。 */
+/** 一个本地文件链接的目标：路径，以及可选的行号区间。 */
 export interface FileOpenTarget {
   readonly path: string;
-  /** 链接里写明的行号；没有写或写得不合法时缺省。 */
+  /** 链接里写明的起始行；没有写或写得不合法时缺省。 */
   readonly line?: number;
+  /** 区间结束行；`#L24-L30`、`:24-30` 这种写法才有，等于起始行时缺省。 */
+  readonly endLine?: number;
 }
 
 /** 一个 Markdown 目标的分类结果。 */
@@ -55,16 +57,16 @@ const LINE_SUFFIX = /:(\d+)(?::\d+|-(\d+))?$/u;
 const LINE_FRAGMENT = /^L(\d+)(?:-L(\d+))?$/u;
 
 /**
- * 解析行号，并拒绝不合法的范围。
+ * 解析行号区间，并拒绝不合法的范围。
  *
  * @param start - 起始行；缺省表示没有行号。
- * @param end - 结束行；缺省表示只有一行。
- * @returns 起始行；不合法时返回 undefined，调用方只打开文件。
+ * @param end - 结束行；缺省或等于起始行表示只有一行。
+ * @returns 行号；范围不合法时返回 undefined，调用方只打开文件。
  */
-function lineOf(
+function linesOf(
   start: string | undefined,
   end: string | undefined
-): number | undefined {
+): { readonly line: number; readonly endLine?: number } | undefined {
   if (start === undefined) {
     return undefined;
   }
@@ -80,11 +82,13 @@ function lineOf(
     return undefined;
   }
 
-  return first;
+  return last > first ? { endLine: last, line: first } : { line: first };
 }
 
-/** 从 `#` 后的片段里取行号；不是行号片段时返回 undefined。 */
-function lineFromFragment(fragment: string): number | undefined {
+/** 从 `#` 后的片段里取行号区间；不是行号片段时返回 undefined。 */
+function linesFromFragment(
+  fragment: string
+): { readonly line: number; readonly endLine?: number } | undefined {
   let decoded: string;
 
   try {
@@ -96,7 +100,7 @@ function lineFromFragment(fragment: string): number | undefined {
 
   const match = LINE_FRAGMENT.exec(decoded);
 
-  return match === null ? undefined : lineOf(match[1], match[2]);
+  return match === null ? undefined : linesOf(match[1], match[2]);
 }
 
 /**
@@ -106,7 +110,7 @@ function lineFromFragment(fragment: string): number | undefined {
  * 所以 `notes%3A24` 是文件名。行号不合法时只返回路径。
  *
  * @param destination - Markdown 里的目标原文。
- * @returns 路径与可选行号；URL、页内锚点、查询串和无法解码的目标返回 null。
+ * @returns 路径与可选行号区间；URL、页内锚点、查询串和无法解码的目标返回 null。
  */
 export function parseFileLink(destination: string): FileOpenTarget | null {
   const hash = destination.indexOf("#");
@@ -141,9 +145,9 @@ export function parseFileLink(destination: string): FileOpenTarget | null {
         return null;
       }
 
-      const line = lineOf(suffix[1], suffix[2]);
+      const lines = linesOf(suffix[1], suffix[2]);
 
-      return line === undefined ? { path } : { line, path };
+      return lines === undefined ? { path } : { path, ...lines };
     }
   }
 
@@ -157,9 +161,9 @@ export function parseFileLink(destination: string): FileOpenTarget | null {
     return { path };
   }
 
-  const line = lineFromFragment(destination.slice(hash + 1));
+  const lines = linesFromFragment(destination.slice(hash + 1));
 
-  return line === undefined ? { path } : { line, path };
+  return lines === undefined ? { path } : { path, ...lines };
 }
 
 /**

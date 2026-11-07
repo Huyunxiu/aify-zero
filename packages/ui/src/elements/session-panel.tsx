@@ -27,6 +27,7 @@ import { FilesView } from "./session-panel/files-view";
 import { NewTabView } from "./session-panel/new-tab-view";
 import { NEW_TAB, withView } from "./session-panel/tabs";
 import type { PanelTabValue, SessionPanelTab } from "./session-panel/tabs";
+import { targetAfterSelect } from "./session-panel/target";
 import { TerminalView } from "./session-panel/terminal-view";
 
 export type { SessionPanelTab } from "./session-panel/tabs";
@@ -104,11 +105,13 @@ export function SessionPanel({
   // 已打开的标签，按打开顺序排列；第一个标签页在面板第一次打开时就在。
   const [tabs, setTabs] = React.useState<PanelTabValue[]>([NEW_TAB]);
   const [activeTab, setActiveTab] = React.useState<PanelTabValue>(NEW_TAB);
-  const [activeFile, setActiveFile] = React.useState<string | null>(null);
+  // 当前打开的文件和高亮区间是一份状态：换文件时旧区间必须一起消失。
+  const [target, setTarget] = React.useState<FileOpenTarget | null>(null);
   const [rootName, setRootName] = React.useState<string | null>(null);
+  const activeFile = target?.path ?? null;
 
   // 聊天里的文件链接要面板做什么：切到文件标签、展开、定位。展开面板本身
-  // 由会话层负责，这里只管标签和当前文件。
+  // 由会话层负责，这里只管标签和当前目标。
   React.useEffect(() => {
     if (openRequest === undefined) {
       return;
@@ -116,8 +119,13 @@ export function SessionPanel({
 
     setTabs((current) => withView(current, "files"));
     setActiveTab("files");
-    setActiveFile(openRequest.path);
+    setTarget(openRequest);
   }, [openRequest]);
+
+  // 树里换文件：同一份目标只换路径，旧的区间不会跟到新文件上。
+  const selectFile = React.useCallback((path: string | null) => {
+    setTarget((current) => targetAfterSelect(current, path));
+  }, []);
 
   // 文件标签写当前文件名；没有打开文件就看工作区根目录名。
   const filesLabel =
@@ -145,7 +153,7 @@ export function SessionPanel({
 
     if (tab === "files") {
       // 文件视图卸载后旧的选择一并清掉；再打开时从工作区根开始。
-      setActiveFile(null);
+      setTarget(null);
       setRootName(null);
     }
 
@@ -228,12 +236,12 @@ export function SessionPanel({
           value="files"
         >
           <FilesView
-            activeFile={activeFile}
-            onActiveFileChange={setActiveFile}
+            onActiveFileChange={selectFile}
             onRootNameChange={setRootName}
             openRequest={openRequest}
             rootName={rootName}
             sessionId={sessionId}
+            target={target}
           />
         </TabsContent>
       ) : null}
