@@ -207,6 +207,7 @@
   "files": {
     "empty": "This project has no files yet.",
     "closeFile": "Close the file",
+    "copyPath": "Copy the path",
     "hideTree": "Hide the directory tree",
     "showTree": "Show the directory tree",
     "unavailable": "This file cannot be shown.",
@@ -219,6 +220,8 @@
   "review": {
     "empty": "This workspace has no changes.",
     "pickFile": "Select a file on the right to see its changes.",
+    "copyPath": "Copy the path",
+    "copyNewPath": "Copy the new path",
     "summary": "{{count}} files changed",
     "refresh": "Read the changes again",
     "hideTree": "Hide the change list",

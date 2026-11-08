@@ -19,6 +19,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { getErrorMessage } from "@workspace/shared/errors";
 import { Button } from "@workspace/ui/components/button";
+import { InputCopyButton } from "@workspace/ui/components/input-copy-button";
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import { client } from "@workspace/ui/lib/orpc";
 import { useContentVersion } from "@workspace/ui/lib/use-content-version";
@@ -287,20 +288,24 @@ export function FilesView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
-        <span className="min-w-0 flex-1 truncate text-muted-foreground text-sm">
-          {activeFile ?? rootName ?? ""}
-        </span>
-        <Button
-          aria-label={showTree ? t("files.hideTree") : t("files.showTree")}
-          aria-pressed={showTree}
-          className="shrink-0"
-          onClick={() => setShowTree((visible) => !visible)}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <FolderTreeIcon className="size-4" />
-        </Button>
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b pl-2 pr-4">
+        <InputCopyButton
+          label={t("files.copyPath")}
+          truncate="start"
+          value={activeFile ?? rootName ?? ""}
+        />
+        <div className="flex gap-2">
+          <Button
+            aria-label={showTree ? t("files.hideTree") : t("files.showTree")}
+            aria-pressed={showTree}
+            className="shrink-0"
+            onClick={() => setShowTree((visible) => !visible)}
+            size="icon-sm"
+            variant="ghost"
+          >
+            <FolderTreeIcon className="size-4" />
+          </Button>
+        </div>
       </div>
       <SplitLayout
         left={

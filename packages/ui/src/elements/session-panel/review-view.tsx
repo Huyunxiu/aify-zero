@@ -21,6 +21,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
 import { Button } from "@workspace/ui/components/button";
+import { HoverScrollText } from "@workspace/ui/components/hover-scroll-text";
+import { InputCopyButton } from "@workspace/ui/components/input-copy-button";
 import {
   Popover,
   PopoverContent,
@@ -190,13 +192,9 @@ export function ReviewView({ active, sessionId }: ReviewViewProps) {
 
   const selectedChange = changedPaths.find((change) => change.path === path);
   const header =
-    path === null
-      ? data?.kind === "changes"
-        ? t("review.summary", { count: changedPaths.length })
-        : ""
-      : selectedChange?.oldPath === undefined
-        ? path
-        : t("review.rename", { from: selectedChange.oldPath, to: path });
+    data?.kind === "changes"
+      ? t("review.summary", { count: changedPaths.length })
+      : "";
 
   /** 左侧内容：提示、拒绝原因，或选中文件的改动。 */
   const leftPane = (): React.ReactNode => {
@@ -236,35 +234,52 @@ export function ReviewView({ active, sessionId }: ReviewViewProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
-        <span className="min-w-0 flex-1 truncate text-muted-foreground text-sm">
-          {header}
-        </span>
-        {counts === null ? null : (
-          <span className="shrink-0 font-mono text-xs tabular-nums">
-            <span className="text-success">+{counts.added}</span>{" "}
-            <span className="text-destructive">−{counts.deleted}</span>
-          </span>
+      <div className="flex h-10 shrink-0 items-center justify-between gap-2 border-b pl-2 pr-4">
+        {path !== null && selectedChange?.oldPath !== undefined ? (
+          <InputCopyButton
+            label={t("review.copyNewPath")}
+            text={t("review.rename", {
+              from: selectedChange.oldPath,
+              to: path,
+            })}
+            truncate="start"
+            value={path}
+          />
+        ) : path !== null ? (
+          <InputCopyButton label={t("review.copyPath")} value={path} />
+        ) : (
+          <HoverScrollText
+            className="flex-1 text-muted-foreground text-sm"
+            value={header}
+          />
         )}
-        <Button
-          aria-label={t("review.refresh")}
-          className="shrink-0"
-          onClick={refresh}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <RefreshCwIcon className="size-4" />
-        </Button>
-        <Button
-          aria-label={showTree ? t("review.hideTree") : t("review.showTree")}
-          aria-pressed={showTree}
-          className="shrink-0"
-          onClick={() => setShowTree((visible) => !visible)}
-          size="icon-sm"
-          variant="ghost"
-        >
-          <FolderTreeIcon className="size-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          {counts === null ? null : (
+            <span className="shrink-0 font-mono text-xs tabular-nums">
+              <span className="text-success">+{counts.added}</span>{" "}
+              <span className="text-destructive">−{counts.deleted}</span>
+            </span>
+          )}
+          <Button
+            aria-label={t("review.refresh")}
+            className="shrink-0"
+            onClick={refresh}
+            size="icon-sm"
+            variant="ghost"
+          >
+            <RefreshCwIcon className="size-4" />
+          </Button>
+          <Button
+            aria-label={showTree ? t("review.hideTree") : t("review.showTree")}
+            aria-pressed={showTree}
+            className="shrink-0"
+            onClick={() => setShowTree((visible) => !visible)}
+            size="icon-sm"
+            variant="ghost"
+          >
+            <FolderTreeIcon className="size-4" />
+          </Button>
+        </div>
         <Popover>
           <PopoverTrigger
             render={

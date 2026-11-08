@@ -207,6 +207,7 @@
   "files": {
     "empty": "这个项目还没有文件。",
     "closeFile": "关闭文件",
+    "copyPath": "复制路径",
     "hideTree": "隐藏目录",
     "showTree": "显示目录",
     "unavailable": "无法显示这个文件。",
@@ -219,6 +220,8 @@
   "review": {
     "empty": "工作区没有改动。",
     "pickFile": "从右侧选一个文件查看改动。",
+    "copyPath": "复制路径",
+    "copyNewPath": "复制新路径",
     "summary": "{{count}} 个文件已改动",
     "refresh": "重新读取改动",
     "hideTree": "隐藏改动列表",
