@@ -73,13 +73,14 @@ function Toasts({
     <Toast.Portal data-slot="toast-portal" {...portalProps}>
       <Toast.Viewport
         className={cn(
-          "fixed z-60 mx-auto flex w-[calc(100%-var(--toast-inset)*2)] max-w-90 [--toast-inset:--spacing(4)] sm:[--toast-inset:--spacing(8)]",
+          "fixed z-60 mx-auto flex w-[calc(100%-var(--aify-panel-width,0px)-var(--toast-inset)*2)] max-w-90 [--toast-inset:--spacing(4)] sm:[--toast-inset:--spacing(8)]",
           // Vertical positioning
           "data-[position*=top]:top-(--toast-inset)",
           "data-[position*=bottom]:bottom-(--toast-inset)",
-          // Horizontal positioning
+          // Horizontal positioning. 右侧的提示让开原生浏览器视图：面板宽度由
+          // 会话层写进 --aify-panel-width，面板收起时为 0。
           "data-[position*=left]:left-(--toast-inset)",
-          "data-[position*=right]:right-(--toast-inset)",
+          "data-[position*=right]:right-[calc(var(--aify-panel-width,0px)+var(--toast-inset))]",
           "data-[position*=center]:left-1/2 data-[position*=center]:-translate-x-1/2",
         )}
         data-position={position}

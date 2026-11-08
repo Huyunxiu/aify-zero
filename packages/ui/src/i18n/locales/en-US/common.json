@@ -192,12 +192,30 @@
   "steering": {
     "marker": "Steering message"
   },
+  "browser": {
+    "address": "Address",
+    "addressPlaceholder": "Enter a URL",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "loading": "Loading",
+    "desktopOnly": "The browser view is only available in the desktop app.",
+    "rejected": {
+      "empty": "Enter a URL.",
+      "invalid": "This is not a valid URL.",
+      "scheme": "Only http and https addresses are allowed.",
+      "credentials": "Addresses with a username or password are not allowed.",
+      "app-origin": "This address belongs to the app itself.",
+      "loopback-port": "This address points at the app's server."
+    }
+  },
   "panel": {
     "addTab": "Add a tab",
     "close": "Close the panel",
     "closeNewTab": "Close the new tab",
     "closeTab": "Close the {{name}} tab",
     "tabs": {
+      "browser": "Browser",
       "files": "Files",
       "new": "New tab",
       "terminal": "Terminal",

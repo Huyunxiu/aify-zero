@@ -25,6 +25,11 @@ function filesOf(state: PanelState, id: string) {
   return state.tabs.find((tab) => tab.id === id)?.files;
 }
 
+/** 一个标签的浏览器状态。 */
+function browserOf(state: PanelState, id: string) {
+  return state.tabs.find((tab) => tab.id === id)?.browser;
+}
+
 /** 标签栏当前的值。 */
 function idsOf(state: PanelState): string[] {
   return state.tabs.map((tab) => tab.id);
@@ -40,8 +45,43 @@ describe("panel tabs", () => {
 
     expect(state.activeId).toBe("new");
     expect(state.tabs).toStrictEqual([
-      { files: null, id: "new", view: "files" },
+      { browser: null, files: null, id: "new", view: "files" },
     ]);
+  });
+
+  test("a browser tab keeps the id it was opened with", () => {
+    const state = panelReducer(initialPanelState("new"), {
+      id: "browser-1",
+      type: "openView",
+      view: "browser",
+    });
+
+    expect(state.activeId).toBe("browser-1");
+    expect(state.tabs).toStrictEqual([
+      { browser: null, files: null, id: "browser-1", view: "browser" },
+    ]);
+  });
+
+  test("a browser title belongs to one tab", () => {
+    const state = run(
+      initialPanelState("new"),
+      { id: "a", type: "openView", view: "browser" },
+      { id: "b", type: "openView", view: "browser" },
+      { id: "a", title: "Example", type: "setBrowserTitle" }
+    );
+
+    expect(browserOf(state, "a")?.title).toBe("Example");
+    expect(browserOf(state, "b")).toBeNull();
+  });
+
+  test("a browser title is ignored outside a browser tab", () => {
+    const state = run(
+      initialPanelState("new"),
+      { id: "a", type: "openView", view: "files" },
+      { id: "a", title: "Example", type: "setBrowserTitle" }
+    );
+
+    expect(browserOf(state, "a")).toBeNull();
   });
 
   test("the same view can open more than once", () => {
@@ -85,7 +125,9 @@ describe("panel tabs", () => {
       { id: "a", type: "close" }
     );
 
-    expect(state.tabs).toStrictEqual([{ files: null, id: "a", view: null }]);
+    expect(state.tabs).toStrictEqual([
+      { browser: null, files: null, id: "a", view: null },
+    ]);
     expect(state.activeId).toBe("a");
   });
 

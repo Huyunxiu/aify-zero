@@ -1,6 +1,9 @@
 import { cn } from "cn"
 import * as ResizablePrimitive from "react-resizable-panels"
 
+/** 面板开合过渡的时长；原生视图的显隐延迟必须和它一致。 */
+export const PANEL_ANIMATION_MS = 250
+
 // 面板尺寸写在外层元素的内联 flex-grow 上（className 落在内层 div），
 // 过渡只能从组挂到后代上。邻栏必须跟着重排，没有 transform 等价物。
 const panelMotionClasses = [

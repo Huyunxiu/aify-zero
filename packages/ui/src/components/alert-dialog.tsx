@@ -2,6 +2,7 @@ import * as React from "react"
 import { AlertDialog as AlertDialogPrimitive } from "@base-ui/react/alert-dialog"
 
 import { cn } from "@workspace/ui/lib/utils"
+import { useBrowserOcclusion } from "@workspace/ui/lib/browser-occlusion"
 import { Button } from "@workspace/ui/components/button"
 
 function AlertDialog({ ...props }: AlertDialogPrimitive.Root.Props) {
@@ -44,6 +45,9 @@ function AlertDialogContent({
 }: AlertDialogPrimitive.Popup.Props & {
   size?: "default" | "sm"
 }) {
+  // 原生浏览器视图盖在 DOM 之上：模态出现时必须把它藏起来。
+  useBrowserOcclusion()
+
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />

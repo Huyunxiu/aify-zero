@@ -1,4 +1,10 @@
 import type { ApiServerStatus } from "@workspace/shared/api-status";
+import type {
+  BrowserBounds,
+  BrowserBridge,
+  BrowserStateEvent,
+  BrowserViewInit,
+} from "@workspace/shared/browser-protocol";
 import { IPC_CHANNELS } from "@workspace/shared/constants";
 import { contextBridge, ipcRenderer } from "electron";
 
@@ -19,6 +25,21 @@ ipcRenderer.on(
 
     for (const listener of serverStatusListeners.values()) {
       listener(status);
+    }
+  }
+);
+
+let nextBrowserStateListenerId = 0;
+const browserStateListeners = new Map<
+  number,
+  (event: BrowserStateEvent) => void
+>();
+
+ipcRenderer.on(
+  IPC_CHANNELS.BROWSER_STATE,
+  (_event, event: BrowserStateEvent) => {
+    for (const listener of browserStateListeners.values()) {
+      listener(event);
     }
   }
 );
@@ -50,6 +71,42 @@ contextBridge.exposeInMainWorld("aifyDesktop", {
   // 终端通道和通道走同一套鉴权与注入逻辑，只是路径不同。
   terminalUrl: (): Promise<string> =>
     ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_URL) as Promise<string>,
+  // 原生浏览器视图。渲染端只看到视图 id、矩形和地址；页面本身由主进程托管。
+  browser: {
+    back: (id: string): void => {
+      ipcRenderer.send(IPC_CHANNELS.BROWSER_BACK, id);
+    },
+    create: async (view: BrowserViewInit): Promise<void> => {
+      await ipcRenderer.invoke(IPC_CHANNELS.BROWSER_CREATE, view);
+    },
+    destroy: (id: string): void => {
+      ipcRenderer.send(IPC_CHANNELS.BROWSER_DESTROY, id);
+    },
+    forward: (id: string): void => {
+      ipcRenderer.send(IPC_CHANNELS.BROWSER_FORWARD, id);
+    },
+    navigate: async (id: string, url: string): Promise<void> => {
+      await ipcRenderer.invoke(IPC_CHANNELS.BROWSER_NAVIGATE, id, url);
+    },
+    offState: (id: number): void => {
+      browserStateListeners.delete(id);
+    },
+    onState: (listener: (event: BrowserStateEvent) => void): number => {
+      nextBrowserStateListenerId += 1;
+      browserStateListeners.set(nextBrowserStateListenerId, listener);
+
+      return nextBrowserStateListenerId;
+    },
+    reload: (id: string): void => {
+      ipcRenderer.send(IPC_CHANNELS.BROWSER_RELOAD, id);
+    },
+    setBounds: (id: string, bounds: BrowserBounds): void => {
+      ipcRenderer.send(IPC_CHANNELS.BROWSER_SET_BOUNDS, id, bounds);
+    },
+    setVisible: (id: string, visible: boolean): void => {
+      ipcRenderer.send(IPC_CHANNELS.BROWSER_SET_VISIBLE, id, visible);
+    },
+  } satisfies BrowserBridge,
 });
 
 window.addEventListener("message", (event) => {

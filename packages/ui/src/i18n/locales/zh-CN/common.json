@@ -192,12 +192,30 @@
   "steering": {
     "marker": "引导消息"
   },
+  "browser": {
+    "address": "地址",
+    "addressPlaceholder": "输入网址",
+    "back": "后退",
+    "forward": "前进",
+    "reload": "刷新",
+    "loading": "正在加载",
+    "desktopOnly": "浏览器视图只在桌面版中可用。",
+    "rejected": {
+      "empty": "请输入网址。",
+      "invalid": "这不是一个有效的网址。",
+      "scheme": "只允许 http 和 https 地址。",
+      "credentials": "不允许带用户名或密码的地址。",
+      "app-origin": "这个地址属于应用自身。",
+      "loopback-port": "这个地址指向应用的服务端口。"
+    }
+  },
   "panel": {
     "addTab": "添加标签页",
     "close": "关闭面板",
     "closeNewTab": "关闭新标签页",
     "closeTab": "关闭 {{name}} 标签",
     "tabs": {
+      "browser": "浏览器",
       "files": "文件",
       "new": "新标签页",
       "terminal": "终端",

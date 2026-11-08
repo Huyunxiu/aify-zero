@@ -6,11 +6,12 @@
  * 可用标签时用「新标签页」选一个视图，标签栏右边的 + 按钮可以再开一个。关闭
  * 标签只卸载对应视图，所有标签都关掉才收起整个面板。
  *
- * 以后加浏览器等视图也走同一个模式：视图加进 `SessionPanelView`，图标和
- * 文案各加一行，区域写成同级目录下的视图组件。
+ * 新增视图也走同一个模式：视图加进 `SessionPanelView`，图标和文案各加一行，
+ * 区域写成同级目录下的视图组件。
  */
 import { Button } from "@workspace/ui/components/button";
 import { FolderIcon } from "@workspace/ui/components/folder-icon";
+import { PANEL_ANIMATION_MS } from "@workspace/ui/components/resizable";
 import {
   TabStripList,
   TabStripTrigger,
@@ -22,6 +23,7 @@ import { fileNameOf } from "@workspace/ui/lib/workspace-path";
 import type { TFunction } from "i18next";
 import {
   FileDiffIcon,
+  GlobeIcon,
   PanelRightIcon,
   PlusIcon,
   SquareTerminalIcon,
@@ -30,6 +32,7 @@ import * as React from "react";
 import { useTranslation } from "react-i18next";
 
 import type { FileOpenTarget } from "../markdown-link";
+import { BrowserView } from "./browser-view";
 import { FilesView } from "./files-view";
 import { NewTabView } from "./new-tab-view";
 import { ReviewView } from "./review-view";
@@ -40,6 +43,10 @@ import { TerminalView } from "./terminal-view";
 export type SessionPanelProps = {
   /** 面板是否展开；收起时终端只暂停绘制，不卸载。 */
   readonly open: boolean;
+  /** 会话所属项目；浏览器档案按它分配，没有项目时按会话。 */
+  readonly projectId: string | null;
+  /** 会话行是否已经读回；未读回时浏览器档案可能选错范围。 */
+  readonly projectResolved: boolean;
   readonly sessionId: string;
   /** 收起面板。入口按钮在会话头部，面板打开时它不再画。 */
   readonly onClose: () => void;
@@ -63,6 +70,7 @@ const TAB_ICONS: Record<SessionPanelView, React.ReactNode> = {
   files: <FolderIcon size={14} />,
   review: <FileDiffIcon size={14} />,
   terminal: <SquareTerminalIcon size={14} />,
+  browser: <GlobeIcon size={14} />,
 };
 
 /** 每个视图的标题文案键；文件视图的标题跟着打开的文件变，单独算。 */
@@ -70,12 +78,14 @@ const TAB_LABEL_KEYS: Record<SessionPanelView, string> = {
   files: "panel.tabs.files",
   review: "panel.tabs.review",
   terminal: "panel.tabs.terminal",
+  browser: "panel.tabs.browser",
 };
 
 /**
  * 一个标签的标题。
  *
- * 文件标签写当前打开的文件名；没有打开文件就看工作区根目录名。
+ * 文件标签写当前打开的文件名；没有打开文件就看工作区根目录名。浏览器标签写
+ * 页面标题，页面还没给标题时用视图名。
  *
  * @param tab - 标签。
  * @param t - 翻译函数。
@@ -84,6 +94,10 @@ const TAB_LABEL_KEYS: Record<SessionPanelView, string> = {
 function tabLabel(tab: PanelTab, t: TFunction): string {
   if (tab.view === null) {
     return t("panel.tabs.new");
+  }
+
+  if (tab.view === "browser") {
+    return tab.browser?.title ?? t(TAB_LABEL_KEYS.browser);
   }
 
   if (tab.view !== "files") {
@@ -126,6 +140,8 @@ function describeTab(tab: PanelTab, t: TFunction): TabDescription {
  */
 export function SessionPanel({
   open,
+  projectId,
+  projectResolved,
   sessionId,
   onClose,
   openRequest,
@@ -140,6 +156,33 @@ export function SessionPanel({
   const [panel, dispatch] = React.useReducer(panelReducer, undefined, () =>
     initialPanelState(nextId())
   );
+
+  // 原生浏览器视图不能跟着面板的宽度过渡走：动画期间先藏起来，结束后再
+  // 用一份稳定的矩形显示。标签切换不经过这里，不受这 250ms 影响。
+  const [animationSettled, setAnimationSettled] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) {
+      setAnimationSettled(false);
+
+      return;
+    }
+
+    // 系统要求减少动态效果时，面板尺寸是瞬间变化的，不必等过渡。
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setAnimationSettled(true);
+
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setAnimationSettled(true);
+    }, PANEL_ANIMATION_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [open]);
 
   // 聊天里的文件链接：当前标签是文件视图就打开在它里面，否则用最早打开的
   // 文件标签；都没有就新开一个。展开面板本身由会话层负责。
@@ -221,8 +264,11 @@ export function SessionPanel({
       {panel.tabs.map((tab) => (
         <TabContent
           active={open && panel.activeId === tab.id}
+          animationSettled={animationSettled}
           dispatch={dispatch}
           key={tab.id}
+          projectId={projectId}
+          projectResolved={projectResolved}
           sessionId={sessionId}
           tab={tab}
         />
@@ -234,14 +280,33 @@ export function SessionPanel({
 type TabContentProps = {
   /** 这个标签是不是当前标签，并且面板没有收起。 */
   readonly active: boolean;
+  /** 面板开合动画是否结束。 */
+  readonly animationSettled: boolean;
   readonly dispatch: React.Dispatch<PanelAction>;
+  readonly projectId: string | null;
+  readonly projectResolved: boolean;
   readonly sessionId: string;
   readonly tab: PanelTab;
 };
 
 /** 一个标签的区域；内容按视图类型挂载。 */
-function TabContent({ active, dispatch, sessionId, tab }: TabContentProps) {
+function TabContent({
+  active,
+  animationSettled,
+  dispatch,
+  projectId,
+  projectResolved,
+  sessionId,
+  tab,
+}: TabContentProps) {
   const className = "min-h-0 flex-1 overflow-hidden";
+
+  const handleBrowserTitle = React.useCallback(
+    (title: string | null) => {
+      dispatch({ id: tab.id, title, type: "setBrowserTitle" });
+    },
+    [dispatch, tab.id]
+  );
 
   if (tab.view === null) {
     return (
@@ -268,6 +333,22 @@ function TabContent({ active, dispatch, sessionId, tab }: TabContentProps) {
     return (
       <TabsContent className={className} keepMounted value={tab.id}>
         <ReviewView active={active} sessionId={sessionId} />
+      </TabsContent>
+    );
+  }
+
+  if (tab.view === "browser") {
+    return (
+      <TabsContent className={className} keepMounted value={tab.id}>
+        <BrowserView
+          active={active}
+          animationSettled={animationSettled}
+          onTitleChange={handleBrowserTitle}
+          projectId={projectId}
+          projectResolved={projectResolved}
+          sessionId={sessionId}
+          viewId={tab.id}
+        />
       </TabsContent>
     );
   }

@@ -4,6 +4,7 @@ import * as React from "react"
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog"
 
 import { cn } from "@workspace/ui/lib/utils"
+import { useBrowserOcclusion } from "@workspace/ui/lib/browser-occlusion"
 import { Button } from "@workspace/ui/components/button"
 import { XIcon } from "lucide-react"
 
@@ -46,6 +47,9 @@ function SheetContent({
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }) {
+  // 原生浏览器视图盖在 DOM 之上：侧边浮层出现时必须把它藏起来。
+  useBrowserOcclusion()
+
   return (
     <SheetPortal>
       <SheetOverlay />

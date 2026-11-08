@@ -6,9 +6,10 @@
  */
 import { Button } from "@workspace/ui/components/button";
 import { FolderIcon } from "@workspace/ui/components/folder-icon";
-import { FileDiffIcon, SquareTerminalIcon } from "lucide-react";
+import { FileDiffIcon, GlobeIcon, SquareTerminalIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { getBrowserRuntime } from "./browser-runtime";
 import type { SessionPanelView } from "./tabs";
 
 export type NewTabViewProps = {
@@ -18,6 +19,8 @@ export type NewTabViewProps = {
 
 export function NewTabView({ onCreate }: NewTabViewProps) {
   const { t } = useTranslation();
+  // 浏览器视图由桌面壳托管，Web 版没有入口。
+  const hasBrowser = getBrowserRuntime() !== null;
 
   return (
     <div className="flex h-full items-center justify-center p-6">
@@ -52,6 +55,18 @@ export function NewTabView({ onCreate }: NewTabViewProps) {
           <SquareTerminalIcon className="size-4" />
           {t("panel.tabs.terminal")}
         </Button>
+        {hasBrowser && (
+          <Button
+            onClick={() => {
+              onCreate("browser");
+            }}
+            size="lg"
+            variant="outline"
+          >
+            <GlobeIcon className="size-4" />
+            {t("panel.tabs.browser")}
+          </Button>
+        )}
       </div>
     </div>
   );

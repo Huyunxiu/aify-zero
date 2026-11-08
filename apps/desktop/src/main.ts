@@ -28,6 +28,8 @@ import { ipcMain } from "electron/main";
 
 import { ipcContext } from "@/ipc/context";
 
+import { installBrowserIpc } from "./browser/ipc";
+import type { BrowserManager } from "./browser/manager";
 import { createAppProtocolHandler, registerAppScheme } from "./protocol";
 import { DesktopServer } from "./server-manager";
 import { isLoopbackOrigin, normalizeServerOrigin } from "./server-origin";
@@ -629,6 +631,11 @@ const onElectronReady = async () => {
   await setupIpcServer();
   installServerSelectionIpc();
   installChannelIpc(apiToken, mainWindow, waitForOrigin);
+  browserManager = installBrowserIpc({
+    apiOrigin: () => server.origin,
+    trustedDocument: isTrustedDocument,
+    window: mainWindow,
+  });
   showWindow(mainWindow);
   logger.info(`[startup] window shown in ${Date.now() - readyStartedAt}ms`);
 
@@ -663,6 +670,9 @@ const focusExistingWindow = (): void => {
 };
 
 let isQuitting = false;
+
+/** 本窗口的浏览器视图；退出和关窗时都要清空。 */
+let browserManager: BrowserManager | undefined;
 
 /**
  * 单实例锁：两个 App 实例同时运行会争抢默认端口和同一个 SQLite 库，而且
@@ -720,6 +730,8 @@ if (!hasSingleInstanceLock) {
 
     isQuitting = true;
     event.preventDefault();
+
+    browserManager?.destroyAll();
 
     void server
       .stop()

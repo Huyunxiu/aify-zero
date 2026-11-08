@@ -1,4 +1,5 @@
 import type { ApiServerStatus } from "@workspace/shared/api-status";
+import type { BrowserBridge } from "@workspace/shared/browser-protocol";
 
 declare global {
   interface Window {
@@ -13,6 +14,8 @@ declare global {
       channelUrl?(): Promise<string>;
       /** 终端通道的 WebSocket 地址。 */
       terminalUrl?(): Promise<string>;
+      /** 原生浏览器视图；浏览器里没有它，入口据此隐藏。 */
+      browser?: BrowserBridge;
     };
   }
 }

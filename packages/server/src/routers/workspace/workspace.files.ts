@@ -212,10 +212,10 @@ export type WorkspaceTextRefusal =
 export type WorkspaceTextResult =
   | ({ readonly kind: "text" } & WorkspaceTextPage)
   | {
-    readonly kind: "refused";
-    readonly path: string;
-    readonly reason: WorkspaceTextRefusal;
-  };
+      readonly kind: "refused";
+      readonly path: string;
+      readonly reason: WorkspaceTextRefusal;
+    };
 
 /** 文本里不允许出现的字节：出现即视为二进制。 */
 const NUL = String.fromCodePoint(0);

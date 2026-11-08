@@ -9,7 +9,7 @@ import type { FileOpenTarget } from "../markdown-link";
 import { targetAfterSelect } from "./target";
 
 /** 面板能打开的视图类型。 */
-export type SessionPanelView = "files" | "review" | "terminal";
+export type SessionPanelView = "files" | "review" | "terminal" | "browser";
 
 /** 文件标签自己的状态。 */
 export type FilesTabState = {
@@ -21,8 +21,16 @@ export type FilesTabState = {
   readonly target: FileOpenTarget | null;
 };
 
+/** 浏览器视图在标签里的状态。 */
+export type BrowserViewTabState = {
+  /** 页面标题；标签栏用它代替视图的固定名字。 */
+  readonly title: string | null;
+};
+
 /** 标签栏里的一个标签；`view` 为 null 时是新标签页。 */
 export type PanelTab = {
+  /** 浏览器视图的状态；其他标签为 null。 */
+  readonly browser: BrowserViewTabState | null;
   /** 文件标签的状态；其他标签为 null。 */
   readonly files: FilesTabState | null;
   readonly id: string;
@@ -59,11 +67,16 @@ export type PanelAction =
       readonly id: string;
       readonly name: string;
       readonly type: "setRootName";
+    }
+  | {
+      readonly id: string;
+      readonly title: string | null;
+      readonly type: "setBrowserTitle";
     };
 
 /** 一个空的新标签页。 */
 function newTab(id: string): PanelTab {
-  return { files: null, id, view: null };
+  return { browser: null, files: null, id, view: null };
 }
 
 /**
@@ -157,6 +170,7 @@ export function panelReducer(
       return {
         activeId: action.id,
         tabs: placeTab(state.tabs, {
+          browser: null,
           files: null,
           id: action.id,
           view: action.view,
@@ -170,6 +184,7 @@ export function panelReducer(
           ? active
           : state.tabs.find((tab) => tab.view === "files");
       const tab: PanelTab = existing ?? {
+        browser: null,
         files: null,
         id: action.id,
         view: "files",
@@ -260,6 +275,27 @@ export function panelReducer(
         tabs: replaceTab(state.tabs, {
           ...tab,
           files: { ...files, rootName: action.name },
+        }),
+      };
+    }
+    case "setBrowserTitle": {
+      const tab = state.tabs.find((item) => item.id === action.id);
+
+      if (tab === undefined || tab.view !== "browser") {
+        return state;
+      }
+
+      const browser = tab.browser ?? { title: null };
+
+      if (browser.title === action.title) {
+        return state;
+      }
+
+      return {
+        ...state,
+        tabs: replaceTab(state.tabs, {
+          ...tab,
+          browser: { ...browser, title: action.title },
         }),
       };
     }

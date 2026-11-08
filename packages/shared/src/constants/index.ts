@@ -79,6 +79,17 @@ export const IPC_CHANNELS = {
   CHANNEL_URL: "channel-url",
   /** 渲染端取终端通道的 WebSocket 地址。 */
   TERMINAL_URL: "terminal-url",
+  /** 浏览器视图：创建、销毁、几何、显隐与导航。 */
+  BROWSER_CREATE: "browser-create",
+  BROWSER_DESTROY: "browser-destroy",
+  BROWSER_SET_BOUNDS: "browser-set-bounds",
+  BROWSER_SET_VISIBLE: "browser-set-visible",
+  BROWSER_NAVIGATE: "browser-navigate",
+  BROWSER_BACK: "browser-back",
+  BROWSER_FORWARD: "browser-forward",
+  BROWSER_RELOAD: "browser-reload",
+  /** 主进程 -> 渲染端的导航状态推送。 */
+  BROWSER_STATE: "browser-state",
 };
 
 /**

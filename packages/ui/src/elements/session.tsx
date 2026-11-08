@@ -404,6 +404,32 @@ export function Session({
   const [fileOpenRequest, setFileOpenRequest] =
     React.useState<FileOpenTarget>();
   const panelRef = usePanelRef();
+  const panelShellRef = React.useRef<HTMLDivElement>(null);
+
+  // Toast 不能被原生浏览器视图盖住：把面板宽度写进根节点变量，Toast 的
+  // 右侧偏移据此让开面板。
+  React.useEffect(() => {
+    const element = panelShellRef.current;
+
+    if (element === null) {
+      return;
+    }
+
+    const root = document.documentElement;
+    const observer = new ResizeObserver(() => {
+      root.style.setProperty(
+        "--aify-panel-width",
+        `${element.getBoundingClientRect().width}px`
+      );
+    });
+
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--aify-panel-width");
+    };
+  }, []);
 
   // 文件链接：展开面板，再把请求交给面板。会话还没有 id 时面板不存在，
   // 链接点不动就好。
@@ -465,6 +491,8 @@ export function Session({
   // has no row yet, so the project picked in the sidebar stays selected.
   const sessionProjectId =
     getSessionQuery.data?.session?.projectId ?? undefined;
+  // 浏览器档案按项目分配；会话行回来之前不能确定项目，先别建视图。
+  const sessionProjectResolved = getSessionQuery.isFetched;
 
   React.useEffect(() => {
     if (getSessionQuery.data?.session) {
@@ -1311,12 +1339,14 @@ export function Session({
                 panelRef={panelRef}
               >
                 {/* 收起时只折叠，不卸载：里面的状态要留到下次打开。 */}
-                <div className="h-full" inert={!panelOpen}>
+                <div className="h-full" inert={!panelOpen} ref={panelShellRef}>
                   <SessionPanel
                     key={sessionId}
                     onClose={() => setPanelOpen(false)}
                     open={panelOpen}
                     openRequest={fileOpenRequest}
+                    projectId={sessionProjectId ?? null}
+                    projectResolved={sessionProjectResolved}
                     sessionId={sessionId}
                   />
                 </div>
