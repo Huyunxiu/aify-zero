@@ -26,16 +26,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@workspace/ui/components/popover";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@workspace/ui/components/segmented-control";
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import { client } from "@workspace/ui/lib/orpc";
 import { useContentVersion } from "@workspace/ui/lib/use-content-version";
 import { isDirectoryPath } from "@workspace/ui/lib/workspace-path";
-import {
-  CheckIcon,
-  FolderTreeIcon,
-  RefreshCwIcon,
-  Settings2Icon,
-} from "lucide-react";
+import { FolderTreeIcon, RefreshCwIcon, Settings2Icon } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
@@ -279,28 +278,26 @@ export function ReviewView({ active, sessionId }: ReviewViewProps) {
           >
             <Settings2Icon className="size-4" />
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-56">
+          <PopoverContent align="end" className="w-72">
             <div className="flex flex-col gap-2">
               <p className="font-medium text-muted-foreground text-xs">
                 {t("review.settings.layout")}
               </p>
-              {LAYOUTS.map((option) => (
-                <Button
-                  aria-pressed={layout === option.value}
-                  className="justify-start gap-2"
-                  key={option.value}
-                  onClick={() => chooseLayout(option.value)}
-                  size="sm"
-                  variant="ghost"
-                >
-                  <CheckIcon
-                    className={
-                      layout === option.value ? "size-4" : "size-4 opacity-0"
-                    }
-                  />
-                  {t(option.label)}
-                </Button>
-              ))}
+              <SegmentedControl className="w-full" size="sm">
+                {LAYOUTS.map((option) => (
+                  <SegmentedControlItem
+                    aria-pressed={layout === option.value}
+                    className="flex-1"
+                    // 空串表示「有这个属性」，未选中时整个属性不出现：样式按属性
+                    // 是否存在来判断，写成 false 会留下 data-checked="false"。
+                    data-checked={layout === option.value ? "" : undefined}
+                    key={option.value}
+                    onClick={() => chooseLayout(option.value)}
+                  >
+                    {t(option.label)}
+                  </SegmentedControlItem>
+                ))}
+              </SegmentedControl>
             </div>
           </PopoverContent>
         </Popover>
