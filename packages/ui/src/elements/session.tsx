@@ -1018,316 +1018,327 @@ export function Session({
 
   return (
     <FileLinkProvider openFile={openFileInPanel}>
-      <ResizablePanelGroup className="overflow-hidden" orientation="horizontal">
-        <ResizablePanel>
-          <div className="@container flex h-full min-w-0 flex-col">
-            {/* session header */}
-            <TitleBar className="sticky top-0 flex h-12 items-center gap-2 px-4">
-              {sessionId && (
-                <div className="min-w-0 truncate text-foreground text-sm max-w-md">
-                  {onClose
-                    ? sessionTitle
-                      ? `Subagent · ${sessionTitle}`
-                      : "Subagent"
-                    : sessionTitle || t("sessions.untitled")}
-                </div>
-              )}
-              <div className="ml-auto flex items-center gap-1 [-webkit-app-region:no-drag]">
-                {sessionId && !panelOpen && (
-                  <Button
-                    aria-label={t("panel.tabs.files")}
-                    onClick={() => setPanelOpen(true)}
-                    size="icon-sm"
-                    variant="ghost"
-                  >
-                    <PanelRightIcon className="size-4" />
-                  </Button>
+      <div className="relative h-full">
+        <ResizablePanelGroup
+          className="overflow-hidden"
+          orientation="horizontal"
+        >
+          <ResizablePanel>
+            <div className="@container flex h-full min-w-0 flex-col">
+              {/* session header */}
+              <TitleBar className="sticky top-0 flex h-12 items-center gap-2 px-4">
+                {sessionId && (
+                  <div className="min-w-0 truncate text-foreground text-sm max-w-md">
+                    {onClose
+                      ? sessionTitle
+                        ? `Subagent · ${sessionTitle}`
+                        : "Subagent"
+                      : sessionTitle || t("sessions.untitled")}
+                  </div>
                 )}
-                {onClose && (
-                  <Button
-                    aria-label="Close"
-                    // The bar is the window's drag region; a control in it has to
-                    // opt back out of that, or the click drags the window.
-                    onClick={onClose}
-                    size="icon-sm"
-                    variant="ghost"
-                  >
-                    <XIcon className="size-4" />
-                  </Button>
-                )}
-              </div>
-            </TitleBar>
-            {/* session container */}
-            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-              {/* session content */}
-              <div className="relative flex-1" ref={contentRef}>
-                <MessageScrollerProvider
-                  autoScroll
-                  defaultScrollPosition="start"
-                  scrollPreviousItemPeek={64}
-                >
-                  <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
-                    <div
-                      className={cn(
-                        "relative size-full mx-auto flex min-h-full min-w-0 w-full flex-col",
-                        hasOutline && "@min-[1100px]:ps-[104px]"
-                      )}
+                <div className="ml-auto flex items-center gap-1 [-webkit-app-region:no-drag]">
+                  {onClose && (
+                    <Button
+                      aria-label="Close"
+                      // 面板入口钉在框右上角；关闭按钮给它让出一个按钮加间距。
+                      className={cn(sessionId && !panelOpen && "mr-8")}
+                      // The bar is the window's drag region; a control in it has to
+                      // opt back out of that, or the click drags the window.
+                      onClick={onClose}
+                      size="icon-sm"
+                      variant="ghost"
                     >
-                      <MessageScroller>
-                        <MessageScrollerViewport>
-                          <MessageScrollerContent className="px-0 py-4 max-w-[calc(56rem+16px)] mx-auto">
-                            {turns.length === 0 ? (
-                              <Empty className="h-full">
-                                <EmptyHeader>
-                                  <EmptyMedia variant="icon">
-                                    <MessageSquareIcon />
-                                  </EmptyMedia>
-                                  {/* A read-only page has just been pointed at a
+                      <XIcon className="size-4" />
+                    </Button>
+                  )}
+                </div>
+              </TitleBar>
+              {/* session container */}
+              <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                {/* session content */}
+                <div className="relative flex-1" ref={contentRef}>
+                  <MessageScrollerProvider
+                    autoScroll
+                    defaultScrollPosition="start"
+                    scrollPreviousItemPeek={64}
+                  >
+                    <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
+                      <div
+                        className={cn(
+                          "relative size-full mx-auto flex min-h-full min-w-0 w-full flex-col",
+                          hasOutline && "@min-[1100px]:ps-[104px]"
+                        )}
+                      >
+                        <MessageScroller>
+                          <MessageScrollerViewport>
+                            <MessageScrollerContent className="px-0 py-4 max-w-[calc(56rem+16px)] mx-auto">
+                              {turns.length === 0 ? (
+                                <Empty className="h-full">
+                                  <EmptyHeader>
+                                    <EmptyMedia variant="icon">
+                                      <MessageSquareIcon />
+                                    </EmptyMedia>
+                                    {/* A read-only page has just been pointed at a
                                   child that has written nothing yet, which is
                                   not the same invitation to type. */}
-                                  <EmptyTitle>
-                                    {readOnly
-                                      ? "Nothing yet"
-                                      : "Start a session"}
-                                  </EmptyTitle>
-                                  <EmptyDescription>
-                                    {readOnly
-                                      ? "This subagent has not written anything yet."
-                                      : "Messages will appear here as the session progresses."}
-                                  </EmptyDescription>
-                                </EmptyHeader>
-                              </Empty>
-                            ) : (
-                              <>
-                                {turns.map((turn) => (
-                                  <MessageScrollerItem
-                                    key={turn.id}
-                                    messageId={turn.id}
-                                    scrollAnchor={turn.type === "user"}
-                                  >
-                                    {renderTurn(turn)}
-                                  </MessageScrollerItem>
-                                ))}
-                                {finalError && (
-                                  <MessageScrollerItem scrollAnchor={false}>
-                                    <Message from="assistant">
-                                      <MessageContent>
-                                        <MessageResponse className="text-destructive">
-                                          {getErrorMessage(finalError)}
-                                        </MessageResponse>
-                                      </MessageContent>
-                                    </Message>
-                                  </MessageScrollerItem>
-                                )}
-                              </>
-                            )}
-                          </MessageScrollerContent>
-                        </MessageScrollerViewport>
-                        <MessageScrollerButton />
-                      </MessageScroller>
-                    </div>
-                  </div>
-                  {hasOutline && (
-                    <div
-                      className="absolute inset-y-0 start-0 hidden w-26 @min-[1100px]:block"
-                      onWheel={(event) => {
-                        // 条目多时先让大纲自己滚；还有余量就交回聊天记录。
-                        const list =
-                          event.currentTarget.querySelector<HTMLElement>(
-                            "[data-proximity-list]"
-                          );
-                        if (
-                          event.target instanceof Node &&
-                          list?.contains(event.target) &&
-                          list.scrollHeight > list.clientHeight
-                        ) {
-                          return;
-                        }
-
-                        contentRef.current
-                          ?.querySelector<HTMLElement>(
-                            '[data-slot="message-scroller-viewport"]'
-                          )
-                          ?.scrollBy({ top: event.deltaY });
-                      }}
-                    >
-                      <SessionOutline sections={outlineSections} />
-                    </div>
-                  )}
-                </MessageScrollerProvider>
-              </div>
-
-              {/* session input */}
-              {!readOnly && (
-                <div
-                  className={cn(
-                    "sticky bottom-0 z-1 w-full",
-                    hasOutline && "@min-[1100px]:ps-[104px]"
-                  )}
-                >
-                  <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 border-t-0 pt-1 px-4 pb-4">
-                    <InboxDock
-                      busy={isGenerating}
-                      messages={pendingMessages}
-                      onCancel={handleQueueCancel}
-                      onClear={handleQueueClear}
-                      onSend={handleQueueSend}
-                    />
-                    <PromptInputProvider>
-                      {pendingQuestionnaire ? (
-                        <QuestionnaireComposer
-                          part={pendingQuestionnaire}
-                          onRespond={handleRespondToolApproval}
-                        />
-                      ) : (
-                        <PromptInput
-                          multiple
-                          maxFileSize={5 * 1024 * 1024}
-                          accept="image/png,image/jpeg,image/webp"
-                          onSubmit={handleSubmit}
-                          onError={console.error}
-                        >
-                          <PromptInputAttachmentsDisplay />
-                          <PromptInputBody>
-                            {/* <PromptInputTextarea /> */}
-                            <PromptInputTiptap
-                              skills={
-                                listSessionResourcesQuery.data?.skills.map(
-                                  (e) => ({
-                                    ...e,
-                                    type: "skill",
-                                  })
-                                ) || []
-                              }
-                              commands={commands}
-                              onEmptyChange={(isEmpty) => {
-                                if (isEmpty !== isEditorEmpty) {
-                                  setIsEditorEmpty(isEmpty);
-                                }
-                              }}
-                            />
-                          </PromptInputBody>
-                          <PromptInputFooter>
-                            <PromptInputTools className="gap-0">
-                              <PromptInputActionMenu>
-                                <PromptInputActionMenuTrigger />
-                                <PromptInputActionMenuContent className="min-w-max">
-                                  <PromptInputActionAddAttachments />
-                                </PromptInputActionMenuContent>
-                              </PromptInputActionMenu>
-                              <ProjectSelect
-                                locked={isProjectLocked}
-                                onProjectChange={setSelectedProjectId}
-                                projectId={selectedProjectId}
-                                projects={projects}
-                              />
-                              <ModelSelect
-                                models={models}
-                                modelId={selectedModelId}
-                                modelEffort={selectedModelEffort}
-                                onModelChange={handleModelChange}
-                                onModelEffortChange={handleModelEffortChange}
-                              />
-                            </PromptInputTools>
-                            <div className="flex items-center gap-2">
-                              {isGenerating && (
-                                <ButtonGroup>
-                                  <Button
-                                    onClick={() =>
-                                      handleBusyModeChange("steering")
-                                    }
-                                    size="xs"
-                                    type="button"
-                                    variant={
-                                      busyMode === "steering"
-                                        ? "secondary"
-                                        : "ghost"
-                                    }
-                                  >
-                                    {t("composer.mode.steering")}
-                                  </Button>
-                                  <Button
-                                    onClick={() =>
-                                      handleBusyModeChange("followup")
-                                    }
-                                    size="xs"
-                                    type="button"
-                                    variant={
-                                      busyMode === "followup"
-                                        ? "secondary"
-                                        : "ghost"
-                                    }
-                                  >
-                                    {t("composer.mode.followup")}
-                                  </Button>
-                                </ButtonGroup>
+                                    <EmptyTitle>
+                                      {readOnly
+                                        ? "Nothing yet"
+                                        : "Start a session"}
+                                    </EmptyTitle>
+                                    <EmptyDescription>
+                                      {readOnly
+                                        ? "This subagent has not written anything yet."
+                                        : "Messages will appear here as the session progresses."}
+                                    </EmptyDescription>
+                                  </EmptyHeader>
+                                </Empty>
+                              ) : (
+                                <>
+                                  {turns.map((turn) => (
+                                    <MessageScrollerItem
+                                      key={turn.id}
+                                      messageId={turn.id}
+                                      scrollAnchor={turn.type === "user"}
+                                    >
+                                      {renderTurn(turn)}
+                                    </MessageScrollerItem>
+                                  ))}
+                                  {finalError && (
+                                    <MessageScrollerItem scrollAnchor={false}>
+                                      <Message from="assistant">
+                                        <MessageContent>
+                                          <MessageResponse className="text-destructive">
+                                            {getErrorMessage(finalError)}
+                                          </MessageResponse>
+                                        </MessageContent>
+                                      </Message>
+                                    </MessageScrollerItem>
+                                  )}
+                                </>
                               )}
-                              <Context
-                                maxTokens={contextWindow}
-                                modelId={selectedModelId}
-                                usage={tokenUsage}
-                                usedTokens={contextUsedTokens}
-                              >
-                                <ContextTrigger />
-                                <ContextContent>
-                                  <ContextContentHeader />
-                                  <ContextContentBody>
-                                    <ContextInputUsage />
-                                    <ContextOutputUsage />
-                                    <ContextReasoningUsage />
-                                    <ContextCacheUsage />
-                                  </ContextContentBody>
-                                  <ContextContentFooter />
-                                </ContextContent>
-                              </Context>
-                              {isGenerating && (
-                                <PromptInputStop onStop={() => void stop()} />
-                              )}
-                              <PromptInputSubmit
-                                disabled={isEditorEmpty || !selectedModelId}
-                                label={submitLabel}
-                                status={status}
-                              />
-                            </div>
-                          </PromptInputFooter>
-                        </PromptInput>
-                      )}
-                    </PromptInputProvider>
-                  </div>
+                            </MessageScrollerContent>
+                          </MessageScrollerViewport>
+                          <MessageScrollerButton />
+                        </MessageScroller>
+                      </div>
+                    </div>
+                    {hasOutline && (
+                      <div
+                        className="absolute inset-y-0 start-0 hidden w-26 @min-[1100px]:block"
+                        onWheel={(event) => {
+                          // 条目多时先让大纲自己滚；还有余量就交回聊天记录。
+                          const list =
+                            event.currentTarget.querySelector<HTMLElement>(
+                              "[data-proximity-list]"
+                            );
+                          if (
+                            event.target instanceof Node &&
+                            list?.contains(event.target) &&
+                            list.scrollHeight > list.clientHeight
+                          ) {
+                            return;
+                          }
+
+                          contentRef.current
+                            ?.querySelector<HTMLElement>(
+                              '[data-slot="message-scroller-viewport"]'
+                            )
+                            ?.scrollBy({ top: event.deltaY });
+                        }}
+                      >
+                        <SessionOutline sections={outlineSections} />
+                      </div>
+                    )}
+                  </MessageScrollerProvider>
                 </div>
-              )}
-            </div>
-          </div>
-        </ResizablePanel>
-        {sessionId && (
-          <>
-            <ResizableHandle
-              className={panelOpen ? undefined : "hidden"}
-              variant="gutter"
-            />
-            <ResizablePanel
-              collapsedSize={0}
-              collapsible
-              defaultSize="50%"
-              id="session-panel"
-              maxSize="80%"
-              minSize="50%"
-              panelRef={panelRef}
-            >
-              {/* 收起时只折叠，不卸载：里面的状态要留到下次打开。 */}
-              <div className="h-full" inert={!panelOpen}>
-                <SessionPanel
-                  key={sessionId}
-                  onClose={() => setPanelOpen(false)}
-                  open={panelOpen}
-                  openRequest={fileOpenRequest}
-                  sessionId={sessionId}
-                />
+
+                {/* session input */}
+                {!readOnly && (
+                  <div
+                    className={cn(
+                      "sticky bottom-0 z-1 w-full",
+                      hasOutline && "@min-[1100px]:ps-[104px]"
+                    )}
+                  >
+                    <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 border-t-0 pt-1 px-4 pb-4">
+                      <InboxDock
+                        busy={isGenerating}
+                        messages={pendingMessages}
+                        onCancel={handleQueueCancel}
+                        onClear={handleQueueClear}
+                        onSend={handleQueueSend}
+                      />
+                      <PromptInputProvider>
+                        {pendingQuestionnaire ? (
+                          <QuestionnaireComposer
+                            part={pendingQuestionnaire}
+                            onRespond={handleRespondToolApproval}
+                          />
+                        ) : (
+                          <PromptInput
+                            multiple
+                            maxFileSize={5 * 1024 * 1024}
+                            accept="image/png,image/jpeg,image/webp"
+                            onSubmit={handleSubmit}
+                            onError={console.error}
+                          >
+                            <PromptInputAttachmentsDisplay />
+                            <PromptInputBody>
+                              {/* <PromptInputTextarea /> */}
+                              <PromptInputTiptap
+                                skills={
+                                  listSessionResourcesQuery.data?.skills.map(
+                                    (e) => ({
+                                      ...e,
+                                      type: "skill",
+                                    })
+                                  ) || []
+                                }
+                                commands={commands}
+                                onEmptyChange={(isEmpty) => {
+                                  if (isEmpty !== isEditorEmpty) {
+                                    setIsEditorEmpty(isEmpty);
+                                  }
+                                }}
+                              />
+                            </PromptInputBody>
+                            <PromptInputFooter>
+                              <PromptInputTools className="gap-0">
+                                <PromptInputActionMenu>
+                                  <PromptInputActionMenuTrigger />
+                                  <PromptInputActionMenuContent className="min-w-max">
+                                    <PromptInputActionAddAttachments />
+                                  </PromptInputActionMenuContent>
+                                </PromptInputActionMenu>
+                                <ProjectSelect
+                                  locked={isProjectLocked}
+                                  onProjectChange={setSelectedProjectId}
+                                  projectId={selectedProjectId}
+                                  projects={projects}
+                                />
+                                <ModelSelect
+                                  models={models}
+                                  modelId={selectedModelId}
+                                  modelEffort={selectedModelEffort}
+                                  onModelChange={handleModelChange}
+                                  onModelEffortChange={handleModelEffortChange}
+                                />
+                              </PromptInputTools>
+                              <div className="flex items-center gap-2">
+                                {isGenerating && (
+                                  <ButtonGroup>
+                                    <Button
+                                      onClick={() =>
+                                        handleBusyModeChange("steering")
+                                      }
+                                      size="xs"
+                                      type="button"
+                                      variant={
+                                        busyMode === "steering"
+                                          ? "secondary"
+                                          : "ghost"
+                                      }
+                                    >
+                                      {t("composer.mode.steering")}
+                                    </Button>
+                                    <Button
+                                      onClick={() =>
+                                        handleBusyModeChange("followup")
+                                      }
+                                      size="xs"
+                                      type="button"
+                                      variant={
+                                        busyMode === "followup"
+                                          ? "secondary"
+                                          : "ghost"
+                                      }
+                                    >
+                                      {t("composer.mode.followup")}
+                                    </Button>
+                                  </ButtonGroup>
+                                )}
+                                <Context
+                                  maxTokens={contextWindow}
+                                  modelId={selectedModelId}
+                                  usage={tokenUsage}
+                                  usedTokens={contextUsedTokens}
+                                >
+                                  <ContextTrigger />
+                                  <ContextContent>
+                                    <ContextContentHeader />
+                                    <ContextContentBody>
+                                      <ContextInputUsage />
+                                      <ContextOutputUsage />
+                                      <ContextReasoningUsage />
+                                      <ContextCacheUsage />
+                                    </ContextContentBody>
+                                    <ContextContentFooter />
+                                  </ContextContent>
+                                </Context>
+                                {isGenerating && (
+                                  <PromptInputStop onStop={() => void stop()} />
+                                )}
+                                <PromptInputSubmit
+                                  disabled={isEditorEmpty || !selectedModelId}
+                                  label={submitLabel}
+                                  status={status}
+                                />
+                              </div>
+                            </PromptInputFooter>
+                          </PromptInput>
+                        )}
+                      </PromptInputProvider>
+                    </div>
+                  </div>
+                )}
               </div>
-            </ResizablePanel>
-          </>
+            </div>
+          </ResizablePanel>
+          {sessionId && (
+            <>
+              <ResizableHandle
+                className={panelOpen ? undefined : "hidden"}
+                variant="gutter"
+              />
+              <ResizablePanel
+                collapsedSize={0}
+                collapsible
+                defaultSize="50%"
+                id="session-panel"
+                maxSize="80%"
+                minSize="50%"
+                panelRef={panelRef}
+              >
+                {/* 收起时只折叠，不卸载：里面的状态要留到下次打开。 */}
+                <div className="h-full" inert={!panelOpen}>
+                  <SessionPanel
+                    key={sessionId}
+                    onClose={() => setPanelOpen(false)}
+                    open={panelOpen}
+                    openRequest={fileOpenRequest}
+                    sessionId={sessionId}
+                  />
+                </div>
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
+        {/* 入口按钮钉在会话框右上角，放在动画区外：聊天栏宽度随面板展开/收起
+          变化，按钮在栏内会跟着滑动；这里任何状态下位置都不变。 */}
+        {sessionId && !panelOpen && (
+          <div className="absolute top-0 right-4 z-10 flex h-12 items-center [-webkit-app-region:no-drag]">
+            <Button
+              aria-label={t("panel.tabs.files")}
+              onClick={() => setPanelOpen(true)}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <PanelRightIcon className="size-4" />
+            </Button>
+          </div>
         )}
-      </ResizablePanelGroup>
+      </div>
     </FileLinkProvider>
   );
 }

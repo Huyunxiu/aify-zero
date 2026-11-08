@@ -1,3 +1,4 @@
+import { panelMotionClasses } from "@workspace/ui/components/resizable";
 import { cn } from "@workspace/ui/lib/utils";
 import * as ResizablePrimitive from "react-resizable-panels";
 
@@ -10,6 +11,7 @@ function IslandGroup({ className, ...props }: ResizablePrimitive.GroupProps) {
       data-slot="resizable-panel-group"
       className={cn(
         "island-group flex h-full w-full aria-[orientation=vertical]:flex-col",
+        panelMotionClasses,
         layout === "default" ? "p-0" : "p-2",
         className
       )}

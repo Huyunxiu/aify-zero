@@ -1,6 +1,16 @@
 import { cn } from "cn"
 import * as ResizablePrimitive from "react-resizable-panels"
 
+// 面板尺寸写在外层元素的内联 flex-grow 上（className 落在内层 div），
+// 过渡只能从组挂到后代上。邻栏必须跟着重排，没有 transform 等价物。
+const panelMotionClasses = [
+  "motion-safe:[&_[data-slot=resizable-panel]]:transition-[flex-grow]",
+  "motion-safe:[&_[data-slot=resizable-panel]]:duration-[250ms]",
+  "motion-safe:[&_[data-slot=resizable-panel]]:ease-[cubic-bezier(0.23,1,0.32,1)]",
+  // 拖动分隔条时尺寸要 1:1 跟手，过渡会带来迟滞。
+  "[&:has([data-separator=active])_[data-slot=resizable-panel]]:transition-none",
+]
+
 function ResizablePanelGroup({
   className,
   ...props
@@ -10,6 +20,7 @@ function ResizablePanelGroup({
       data-slot="resizable-panel-group"
       className={cn(
         "flex h-full w-full aria-[orientation=vertical]:flex-col",
+        panelMotionClasses,
         className
       )}
       {...props}
@@ -94,4 +105,4 @@ function ResizableGutterHandle({
   )
 }
 
-export { ResizableHandle, ResizablePanel, ResizablePanelGroup }
+export { panelMotionClasses, ResizableHandle, ResizablePanel, ResizablePanelGroup }
