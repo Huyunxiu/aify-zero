@@ -142,6 +142,10 @@ export function BrowserView({
 
     let disposed = false;
 
+    // 新建的视图总是隐藏的。StrictMode 会销毁再建一次，上一只视图的
+    // 「已显示」不能带到新视图上，否则新视图再也不会收到显示命令。
+    appliedRef.current = null;
+
     runtime
       .create({
         bounds: boundsRef.current ?? ZERO_BOUNDS,
@@ -157,6 +161,7 @@ export function BrowserView({
 
     return () => {
       disposed = true;
+      appliedRef.current = null;
       runtime.destroy(viewId);
     };
   }, [projectResolved, runtime, scope, viewId]);

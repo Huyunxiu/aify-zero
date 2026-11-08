@@ -135,6 +135,7 @@ export class BrowserManager {
     this.views.set(init.id, managed);
     this.attach(managed);
     this.publish(managed);
+    logger.info(`Created browser view ${init.id} in partition ${partition}`);
   }
 
   /**
@@ -179,6 +180,7 @@ export class BrowserManager {
 
     managed.visible = visible;
     managed.view.setVisible(visible);
+    logger.info(`Browser view ${id} ${visible ? "shown" : "hidden"}`);
   }
 
   /**
@@ -203,6 +205,7 @@ export class BrowserManager {
       throw new Error(`${BROWSER_URL_REJECTION_PREFIX}${result.reason}`);
     }
 
+    logger.info(`Browser view ${id} navigating to ${result.url}`);
     await managed.view.webContents.loadURL(result.url);
   }
 
