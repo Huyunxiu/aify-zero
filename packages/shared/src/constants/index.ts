@@ -6,6 +6,8 @@ export const LOCAL_STORAGE_KEYS = {
   MODEL_EFFORT: "model-effort",
   /** 运行中按 Enter 的默认投递方式：steering 或 followup。 */
   COMPOSER_BUSY_MODE: "composer-busy-mode",
+  /** 改动视图里差异的排布：堆叠或并排。 */
+  REVIEW_DIFF_LAYOUT: "review-diff-layout",
 };
 
 // languages

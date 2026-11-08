@@ -6,7 +6,7 @@
  */
 import { Button } from "@workspace/ui/components/button";
 import { FolderIcon } from "@workspace/ui/components/folder-icon";
-import { SquareTerminalIcon } from "lucide-react";
+import { FileDiffIcon, SquareTerminalIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { SessionPanelTab } from "../session-panel";
@@ -31,6 +31,16 @@ export function NewTabView({ onCreate }: NewTabViewProps) {
         >
           <FolderIcon size={16} />
           {t("panel.tabs.files")}
+        </Button>
+        <Button
+          onClick={() => {
+            onCreate("review");
+          }}
+          size="lg"
+          variant="outline"
+        >
+          <FileDiffIcon className="size-4" />
+          {t("panel.tabs.review")}
         </Button>
         <Button
           onClick={() => {

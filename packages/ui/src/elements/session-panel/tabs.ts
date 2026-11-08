@@ -6,7 +6,7 @@
  */
 
 /** 面板能打开的视图。同一个视图同时只有一个标签。 */
-export type SessionPanelTab = "files" | "terminal";
+export type SessionPanelTab = "files" | "review" | "terminal";
 
 /** 新标签页的标签值；选中时显示视图选择页，不挂具体视图。 */
 export const NEW_TAB = "new";

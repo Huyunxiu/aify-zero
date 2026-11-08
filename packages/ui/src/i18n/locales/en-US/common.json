@@ -200,7 +200,8 @@
     "tabs": {
       "files": "Files",
       "new": "New tab",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "review": "Changes"
     }
   },
   "files": {
@@ -213,6 +214,30 @@
       "not-regular-file": "This path is not a regular file, so it has no content to read.",
       "not-text": "This file format cannot be previewed yet.",
       "too-large": "This file is larger than the preview limit."
+    }
+  },
+  "review": {
+    "empty": "This workspace has no changes.",
+    "pickFile": "Select a file on the right to see its changes.",
+    "summary": "{{count}} files changed",
+    "refresh": "Read the changes again",
+    "hideTree": "Hide the change list",
+    "showTree": "Show the change list",
+    "noContent": "This file has no content to show.",
+    "rename": "{{from}} → {{to}}",
+    "unsupported": {
+      "not-a-repository": "This directory is not a Git repository, so changes cannot be listed.",
+      "git-missing": "The git command was not found, so changes cannot be listed."
+    },
+    "refused": {
+      "binary": "This file is not text, so its changes cannot be shown.",
+      "too-large": "This file is larger than the preview limit, so its changes cannot be shown."
+    },
+    "settings": {
+      "open": "Change view settings",
+      "layout": "Diff layout",
+      "stacked": "Stacked",
+      "split": "Side by side"
     }
   },
   "requestFailed": "Request failed",

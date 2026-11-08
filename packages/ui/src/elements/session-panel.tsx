@@ -17,14 +17,21 @@ import {
   TabsContent,
 } from "@workspace/ui/components/tabs";
 import { TitleBar } from "@workspace/ui/elements/title-bar";
+import { fileNameOf } from "@workspace/ui/lib/workspace-path";
 import type { TFunction } from "i18next";
-import { PanelRightIcon, PlusIcon, SquareTerminalIcon } from "lucide-react";
+import {
+  FileDiffIcon,
+  PanelRightIcon,
+  PlusIcon,
+  SquareTerminalIcon,
+} from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
 import type { FileOpenTarget } from "./markdown-link";
 import { FilesView } from "./session-panel/files-view";
 import { NewTabView } from "./session-panel/new-tab-view";
+import { ReviewView } from "./session-panel/review-view";
 import { NEW_TAB, withView } from "./session-panel/tabs";
 import type { PanelTabValue, SessionPanelTab } from "./session-panel/tabs";
 import { targetAfterSelect } from "./session-panel/target";
@@ -53,10 +60,27 @@ type TabDescription = {
   readonly label: string;
 };
 
+/** 每个视图的图标：加视图时在这一张表里加一行。 */
+const TAB_ICONS: Record<SessionPanelTab, React.ReactNode> = {
+  files: <FolderIcon size={14} />,
+  review: <FileDiffIcon size={14} />,
+  terminal: <SquareTerminalIcon size={14} />,
+};
+
+/** 每个视图的标题：文件视图的标题跟着打开的文件变，所以是一个函数。 */
+const TAB_LABELS: Record<
+  SessionPanelTab,
+  (t: TFunction, filesLabel: string) => string
+> = {
+  files: (_t, filesLabel) => filesLabel,
+  review: (t) => t("panel.tabs.review"),
+  terminal: (t) => t("panel.tabs.terminal"),
+};
+
 /**
- * 一个标签的三样显示内容。
+ * 一个标签的图标、标题和关闭提示。
  *
- * 三样都出自同一次判断：新增视图时只改这一处。
+ * 图标和标题来自上面两张表；视图自己的内容还在下面按标签挂载。
  *
  * @param tab - 标签值。
  * @param filesLabel - 文件标签的标题；它跟着打开的文件变，所以由调用方算好传入。
@@ -76,16 +100,11 @@ function describeTab(
     };
   }
 
-  const label = tab === "files" ? filesLabel : t("panel.tabs.terminal");
+  const label = TAB_LABELS[tab](t, filesLabel);
 
   return {
     closeLabel: t("panel.closeTab", { name: label }),
-    icon:
-      tab === "files" ? (
-        <FolderIcon size={14} />
-      ) : (
-        <SquareTerminalIcon size={14} />
-      ),
+    icon: TAB_ICONS[tab],
     label,
   };
 }
@@ -131,7 +150,7 @@ export function SessionPanel({
   const filesLabel =
     activeFile === null
       ? (rootName ?? t("panel.tabs.files"))
-      : activeFile.slice(activeFile.lastIndexOf("/") + 1);
+      : fileNameOf(activeFile);
 
   /** 增加一个新标签页；已经有一个时只切过去。 */
   const addTab = (): void => {
@@ -192,6 +211,7 @@ export function SessionPanel({
 
             return (
               <TabStripTrigger
+                className="min-w-30"
                 closeLabel={closeLabel}
                 icon={icon}
                 key={tab}
@@ -242,6 +262,18 @@ export function SessionPanel({
             rootName={rootName}
             sessionId={sessionId}
             target={target}
+          />
+        </TabsContent>
+      ) : null}
+      {tabs.includes("review") ? (
+        <TabsContent
+          className="min-h-0 flex-1 overflow-hidden"
+          keepMounted
+          value="review"
+        >
+          <ReviewView
+            active={open && activeTab === "review"}
+            sessionId={sessionId}
           />
         </TabsContent>
       ) : null}

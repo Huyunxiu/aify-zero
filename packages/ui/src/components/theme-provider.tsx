@@ -24,10 +24,12 @@ type ThemeProviderState = {
   theme: Theme;
   themes: readonly Theme[];
   setTheme: (theme: Theme) => void;
+  /** `theme` 解析后的结果：选「跟随系统」时，它跟着系统偏好变。 */
+  resolvedTheme: ResolvedTheme;
 };
 
 const COLOR_SCHEME_QUERY = "(prefers-color-scheme: dark)";
-const THEME_VALUES = ["dark", "light", "system"];
+const THEME_VALUES = ["dark", "light", "system"] as const;
 
 const ThemeProviderContext = createContext<ThemeProviderState | undefined>(
   undefined
@@ -84,6 +86,14 @@ export function ThemeProvider({
     return defaultTheme;
   });
 
+  // 解析后的深浅色就是写在 `html` 上的那一个；消费方不必再去读 DOM。
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => {
+    const storedTheme = localStorage.getItem(storageKey);
+    const initialTheme = isTheme(storedTheme) ? storedTheme : defaultTheme;
+
+    return initialTheme === "system" ? getSystemTheme() : initialTheme;
+  });
+
   const setTheme = useCallback(
     (nextTheme: Theme) => {
       localStorage.setItem(storageKey, nextTheme);
@@ -103,6 +113,7 @@ export function ThemeProvider({
 
       root.classList.remove("light", "dark");
       root.classList.add(resolvedTheme);
+      setResolvedTheme(resolvedTheme);
 
       if (restoreTransitions) {
         restoreTransitions();
@@ -198,11 +209,12 @@ export function ThemeProvider({
 
   const value = useMemo(
     () => ({
+      resolvedTheme,
       setTheme,
       themes: THEME_VALUES,
       theme,
     }),
-    [theme, setTheme]
+    [resolvedTheme, theme, setTheme]
   );
 
   return (

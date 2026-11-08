@@ -10,7 +10,7 @@
  */
 import type { CodeViewItem, FileContents } from "@pierre/diffs";
 import { CodeView } from "@pierre/diffs/react";
-import type { CodeViewHandle, CodeViewReactOptions } from "@pierre/diffs/react";
+import type { CodeViewHandle } from "@pierre/diffs/react";
 import {
   FileTree,
   useFileTree,
@@ -19,23 +19,24 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { getErrorMessage } from "@workspace/shared/errors";
 import { Button } from "@workspace/ui/components/button";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@workspace/ui/components/resizable";
+import { useTheme } from "@workspace/ui/components/theme-provider";
 import { client } from "@workspace/ui/lib/orpc";
+import { useContentVersion } from "@workspace/ui/lib/use-content-version";
 import {
   ancestorDirectories,
+  fileNameOf,
+  isDirectoryPath,
   treePathOf,
 } from "@workspace/ui/lib/workspace-path";
 import { FolderTreeIcon } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { usePanelRef } from "react-resizable-panels";
 
 import type { FileOpenTarget } from "../markdown-link";
-import { selectOnlyPath } from "./file-tree-selection";
+import { CODE_VIEW_STYLE, codeViewOptions } from "./code-preview";
+import { selectOnlyPath, treeStyle } from "./file-tree";
+import { Hint } from "./hint";
+import { SplitLayout, useTreePanel } from "./split-layout";
 
 export type FilesViewProps = {
   readonly onActiveFileChange: (path: string | null) => void;
@@ -91,50 +92,6 @@ function fileUrl(sessionId: string, path: string): string {
   return url.href;
 }
 
-/** 从路径里取文件名；高亮只关心它。 */
-function fileNameOf(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
-}
-
-/**
- * 树的配色映射到应用的设计令牌。
- *
- * 树自带一份 `color-scheme: light dark`，只认系统偏好；把这些变量接上
- * `--background` / `--foreground` 之后，深浅色就跟着 `html` 上的 class 走。
- */
-const TREE_THEME = {
-  "--trees-bg-override": "var(--background)",
-  "--trees-bg-muted-override": "var(--muted)",
-  "--trees-border-color-override": "var(--border)",
-  "--trees-fg-muted-override": "var(--muted-foreground)",
-  "--trees-fg-override": "var(--foreground)",
-  "--trees-focus-ring-color-override": "var(--ring)",
-  "--trees-scrollbar-thumb-override": "var(--border)",
-  "--trees-search-bg-override": "var(--muted)",
-  "--trees-search-fg-override": "var(--foreground)",
-  "--trees-selected-bg-override": "var(--accent)",
-  "--trees-selected-fg-override": "var(--accent-foreground)",
-  "--trees-padding-inline": "4px",
-} as React.CSSProperties;
-
-/** 观察 `html` 上的深浅色 class，让树的 `color-scheme` 跟着切。 */
-function useIsDark(): boolean {
-  const [isDark, setIsDark] = React.useState(() =>
-    document.documentElement.classList.contains("dark")
-  );
-
-  React.useEffect(() => {
-    const root = document.documentElement;
-    const observer = new MutationObserver(() => {
-      setIsDark(root.classList.contains("dark"));
-    });
-    observer.observe(root, { attributeFilter: ["class"], attributes: true });
-    return () => observer.disconnect();
-  }, []);
-
-  return isDark;
-}
-
 /**
  * 一个会话的工作区文件。
  *
@@ -150,7 +107,7 @@ export function FilesView({
 }: FilesViewProps) {
   const activeFile = target?.path ?? null;
   const { t } = useTranslation();
-  const isDark = useIsDark();
+  const isDark = useTheme().resolvedTheme === "dark";
   const { model } = useFileTree({
     paths: [],
     density: "default",
@@ -164,19 +121,7 @@ export function FilesView({
 
   // 目录默认显示；收起只折叠右侧那栏，不卸载，树的状态都留着。
   const [showTree, setShowTree] = React.useState(true);
-  const treeRef = usePanelRef();
-
-  React.useEffect(() => {
-    const panel = treeRef.current;
-    if (panel === null) {
-      return;
-    }
-    if (showTree) {
-      panel.expand();
-    } else {
-      panel.collapse();
-    }
-  }, [showTree, treeRef]);
+  const treeRef = useTreePanel(showTree);
 
   // 已列出和正在列出的目录：同一目录只请求一次，展开和选中不会叠加请求。
   const loaded = React.useRef(new Set<string>());
@@ -333,7 +278,7 @@ export function FilesView({
     if (current === undefined) {
       return;
     }
-    if (current.endsWith("/")) {
+    if (isDirectoryPath(current)) {
       void loadDirectory(current);
       return;
     }
@@ -357,38 +302,22 @@ export function FilesView({
           <FolderTreeIcon className="size-4" />
         </Button>
       </div>
-      <ResizablePanelGroup orientation="horizontal">
-        <ResizablePanel defaultSize={320} minSize={160}>
-          <div className="flex h-full min-w-0 flex-col">
-            {/* 正文再长也不参与高度：`contain: size` 让这一格的尺寸只由 flex
-              决定，长文件才不会把面板和它外面整条高度链一起撑高。 */}
-            <div className="min-h-0 flex-1 overflow-auto contain-[size]">
-              {/* 没有选文件时区域也留着，打开文件时布局才不会跳。 */}
-              {activeFile === null ? null : (
-                <FilePreview
-                  key={activeFile}
-                  endLine={target?.endLine}
-                  line={target?.line}
-                  path={activeFile}
-                  sessionId={sessionId}
-                />
-              )}
-            </div>
-          </div>
-        </ResizablePanel>
-        <ResizableHandle
-          className={showTree ? undefined : "hidden"}
-          variant="gutter"
-        />
-        <ResizablePanel
-          collapsedSize={0}
-          collapsible
-          defaultSize={208}
-          maxSize={420}
-          minSize={160}
-          panelRef={treeRef}
-        >
-          <div className="flex h-full min-w-0 flex-col" inert={!showTree}>
+      <SplitLayout
+        left={
+          // 没有选文件时区域也留着，打开文件时布局才不会跳。
+          activeFile === null ? null : (
+            <FilePreview
+              key={activeFile}
+              endLine={target?.endLine}
+              line={target?.line}
+              path={activeFile}
+              sessionId={sessionId}
+            />
+          )
+        }
+        showTree={showTree}
+        tree={
+          <>
             {loadError === null ? null : (
               <p className="px-3 py-2 text-destructive text-xs">{loadError}</p>
             )}
@@ -398,18 +327,12 @@ export function FilesView({
               </p>
             ) : null}
             <div className="min-h-0 flex-1 py-1">
-              <FileTree
-                model={model}
-                style={{
-                  ...TREE_THEME,
-                  colorScheme: isDark ? "dark" : "light",
-                  height: "100%",
-                }}
-              />
+              <FileTree model={model} style={treeStyle(isDark)} />
             </div>
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+          </>
+        }
+        treeRef={treeRef}
+      />
     </div>
   );
 }
@@ -427,33 +350,10 @@ type FilePreviewProps = {
 const PREVIEW_LIMIT = 400;
 const MAX_PREVIEW_LIMIT = 5000;
 
-/** 预览区自己滚动，撑满面板剩下的高度。 */
-const CODE_VIEW_STYLE = { height: "100%", overflow: "auto" } as const;
-
-/**
- * 文本内容的版本号。
- *
- * `CodeView` 用 id 认条目、用 version 认内容变化；同一个文件在磁盘上变了，
- * 光换 `file` 对象不够，要让 version 跟着变。内容不多，直接算一个廉价指纹。
- *
- * @param contents - 预览的文本。
- * @returns 无符号 32 位指纹。
- */
-function contentVersion(contents: string): number {
-  let hash = 0x81_1c_9d_c5;
-
-  for (let index = 0; index < contents.length; index += 1) {
-    hash ^= contents.codePointAt(index) ?? 0;
-    hash = Math.imul(hash, 0x01_00_01_93);
-  }
-
-  return Math.abs(hash);
-}
-
 /** 文件预览：图片直接给地址，文本取第一页。 */
 function FilePreview({ sessionId, path, line, endLine }: FilePreviewProps) {
   const { t } = useTranslation();
-  const isDark = useIsDark();
+  const isDark = useTheme().resolvedTheme === "dark";
   const [imageFailed, setImageFailed] = React.useState(false);
   const viewerRef = React.useRef<CodeViewHandle<undefined, undefined>>(null);
   const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
@@ -475,31 +375,21 @@ function FilePreview({ sessionId, path, line, endLine }: FilePreviewProps) {
   // 条目只关心文件名和文本；两者不变时不要重建输入，省掉一次重新解析。
   const name = fileNameOf(path);
   const contents = read.data?.kind === "text" ? read.data.text : "";
-  const id = `file:${path}`;
+  // 条目 id 就是文件在工作区里的路径；一个查看器里路径唯一，够用了。
+  const id = path;
+  const version = useContentVersion(read.data);
   const items = React.useMemo<CodeViewItem<undefined>[]>(
     () => [
       {
         file: { contents, name } satisfies FileContents,
         id,
         type: "file",
-        version: contentVersion(contents),
+        version,
       },
     ],
-    [contents, id, name]
+    [contents, id, name, version]
   );
-  const options = React.useMemo<CodeViewReactOptions<undefined, undefined>>(
-    () => ({
-      theme: { dark: "pierre-dark", light: "pierre-light" },
-      themeType: isDark ? "dark" : "light",
-      overflow: "wrap",
-      // 上方已经画出路径，这里不再重复一条文件头。
-      disableFileHeader: true,
-      // 文件区跟面板同底色：主题的底色只服务高亮，不要盖住工作区的背景。
-      // 主题把底色收在一个变量里，改写它，宿主和行背景一起变透明。
-      unsafeCSS: ":host { --diffs-bg: transparent; }",
-    }),
-    [isDark]
-  );
+  const options = React.useMemo(() => codeViewOptions(isDark), [isDark]);
 
   // 行号是一条滚动目标：预览换行或换内容后再跳一次，位置随实测高度走。
   // 区间交给 range 目标，让整段落在视野里，和只给起始行时一样。
@@ -568,13 +458,7 @@ function FilePreview({ sessionId, path, line, endLine }: FilePreviewProps) {
 
   // 不是失败：文件在，只是不能按文本预览。原因画在正中间就够了。
   if (read.data.kind === "refused") {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        <p className="text-center text-muted-foreground text-sm">
-          {t(`files.refused.${read.data.reason}`)}
-        </p>
-      </div>
-    );
+    return <Hint>{t(`files.refused.${read.data.reason}`)}</Hint>;
   }
 
   // 高亮始终受控：没有区间时传 null。传 undefined 会让 CodeView 保留上一次

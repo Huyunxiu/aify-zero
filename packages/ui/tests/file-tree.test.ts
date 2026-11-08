@@ -1,7 +1,7 @@
 import { FileTree } from "@pierre/trees";
 import { describe, expect, test } from "vitest";
 
-import { selectOnlyPath } from "../src/elements/session-panel/file-tree-selection";
+import { selectOnlyPath } from "../src/elements/session-panel/file-tree";
 
 /** 一棵只有目录结构的小树；不需要 DOM，模型本身就能算选择。 */
 function makeTree(): FileTree {

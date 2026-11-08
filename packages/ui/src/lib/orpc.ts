@@ -55,7 +55,9 @@ export const link = new RPCLink({
   headers: () => ({ [LANGUAGE_HEADER]: i18n.language }),
   // 文档相对地址：浏览器打到同源 /api/rpc，桌面打到 aify-app://app/api/rpc，
   // 由各自的文档所有者转发，渲染端不需要知道自己在哪。
-  url: new URL("api/rpc", document.baseURI).href,
+  // 每次请求现算，不在模块加载时算：读 `document` 是浏览器才有的能力，写在
+  // 顶层会让这个文件在 node 里（例如测试）一被 import 就抛 ReferenceError。
+  url: () => new URL("api/rpc", document.baseURI).href,
 });
 
 export const client: AppRouterClient = createORPCClient(link);

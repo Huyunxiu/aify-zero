@@ -4,6 +4,7 @@ import { t } from "../i18n";
 import { publicProcedure } from "../index";
 import { agent } from "./agent/agent.router";
 import { project } from "./project/project.router";
+import { review } from "./review/review.router";
 import { session } from "./session/session.router";
 import { setting } from "./settings/settings.router";
 import { skill } from "./skill/skill.router";
@@ -12,6 +13,7 @@ import { workspace } from "./workspace/workspace.router";
 export const appRouter = {
   agent,
   project,
+  review,
   skill,
   session,
   setting,

@@ -200,7 +200,8 @@
     "tabs": {
       "files": "文件",
       "new": "新标签页",
-      "terminal": "终端"
+      "terminal": "终端",
+      "review": "改动"
     }
   },
   "files": {
@@ -213,6 +214,30 @@
       "not-regular-file": "该路径不是普通文件，无法读取内容。",
       "not-text": "该格式文件暂时无法预览",
       "too-large": "文件超出预览上限，请换一种方式查看。"
+    }
+  },
+  "review": {
+    "empty": "工作区没有改动。",
+    "pickFile": "从右侧选一个文件查看改动。",
+    "summary": "{{count}} 个文件已改动",
+    "refresh": "重新读取改动",
+    "hideTree": "隐藏改动列表",
+    "showTree": "显示改动列表",
+    "noContent": "这个文件没有可显示的内容。",
+    "rename": "{{from}} → {{to}}",
+    "unsupported": {
+      "not-a-repository": "这个目录不是 Git 仓库，无法列出改动。",
+      "git-missing": "找不到 git 命令，无法列出改动。"
+    },
+    "refused": {
+      "binary": "这个文件不是文本，无法显示改动。",
+      "too-large": "文件超出预览上限，无法显示改动。"
+    },
+    "settings": {
+      "open": "改动视图设置",
+      "layout": "Diff 布局",
+      "stacked": "堆叠",
+      "split": "并排"
     }
   },
   "requestFailed": "请求失败",

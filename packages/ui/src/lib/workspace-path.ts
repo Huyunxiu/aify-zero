@@ -78,3 +78,25 @@ export function ancestorDirectories(treePath: string): string[] {
 
   return directories;
 }
+
+/**
+ * 路径里的文件名：最后一个 `/` 之后的部分。
+ *
+ * @param path - 工作区根相对的路径。
+ * @returns 文件名；路径本身没有 `/` 时就是它自己。
+ */
+export function fileNameOf(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+/**
+ * 这个路径在树里是不是目录。
+ *
+ * 树用结尾的 `/` 区分目录和文件，判断只写这一处。
+ *
+ * @param path - 树里的路径。
+ * @returns 结尾是 `/` 时为 true。
+ */
+export function isDirectoryPath(path: string): boolean {
+  return path.endsWith("/");
+}
