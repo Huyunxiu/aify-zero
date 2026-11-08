@@ -165,6 +165,9 @@ export function SessionPanel({
     dispatch({ id, type: "close" });
   };
 
+  // 已经有新标签页时，+ 按钮只会切过去，和它重复，所以不画。
+  const hasNewTab = panel.tabs.some((tab) => tab.view === null);
+
   return (
     <Tabs
       className="flex h-full min-h-0 flex-col gap-0"
@@ -193,15 +196,17 @@ export function SessionPanel({
               </TabStripTrigger>
             );
           })}
-          <Button
-            aria-label={t("panel.addTab")}
-            className="[-webkit-app-region:no-drag] shrink-0"
-            onClick={addTab}
-            size="icon-sm"
-            variant="ghost"
-          >
-            <PlusIcon className="size-4" />
-          </Button>
+          {!hasNewTab && (
+            <Button
+              aria-label={t("panel.addTab")}
+              className="[-webkit-app-region:no-drag] shrink-0"
+              onClick={addTab}
+              size="icon-sm"
+              variant="ghost"
+            >
+              <PlusIcon className="size-4" />
+            </Button>
+          )}
         </TabStripList>
         <Button
           aria-label={t("panel.close")}
