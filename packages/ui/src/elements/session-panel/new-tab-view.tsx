@@ -1,19 +1,19 @@
 /**
- * 面板的新标签页。
+ * 面板里的新标签页。
  *
- * 面板没有标签时显示，由用户选一个要打开的视图。选完这个页面就换成对应
- * 视图；所有标签关闭后，面板下次打开又回到这里。
+ * 选中它时由用户选一个要打开的视图。选完这个标签页就换成对应视图；所有
+ * 标签关闭后，面板下次打开又回到这里。
  */
 import { Button } from "@workspace/ui/components/button";
 import { FolderIcon } from "@workspace/ui/components/folder-icon";
 import { FileDiffIcon, SquareTerminalIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import type { SessionPanelTab } from "../session-panel";
+import type { SessionPanelView } from "./tabs";
 
 export type NewTabViewProps = {
   /** 打开一个视图标签。 */
-  readonly onCreate: (tab: SessionPanelTab) => void;
+  readonly onCreate: (view: SessionPanelView) => void;
 };
 
 export function NewTabView({ onCreate }: NewTabViewProps) {

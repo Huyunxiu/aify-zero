@@ -105,7 +105,7 @@ import {
   QuestionnaireComposer,
 } from "./questionnaire";
 import type { QuestionnairePlacement } from "./questionnaire";
-import { SessionPanel } from "./session-panel";
+import { SessionPanel } from "./session-panel/session-panel";
 import { TitleBar } from "./title-bar";
 import { UserMessage } from "./user-message";
 
