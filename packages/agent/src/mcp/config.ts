@@ -3,13 +3,26 @@ import { z } from "zod";
 /** 工具名前缀与工具名之间的分隔符。 */
 const MCP_TOOL_NAME_SEPARATOR = "__";
 
+/** 服务器名的字符集：工具名前缀只允许这一段安全的字符。 */
+const MCP_SERVER_NAME_CHARS = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
+const MCP_SERVER_NAME_MESSAGE =
+  "Use lowercase letters, digits, _ and -; start with a letter or digit";
+
 /**
- * 服务器名会变成工具名前缀，所以只允许一段安全的字符。
+ * 服务器名会变成工具名前缀，所以必须能和分隔符 `__` 分开。
  *
- * 模型看到的工具名因此总是可解析的：前缀不会和工具名里的下划线混淆，因为
- * 前缀本身不含连续下划线。
+ * 光看字符集不够：`ab__cd` 允许通过，它的工具 `t` 会叫 `ab__cd__t`，而切分
+ * 只认第一个 `__`，服务器名就成了 `ab`，审批查不到注解。结尾下划线同理，
+ * 会与分隔符连成 `___`。
  */
-const MCP_SERVER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+export function isValidMcpServerName(name: string): boolean {
+  if (!MCP_SERVER_NAME_CHARS.test(name)) {
+    return false;
+  }
+
+  return !name.includes(MCP_TOOL_NAME_SEPARATOR) && !name.endsWith("_");
+}
 
 const mcpStdioTransportSchema = z
   .object({
@@ -32,12 +45,7 @@ const mcpRemoteTransportSchema = z
 export const mcpServerSchema = z
   .object({
     id: z.string().min(1),
-    name: z
-      .string()
-      .regex(
-        MCP_SERVER_NAME_PATTERN,
-        "Use lowercase letters, digits, _ and -; start with a letter or digit"
-      ),
+    name: z.string().refine(isValidMcpServerName, MCP_SERVER_NAME_MESSAGE),
     enabled: z.boolean().default(true),
     /** 放行没有只说读的工具；破坏性注解仍然询问。 */
     autoApprove: z.boolean().default(false),

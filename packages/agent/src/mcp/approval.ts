@@ -1,4 +1,5 @@
 import type { ToolApprovalPattern } from "../tool-approval";
+import { splitMcpToolName } from "./config";
 import type { McpManager } from "./manager";
 
 /**
@@ -10,15 +11,23 @@ import type { McpManager } from "./manager";
  *
  * 注解是第三方自述，按不可信处理：只有明确说「只读」才自动放行，明确说
  * 「破坏性」就永远询问，其余看服务器自己的 `autoApprove`。
+ *
+ * 查不到注解不等于安全：前缀是我们的服务器、工具表里却没有它（旧回合手里
+ * 的工具、被取代的一代），一样要问。
  */
 export function createMcpToolApprovalPattern(
   manager: McpManager
 ): ToolApprovalPattern {
   return (request) => {
+    const parsed = splitMcpToolName(request.toolName);
+    if (!parsed || !manager.hasServer(parsed.serverName)) {
+      // 不是我们的工具名形状，交给后面的规则。
+      return;
+    }
+
     const resolved = manager.resolveTool(request.toolName);
     if (!resolved) {
-      // 不是 MCP 工具，交给后面的规则。
-      return;
+      return { decision: "ask" };
     }
 
     const { server, definition } = resolved;

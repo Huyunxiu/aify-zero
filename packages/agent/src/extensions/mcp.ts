@@ -3,7 +3,7 @@ import { logger } from "@workspace/shared/logger";
 
 import { mcpToolName } from "../mcp/config";
 import type { McpServerConfig } from "../mcp/config";
-import type { McpManager } from "../mcp/manager";
+import type { McpLease, McpManager } from "../mcp/manager";
 import { createMcpTool } from "../mcp/tool";
 import type { ExtensionAPI, ExtensionOptions } from "./types";
 import { Extension } from "./types";
@@ -17,8 +17,8 @@ export interface McpExtensionOptions extends ExtensionOptions {
 /**
  * MCP 扩展。
  *
- * 装配时向管理器要一份工具快照，把每个工具以前缀 `服务器名__工具名` 注册成
- * 本地工具。连不上的服务器跳过，不打断装配；会话结束时只放掉引用，连接留给
+ * 装配时向管理器借一份工具快照，把每个工具以前缀 `服务器名__工具名` 注册成
+ * 本地工具。连不上的服务器跳过，不打断装配；会话结束时只归还租约，连接留给
  * 管理器按空闲时间收。
  *
  * 审批不在这里：见 `createMcpToolApprovalPattern` 的说明。
@@ -26,7 +26,7 @@ export interface McpExtensionOptions extends ExtensionOptions {
 export class McpExtension extends Extension {
   readonly #manager: McpManager;
   readonly #servers: readonly McpServerConfig[];
-  #acquired: string[] = [];
+  #leases: McpLease[] = [];
 
   constructor(options: McpExtensionOptions) {
     super(options);
@@ -35,21 +35,22 @@ export class McpExtension extends Extension {
   }
 
   async init(api: ExtensionAPI): Promise<void> {
-    this.#acquired = [];
+    // 同一个实例被重复装配时，先还掉上一轮的引用，否则引用计数回不到 0。
+    this.dispose();
 
     for (const server of this.#servers) {
       if (!server.enabled) {
         continue;
       }
 
-      const snapshot = await this.#manager.acquire(server);
-      if (snapshot.status !== "ready") {
+      const lease = await this.#manager.acquire(server);
+      this.#leases.push(lease);
+
+      if (lease.status !== "ready") {
         continue;
       }
 
-      this.#acquired.push(server.id);
-
-      for (const definition of snapshot.tools) {
+      for (const definition of lease.tools) {
         const name = mcpToolName(server.name, definition.name);
         try {
           api.tool(
@@ -58,7 +59,7 @@ export class McpExtension extends Extension {
               server,
               definition,
               call: (input, options) =>
-                this.#manager.callTool(server, definition.name, input, options),
+                lease.callTool(definition.name, input, options),
             })
           );
         } catch (error) {
@@ -72,9 +73,9 @@ export class McpExtension extends Extension {
   }
 
   dispose(): void {
-    for (const serverId of this.#acquired) {
-      this.#manager.release(serverId);
+    for (const lease of this.#leases) {
+      lease.release();
     }
-    this.#acquired = [];
+    this.#leases = [];
   }
 }

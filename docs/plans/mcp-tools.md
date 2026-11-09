@@ -50,18 +50,18 @@ type McpServerConfig = {
 
 ## 模块
 
-| 路径                                                      | 职责                                                                        |
-| --------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `packages/agent/src/mcp/config.ts`                        | `McpServerConfig` 的 zod schema 与默认值                                    |
-| `packages/agent/src/mcp/connection.ts`                    | 一个服务器：建连、握手、列工具、调用、关闭、初始化超时                      |
-| `packages/agent/src/mcp/manager.ts`                       | 进程级管理器：懒连接、状态表、引用计数、空闲 5 分钟断开、失败缓存、配置失效 |
-| `packages/agent/src/mcp/tool.ts`                          | 把 MCP 工具包成本地工具：加前缀、读注解、规范化结果、截断                   |
-| `packages/agent/src/extensions/mcp/extension.ts`          | `McpExtension`：`init` 里取工具快照并注册，`dispose` 不动连接               |
-| `packages/server/src/mcp/registry.ts`                     | 管理器单例、从设置读取配置、保存设置后失效                                  |
-| `packages/server/src/session/agent.ts`                    | 把配置与单例传给 `createSessionAgent` 的 `extensions`                       |
-| `packages/server/src/serve.ts`                            | shutdown 时关闭管理器，收掉子进程                                           |
-| `packages/server/src/routers/settings/settings.schema.ts` | `mcpServers` 字段                                                           |
-| `packages/server/src/routers/settings/settings.router.ts` | 保存后调用 `invalidate()`                                                   |
+| 路径                                                      | 职责                                                                              |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `packages/agent/src/mcp/config.ts`                        | `McpServerConfig` 的 zod schema 与默认值                                          |
+| `packages/agent/src/mcp/connection.ts`                    | 一个服务器：建连、握手、列工具、调用、关闭、初始化超时                            |
+| `packages/agent/src/mcp/manager.ts`                       | 进程级管理器：懒连接、租约式引用计数、状态表、空闲 5 分钟断开、失败缓存、配置失效 |
+| `packages/agent/src/mcp/tool.ts`                          | 把 MCP 工具包成本地工具：加前缀、读注解、规范化结果、截断                         |
+| `packages/agent/src/extensions/mcp.ts`                    | `McpExtension`：`init` 里借租约并注册工具，`dispose` 只归还引用                   |
+| `packages/server/src/mcp/registry.ts`                     | 管理器单例、从设置读取配置、保存设置后失效                                        |
+| `packages/server/src/session/agent.ts`                    | 把配置与单例传给 `createSessionAgent` 的 `extensions`                             |
+| `packages/server/src/serve.ts`                            | shutdown 时关闭管理器，收掉子进程                                                 |
+| `packages/server/src/routers/settings/settings.schema.ts` | `mcpServers` 字段                                                                 |
+| `packages/server/src/routers/settings/settings.router.ts` | 保存后调用 `invalidate()`                                                         |
 
 ## 请求流
 
@@ -69,11 +69,12 @@ type McpServerConfig = {
 只标记）→ UI 刷新状态。
 
 **新回合**：`buildSessionAgent` 读设置 → `new McpExtension({ manager, servers })` →
-`init` 对每个 `enabled` 的服务器 `manager.acquire(id)` → 拿到 `{ status, tools }` →
-把成功的工具以 `name__tool` 注册。失败只记状态，不抛错。
+`init` 对每个 `enabled` 的服务器 `manager.acquire(server)` → 拿到租约（`{ status, tools }`
+加 `callTool` 与 `release`）→ 把成功的工具以 `name__tool` 注册。失败只记状态，不抛错；
+失败的服务器也拿到租约，归还路径因此只有一条。
 
 **工具调用**：`step-runner` 剥掉 `execute` 发起流式调用 → 模型返回工具调用 → 整批
-走 `pre_tool_call` 与审批 → `executeToolCalls` 执行包装后的工具 → `manager.call()`
+走 `pre_tool_call` 与审批 → `executeToolCalls` 执行包装后的工具 → 租约的 `callTool()`
 → `CallToolResult` → `ToolOutput`。
 
 ## 审批规则
@@ -142,6 +143,12 @@ Dialog 复用新增/编辑。每行显示状态点、工具数、失败原因。
 - 传输多了 `sse`：SDK 的远程配置本来就同时支持 `http` 与 `sse`，只是配置里的一个取值。
 - 二进制内容的原文没有进 `metadata`，只留类型、MIME 和字节数。原计划写的是「原文进
   metadata」，那会把 base64 写进每一步的存储。
+- 引用计数记在租约上，不记在服务器 id 上：配置一改，旧连接会被新的一代取代，
+  但旧租约还在进行中的回合手里，按 id 归还会把这次归还算到新连接头上。旧的一代
+  等最后一个 `release` 再断开，`invalidate()` 也不再清空工具表，否则正在跑的
+  回合会撞上 `not connected`，审批还会因为查不到注解而弃权放行。
+- 服务器名除了字符集，还拒绝 `__` 与结尾 `_`：它们会和工具名分隔符混淆，
+  切分拿到错误的服务器名，审批就查不到注解。
 - `ensureUserSettings` 现在对读到的设置跑一遍 schema。新增字段的默认值只在这里补，
   否则旧设置里没有 `mcpServers`，调用点得到 `undefined`。
 - 冒烟测试自带一个 60 行的 stdio 服务器（`tests/mcp/fixtures/echo-server.mjs`），

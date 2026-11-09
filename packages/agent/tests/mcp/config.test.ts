@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   findMcpServerProblems,
+  isValidMcpServerName,
   mcpServerSchema,
   mcpToolName,
   splitMcpToolName,
@@ -10,6 +11,27 @@ import {
 describe(mcpToolName, () => {
   test("prefixes the tool name with the server name", () => {
     expect(mcpToolName("linear", "create_issue")).toBe("linear__create_issue");
+  });
+});
+
+describe(isValidMcpServerName, () => {
+  test("accepts names that can be a tool prefix", () => {
+    for (const name of ["linear", "linear-2", "a_b", "a", "0"]) {
+      expect(isValidMcpServerName(name)).toBeTruthy();
+    }
+  });
+
+  test("rejects names that would blur the separator", () => {
+    // `ab__cd__t` 会被切分成服务器 `ab`，审批因此查不到注解。
+    expect(isValidMcpServerName("ab__cd")).toBeFalsy();
+    // 结尾下划线与分隔符连成 `___`，同样切错。
+    expect(isValidMcpServerName("ab_")).toBeFalsy();
+  });
+
+  test("rejects names outside the character set", () => {
+    for (const name of ["", "Linear", "-ab", "ab c", "ab.c", "a".repeat(33)]) {
+      expect(isValidMcpServerName(name)).toBeFalsy();
+    }
   });
 });
 
