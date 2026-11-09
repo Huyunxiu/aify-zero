@@ -233,7 +233,7 @@ export function McpSettings() {
   });
 
   const servers = serversQuery.data ?? [];
-  const statuses = statusQuery.data?.data ?? [];
+  const statuses = statusQuery.data ?? [];
 
   const statusOf = (id: string) => statuses.find((row) => row.id === id);
 
@@ -452,12 +452,19 @@ export function McpSettings() {
                 <form.Field
                   name="name"
                   validators={{
-                    onChange: ({ value }) =>
-                      !value
-                        ? t("settings.mcp.nameRequired")
-                        : isValidMcpServerName(value)
-                          ? undefined
-                          : t("settings.mcp.nameInvalid"),
+                    onChange: ({ value }) => {
+                      if (!value) {
+                        return t("settings.mcp.nameRequired");
+                      }
+                      if (!isValidMcpServerName(value)) {
+                        return t("settings.mcp.nameInvalid");
+                      }
+                      // 前缀必须唯一，否则两个服务器的工具会互相覆盖。
+                      const taken = servers.some(
+                        (row) => row.name === value && row.id !== editingId
+                      );
+                      return taken ? t("settings.mcp.nameTaken") : undefined;
+                    },
                   }}
                 >
                   {(field) => {

@@ -1,5 +1,6 @@
 import { publicProcedure } from "../../index";
 import { getMcpManager } from "../../mcp/registry";
+import { assertUniqueMcpServers } from "../../mcp/validate";
 import {
   createDict,
   findDictByCode,
@@ -61,9 +62,16 @@ export const updateUserSettingsRoute = publicProcedure
       Object.entries(input).filter(([, value]) => value !== undefined)
     );
     const merged = { ...current, ...patch };
+
+    const touchedMcp = input.mcpServers !== undefined;
+    if (touchedMcp) {
+      // 只在提交了 MCP 配置时校验：旧数据里的冲突不该把别的设置项也锁住。
+      assertUniqueMcpServers(merged.mcpServers);
+    }
+
     const saved = await saveUserSettings(merged);
 
-    if (input.mcpServers !== undefined) {
+    if (touchedMcp) {
       // 只打标记：正在跑的回合还用着旧连接，下一次装配才重建。
       getMcpManager().invalidate();
     }

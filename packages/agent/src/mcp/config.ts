@@ -85,36 +85,34 @@ export function splitMcpToolName(
   return { serverName: fullName.slice(0, at), toolName };
 }
 
+/** 一条配置与同组其它配置冲突的地方。字符集与空命令由 schema 管，这里只管跨条目。 */
+export type McpServerProblem =
+  | { kind: "duplicate-id"; id: string }
+  | { kind: "duplicate-name"; name: string };
+
 /**
  * 配置之间的一致性检查。
  *
  * 服务器名是工具名前缀，重名会让两个服务器的工具互相覆盖，因此在保存前就
- * 拦住，而不是等到注册时才发现。
+ * 拦住，而不是等到注册时才发现。id 重复会让两个条目争同一个连接槽。
  */
 export function findMcpServerProblems(
   servers: readonly McpServerConfig[]
-): string[] {
-  const problems: string[] = [];
+): McpServerProblem[] {
+  const problems: McpServerProblem[] = [];
   const seenIds = new Set<string>();
   const seenNames = new Set<string>();
 
   for (const server of servers) {
     if (seenIds.has(server.id)) {
-      problems.push(`duplicate server id: ${server.id}`);
+      problems.push({ kind: "duplicate-id", id: server.id });
     }
     seenIds.add(server.id);
 
     if (seenNames.has(server.name)) {
-      problems.push(`duplicate server name: ${server.name}`);
+      problems.push({ kind: "duplicate-name", name: server.name });
     }
     seenNames.add(server.name);
-
-    if (
-      server.transport.type === "stdio" &&
-      server.transport.command.trim() === ""
-    ) {
-      problems.push(`server "${server.name}" has an empty command`);
-    }
   }
 
   return problems;

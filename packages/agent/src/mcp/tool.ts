@@ -10,7 +10,6 @@ import type { McpToolDefinition } from "./connection";
 
 /** 单次结果的上限（256 KB）：再大的内容留给面板，不塞进上下文。 */
 const MAX_OUTPUT_BYTES = 256 * 1024;
-const MAX_OUTPUT_LINES = 10_000;
 
 export type McpContentPartSummary = {
   type: string;
@@ -128,10 +127,12 @@ function summarizeResult(
   }
 
   const text = lines.length > 0 ? lines.join("\n") : "(empty result)";
+  // 只按字节截断：行数上限由字节数自然约束（最坏情况每行 2 字节），
+  // 再加一条行规则只会让提示说错原因。
   const truncated = truncateContent({
     content: text,
     maxBytes: MAX_OUTPUT_BYTES,
-    maxLines: MAX_OUTPUT_LINES,
+    maxLines: Number.POSITIVE_INFINITY,
     direction: "head",
   });
   const wasTruncated = truncated.truncatedByBytes || truncated.truncatedByLines;

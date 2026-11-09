@@ -61,8 +61,14 @@ describe(findMcpServerProblems, () => {
 
   test("reports duplicate names, because the name is the tool prefix", () => {
     expect(findMcpServerProblems([stdio, { ...stdio, id: "b" }])).toStrictEqual(
-      ["duplicate server name: alpha"]
+      [{ kind: "duplicate-name", name: "alpha" }]
     );
+  });
+
+  test("reports duplicate ids, because they share one connection slot", () => {
+    expect(
+      findMcpServerProblems([stdio, { ...stdio, name: "beta" }])
+    ).toStrictEqual([{ kind: "duplicate-id", id: "a" }]);
   });
 
   test("accepts a well formed list", () => {

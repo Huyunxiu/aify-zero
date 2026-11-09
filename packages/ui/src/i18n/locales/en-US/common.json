@@ -80,6 +80,7 @@
       "nameHint": "Lowercase letters, digits, _ and -. It becomes the tool name prefix.",
       "nameRequired": "Name is required",
       "nameInvalid": "Use lowercase letters, digits, _ and -",
+      "nameTaken": "Another server already uses this name",
       "transport": "Transport",
       "transports": {
         "stdio": "Local process (stdio)",
