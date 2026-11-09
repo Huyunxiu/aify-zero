@@ -24,6 +24,7 @@ import {
 import { logger } from "@workspace/shared/logger";
 
 import { app } from "./app";
+import { shutdownMcp } from "./mcp/registry";
 import { SQLiteStore } from "./storage/sqlite-store";
 import { attachWebSocket } from "./ws";
 
@@ -184,7 +185,9 @@ export async function runServerProcess(): Promise<void> {
   let closing: Promise<void> | undefined;
   const shutdown = (): void => {
     closing ??= handle.close().then(
-      () => {
+      async () => {
+        // MCP 服务器可能是子进程，必须在这里收掉；进程直接退出会留下孤儿。
+        await shutdownMcp();
         closeDb();
         process.exit(0);
       },

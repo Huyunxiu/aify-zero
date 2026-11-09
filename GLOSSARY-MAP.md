@@ -5,8 +5,11 @@
 ## Contexts
 
 - [packages/ui](./packages/ui/GLOSSARY.md)：会话面板与其中的各个视图（文件、改动、终端）。
+- [packages/agent](./packages/agent/GLOSSARY.md)：会话里的模型循环，以及进入循环的工具、MCP 服务器和扩展。
 
 ## Relationships
 
 - **packages/ui ↔ packages/server**：服务端计算改动与基线，用的是同一套词；词表只写在
   `packages/ui/GLOSSARY.md`，服务端不另立说法。
+- **packages/agent → packages/ui**：工具和 MCP 工具的名字出现在会话面板里，面板用同一套
+  说法显示它们，不另起词。

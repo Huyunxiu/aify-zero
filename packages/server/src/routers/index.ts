@@ -3,6 +3,7 @@ import type { RouterClient } from "@orpc/server";
 import { t } from "../i18n";
 import { publicProcedure } from "../index";
 import { agent } from "./agent/agent.router";
+import { mcp } from "./mcp/mcp.router";
 import { project } from "./project/project.router";
 import { review } from "./review/review.router";
 import { session } from "./session/session.router";
@@ -12,6 +13,7 @@ import { workspace } from "./workspace/workspace.router";
 
 export const appRouter = {
   agent,
+  mcp,
   project,
   review,
   skill,

@@ -1,4 +1,5 @@
 import { publicProcedure } from "../../index";
+import { getMcpManager } from "../../mcp/registry";
 import {
   createDict,
   findDictByCode,
@@ -6,6 +7,7 @@ import {
 } from "../dict/dict.repository";
 import {
   updateUserSettingsSchema,
+  USER_SETTINGS_DEFAULTS,
   userSettingsSchema,
 } from "./settings.schema";
 import type { AiModel, UserSettings } from "./settings.schema";
@@ -13,20 +15,28 @@ import type { AiModel, UserSettings } from "./settings.schema";
 const USER_SETTINGS_CODE = "user.settings";
 const USER_SETTINGS_NAME = "User Settings";
 
-/** Ensure the user.settings dict entry exists, creating it with defaults if not. */
+/**
+ * Ensure the user.settings dict entry exists, creating it with defaults if not.
+ *
+ * 存下来的内容一律过一遍 schema：新增字段的默认值只在这里补齐，读到的设置
+ * 因此总是完整的一份，调用方不用到处写 `?? []`。
+ */
 async function ensureUserSettings(): Promise<UserSettings> {
   const existing = await findDictByCode(USER_SETTINGS_CODE);
   if (existing) {
-    return existing.content as UserSettings;
+    // 旧版本写下的设置缺字段，用默认值补齐再交给调用方。
+    return userSettingsSchema.parse({
+      ...USER_SETTINGS_DEFAULTS,
+      ...(existing.content as Partial<UserSettings>),
+    });
   }
 
-  const defaults = userSettingsSchema.parse({});
   await createDict({
     code: USER_SETTINGS_CODE,
     name: USER_SETTINGS_NAME,
-    content: defaults,
+    content: USER_SETTINGS_DEFAULTS,
   });
-  return defaults;
+  return USER_SETTINGS_DEFAULTS;
 }
 
 /** Persist updated settings back to the dict store. */
@@ -46,8 +56,19 @@ export const updateUserSettingsRoute = publicProcedure
   .input(updateUserSettingsSchema)
   .handler(async ({ input }) => {
     const current = await ensureUserSettings();
-    const merged = { ...current, ...input };
-    return await saveUserSettings(merged);
+    // 显式的 undefined 也算「没提交」，别用它覆盖已存的值。
+    const patch = Object.fromEntries(
+      Object.entries(input).filter(([, value]) => value !== undefined)
+    );
+    const merged = { ...current, ...patch };
+    const saved = await saveUserSettings(merged);
+
+    if (input.mcpServers !== undefined) {
+      // 只打标记：正在跑的回合还用着旧连接，下一次装配才重建。
+      getMcpManager().invalidate();
+    }
+
+    return saved;
   });
 
 /** The user's settings, created with defaults on first read. */

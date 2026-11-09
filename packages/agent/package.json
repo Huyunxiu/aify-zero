@@ -11,6 +11,7 @@
   },
   "scripts": {},
   "dependencies": {
+    "@ai-sdk/mcp": "catalog:",
     "@workspace/agent-client": "workspace:*",
     "@workspace/shared": "workspace:*",
     "ai": "catalog:",
@@ -19,7 +20,8 @@
     "glob": "catalog:",
     "nanoid": "catalog:",
     "turndown": "catalog:",
-    "uuid": "catalog:"
+    "uuid": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@ai-sdk/devtools": "catalog:",

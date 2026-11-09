@@ -12,12 +12,13 @@ import {
 } from "@workspace/ui/components/sidebar";
 import { Island, IslandGroup } from "@workspace/ui/elements/island";
 import { TitleBar } from "@workspace/ui/elements/title-bar";
-import { ChevronLeft, UserCog, Palette, Package } from "lucide-react";
+import { ChevronLeft, UserCog, Palette, Package, Plug } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AppearanceSettings } from "./appearance-settings";
 import { GeneralSettings } from "./general-settings";
+import { McpSettings } from "./mcp-settings";
 import { ModelSettings } from "./model-settings";
 
 const data = {
@@ -36,6 +37,11 @@ const data = {
       key: "model",
       titleKey: "settings.model.title" as const,
       icon: Package,
+    },
+    {
+      key: "mcp",
+      titleKey: "settings.mcp.title" as const,
+      icon: Plug,
     },
   ],
 };
@@ -88,6 +94,7 @@ export const Settings = ({ onClose }: SettingsProps) => {
             <TitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3" />
             {activeTab === "appearance" && <AppearanceSettings />}
             {activeTab === "general" && <GeneralSettings />}
+            {activeTab === "mcp" && <McpSettings />}
             {activeTab === "model" && <ModelSettings />}
           </Island>
         </IslandGroup>

@@ -14,6 +14,8 @@ export default defineConfig({
       ".agents/**",
       "packages/ui/src/routeTree.gen.ts",
       "packages/db/src/migrations",
+      // 冒烟测试用的 MCP 服务器是运行脚本，不参与类型感知检查。
+      "packages/agent/tests/mcp/fixtures/**",
       "packages/ui/src/components/**.tsx",
       "packages/ui/src/elements/prompt-input.tsx",
       "packages/ui/src/elements/message.tsx",
@@ -30,6 +32,8 @@ export default defineConfig({
       // 归属到任何项目；格式化仍然覆盖它。
       "apps/desktop/vite.renderer.config.mts",
       "packages/db/src/migrations",
+      // 冒烟测试用的 MCP 服务器是运行脚本，不参与类型感知检查。
+      "packages/agent/tests/mcp/fixtures/**",
       "packages/ui/src/components/**.tsx",
       "packages/ui/src/elements/prompt-input.tsx",
       "packages/ui/src/elements/message.tsx",

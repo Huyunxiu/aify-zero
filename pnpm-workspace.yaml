@@ -20,6 +20,7 @@ allowBuilds:
   msw: true
 catalog:
   "@ai-sdk/devtools": 1.0.42
+  "@ai-sdk/mcp": ^2.0.74
   "@ai-sdk/openai-compatible": ^3.0.68
   "@ai-sdk/react": 4.0.142
   "@base-ui/react": ^1.9.0

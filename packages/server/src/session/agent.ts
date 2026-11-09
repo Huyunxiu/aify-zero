@@ -1,10 +1,12 @@
 import { mkdirSync } from "node:fs";
 
 import {
+  createMcpToolApprovalPattern,
   createSessionAgent,
   ContextExtension,
   FileSystemContextSource,
   FileSystemSkillSource,
+  McpExtension,
   SkillExtension,
 } from "@workspace/agent";
 import type { Agent } from "@workspace/agent";
@@ -13,6 +15,7 @@ import type { ModelEffort } from "@workspace/shared/constants";
 
 import { getSessionDir } from "../config";
 import { JOB_REGISTRY } from "../jobs";
+import { getMcpManager } from "../mcp/registry";
 import { getProjectDirs } from "../routers/project/project.service";
 import type { AiModel } from "../routers/settings/settings.schema";
 import { getUserSettings } from "../routers/settings/settings.service";
@@ -58,6 +61,10 @@ export async function buildSessionAgent({
 
   // 默认扩展和工具装配由 agent 包的组合根决定；这里只提供宿主才能知道的
   // 东西：目录、模型、设置和文件系统资源。
+  //
+  // MCP 连接归进程，不归会话：每回合都会走到这里，扩展只向管理器要快照。
+  const mcpManager = getMcpManager();
+
   return await createSessionAgent({
     sessionId,
     store,
@@ -75,7 +82,14 @@ export async function buildSessionAgent({
     compactionOverrides: settings.compaction,
     modelContextWindows,
     jobs: JOB_REGISTRY,
+    // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。
+    toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),
     extensions: [
+      new McpExtension({
+        id: "mcp",
+        manager: mcpManager,
+        servers: settings.mcpServers,
+      }),
       new SkillExtension({
         id: "filesystem-skills",
         sources: [new FileSystemSkillSource()],
