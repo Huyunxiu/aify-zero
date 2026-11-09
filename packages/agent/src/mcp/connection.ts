@@ -56,10 +56,6 @@ export class McpConnection {
       options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
   }
 
-  get connected(): boolean {
-    return this.#client !== undefined;
-  }
-
   /** 建连并完成握手；并发调用共用同一次握手。 */
   async connect(): Promise<void> {
     if (this.#client) {

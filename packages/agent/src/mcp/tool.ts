@@ -18,8 +18,8 @@ export type McpContentPartSummary = {
 };
 
 export type McpToolOutputMetadata = {
-  server: string;
-  tool: string;
+  serverName: string;
+  toolName: string;
   isError: boolean;
   truncated: boolean;
   /** 没有交给模型的二进制部分，只留摘要。 */
@@ -145,8 +145,8 @@ function summarizeResult(
     output,
     code: result.isError === true ? "error" : "ok",
     metadata: {
-      server: server.name,
-      tool: definition.name,
+      serverName: server.name,
+      toolName: definition.name,
       isError: result.isError === true,
       truncated: wasTruncated,
       parts,
@@ -194,8 +194,8 @@ export function createMcpTool({
           output: `MCP tool "${definition.name}" on server "${server.name}" failed: ${getErrorMessage(error)}`,
           code: "error",
           metadata: {
-            server: server.name,
-            tool: definition.name,
+            serverName: server.name,
+            toolName: definition.name,
             isError: true,
             truncated: false,
             parts: [],

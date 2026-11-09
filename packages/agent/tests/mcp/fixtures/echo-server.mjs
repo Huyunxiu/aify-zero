@@ -20,6 +20,13 @@ const tools = [
 
 let buffer = "";
 
+// 冒烟测试要知道这个进程是否真的退出了；没有这个环境变量就什么也不做。
+const pidFile = process.env.ECHO_PID_FILE;
+if (pidFile) {
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(pidFile, String(process.pid));
+}
+
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }

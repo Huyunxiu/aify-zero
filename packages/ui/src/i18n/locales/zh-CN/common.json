@@ -110,6 +110,7 @@
       "testOk": "连接成功，共 {{count}} 个工具。",
       "testFailed": "失败：{{error}}",
       "toolCount": "{{count}} 个工具",
+      "manyTools": "每个回合都会进提示词",
       "status": {
         "idle": "未连接",
         "connecting": "连接中",
