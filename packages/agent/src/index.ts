@@ -9,6 +9,7 @@ export * from "./resources";
 export * from "./tools";
 export * from "./hooks-manager";
 export * from "./jobs";
+export * from "./mcp";
 export type * from "./types";
 export * from "./stream-registry";
 export * from "./subagent";

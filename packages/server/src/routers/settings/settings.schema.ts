@@ -1,3 +1,4 @@
+import { mcpServerSchema } from "@workspace/agent/mcp/config";
 import z from "zod";
 
 export const Modality = z.enum(["text", "audio", "image", "video", "pdf"]);
@@ -45,26 +46,52 @@ export const compactionSettingsSchema = z.object({
 
 export type CompactionSettings = z.infer<typeof compactionSettingsSchema>;
 
+/**
+ * 完整的一份设置。
+ *
+ * 这里故意不给字段写 `.default()`：默认值是「第一次创建」的事，不是「每次
+ * 解析」的事。写在这里的话，`partial()` 会把没提交的字段也补成默认值，
+ * `{...current, ...input}` 于是把它们清空 —— 保存 MCP 服务器会连带清掉
+ * 模型列表，就是这个原因。
+ */
 export const userSettingsSchema = z.object({
   /** UI theme preference */
-  theme: z.enum(["light", "dark", "system"]).default("system"),
+  theme: z.enum(["light", "dark", "system"]),
   /** Interface language */
-  language: z.string().default("en-US"),
+  language: z.string(),
   /** Default AI model ID to use */
-  defaultModel: z.string().default(""),
+  defaultModel: z.string(),
   /** Configured AI models */
-  models: z.array(aiModelSchema).default([]),
+  models: z.array(aiModelSchema),
+  /** MCP 服务器；连接由进程共享，配置只存在这里。 */
+  mcpServers: z.array(mcpServerSchema),
   /** 上下文压缩；默认开启，并使用保守的预算。 */
-  compaction: compactionSettingsSchema.default({
+  compaction: compactionSettingsSchema,
+});
+
+export type UserSettings = z.infer<typeof userSettingsSchema>;
+
+/** 第一次创建 `user.settings` 时写入的值。 */
+export const USER_SETTINGS_DEFAULTS: UserSettings = {
+  theme: "system",
+  language: "en-US",
+  defaultModel: "",
+  models: [],
+  mcpServers: [],
+  compaction: {
     auto: true,
     thresholdRatio: 0.8,
     reserveTokens: 16_384,
     keepRecentTokens: 20_000,
     pruneToolResults: true,
     maxSummaryTokens: 8192,
-  }),
-});
+  },
+};
 
-export type UserSettings = z.infer<typeof userSettingsSchema>;
-
+/**
+ * PATCH 形状。
+ *
+ * 只带调用方真给了的字段：`.partial()` 之后没有默认值可补，缺的键仍然是
+ * `undefined`，合并时不会覆盖已存的设置。
+ */
 export const updateUserSettingsSchema = userSettingsSchema.partial();

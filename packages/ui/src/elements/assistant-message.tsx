@@ -1,5 +1,5 @@
 import type { AgentToolSet } from "@workspace/agent";
-import { isAgentToolPart } from "@workspace/agent-client";
+import { getToolName, isAgentToolPart } from "@workspace/agent-client";
 import type {
   AgentAssistantTurn,
   AgentPart,
@@ -21,6 +21,7 @@ import {
   FilePenIcon,
   ListChecksIcon,
   Minimize2Icon,
+  WrenchIcon,
 } from "lucide-react";
 
 import {
@@ -1254,6 +1255,83 @@ export const AssistantMessage = ({
                           <div className="whitespace-pre">
                             {part.output?.output ?? ""}
                           </div>
+                        </FramePanel>
+                        {renderToolError(part)}
+                      </Frame>
+                    </AgentActivityStep>
+                    <AgentActivityApproval
+                      part={part}
+                      onRespondToolApproval={onRespondToolApproval}
+                    />
+                  </>
+                );
+              } else if (isAgentToolPart(part)) {
+                // 兜底分支：没有专属渲染的工具都走这里。MCP 工具的渲染因此
+                // 不需要逐个写，新加的内置工具也不会在面板里消失。
+                const toolName = getToolName(part);
+                const separator = toolName.indexOf("__");
+                const serverName =
+                  separator > 0 ? toolName.slice(0, separator) : undefined;
+                const shortName =
+                  separator > 0 ? toolName.slice(separator + 2) : toolName;
+                const input = JSON.stringify(part.input ?? null, null, 2) ?? "";
+                const output = (part.output as { output?: string } | undefined)
+                  ?.output;
+
+                return (
+                  <>
+                    <AgentActivityStep
+                      key={i}
+                      path={`${i}`}
+                      icon={WrenchIcon}
+                      label={getStepLabel(
+                        serverName ? `${serverName} · ${shortName}` : shortName
+                      )}
+                      status={status}
+                      summary={summary}
+                      duration={duration}
+                    >
+                      <Frame variant="default" overflowBehavior="scroll">
+                        <FrameHeader>
+                          <FrameTitle>
+                            {serverName
+                              ? `${serverName} · ${shortName}`
+                              : shortName}
+                          </FrameTitle>
+                          <div>
+                            <CopyButton
+                              className="text-muted-foreground"
+                              size="icon-sm"
+                              variant="ghost"
+                              label="Copy"
+                              message={input}
+                            />
+                          </div>
+                        </FrameHeader>
+                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                          <div className="text-muted-foreground">INPUT</div>
+                        </div>
+                        <FramePanel
+                          className={cn({ "rounded-b-none": part.approval })}
+                        >
+                          <div className="whitespace-pre">{input}</div>
+                        </FramePanel>
+                        {getInlineToolApprovalComponent(part)}
+
+                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+                          <div className="text-muted-foreground">OUTPUT</div>
+                          <div>
+                            <CopyButton
+                              className="text-muted-foreground"
+                              size="icon-sm"
+                              variant="ghost"
+                              label="Copy"
+                              message={output ?? ""}
+                            />
+                          </div>
+                        </div>
+                        <FramePanel>
+                          <div className="whitespace-pre">{output ?? ""}</div>
                         </FramePanel>
                         {renderToolError(part)}
                       </Frame>
