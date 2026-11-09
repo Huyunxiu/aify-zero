@@ -1,6 +1,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isValidMcpServerName } from "@workspace/agent/mcp/config";
+import type { McpServerStatus } from "@workspace/agent/mcp/manager";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -185,13 +186,23 @@ function toForm(server: McpServerRow): McpFormValues {
   };
 }
 
-/** 状态点：颜色只说明连通性，文字由 Badge 给。 */
-const STATUS_DOT: Record<string, string> = {
+/** 状态点：颜色只说明连通性，文字由旁边的标签给。 */
+const STATUS_DOT: Record<McpServerStatus, string> = {
   idle: "bg-muted-foreground/40",
   connecting: "bg-amber-500",
   ready: "bg-emerald-500",
   failed: "bg-destructive",
 };
+
+const STATUS_LABEL_KEY: Record<McpServerStatus, string> = {
+  idle: "settings.mcp.status.idle",
+  connecting: "settings.mcp.status.connecting",
+  ready: "settings.mcp.status.ready",
+  failed: "settings.mcp.status.failed",
+};
+
+/** 超过这个工具数就把成本说出来；不自动禁用。 */
+const MANY_TOOLS = 50;
 
 export function McpSettings() {
   const { t } = useTranslation();
@@ -286,12 +297,7 @@ export function McpSettings() {
   return (
     <div className="mx-auto flex w-2xl flex-col">
       <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="font-bold text-xl">{t("settings.mcp.title")}</h1>
-          <p className="text-muted-foreground text-sm">
-            {t("settings.mcp.description")}
-          </p>
-        </div>
+        <h1 className="font-bold text-xl">{t("settings.mcp.title")}</h1>
         <Button size="sm" onClick={openCreate}>
           <PlusIcon />
           {t("settings.mcp.addServer")}
@@ -310,7 +316,7 @@ export function McpSettings() {
             ) : (
               servers.map((server) => {
                 const status = statusOf(server.id);
-                const label = status?.status ?? "idle";
+                const label: McpServerStatus = status?.status ?? "idle";
 
                 return (
                   <TableRow key={server.id}>
@@ -334,11 +340,20 @@ export function McpSettings() {
                       ) : null}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
-                      {status?.toolCount
-                        ? t("settings.mcp.toolCount", {
+                      {status?.toolCount ? (
+                        <>
+                          {t("settings.mcp.toolCount", {
                             count: status.toolCount,
-                          })
-                        : t(`settings.mcp.status.${label}`)}
+                          })}
+                          {status.toolCount > MANY_TOOLS ? (
+                            <span className="ml-2 text-amber-600">
+                              {t("settings.mcp.manyTools")}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        t(STATUS_LABEL_KEY[label])
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">

@@ -2,7 +2,6 @@ import type { AgentToolSet } from "@workspace/agent";
 import { getToolName, isAgentToolPart } from "@workspace/agent-client";
 import type {
   AgentAssistantTurn,
-  AgentPart,
   AgentToolPart,
 } from "@workspace/agent-client";
 import {
@@ -23,6 +22,7 @@ import {
   Minimize2Icon,
   WrenchIcon,
 } from "lucide-react";
+import type { ReactNode } from "react";
 
 import {
   AgentActivity,
@@ -210,32 +210,140 @@ const TURN_HEADING = {
   error: "Failed",
 } as const;
 
-const renderToolError = (part: AgentPart<AgentToolSet>) => {
-  if (!isAgentToolPart(part)) {
-    return;
+const renderToolError = (part: AgentToolPart) => {
+  if (part.state !== "output-error" || !part.errorText) {
+    return null;
   }
 
   return (
-    part.state === "output-error" &&
-    part.errorText && (
-      <>
-        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-          <div className="text-muted-foreground">ERROR</div>
-          <div>
-            <CopyButton
-              className="text-muted-foreground"
-              size="icon-sm"
-              variant="ghost"
-              label="Copy"
-              message={part.errorText ?? ""}
-            />
-          </div>
+    <>
+      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
+        <div className="text-muted-foreground">ERROR</div>
+        <div>
+          <CopyButton
+            className="text-muted-foreground"
+            size="icon-sm"
+            variant="ghost"
+            label="Copy"
+            message={part.errorText}
+          />
         </div>
-        <FramePanel>
-          <div className="whitespace-pre">{part.errorText ?? ""}</div>
-        </FramePanel>
-      </>
-    )
+      </div>
+      <FramePanel>
+        <div className="whitespace-pre">{part.errorText}</div>
+      </FramePanel>
+    </>
+  );
+};
+
+/** 工具面板里的一段：标签，以及有内容时的复制按钮。 */
+const ToolSectionLabel = ({
+  label,
+  copy,
+}: {
+  label: string;
+  copy?: string;
+}) => (
+  <div className="flex items-center justify-between pr-1 pl-4 mb-1">
+    <div className="text-muted-foreground">{label}</div>
+    {copy === undefined ? null : (
+      <div>
+        <CopyButton
+          className="text-muted-foreground"
+          size="icon-sm"
+          variant="ghost"
+          label="Copy"
+          message={copy}
+        />
+      </div>
+    )}
+  </div>
+);
+
+/** 审批条：一次调用的批准与拒绝。没有待批请求时什么也不画。 */
+const InlineToolApproval = ({
+  part,
+  onRespond,
+}: {
+  part: AgentToolPart;
+  onRespond?: AssistantMessageProps["onRespondToolApproval"];
+}) => {
+  const { approval } = part;
+  if (!approval) {
+    return null;
+  }
+
+  return (
+    <FramePanel className="rounded-t-none -mt-1 px-2.5 py-2.5">
+      <div className="flex items-center gap-2">
+        <Button
+          variant={approval.approved === true ? "success" : "default"}
+          onClick={() => onRespond?.(approval.id, true)}
+          size="sm"
+        >
+          {approval.approved ? "Approved" : "Approve"}
+        </Button>
+        {approval.approved === undefined && (
+          <Button
+            onClick={() => onRespond?.(approval.id, false)}
+            size="sm"
+            variant="outline"
+          >
+            Deny
+          </Button>
+        )}
+      </div>
+    </FramePanel>
+  );
+};
+
+/**
+ * INPUT 与 OUTPUT 的骨架。
+ *
+ * 十一个工具分支原本各自抄一遍这段：复制按钮、审批条、错误块都在一起。差别
+ * 只在标题、图标和中间那一段，所以把中间留给 `children`。
+ */
+const ToolPanels = ({
+  part,
+  onRespond,
+  children,
+  hideOutput = false,
+  renderOutput,
+}: {
+  part: AgentToolPart;
+  onRespond?: AssistantMessageProps["onRespondToolApproval"];
+  /** INPUT 与 OUTPUT 之间的内容，例如 edit-file 的 diff。 */
+  children?: ReactNode;
+  /** 没有结果可显示时不画 OUTPUT，例如没有启动子会话的 task。 */
+  hideOutput?: boolean;
+  /** 内容需要富文本渲染时替换默认的等宽正文。 */
+  renderOutput?: (text: string) => ReactNode;
+}) => {
+  const input = JSON.stringify(part.input, null, 2) ?? "";
+  const output = (part.output as { output?: string } | undefined)?.output ?? "";
+
+  return (
+    <>
+      <ToolSectionLabel label="INPUT" copy={input} />
+      <FramePanel className={cn({ "rounded-b-none": part.approval })}>
+        <div className="whitespace-pre">{input}</div>
+      </FramePanel>
+      <InlineToolApproval part={part} onRespond={onRespond} />
+      {children}
+      {hideOutput ? null : (
+        <>
+          <ToolSectionLabel label="OUTPUT" copy={output} />
+          <FramePanel>
+            {renderOutput ? (
+              renderOutput(output)
+            ) : (
+              <div className="whitespace-pre">{output}</div>
+            )}
+          </FramePanel>
+        </>
+      )}
+      {renderToolError(part)}
+    </>
   );
 };
 
@@ -259,35 +367,6 @@ export const AssistantMessage = ({
   const selectSubagent = useSubagentPane((state) => state.select);
 
   const { answerPart, entries, parts } = splitAssistantMessageSteps(turn);
-
-  const getInlineToolApprovalComponent = (part: AgentToolPart) => {
-    if (!part.approval) {
-      return;
-    }
-
-    return (
-      <FramePanel className="rounded-t-none -mt-1 px-2.5 py-2.5">
-        <div className="flex items-center gap-2">
-          <Button
-            variant={part.approval.approved === true ? "success" : "default"}
-            onClick={() => onRespondToolApproval?.(part.approval!.id, true)}
-            size="sm"
-          >
-            {part.approval.approved ? "Approved" : "Approve"}
-          </Button>
-          {part.approval.approved === undefined && (
-            <Button
-              onClick={() => onRespondToolApproval?.(part.approval!.id, false)}
-              size="sm"
-              variant="outline"
-            >
-              Deny
-            </Button>
-          )}
-        </div>
-      </FramePanel>
-    );
-  };
 
   return (
     <div className="group flex w-full items-start gap-3 pr-8">
@@ -453,47 +532,10 @@ export const AssistantMessage = ({
                         <FrameHeader>
                           <FrameTitle>Read</FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -518,47 +560,10 @@ export const AssistantMessage = ({
                         <FrameHeader>
                           <FrameTitle>Create</FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -583,47 +588,10 @@ export const AssistantMessage = ({
                         <FrameHeader>
                           <FrameTitle>Delete</FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -651,111 +619,73 @@ export const AssistantMessage = ({
                         <FrameHeader>
                           <FrameTitle>Edit</FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
                         >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">DIFF</div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre-wrap wrap-break-word font-mono text-xs">
-                            {actualDiff
-                              ? actualDiff.split("\n").map((line, j) => {
-                                  const { sign, text } =
-                                    parseRenderedDiffLine(line);
-                                  return (
-                                    <div
-                                      key={j}
-                                      className={
-                                        sign === "-"
-                                          ? "text-destructive"
-                                          : sign === "+"
-                                            ? "text-green-600"
-                                            : "text-muted-foreground"
-                                      }
-                                    >
-                                      {sign}
-                                      {text}
-                                    </div>
-                                  );
-                                })
-                              : (part.input?.edits ?? []).map(
-                                  (block, blockIndex) => {
-                                    // 流式输出期间 input 是 DeepPartial，
-                                    // 未拼完整的编辑块先不渲染。
-                                    if (
-                                      typeof block?.oldText !== "string" ||
-                                      typeof block?.newText !== "string"
-                                    ) {
-                                      return null;
-                                    }
+                          <ToolSectionLabel label="DIFF" />
+                          <FramePanel>
+                            <div className="whitespace-pre-wrap wrap-break-word font-mono text-xs">
+                              {actualDiff
+                                ? actualDiff.split("\n").map((line, j) => {
+                                    const { sign, text } =
+                                      parseRenderedDiffLine(line);
                                     return (
                                       <div
-                                        key={blockIndex}
+                                        key={j}
                                         className={
-                                          blockIndex > 0 ? "mt-2" : undefined
+                                          sign === "-"
+                                            ? "text-destructive"
+                                            : sign === "+"
+                                              ? "text-green-600"
+                                              : "text-muted-foreground"
                                         }
                                       >
-                                        {editDiffLines(
-                                          block.oldText,
-                                          block.newText
-                                        ).map((line, j) => (
-                                          <div
-                                            key={j}
-                                            className={
-                                              line.sign === "-"
-                                                ? "text-destructive"
-                                                : "text-green-600"
-                                            }
-                                          >
-                                            {line.sign}
-                                            {line.text}
-                                          </div>
-                                        ))}
+                                        {sign}
+                                        {text}
                                       </div>
                                     );
-                                  }
-                                )}
-                          </div>
-                        </FramePanel>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                                  })
+                                : (part.input?.edits ?? []).map(
+                                    (block, blockIndex) => {
+                                      // 流式输出期间 input 是 DeepPartial，
+                                      // 未拼完整的编辑块先不渲染。
+                                      if (
+                                        typeof block?.oldText !== "string" ||
+                                        typeof block?.newText !== "string"
+                                      ) {
+                                        return null;
+                                      }
+                                      return (
+                                        <div
+                                          key={blockIndex}
+                                          className={
+                                            blockIndex > 0 ? "mt-2" : undefined
+                                          }
+                                        >
+                                          {editDiffLines(
+                                            block.oldText,
+                                            block.newText
+                                          ).map((line, j) => (
+                                            <div
+                                              key={j}
+                                              className={
+                                                line.sign === "-"
+                                                  ? "text-destructive"
+                                                  : "text-green-600"
+                                              }
+                                            >
+                                              {line.sign}
+                                              {line.text}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      );
+                                    }
+                                  )}
+                            </div>
+                          </FramePanel>
+                        </ToolPanels>
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -780,47 +710,10 @@ export const AssistantMessage = ({
                         <FrameHeader>
                           <FrameTitle>Grep</FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -845,47 +738,10 @@ export const AssistantMessage = ({
                         <FrameHeader>
                           <FrameTitle>Glob</FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -910,47 +766,10 @@ export const AssistantMessage = ({
                         <FrameHeader>
                           <FrameTitle>Fetch</FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -977,47 +796,15 @@ export const AssistantMessage = ({
                             Load skill {part.input?.skill}
                           </FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <MessageResponse controls={FRAME_CONTROLS}>
-                            {part.output?.output ?? ""}
-                          </MessageResponse>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                          renderOutput={(text) => (
+                            <MessageResponse controls={FRAME_CONTROLS}>
+                              {text}
+                            </MessageResponse>
+                          )}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -1049,47 +836,10 @@ export const AssistantMessage = ({
                             {getStepLabel(shellAction, part.input?.description)}
                           </FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={part.output?.output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -1147,53 +897,16 @@ export const AssistantMessage = ({
                             {getStepLabel("Task", part.input?.description)}
                           </FrameTitle>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={
-                                JSON.stringify(part.input, null, 2) ?? ""
-                              }
-                            />
-                          </div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">
-                            {JSON.stringify(part.input, null, 2) ?? ""}
-                          </div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        {showResult && (
-                          <>
-                            <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                              <div className="text-muted-foreground">
-                                OUTPUT
-                              </div>
-                              <div>
-                                <CopyButton
-                                  className="text-muted-foreground"
-                                  size="icon-sm"
-                                  variant="ghost"
-                                  label="Copy"
-                                  message={result}
-                                />
-                              </div>
-                            </div>
-                            <FramePanel>
-                              <MessageResponse controls={FRAME_CONTROLS}>
-                                {result}
-                              </MessageResponse>
-                            </FramePanel>
-                          </>
-                        )}
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                          hideOutput={!showResult}
+                          renderOutput={(text) => (
+                            <MessageResponse controls={FRAME_CONTROLS}>
+                              {text}
+                            </MessageResponse>
+                          )}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -1274,10 +987,6 @@ export const AssistantMessage = ({
                   separator > 0 ? toolName.slice(0, separator) : undefined;
                 const shortName =
                   separator > 0 ? toolName.slice(separator + 2) : toolName;
-                const input = JSON.stringify(part.input ?? null, null, 2) ?? "";
-                const output = (part.output as { output?: string } | undefined)
-                  ?.output;
-
                 return (
                   <>
                     <AgentActivityStep
@@ -1298,42 +1007,11 @@ export const AssistantMessage = ({
                               ? `${serverName} · ${shortName}`
                               : shortName}
                           </FrameTitle>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={input}
-                            />
-                          </div>
                         </FrameHeader>
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">INPUT</div>
-                        </div>
-                        <FramePanel
-                          className={cn({ "rounded-b-none": part.approval })}
-                        >
-                          <div className="whitespace-pre">{input}</div>
-                        </FramePanel>
-                        {getInlineToolApprovalComponent(part)}
-
-                        <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-                          <div className="text-muted-foreground">OUTPUT</div>
-                          <div>
-                            <CopyButton
-                              className="text-muted-foreground"
-                              size="icon-sm"
-                              variant="ghost"
-                              label="Copy"
-                              message={output ?? ""}
-                            />
-                          </div>
-                        </div>
-                        <FramePanel>
-                          <div className="whitespace-pre">{output ?? ""}</div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                        <ToolPanels
+                          part={part}
+                          onRespond={onRespondToolApproval}
+                        />
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval

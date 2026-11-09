@@ -110,6 +110,7 @@
       "testOk": "Connected. {{count}} tools.",
       "testFailed": "Failed: {{error}}",
       "toolCount": "{{count}} tools",
+      "manyTools": "Adds to the prompt every turn",
       "status": {
         "idle": "Not connected",
         "connecting": "Connecting",
