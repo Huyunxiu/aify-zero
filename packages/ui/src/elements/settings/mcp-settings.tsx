@@ -1,5 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { isValidMcpServerName } from "@workspace/agent/mcp/config";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -93,8 +94,6 @@ const EMPTY_FORM: McpFormValues = {
   url: "",
   headers: "",
 };
-
-const SERVER_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 
 /** "KEY=VALUE" 每行一条；空行和 `#` 注释忽略。 */
 function parsePairs(text: string): Record<string, string> {
@@ -456,7 +455,7 @@ export function McpSettings() {
                     onChange: ({ value }) =>
                       !value
                         ? t("settings.mcp.nameRequired")
-                        : SERVER_NAME_PATTERN.test(value)
+                        : isValidMcpServerName(value)
                           ? undefined
                           : t("settings.mcp.nameInvalid"),
                   }}

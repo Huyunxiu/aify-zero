@@ -56,6 +56,19 @@ describe(createMcpToolApprovalPattern, () => {
     expect(decide(request("read-file"))).toBeUndefined();
   });
 
+  test("abstains for a prefix that is not one of its servers", async () => {
+    const decide = await pattern();
+    expect(decide(request("other__list_issues"))).toBeUndefined();
+  });
+
+  test("asks when a known server has no such tool", async () => {
+    // 旧回合手里的工具、被取代的一代：查不到注解时按不可信处理。
+    const decide = await pattern({ autoApprove: true });
+    expect(decide(request("linear__forgotten_tool"))).toStrictEqual({
+      decision: "ask",
+    });
+  });
+
   test("allows a read-only tool without asking", async () => {
     const decide = await pattern();
     expect(decide(request("linear__list_issues"))).toStrictEqual({

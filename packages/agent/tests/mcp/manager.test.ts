@@ -71,10 +71,10 @@ describe(McpManager, () => {
     const spies = createSpies();
     const { manager, factory } = createManager(spies);
 
-    await manager.acquire(server);
-    await manager.acquire(server);
-    manager.release(server.id);
-    manager.release(server.id);
+    const first = await manager.acquire(server);
+    const second = await manager.acquire(server);
+    first.release();
+    second.release();
 
     expect(factory).toHaveBeenCalledOnce();
     expect(spies.listTools).toHaveBeenCalledOnce();
@@ -84,12 +84,16 @@ describe(McpManager, () => {
     const spies = createSpies();
     const { manager, factory } = createManager(spies);
 
-    await Promise.all([manager.acquire(server), manager.acquire(server)]);
+    const leases = await Promise.all([
+      manager.acquire(server),
+      manager.acquire(server),
+    ]);
 
     expect(factory).toHaveBeenCalledOnce();
     expect(spies.listTools).toHaveBeenCalledOnce();
-    manager.release(server.id);
-    manager.release(server.id);
+    for (const lease of leases) {
+      lease.release();
+    }
   });
 
   test("keeps the connection while the idle window has not elapsed", async () => {
@@ -97,8 +101,8 @@ describe(McpManager, () => {
     const spies = createSpies();
     const { manager } = createManager(spies, { idleTimeoutMs: 1000 });
 
-    await manager.acquire(server);
-    manager.release(server.id);
+    const lease = await manager.acquire(server);
+    lease.release();
     await vi.advanceTimersByTimeAsync(500);
 
     expect(spies.close).not.toHaveBeenCalled();
@@ -109,8 +113,8 @@ describe(McpManager, () => {
     const spies = createSpies();
     const { manager } = createManager(spies, { idleTimeoutMs: 1000 });
 
-    await manager.acquire(server);
-    manager.release(server.id);
+    const lease = await manager.acquire(server);
+    lease.release();
     await vi.advanceTimersByTimeAsync(1500);
 
     expect(spies.close).toHaveBeenCalledOnce();
@@ -120,11 +124,12 @@ describe(McpManager, () => {
     const spies = createSpies();
     const { manager } = createManager(spies);
 
-    await manager.acquire(server);
-    await manager.acquire(server);
-    manager.release(server.id);
+    const first = await manager.acquire(server);
+    const second = await manager.acquire(server);
+    first.release();
 
     expect(spies.close).not.toHaveBeenCalled();
+    second.release();
   });
 
   test("reports a failed server instead of throwing", async () => {
@@ -132,10 +137,11 @@ describe(McpManager, () => {
     spies.listTools.mockRejectedValue(new Error("command not found"));
     const { manager } = createManager(spies);
 
-    const snapshot = await manager.acquire(server);
+    const lease = await manager.acquire(server);
 
-    expect(snapshot.status).toBe("failed");
-    expect(snapshot.error).toContain("command not found");
+    expect(lease.status).toBe("failed");
+    expect(lease.error).toContain("command not found");
+    lease.release();
   });
 
   test("caches a failure for the retry window", async () => {
@@ -143,66 +149,127 @@ describe(McpManager, () => {
     spies.listTools.mockRejectedValue(new Error("boom"));
     const { manager } = createManager(spies);
 
-    await manager.acquire(server);
-    await manager.acquire(server);
+    const first = await manager.acquire(server);
+    const second = await manager.acquire(server);
+    first.release();
+    second.release();
 
     expect(spies.listTools).toHaveBeenCalledOnce();
+  });
+
+  test("returns the reference count after concurrent failures", async () => {
+    vi.useFakeTimers();
+    const spies = createSpies();
+    spies.listTools.mockRejectedValue(new Error("boom"));
+    const { manager } = createManager(spies, { idleTimeoutMs: 1000 });
+
+    const leases = await Promise.all([
+      manager.acquire(server),
+      manager.acquire(server),
+    ]);
+    for (const lease of leases) {
+      lease.release();
+    }
+    // 失败时连接已经收过一次；引用归零后空闲计时器还会再收一次。
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(spies.close).toHaveBeenCalledTimes(2);
   });
 
   test("reconnects when the config changes", async () => {
     const spies = createSpies();
     const { manager, factory } = createManager(spies);
 
-    await manager.acquire(server);
-    await manager.acquire({ ...server, autoApprove: true });
+    const first = await manager.acquire(server);
+    const second = await manager.acquire({ ...server, autoApprove: true });
 
     expect(factory).toHaveBeenCalledTimes(2);
+    // 旧的一代还有人拿着，不能中途断开。
+    expect(spies.close).not.toHaveBeenCalled();
+
+    first.release();
     expect(spies.close).toHaveBeenCalledOnce();
+    second.release();
   });
 
   test("reconnects after invalidate, but not before the next acquire", async () => {
     const spies = createSpies();
     const { manager, factory } = createManager(spies);
 
-    await manager.acquire(server);
+    const first = await manager.acquire(server);
     manager.invalidate();
 
     expect(spies.close).not.toHaveBeenCalled();
 
-    await manager.acquire(server);
+    const second = await manager.acquire(server);
     expect(factory).toHaveBeenCalledTimes(2);
+
+    first.release();
+    second.release();
+  });
+
+  test("keeps a running turn working after invalidate", async () => {
+    const spies = createSpies();
+    const { manager } = createManager(spies);
+    const lease = await manager.acquire(server);
+
+    manager.invalidate();
+
+    await expect(lease.callTool("list_issues", {})).resolves.toMatchObject({
+      content: [{ type: "text", text: "ok" }],
+    });
+    // 审批靠旧工具表认注解，失效后也必须查得到。
+    expect(manager.resolveTool("linear__list_issues")).toMatchObject({
+      definition: { annotations: { readOnlyHint: true } },
+    });
+    lease.release();
   });
 
   test("resolves a prefixed tool name back to its server and annotations", async () => {
     const spies = createSpies();
     const { manager } = createManager(spies);
-    await manager.acquire(server);
+    const lease = await manager.acquire(server);
 
     expect(manager.resolveTool("linear__list_issues")).toMatchObject({
       server: { name: "linear" },
       definition: { name: "list_issues", annotations: { readOnlyHint: true } },
     });
     expect(manager.resolveTool("read-file")).toBeUndefined();
+    lease.release();
+  });
+
+  test("knows its own server prefixes", async () => {
+    const spies = createSpies();
+    const { manager } = createManager(spies);
+    const lease = await manager.acquire(server);
+
+    expect(manager.hasServer("linear")).toBeTruthy();
+    expect(manager.hasServer("other")).toBeFalsy();
+    lease.release();
   });
 
   test("calls a tool through the live connection", async () => {
     const spies = createSpies();
     const { manager } = createManager(spies);
-    await manager.acquire(server);
+    const lease = await manager.acquire(server);
 
-    const result = await manager.callTool(server, "list_issues", {});
+    const result = await lease.callTool("list_issues", {});
 
-    expect(spies.callTool).toHaveBeenCalledWith("list_issues", {}, {});
+    expect(spies.callTool).toHaveBeenCalledWith("list_issues", {}, undefined);
     expect(result).toMatchObject({ content: [{ type: "text" }] });
+    lease.release();
   });
 
   test("refuses to call a tool while the server is not connected", async () => {
     const spies = createSpies();
+    spies.listTools.mockRejectedValue(new Error("nope"));
     const { manager } = createManager(spies);
+    const lease = await manager.acquire(server);
 
-    await expect(manager.callTool(server, "list_issues", {})).rejects.toThrow(
+    await expect(lease.callTool("list_issues", {})).rejects.toThrow(
       "not connected"
     );
+    lease.release();
   });
 
   test("tests a server on a throwaway connection", async () => {
@@ -221,7 +288,7 @@ describe(McpManager, () => {
   test("reports configuration state per server", async () => {
     const spies = createSpies();
     const { manager } = createManager(spies);
-    await manager.acquire(server);
+    const lease = await manager.acquire(server);
 
     expect(manager.statuses([server])).toStrictEqual([
       {
@@ -232,6 +299,7 @@ describe(McpManager, () => {
         error: undefined,
       },
     ]);
+    lease.release();
   });
 
   test("closes every connection on shutdown", async () => {
