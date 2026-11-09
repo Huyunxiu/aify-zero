@@ -80,6 +80,7 @@
       "nameHint": "小写字母、数字、_ 和 -。它会成为工具名的前缀。",
       "nameRequired": "名称必填",
       "nameInvalid": "只能用小写字母、数字、_ 和 -",
+      "nameTaken": "已有服务器在用这个名称",
       "transport": "传输方式",
       "transports": {
         "stdio": "本地进程（stdio）",

@@ -49,6 +49,14 @@ export const ErrorMap = {
     message: "A project already uses this directory.",
     data: z.object({ primaryDir: z.string() }),
   },
+  MCP_SERVER_DUPLICATE: {
+    status: 409,
+    message: "Two MCP servers share the same id or name.",
+    data: z.object({
+      kind: z.enum(["duplicate-id", "duplicate-name"]),
+      value: z.string(),
+    }),
+  },
   NOTHING_TO_FORK: {
     status: 400,
     message: "This chat has nothing to fork.",

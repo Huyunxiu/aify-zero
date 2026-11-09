@@ -50,18 +50,18 @@ type McpServerConfig = {
 
 ## 模块
 
-| 路径                                                      | 职责                                                                              |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `packages/agent/src/mcp/config.ts`                        | `McpServerConfig` 的 zod schema 与默认值                                          |
-| `packages/agent/src/mcp/connection.ts`                    | 一个服务器：建连、握手、列工具、调用、关闭、初始化超时                            |
-| `packages/agent/src/mcp/manager.ts`                       | 进程级管理器：懒连接、租约式引用计数、状态表、空闲 5 分钟断开、失败缓存、配置失效 |
-| `packages/agent/src/mcp/tool.ts`                          | 把 MCP 工具包成本地工具：加前缀、读注解、规范化结果、截断                         |
-| `packages/agent/src/extensions/mcp.ts`                    | `McpExtension`：`init` 里借租约并注册工具，`dispose` 只归还引用                   |
-| `packages/server/src/mcp/registry.ts`                     | 管理器单例、从设置读取配置、保存设置后失效                                        |
-| `packages/server/src/session/agent.ts`                    | 把配置与单例传给 `createSessionAgent` 的 `extensions`                             |
-| `packages/server/src/serve.ts`                            | shutdown 时关闭管理器，收掉子进程                                                 |
-| `packages/server/src/routers/settings/settings.schema.ts` | `mcpServers` 字段                                                                 |
-| `packages/server/src/routers/settings/settings.router.ts` | 保存后调用 `invalidate()`                                                         |
+| 路径                                                       | 职责                                                                              |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `packages/agent/src/mcp/config.ts`                         | `McpServerConfig` 的 zod schema 与默认值                                          |
+| `packages/agent/src/mcp/connection.ts`                     | 一个服务器：建连、握手、列工具、调用、关闭、初始化超时                            |
+| `packages/agent/src/mcp/manager.ts`                        | 进程级管理器：懒连接、租约式引用计数、状态表、空闲 5 分钟断开、失败缓存、配置失效 |
+| `packages/agent/src/mcp/tool.ts`                           | 把 MCP 工具包成本地工具：加前缀、读注解、规范化结果、截断                         |
+| `packages/agent/src/extensions/mcp.ts`                     | `McpExtension`：`init` 里借租约并注册工具，`dispose` 只归还引用                   |
+| `packages/server/src/mcp/registry.ts`                      | 管理器单例、从设置读取配置、保存设置后失效                                        |
+| `packages/server/src/session/agent.ts`                     | 把配置与单例传给 `createSessionAgent` 的 `extensions`                             |
+| `packages/server/src/serve.ts`                             | shutdown 时关闭管理器，收掉子进程                                                 |
+| `packages/server/src/routers/settings/settings.schema.ts`  | `mcpServers` 字段                                                                 |
+| `packages/server/src/routers/settings/settings.service.ts` | 保存前查重名/重 id，保存后调用 `invalidate()`                                     |
 
 ## 请求流
 
@@ -105,7 +105,7 @@ type McpServerConfig = {
 **设置页**：`settings.tsx` 的 `nav` 加第 4 项「MCP 服务器」，内容照
 `model-settings.tsx`：列表 + Switch 启停 + Pencil 编辑 + Trash 二次确认 + 同一个
 Dialog 复用新增/编辑。每行显示状态点、工具数、失败原因。编辑弹窗里有「测试连接」。
-`env` 与 `headers` 用密码框，明文存 `dict`（与现有 `apiKey` 一致）。
+`env` 与 `headers` 按行编辑，明文存 `dict`（与现有 `apiKey` 一致，它也是普通输入框）。
 
 **会话面板**：`assistant-message.tsx` 的 if 链加兜底分支，任何未匹配的工具都渲染成
 通用面板（图标 + 工具名 + INPUT/OUTPUT + 审批按钮）。MCP 工具走这个面板，多一个
@@ -149,9 +149,15 @@ Dialog 复用新增/编辑。每行显示状态点、工具数、失败原因。
   回合会撞上 `not connected`，审批还会因为查不到注解而弃权放行。
 - 服务器名除了字符集，还拒绝 `__` 与结尾 `_`：它们会和工具名分隔符混淆，
   切分拿到错误的服务器名，审批就查不到注解。
+- 重名与重 id 在保存设置时拦住（`MCP_SERVER_DUPLICATE`），弹窗里也先校验一次重名；
+  `config.ts` 的 `findMcpServerProblems` 因此有了 src 里的调用点，不再只是测试在用。
+- `env` 与 `headers` 没有做成密码框：仓库里 `apiKey` 也是普通输入框，单独给这两个
+  字段加遮罩会让同一类机密有两种编辑方式；它们在列表里不显示，只在编辑弹窗里出现。
+- 结果只按 256 KB 截断，没有另加行数上限：行数被字节数自然约束，再加一条只会让
+  截断提示说错原因。
 - `ensureUserSettings` 现在对读到的设置跑一遍 schema。新增字段的默认值只在这里补，
   否则旧设置里没有 `mcpServers`，调用点得到 `undefined`。
-- 冒烟测试自带一个 60 行的 stdio 服务器（`tests/mcp/fixtures/echo-server.mjs`），
+- 冒烟测试自带一个 stdio 服务器（`tests/mcp/fixtures/echo-server.mjs`，约 80 行），
   不额外引入依赖。
 
 ## 不做

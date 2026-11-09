@@ -9,7 +9,7 @@ const statuses = publicProcedure
   .route({ method: "GET", path: "/mcp/servers/status" })
   .handler(async () => {
     const settings = await getUserSettings();
-    return { data: getMcpManager().statuses(settings.mcpServers) };
+    return getMcpManager().statuses(settings.mcpServers);
   });
 
 /** 试连一次，不改动已有连接；编辑弹窗用它。 */
