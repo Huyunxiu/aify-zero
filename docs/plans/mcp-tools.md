@@ -166,5 +166,7 @@ Dialog 复用新增/编辑。每行显示状态点、工具数、失败原因。
 
 ## 不做
 
-resources、prompts、sampling；OAuth；`tools/list_changed` 监听；单工具级开关；
+resources、prompts、sampling；`tools/list_changed` 监听；单工具级开关；
 按项目或按 agent 的配置；MCP 工具结果的富媒体回灌模型。
+
+OAuth 后来补上了，见 [mcp-auth.md](./mcp-auth.md)。
