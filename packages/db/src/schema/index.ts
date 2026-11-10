@@ -5,6 +5,7 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import {
   integer,
   index,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -308,3 +309,32 @@ export const dict_table = sqliteTable("dict", {
 
 export type DictModel = InferSelectModel<typeof dict_table>;
 export type DictInsertModel = InferInsertModel<typeof dict_table>;
+
+/**
+ * MCP 授权凭据。
+ *
+ * 一行一类：`tokens`、`client`（动态注册信息）、`verifier`（PKCE 与 state）。
+ * `generation` 每次写入加一，删除时带上读到的代次——并发刷新时晚到的删除会
+ * 落空，不会删掉别人刚换来的令牌。
+ */
+export const mcp_credential_table = sqliteTable(
+  "mcp_credential",
+  {
+    serverId: text("server_id").notNull(),
+    kind: text("kind").notNull(),
+    generation: integer("generation").notNull().default(0),
+    content: text("content", { mode: "json" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [primaryKey({ columns: [table.serverId, table.kind] })]
+);
+
+export type McpCredentialModel = InferSelectModel<typeof mcp_credential_table>;
+export type McpCredentialInsertModel = InferInsertModel<
+  typeof mcp_credential_table
+>;
