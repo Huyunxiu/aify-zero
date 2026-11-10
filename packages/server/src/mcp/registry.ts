@@ -1,5 +1,8 @@
 import { McpManager } from "@workspace/agent";
 
+import { clearMcpCredentials } from "./credentials";
+import { createMcpAuthProvider } from "./oauth";
+
 /**
  * 进程级的 MCP 连接管理器。
  *
@@ -10,7 +13,10 @@ let manager: McpManager | undefined;
 
 /** 拿单例，第一次调用时创建。 */
 export function getMcpManager(): McpManager {
-  manager ??= new McpManager();
+  manager ??= new McpManager({
+    createAuthProvider: createMcpAuthProvider,
+    onAuthorizationServerMismatch: clearMcpCredentials,
+  });
   return manager;
 }
 

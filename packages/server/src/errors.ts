@@ -57,6 +57,11 @@ export const ErrorMap = {
       value: z.string(),
     }),
   },
+  MCP_SERVER_NOT_FOUND: {
+    status: 404,
+    message: "The requested MCP server was not found.",
+    data: z.object({ id: z.string() }),
+  },
   NOTHING_TO_FORK: {
     status: 400,
     message: "This chat has nothing to fork.",

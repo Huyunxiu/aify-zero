@@ -21,6 +21,10 @@ import { requestId } from "hono/request-id";
 
 import { bearerAuth } from "./auth";
 import { createContext } from "./context";
+import {
+  handleMcpAuthorizationCallback,
+  renderMcpAuthorizationPage,
+} from "./mcp/oauth-callback";
 import { appRouter } from "./routers/index";
 import { serveWorkspaceFile } from "./routers/workspace/workspace.file-route";
 import { resolveSessionWorkspace } from "./routers/workspace/workspace.service";
@@ -116,6 +120,19 @@ export const createApp = ({
         ),
     })
   );
+  // MCP 授权的回环回调：浏览器带 `code` 回来时没有 bearer token，所以这条
+  // 路由必须在鉴权之前。它只按 `state` 找回流程，不放宽任何别的路由。
+  // 见 docs/adr/0003。
+  app.get("/api/mcp/oauth/callback", async (c) => {
+    const result = await handleMcpAuthorizationCallback({
+      code: c.req.query("code"),
+      state: c.req.query("state"),
+      issuer: c.req.query("iss"),
+    });
+
+    return c.html(renderMcpAuthorizationPage(result), result.ok ? 200 : 400);
+  });
+
   // Auth sits after the logger, so rejected requests still reach the access log,
   // and before the oRPC handler, so no route can accidentally opt out.
   app.use(bearerAuth(apiToken));
