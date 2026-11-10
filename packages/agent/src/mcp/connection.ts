@@ -1,8 +1,9 @@
-import { createMCPClient } from "@ai-sdk/mcp";
+import { createMCPClient, UnauthorizedError } from "@ai-sdk/mcp";
 import type {
   CallToolResult,
   MCPClient,
   McpToolAnnotations,
+  OAuthClientProvider,
 } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import { logger } from "@workspace/shared/logger";
@@ -30,11 +31,50 @@ type RemoteTransportConfig = {
   type: "http" | "sse";
   url: string;
   headers: Record<string, string>;
+  authProvider?: OAuthClientProvider;
+  /** 只读令牌那一档用它注入 Authorization，不走 SDK 的 401 流程。 */
+  fetch?: typeof fetch;
 };
+
+/** 带授权地址的 provider：管理器在 401 之后把它交给界面。 */
+export type McpAuthProvider = OAuthClientProvider & {
+  readonly authorizationUrl?: URL;
+};
+
+export type McpAuthorizationMode =
+  /** 撞到 401 就发起授权，用户点「授权」走这一档。 */
+  | "start"
+  /** 只带已存令牌，401 就报错；「测试连接」走这一档，不会注册新客户端。 */
+  | "reuse";
 
 export type McpConnectionOptions = {
   connectTimeoutMs?: number;
+  /** 远程服务器走授权流程时由宿主注入；stdio 没有。 */
+  authProvider?: McpAuthProvider;
+  /** 默认 `start`：可以由这次连接发起授权。 */
+  authorization?: McpAuthorizationMode;
 };
+
+/**
+ * 这次失败是不是「需要用户授权」。
+ *
+ * 有 provider 时 SDK 抛 `UnauthorizedError`；没 provider 或重试过一次之后
+ * 走的是带 `statusCode` 的 `MCPClientError`。两种都要认，否则一次 401 会被
+ * 记成普通的连接失败，用户永远看不到「去授权」的提示。
+ */
+export function isAuthorizationRequiredError(error: unknown): boolean {
+  if (error instanceof UnauthorizedError) {
+    return true;
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+
+  const record = error as { name?: unknown; statusCode?: unknown };
+
+  return record.name === "UnauthorizedError" || record.statusCode === 401;
+}
 
 /**
  * 一个 MCP 服务器的连接。
@@ -45,6 +85,8 @@ export type McpConnectionOptions = {
 export class McpConnection {
   readonly #server: McpServerConfig;
   readonly #connectTimeoutMs: number;
+  readonly #authProvider?: McpAuthProvider;
+  readonly #authorization: McpAuthorizationMode;
   #client?: MCPClient;
   /** 正在进行的握手；并发的装配共用同一次，不要各拉一个子进程。 */
   #connecting?: Promise<MCPClient>;
@@ -54,6 +96,13 @@ export class McpConnection {
     this.#server = server;
     this.#connectTimeoutMs =
       options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
+    this.#authProvider = options.authProvider;
+    this.#authorization = options.authorization ?? "start";
+  }
+
+  /** 授权流程捕获到的地址；401 之后管理器读它。 */
+  authorizationUrl(): string | undefined {
+    return this.#authProvider?.authorizationUrl?.toString();
   }
 
   /** 建连并完成握手；并发调用共用同一次握手。 */
@@ -150,6 +199,24 @@ export class McpConnection {
     }
   }
 
+  /**
+   * 每次请求现读令牌的 fetch。
+   *
+   * 「测试连接」用它：有令牌就带上，没有就得到一次 401，而不是一次注册。
+   */
+  #tokenFetch(provider: McpAuthProvider): typeof fetch {
+    return async (input, init) => {
+      const tokens = await provider.tokens();
+      const headers = new Headers(init?.headers);
+
+      if (tokens?.access_token !== undefined) {
+        headers.set("authorization", `Bearer ${tokens.access_token}`);
+      }
+
+      return await fetch(input, { ...init, headers });
+    };
+  }
+
   async #requireClient(): Promise<MCPClient> {
     await this.connect();
     // connect 保证 client 已赋值；这里再取一次是为了让类型收窄。
@@ -172,10 +239,29 @@ export class McpConnection {
       });
     }
 
+    if (this.#authProvider === undefined) {
+      return {
+        type: transport.type,
+        url: transport.url,
+        headers: transport.headers,
+      };
+    }
+
+    if (this.#authorization === "reuse") {
+      // 只读这一档不走 SDK 的 401 流程：那条路会注册客户端、覆盖 verifier。
+      return {
+        type: transport.type,
+        url: transport.url,
+        headers: transport.headers,
+        fetch: this.#tokenFetch(this.#authProvider),
+      };
+    }
+
     return {
       type: transport.type,
       url: transport.url,
       headers: transport.headers,
+      authProvider: this.#authProvider,
     };
   }
 }

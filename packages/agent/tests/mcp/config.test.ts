@@ -3,10 +3,25 @@ import { describe, expect, test } from "vitest";
 import {
   findMcpServerProblems,
   isValidMcpServerName,
+  mcpAuthType,
   mcpServerSchema,
   mcpToolName,
+  needsMcpAuthorization,
   splitMcpToolName,
 } from "../../src/mcp/config.js";
+
+const oauthServer = {
+  id: "linear",
+  name: "linear",
+  enabled: true,
+  autoApprove: false,
+  auth: { type: "oauth" as const },
+  transport: {
+    type: "http" as const,
+    url: "https://mcp.example.com/mcp",
+    headers: {},
+  },
+};
 
 describe(mcpToolName, () => {
   test("prefixes the tool name with the server name", () => {
@@ -102,6 +117,62 @@ describe("MCP server config", () => {
         name: "Linear Server",
         transport: { type: "stdio", command: "node" },
       }).success
+    ).toBeFalsy();
+  });
+});
+
+describe(mcpAuthType, () => {
+  test("reads the explicit value", () => {
+    expect(mcpAuthType(oauthServer)).toBe("oauth");
+    expect(mcpAuthType({ ...oauthServer, auth: { type: "none" } })).toBe(
+      "none"
+    );
+  });
+
+  test("infers static headers from an old config without auth", () => {
+    const parsed = mcpServerSchema.parse({
+      id: "old",
+      name: "old",
+      transport: {
+        type: "http",
+        url: "https://example.com/mcp",
+        headers: { Authorization: "Bearer x" },
+      },
+    });
+
+    expect(mcpAuthType(parsed)).toBe("headers");
+  });
+
+  test("falls back to none when nothing is configured", () => {
+    const parsed = mcpServerSchema.parse({
+      id: "plain",
+      name: "plain",
+      transport: { type: "http", url: "https://example.com/mcp" },
+    });
+
+    expect(mcpAuthType(parsed)).toBe("none");
+  });
+
+  test("rejects oauth on stdio, where credentials come from the environment", () => {
+    expect(
+      mcpServerSchema.safeParse({
+        id: "local",
+        name: "local",
+        auth: { type: "oauth" },
+        transport: { type: "stdio", command: "node" },
+      }).success
+    ).toBeFalsy();
+  });
+});
+
+describe(needsMcpAuthorization, () => {
+  test("is true only for an enabled oauth server", () => {
+    expect(needsMcpAuthorization(oauthServer)).toBeTruthy();
+    expect(
+      needsMcpAuthorization({ ...oauthServer, enabled: false })
+    ).toBeFalsy();
+    expect(
+      needsMcpAuthorization({ ...oauthServer, auth: { type: "headers" } })
     ).toBeFalsy();
   });
 });

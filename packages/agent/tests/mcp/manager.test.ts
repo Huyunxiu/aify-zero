@@ -1,3 +1,7 @@
+import {
+  AuthorizationServerMismatchError,
+  UnauthorizedError,
+} from "@ai-sdk/mcp";
 import type { CallToolResult } from "@ai-sdk/mcp";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -13,6 +17,8 @@ const server: McpServerConfig = {
   autoApprove: false,
   transport: { type: "http", url: "https://example.com/mcp", headers: {} },
 };
+
+const oauthServer: McpServerConfig = { ...server, auth: { type: "oauth" } };
 
 const tools: McpToolDefinition[] = [
   {
@@ -141,6 +147,38 @@ describe(McpManager, () => {
 
     expect(lease.status).toBe("failed");
     expect(lease.error).toContain("command not found");
+    lease.release();
+  });
+
+  test("turns a 401 into needs-auth without an English error", async () => {
+    const spies = createSpies();
+    spies.listTools.mockRejectedValueOnce(new UnauthorizedError());
+    const { manager } = createManager(spies);
+
+    const lease = await manager.acquire(oauthServer);
+
+    expect(lease.status).toBe("needs-auth");
+    expect(lease.error).toBeUndefined();
+    lease.release();
+  });
+
+  test("drops credentials and asks for authorization when the issuer changed", async () => {
+    const spies = createSpies();
+    spies.listTools.mockRejectedValueOnce(
+      new AuthorizationServerMismatchError({ message: "issuer changed" })
+    );
+    const onMismatch = vi.fn<(serverId: string) => void>();
+    const manager = new McpManager({
+      createConnection: () => spies.connection,
+      idleTimeoutMs: 1000,
+      onAuthorizationServerMismatch: onMismatch,
+    });
+
+    const lease = await manager.acquire(oauthServer);
+
+    expect(lease.status).toBe("needs-auth");
+    expect(onMismatch).toHaveBeenCalledWith(oauthServer.id);
+    expect(lease.error).toBeUndefined();
     lease.release();
   });
 

@@ -1,11 +1,12 @@
+import { AuthorizationServerMismatchError } from "@ai-sdk/mcp";
 import type { CallToolResult } from "@ai-sdk/mcp";
 import { getErrorMessage } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
 
 import type { McpServerConfig } from "./config";
-import { splitMcpToolName } from "./config";
-import type { McpToolDefinition } from "./connection";
-import { McpConnection } from "./connection";
+import { needsMcpAuthorization, splitMcpToolName } from "./config";
+import type { McpAuthProvider, McpToolDefinition } from "./connection";
+import { isAuthorizationRequiredError, McpConnection } from "./connection";
 
 /** 没有会话在用之后，连接再留一会儿；太短会让下个回合重新握手。 */
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -13,7 +14,13 @@ const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 /** 建连失败后暂时不再重试的窗口，避免每回合都去撞一个坏命令。 */
 const DEFAULT_FAILURE_RETRY_MS = 60 * 1000;
 
-export type McpServerStatus = "idle" | "connecting" | "ready" | "failed";
+export type McpServerStatus =
+  | "idle"
+  | "connecting"
+  | "ready"
+  | "failed"
+  /** 等用户去设置页授权；和 `failed` 分开，因为它等的是人，不是重试。 */
+  | "needs-auth";
 
 /** 一行状态，给设置页看。 */
 export type McpServerState = {
@@ -49,9 +56,20 @@ export type McpLease = McpServerSnapshot & {
   release(): void;
 };
 
+/** `authorize()` 的结果：要么连上了，要么等浏览器。 */
+export type McpAuthorizeResult = {
+  status: McpServerStatus;
+  toolCount: number;
+  error?: string;
+  /** `needs-auth` 时浏览器该去的地方。 */
+  url?: string;
+};
+
 /** 管理器只依赖这几个方法，测试可以塞一个内存实现进来。 */
 export interface McpConnectionHandle {
   listTools(): Promise<readonly McpToolDefinition[]>;
+  /** 授权流程捕获到的地址；管理器在 401 之后取走。 */
+  authorizationUrl?(): string | undefined;
   callTool(
     toolName: string,
     input: unknown,
@@ -69,6 +87,12 @@ export interface McpManagerOptions {
   connectTimeoutMs?: number;
   /** 测试用：替换连接的构造方式。 */
   createConnection?: (server: McpServerConfig) => McpConnectionHandle;
+  /** 试连用的连接；默认只带令牌、不发起授权。 */
+  createProbeConnection?: (server: McpServerConfig) => McpConnectionHandle;
+  /** 远程服务器的授权 provider；`oauth` 之外的配置返回 undefined。 */
+  createAuthProvider?: (server: McpServerConfig) => McpAuthProvider | undefined;
+  /** 授权服务器变了、旧凭据已经对不上时调用；宿主用它清库。 */
+  onAuthorizationServerMismatch?: (serverId: string) => Promise<void> | void;
 }
 
 type Entry = {
@@ -83,10 +107,17 @@ type Entry = {
   /** 已被新的一代取代：最后一个租约归还时才断开。 */
   retired: boolean;
   failedAt?: number;
+  /** 最近一次 401 之后捕获到的授权地址。 */
+  authorizationUrl?: string;
   idleTimer?: ReturnType<typeof setTimeout>;
   /** 正在进行的建连与列工具；并发 acquire 共用它。 */
   pending?: Promise<McpServerSnapshot>;
 };
+
+/** 模型看到的提示：说清「做什么」，不说「哪一层抛的」。 */
+function authorizationRequiredMessage(serverName: string): string {
+  return `MCP server "${serverName}" needs authorization. Open Settings, MCP servers, and authorize it again.`;
+}
 
 function sameConfig(a: McpServerConfig, b: McpServerConfig): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -120,6 +151,15 @@ export class McpManager {
   /** 被取代但还有租约没还的旧连接。 */
   readonly #retired = new Set<Entry>();
   readonly #createConnection: (server: McpServerConfig) => McpConnectionHandle;
+  readonly #createProbeConnection: (
+    server: McpServerConfig
+  ) => McpConnectionHandle;
+  readonly #createAuthProvider?: (
+    server: McpServerConfig
+  ) => McpAuthProvider | undefined;
+  readonly #onAuthorizationServerMismatch?: (
+    serverId: string
+  ) => Promise<void> | void;
   readonly #idleTimeoutMs: number;
   readonly #failureRetryMs: number;
   #closed = false;
@@ -127,11 +167,23 @@ export class McpManager {
   constructor(options: McpManagerOptions = {}) {
     this.#idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.#failureRetryMs = options.failureRetryMs ?? DEFAULT_FAILURE_RETRY_MS;
+    this.#createAuthProvider = options.createAuthProvider;
+    this.#onAuthorizationServerMismatch = options.onAuthorizationServerMismatch;
     this.#createConnection =
       options.createConnection ??
       ((server) =>
         new McpConnection(server, {
           connectTimeoutMs: options.connectTimeoutMs,
+          authProvider: this.#createAuthProvider?.(server),
+        }));
+    this.#createProbeConnection =
+      options.createProbeConnection ??
+      options.createConnection ??
+      ((server) =>
+        new McpConnection(server, {
+          connectTimeoutMs: options.connectTimeoutMs,
+          authProvider: this.#createAuthProvider?.(server),
+          authorization: "reuse",
         }));
   }
 
@@ -162,6 +214,65 @@ export class McpManager {
 
     const snapshot = await this.#snapshot(entry);
     return this.#lease(entry, snapshot);
+  }
+
+  /**
+   * 为一个服务器发起授权。
+   *
+   * 先换代再建连：上一次的失败窗口与旧令牌都不该影响这一次。撞 401 时把
+   * provider 捕获的授权地址交回去，由界面打开浏览器；连上了就顺手把状态刷
+   * 成 `ready`，用户不用等下一个回合。
+   */
+  async authorize(server: McpServerConfig): Promise<McpAuthorizeResult> {
+    if (this.#closed) {
+      return { status: "failed", toolCount: 0, error: "MCP manager is closed" };
+    }
+
+    this.#retireCurrent(server.id);
+    const entry = this.#entry(server);
+    entry.refs += 1;
+    this.#clearIdle(entry);
+
+    try {
+      const snapshot = await this.#snapshot(entry);
+      return {
+        status: snapshot.status,
+        toolCount: snapshot.tools.length,
+        error: snapshot.error,
+        url: entry.authorizationUrl,
+      };
+    } finally {
+      this.#release(entry);
+    }
+  }
+
+  /**
+   * 让一个服务器换代。
+   *
+   * 撤销授权、改了地址这类事只影响一个服务器，不该把所有连接一起打上失效
+   * 标记——别的服务器正在跑的回合会因此白重连一次。
+   *
+   * @param options.resetStatus - 连状态一起清掉。撤销授权时要它：令牌已经
+   * 没了，界面上还写着「已连接」就是在骗人。
+   */
+  invalidateServer(
+    serverId: string,
+    options: { resetStatus?: boolean } = {}
+  ): void {
+    const entry = this.#entries.get(serverId);
+    if (entry === undefined) {
+      return;
+    }
+
+    entry.stale = true;
+    entry.failedAt = undefined;
+
+    if (options.resetStatus === true) {
+      entry.status = "idle";
+      entry.tools = [];
+      entry.error = undefined;
+      entry.authorizationUrl = undefined;
+    }
   }
 
   /**
@@ -237,7 +348,7 @@ export class McpManager {
   async test(
     server: McpServerConfig
   ): Promise<{ ok: boolean; toolCount: number; error?: string }> {
-    const connection = this.#createConnection(server);
+    const connection = this.#createProbeConnection(server);
 
     try {
       const tools = await connection.listTools();
@@ -259,6 +370,14 @@ export class McpManager {
     await Promise.all(entries.map((entry) => this.#closeEntry(entry)));
   }
 
+  /** 让某个服务器的当前一代退场；没有就什么都不做。 */
+  #retireCurrent(serverId: string): void {
+    const existing = this.#entries.get(serverId);
+    if (existing !== undefined) {
+      this.#retire(existing);
+    }
+  }
+
   #lease(entry: Entry, snapshot: McpServerSnapshot): McpLease {
     let released = false;
 
@@ -267,10 +386,36 @@ export class McpManager {
       tools: snapshot.tools,
       error: snapshot.error,
       callTool: async (toolName, input, options) => {
+        if (entry.status === "needs-auth") {
+          throw new Error(authorizationRequiredMessage(entry.server.name));
+        }
         if (entry.status !== "ready") {
           throw new Error(`MCP server "${entry.server.name}" is not connected`);
         }
-        return await entry.connection.callTool(toolName, input, options);
+
+        try {
+          return await entry.connection.callTool(toolName, input, options);
+        } catch (error) {
+          if (error instanceof AuthorizationServerMismatchError) {
+            // 运行期刷新时才发现授权服务器换了：旧凭据已经没用，删掉再等用户授权。
+            await this.#onAuthorizationServerMismatch?.(entry.server.id);
+            this.#enterNeedsAuth(entry);
+            throw new Error(authorizationRequiredMessage(entry.server.name), {
+              cause: error,
+            });
+          }
+
+          if (
+            needsMcpAuthorization(entry.server) &&
+            isAuthorizationRequiredError(error)
+          ) {
+            this.#enterNeedsAuth(entry);
+            throw new Error(authorizationRequiredMessage(entry.server.name), {
+              cause: error,
+            });
+          }
+          throw error;
+        }
       },
       release: () => {
         if (released) {
@@ -291,6 +436,12 @@ export class McpManager {
     if (entry.status === "connecting" && entry.pending) {
       // 同一回合里两个会话同时装配：共用一次握手，不要再拉一个进程。
       return await entry.pending;
+    }
+
+    if (entry.status === "needs-auth") {
+      // 等用户动手，不按时间重试：重试会重新发现元数据、再注册一个客户端，
+      // 而用户根本没打算授权。换代只发生在点授权、撤销或改配置时。
+      return { status: "needs-auth", tools: [], error: undefined };
     }
 
     if (entry.status === "failed" && this.#withinFailureWindow(entry)) {
@@ -315,6 +466,23 @@ export class McpManager {
       entry.failedAt = undefined;
       return { status: "ready", tools };
     } catch (error) {
+      if (error instanceof AuthorizationServerMismatchError) {
+        // 令牌认的授权服务器和新元数据不一致：删掉旧凭据，让用户重新授权。
+        await this.#onAuthorizationServerMismatch?.(entry.server.id);
+        this.#enterNeedsAuth(entry);
+        await closeQuietly(entry.connection, entry.server.name);
+        return { status: "needs-auth", tools: [], error: undefined };
+      }
+
+      if (
+        needsMcpAuthorization(entry.server) &&
+        isAuthorizationRequiredError(error)
+      ) {
+        this.#enterNeedsAuth(entry);
+        await closeQuietly(entry.connection, entry.server.name);
+        return { status: "needs-auth", tools: [], error: undefined };
+      }
+
       entry.status = "failed";
       entry.failedAt = Date.now();
       entry.error = getErrorMessage(error);
@@ -324,6 +492,19 @@ export class McpManager {
       await closeQuietly(entry.connection, entry.server.name);
       return { status: "failed", tools: [], error: entry.error };
     }
+  }
+
+  /**
+   * 把一代连接标成「等用户授权」。
+   *
+   * 授权地址要在关闭连接之前取走：provider 活在连接对象上。状态自己说明问题，
+   * 错误一栏留给真正的失败，否则界面会用英文重复一遍。
+   */
+  #enterNeedsAuth(entry: Entry): void {
+    entry.authorizationUrl = entry.connection.authorizationUrl?.();
+    entry.status = "needs-auth";
+    entry.error = undefined;
+    logger.info(`[mcp] server "${entry.server.name}" needs authorization`);
   }
 
   /** 归还一次借出。引用归零时，被取代的连接立刻断，其余等空闲计时。 */
