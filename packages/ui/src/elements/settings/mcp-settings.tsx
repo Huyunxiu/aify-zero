@@ -1,6 +1,6 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isValidMcpServerName } from "@workspace/agent/mcp/config";
+import { isValidMcpServerName, mcpAuthType } from "@workspace/agent/mcp/config";
 import type { McpServerStatus } from "@workspace/agent/mcp/manager";
 import {
   AlertDialog,
@@ -24,6 +24,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@workspace/ui/components/dropdown-menu";
 import {
   Field,
   FieldDescription,
@@ -50,7 +56,15 @@ import {
 import { Textarea } from "@workspace/ui/components/textarea";
 import { client } from "@workspace/ui/lib/orpc";
 import { cn } from "@workspace/ui/lib/utils";
-import { Pencil, PlusIcon, PlugZap, Trash } from "lucide-react";
+import {
+  ChevronDown,
+  KeyRound,
+  LogOut,
+  Pencil,
+  PlusIcon,
+  PlugZap,
+  Trash,
+} from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -61,6 +75,17 @@ type McpServerRow = NonNullable<
 >[number];
 
 type TransportType = "stdio" | "http" | "sse";
+
+/** 授权方式：不需要、用请求头里的静态凭据、走授权流程。 */
+type AuthType = "none" | "headers" | "oauth";
+
+/** Select 给回来的是字符串，这里收窄成三档。 */
+function toAuthType(value: string): AuthType {
+  if (value === "headers" || value === "oauth") {
+    return value;
+  }
+  return "none";
+}
 
 /** Select 给回来的是字符串，这里收窄成三种传输之一。 */
 function toTransportType(value: string): TransportType {
@@ -81,6 +106,7 @@ type McpFormValues = {
   cwd: string;
   url: string;
   headers: string;
+  authType: AuthType;
 };
 
 const EMPTY_FORM: McpFormValues = {
@@ -94,6 +120,7 @@ const EMPTY_FORM: McpFormValues = {
   cwd: "",
   url: "",
   headers: "",
+  authType: "none",
 };
 
 /** "KEY=VALUE" 每行一条；空行和 `#` 注释忽略。 */
@@ -150,10 +177,13 @@ function toServer(values: McpFormValues, id: string): McpServerRow {
 
   return {
     ...base,
+    auth: { type: values.authType },
     transport: {
       type: values.transportType,
       url: values.url.trim(),
-      headers: parsePairs(values.headers),
+      // 只有「静态凭据」这一档才真的发请求头；OAuth 模式下留着旧值会让人
+      // 以为两份凭据同时在生效。
+      headers: values.authType === "headers" ? parsePairs(values.headers) : {},
     },
   };
 }
@@ -183,6 +213,7 @@ function toForm(server: McpServerRow): McpFormValues {
     transportType: server.transport.type,
     url: server.transport.url,
     headers: formatPairs(server.transport.headers),
+    authType: mcpAuthType(server),
   };
 }
 
@@ -192,14 +223,16 @@ const STATUS_DOT: Record<McpServerStatus, string> = {
   connecting: "bg-amber-500",
   ready: "bg-emerald-500",
   failed: "bg-destructive",
+  "needs-auth": "bg-amber-500",
 };
 
-const STATUS_LABEL_KEY: Record<McpServerStatus, string> = {
+const STATUS_LABEL_KEY = {
   idle: "settings.mcp.status.idle",
   connecting: "settings.mcp.status.connecting",
   ready: "settings.mcp.status.ready",
   failed: "settings.mcp.status.failed",
-};
+  "needs-auth": "settings.mcp.status.needsAuth",
+} as const satisfies Record<McpServerStatus, string>;
 
 /** 超过这个工具数就把成本说出来；不自动禁用。 */
 const MANY_TOOLS = 50;
@@ -240,6 +273,29 @@ export function McpSettings() {
     mutationFn: async (server: McpServerRow) => await client.mcp.test(server),
     onSuccess: (result) => {
       setTestResult(result);
+    },
+  });
+
+  /**
+   * 发起授权。
+   *
+   * 返回里带 `url` 说明服务器要一次浏览器同意；`window.open` 在桌面里会被主
+   * 进程接住、转给系统浏览器，不需要另开一条 IPC 通道。
+   */
+  const authorizeMutation = useMutation({
+    mutationFn: async (id: string) => await client.mcp.authorize({ id }),
+    onSuccess: (result) => {
+      if (result.url !== undefined) {
+        window.open(result.url, "_blank", "noopener,noreferrer");
+      }
+      void queryClient.invalidateQueries({ queryKey: ["mcp-status"] });
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: async (id: string) => await client.mcp.revoke({ id }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mcp-status"] });
     },
   });
 
@@ -317,6 +373,7 @@ export function McpSettings() {
               servers.map((server) => {
                 const status = statusOf(server.id);
                 const label: McpServerStatus = status?.status ?? "idle";
+                const isOAuth = mcpAuthType(server) === "oauth";
 
                 return (
                   <TableRow key={server.id}>
@@ -340,20 +397,69 @@ export function McpSettings() {
                       ) : null}
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
-                      {status?.toolCount ? (
-                        <>
-                          {t("settings.mcp.toolCount", {
-                            count: status.toolCount,
-                          })}
-                          {status.toolCount > MANY_TOOLS ? (
-                            <span className="ml-2 text-amber-600">
-                              {t("settings.mcp.manyTools")}
-                            </span>
-                          ) : null}
-                        </>
-                      ) : (
-                        t(STATUS_LABEL_KEY[label])
-                      )}
+                      <div className="flex items-center gap-2">
+                        {status?.toolCount ? (
+                          <span>
+                            {t("settings.mcp.toolCount", {
+                              count: status.toolCount,
+                            })}
+                            {status.toolCount > MANY_TOOLS ? (
+                              <span className="ml-2 text-amber-600">
+                                {t("settings.mcp.manyTools")}
+                              </span>
+                            ) : null}
+                          </span>
+                        ) : null}
+
+                        {isOAuth ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  className="h-7 gap-1 px-2 text-muted-foreground"
+                                  size="sm"
+                                  variant="ghost"
+                                />
+                              }
+                            >
+                              {status?.toolCount
+                                ? t("settings.mcp.authMenu")
+                                : t(STATUS_LABEL_KEY[label])}
+                              <ChevronDown />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                              align="start"
+                              className="w-auto min-w-44"
+                            >
+                              <DropdownMenuItem
+                                disabled={authorizeMutation.isPending}
+                                onClick={() => {
+                                  void authorizeMutation.mutateAsync(server.id);
+                                }}
+                              >
+                                <KeyRound />
+                                {label === "needs-auth" || !status?.authorized
+                                  ? t("settings.mcp.authorize")
+                                  : t("settings.mcp.reauthorize")}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                disabled={
+                                  !status?.authorized ||
+                                  revokeMutation.isPending
+                                }
+                                onClick={() => {
+                                  void revokeMutation.mutateAsync(server.id);
+                                }}
+                              >
+                                <LogOut />
+                                {t("settings.mcp.revoke")}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : status?.toolCount ? null : (
+                          t(STATUS_LABEL_KEY[label])
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">
@@ -695,30 +801,75 @@ export function McpSettings() {
                           }}
                         </form.Field>
 
-                        <form.Field name="headers">
+                        <form.Field name="authType">
                           {(field) => (
                             <Field>
                               <FieldLabel htmlFor={field.name}>
-                                {t("settings.mcp.headers")}
+                                {t("settings.mcp.auth.type")}
                               </FieldLabel>
-                              <Textarea
-                                id={field.name}
-                                name={field.name}
+                              <Select
                                 value={field.state.value}
-                                placeholder={t(
-                                  "settings.mcp.headersPlaceholder"
-                                )}
-                                onBlur={field.handleBlur}
-                                onChange={(e) => {
-                                  field.handleChange(e.target.value);
+                                onValueChange={(value) => {
+                                  field.handleChange(
+                                    toAuthType(value ?? "none")
+                                  );
                                 }}
-                              />
+                              >
+                                <SelectTrigger id={field.name}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">
+                                    {t("settings.mcp.auth.none")}
+                                  </SelectItem>
+                                  <SelectItem value="headers">
+                                    {t("settings.mcp.auth.headers")}
+                                  </SelectItem>
+                                  <SelectItem value="oauth">
+                                    {t("settings.mcp.auth.oauth")}
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
                               <FieldDescription>
-                                {t("settings.mcp.headersHint")}
+                                {field.state.value === "oauth"
+                                  ? t("settings.mcp.auth.oauthHint")
+                                  : field.state.value === "headers"
+                                    ? t("settings.mcp.headersHint")
+                                    : t("settings.mcp.auth.noneHint")}
                               </FieldDescription>
                             </Field>
                           )}
                         </form.Field>
+
+                        <form.Subscribe
+                          selector={(state) => state.values.authType}
+                        >
+                          {(authType) =>
+                            authType === "headers" ? (
+                              <form.Field name="headers">
+                                {(field) => (
+                                  <Field>
+                                    <FieldLabel htmlFor={field.name}>
+                                      {t("settings.mcp.headers")}
+                                    </FieldLabel>
+                                    <Textarea
+                                      id={field.name}
+                                      name={field.name}
+                                      value={field.state.value}
+                                      placeholder={t(
+                                        "settings.mcp.headersPlaceholder"
+                                      )}
+                                      onBlur={field.handleBlur}
+                                      onChange={(e) => {
+                                        field.handleChange(e.target.value);
+                                      }}
+                                    />
+                                  </Field>
+                                )}
+                              </form.Field>
+                            ) : null
+                          }
+                        </form.Subscribe>
                       </>
                     )
                   }

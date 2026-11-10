@@ -66,11 +66,11 @@ const TAB_ICONS: Record<SessionPanelView, React.ReactNode> = {
 };
 
 /** 每个视图的标题文案键；文件视图的标题跟着打开的文件变，单独算。 */
-const TAB_LABEL_KEYS: Record<SessionPanelView, string> = {
+const TAB_LABEL_KEYS = {
   files: "panel.tabs.files",
   review: "panel.tabs.review",
   terminal: "panel.tabs.terminal",
-};
+} as const satisfies Record<SessionPanelView, string>;
 
 /**
  * 一个标签的标题。

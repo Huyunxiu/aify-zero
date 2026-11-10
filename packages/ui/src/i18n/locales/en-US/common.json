@@ -103,6 +103,14 @@
       "headers": "Headers",
       "headersPlaceholder": "Authorization=Bearer ...",
       "headersHint": "One KEY=value per line. Stored as plain text.",
+      "auth": {
+        "type": "Authorization",
+        "none": "None",
+        "headers": "Headers",
+        "oauth": "Authorize in a browser",
+        "oauthHint": "Use Authorize in the list. The browser opens once; authorize on the machine that runs the API server. Tokens stay on that machine.",
+        "noneHint": "This server needs no credentials."
+      },
       "enabled": "Enabled",
       "autoApprove": "Approve automatically",
       "autoApproveDescription": "Allow calls without asking. Tools that report themselves as destructive still ask.",
@@ -111,11 +119,16 @@
       "testFailed": "Failed: {{error}}",
       "toolCount": "{{count}} tools",
       "manyTools": "Adds to the prompt every turn",
+      "authorize": "Authorize",
+      "reauthorize": "Authorize again",
+      "revoke": "Remove authorization",
+      "authMenu": "Authorization",
       "status": {
         "idle": "Not connected",
         "connecting": "Connecting",
         "ready": "Connected",
-        "failed": "Failed"
+        "failed": "Failed",
+        "needsAuth": "Needs authorization"
       },
       "delete": "Delete",
       "deleteConfirm": "Delete this server?",

@@ -16,6 +16,17 @@ export const resources = {
   },
 } as const;
 
+/**
+ * 让 `t("...")` 的键在编译期受检：缺键或拼错键都是类型错误，而不是界面上
+ * 原样显示一段键名。
+ */
+declare module "i18next" {
+  interface CustomTypeOptions {
+    defaultNS: "common";
+    resources: { common: (typeof resources)["en-US"]["common"] };
+  }
+}
+
 export type Lang = keyof typeof resources;
 
 export const LANG_VALUES = Object.keys(resources) as Lang[];
