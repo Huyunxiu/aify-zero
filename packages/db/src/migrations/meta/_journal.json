@@ -64,6 +64,13 @@
       "when": 1793636174688,
       "tag": "0008_session_scoped_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1794320537401,
+      "tag": "0009_yellow_the_stranger",
+      "breakpoints": true
     }
   ]
 }

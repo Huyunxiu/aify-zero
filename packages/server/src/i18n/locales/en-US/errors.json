@@ -23,6 +23,7 @@
   "PROJECT_NOT_FOUND": "The requested project was not found.",
   "PROJECT_DIR_EXISTS": "A project already uses this directory.",
   "MCP_SERVER_DUPLICATE": "Two MCP servers share the same id or name.",
+  "MCP_SERVER_NOT_FOUND": "The requested MCP server was not found. It may have been deleted.",
   "NOTHING_TO_FORK": "There is nothing to fork in this chat yet.",
   "MESSAGE_NOT_FOUND": "The requested message was not found in this chat.",
   "STREAM_NOT_FOUND": "There is no reply running for this chat.",

@@ -103,6 +103,14 @@
       "headers": "请求头",
       "headersPlaceholder": "Authorization=Bearer ...",
       "headersHint": "一行一个 KEY=value，明文保存。",
+      "auth": {
+        "type": "授权方式",
+        "none": "不需要",
+        "headers": "请求头",
+        "oauth": "浏览器授权",
+        "oauthHint": "在列表里点「授权」，浏览器会打开一次；授权要在运行 API server 的机器上完成，令牌只留在那台机器。",
+        "noneHint": "这个服务器不需要凭据。"
+      },
       "enabled": "启用",
       "autoApprove": "自动放行",
       "autoApproveDescription": "调用时不再询问。自述为破坏性的工具仍然会询问。",
@@ -111,11 +119,16 @@
       "testFailed": "失败：{{error}}",
       "toolCount": "{{count}} 个工具",
       "manyTools": "每个回合都会进提示词",
+      "authorize": "授权",
+      "reauthorize": "重新授权",
+      "revoke": "撤销授权",
+      "authMenu": "授权状态",
       "status": {
         "idle": "未连接",
         "connecting": "连接中",
         "ready": "已连接",
-        "failed": "失败"
+        "failed": "失败",
+        "needsAuth": "需要授权"
       },
       "delete": "删除",
       "deleteConfirm": "删除这个服务器？",

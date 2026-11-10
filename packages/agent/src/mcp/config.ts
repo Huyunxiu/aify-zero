@@ -42,6 +42,20 @@ const mcpRemoteTransportSchema = z
   })
   .strict();
 
+/**
+ * 授权方式。
+ *
+ * `headers` 表示用 `transport.headers` 里的静态凭据；`oauth` 表示走授权流程。
+ * 字段可省略：旧设置里没有它，读的时候按 headers 是否为空推断，不用迁移数据。
+ */
+export const mcpAuthSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("none") }).strict(),
+  z.object({ type: z.literal("headers") }).strict(),
+  z.object({ type: z.literal("oauth") }).strict(),
+]);
+
+export type McpAuth = z.infer<typeof mcpAuthSchema>;
+
 export const mcpServerSchema = z
   .object({
     id: z.string().min(1),
@@ -49,15 +63,52 @@ export const mcpServerSchema = z
     enabled: z.boolean().default(true),
     /** 放行没有只说读的工具；破坏性注解仍然询问。 */
     autoApprove: z.boolean().default(false),
+    auth: mcpAuthSchema.optional(),
     transport: z.discriminatedUnion("type", [
       mcpStdioTransportSchema,
       mcpRemoteTransportSchema,
     ]),
   })
-  .strict();
+  .strict()
+  .superRefine((server, ctx) => {
+    // stdio 的凭据来自它自己的环境变量，这里插不进授权流程。
+    if (server.auth?.type === "oauth" && server.transport.type === "stdio") {
+      ctx.addIssue({
+        code: "custom",
+        message: "OAuth needs an http or sse transport",
+        path: ["auth"],
+      });
+    }
+  });
 
 export type McpServerConfig = z.infer<typeof mcpServerSchema>;
 export type McpServerTransport = McpServerConfig["transport"];
+
+/**
+ * 一份配置实际用的是哪一档授权。
+ *
+ * 缺省值从 `transport.headers` 推：旧设置只写过请求头，没有 `auth` 字段，
+ * 读出来必须仍然是「静态凭据」，不能当成不需要授权。
+ */
+export function mcpAuthType(server: McpServerConfig): McpAuth["type"] {
+  if (server.auth) {
+    return server.auth.type;
+  }
+
+  return server.transport.type !== "stdio" &&
+    Object.keys(server.transport.headers).length > 0
+    ? "headers"
+    : "none";
+}
+
+/** 这个服务器是否需要走授权流程。 */
+export function needsMcpAuthorization(server: McpServerConfig): boolean {
+  return (
+    mcpAuthType(server) === "oauth" &&
+    server.transport.type !== "stdio" &&
+    server.enabled
+  );
+}
 
 /** 模型看到的工具名。 */
 export function mcpToolName(serverName: string, toolName: string): string {

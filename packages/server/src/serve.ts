@@ -24,6 +24,7 @@ import {
 import { logger } from "@workspace/shared/logger";
 
 import { app } from "./app";
+import { setMcpOAuthRedirectUrl } from "./mcp/oauth";
 import { shutdownMcp } from "./mcp/registry";
 import { SQLiteStore } from "./storage/sqlite-store";
 import { attachWebSocket } from "./ws";
@@ -130,6 +131,12 @@ export async function startServer(
   if (address === null || typeof address === "string") {
     throw new Error("API server did not report a TCP address");
   }
+
+  // 授权回调的地址只能在拿到真实端口之后确定：`AIFY_API_PORT=0` 时 listen
+  // 之前没有人知道它会落在哪。
+  setMcpOAuthRedirectUrl(
+    `http://127.0.0.1:${address.port}/api/mcp/oauth/callback`
+  );
 
   let closing: Promise<void> | undefined;
 

@@ -1,4 +1,6 @@
 import { publicProcedure } from "../../index";
+import { dropStaleMcpCredentials } from "../../mcp/credentials-cleanup";
+import { mcpAuthorizationFlows } from "../../mcp/oauth";
 import { getMcpManager } from "../../mcp/registry";
 import { assertUniqueMcpServers } from "../../mcp/validate";
 import {
@@ -72,6 +74,15 @@ export const updateUserSettingsRoute = publicProcedure
     const saved = await saveUserSettings(merged);
 
     if (touchedMcp) {
+      // 地址或授权方式变了的服务器，旧令牌已经对不上新配置，先清掉。
+      const dropped = await dropStaleMcpCredentials(
+        current.mcpServers,
+        saved.mcpServers
+      );
+      for (const id of dropped) {
+        mcpAuthorizationFlows.forget(id);
+      }
+
       // 只打标记：正在跑的回合还用着旧连接，下一次装配才重建。
       getMcpManager().invalidate();
     }
