@@ -41,6 +41,8 @@ async function startSubagent(
   const parent: SubagentParent = {
     context: agent.context,
     tools: agent.tools,
+    toolExposure: agent.toolExposure,
+    toolRoute: agent.toolRoute,
     credentials: {
       apiKey: agent.apiKey,
       apiUrl: agent.apiUrl,

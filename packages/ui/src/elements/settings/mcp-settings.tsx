@@ -1,6 +1,10 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { isValidMcpServerName, mcpAuthType } from "@workspace/agent/mcp/config";
+import {
+  isValidMcpServerName,
+  mcpAuthType,
+  mcpExposureType,
+} from "@workspace/agent/mcp/config";
 import type { McpServerStatus } from "@workspace/agent/mcp/manager";
 import {
   AlertDialog,
@@ -99,6 +103,8 @@ type McpFormValues = {
   name: string;
   enabled: boolean;
   autoApprove: boolean;
+  /** 工具只在目录里，模型搜到之后再转调。关掉就是每步都声明。 */
+  searchOnDemand: boolean;
   transportType: TransportType;
   command: string;
   args: string;
@@ -113,6 +119,7 @@ const EMPTY_FORM: McpFormValues = {
   name: "",
   enabled: true,
   autoApprove: false,
+  searchOnDemand: true,
   transportType: "stdio",
   command: "",
   args: "",
@@ -157,6 +164,9 @@ function toServer(values: McpFormValues, id: string): McpServerRow {
     name: values.name.trim(),
     enabled: values.enabled,
     autoApprove: values.autoApprove,
+    exposure: values.searchOnDemand
+      ? ("deferred" as const)
+      : ("direct" as const),
   };
 
   if (values.transportType === "stdio") {
@@ -193,6 +203,7 @@ function toForm(server: McpServerRow): McpFormValues {
     name: server.name,
     enabled: server.enabled ?? true,
     autoApprove: server.autoApprove ?? false,
+    searchOnDemand: mcpExposureType(server) === "deferred",
   };
 
   if (server.transport.type === "stdio") {
@@ -234,8 +245,13 @@ const STATUS_LABEL_KEY = {
   "needs-auth": "settings.mcp.status.needsAuth",
 } as const satisfies Record<McpServerStatus, string>;
 
-/** 超过这个工具数就把成本说出来；不自动禁用。 */
-const MANY_TOOLS = 50;
+/**
+ * 常驻工具超过这个数就把成本说出来；不自动禁用。
+ *
+ * 只对常驻的服务器说：进目录的工具不占每步请求，它们多不多是搜索结果的
+ * 事，不是这个提示的事。
+ */
+const MANY_RESIDENT_TOOLS = 50;
 
 export function McpSettings() {
   const { t } = useTranslation();
@@ -403,7 +419,8 @@ export function McpSettings() {
                             {t("settings.mcp.toolCount", {
                               count: status.toolCount,
                             })}
-                            {status.toolCount > MANY_TOOLS ? (
+                            {mcpExposureType(server) === "direct" &&
+                            status.toolCount > MANY_RESIDENT_TOOLS ? (
                               <span className="ml-2 text-amber-600">
                                 {t("settings.mcp.manyTools")}
                               </span>
@@ -908,6 +925,28 @@ export function McpSettings() {
                         </FieldLabel>
                         <FieldDescription>
                           {t("settings.mcp.autoApproveDescription")}
+                        </FieldDescription>
+                      </div>
+                    </Field>
+                  )}
+                </form.Field>
+
+                <form.Field name="searchOnDemand">
+                  {(field) => (
+                    <Field orientation="horizontal">
+                      <Switch
+                        id={field.name}
+                        checked={field.state.value}
+                        onCheckedChange={(checked) => {
+                          field.handleChange(checked);
+                        }}
+                      />
+                      <div>
+                        <FieldLabel htmlFor={field.name}>
+                          {t("settings.mcp.searchOnDemand")}
+                        </FieldLabel>
+                        <FieldDescription>
+                          {t("settings.mcp.searchOnDemandDescription")}
                         </FieldDescription>
                       </div>
                     </Field>

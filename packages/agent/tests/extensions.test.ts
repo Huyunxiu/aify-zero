@@ -16,7 +16,7 @@ import { HooksManager } from "../src/hooks-manager.js";
 import type { HooksMap } from "../src/hooks-manager.js";
 import type { ContextSource, SkillSource } from "../src/resources/types.js";
 import type { SkillInfo } from "../src/skill/skill-types.js";
-import type { AgentToolSet } from "../src/types.js";
+import type { AgentToolSet, ToolExposure } from "../src/types.js";
 
 const makeTool = (description: string): Tool =>
   ({ description }) as unknown as Tool;
@@ -66,6 +66,7 @@ class TestExtension extends Extension {
 
 const makeDeps = () => {
   const tools: ToolSet = {};
+  const exposure = new Map<string, ToolExposure>();
   const hooks = new HooksManager();
   const deps: ExtensionManagerDeps = {
     agent: {
@@ -81,16 +82,18 @@ const makeDeps = () => {
       sessionDir: "/sessions/session-1",
     },
     tools,
-    registerTool: (name, tool) => {
+    registerTool: (name, tool, value) => {
       tools[name] = tool;
+      exposure.set(name, value);
     },
     unregisterTool: (name) => {
       Reflect.deleteProperty(tools, name);
+      exposure.delete(name);
     },
     hooks,
   };
 
-  return { deps, tools, hooks };
+  return { deps, tools, exposure, hooks };
 };
 
 const emitTurnStart = (hooks: HooksManager) =>
@@ -141,6 +144,44 @@ describe(ExtensionManager, () => {
     );
 
     expect(tools.shared).toBe(third);
+  });
+
+  test("records a tool as direct unless it asks to be deferred", async () => {
+    const { deps, exposure } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new TestExtension("tools", (api) => {
+        api.tool("resident", makeTool("resident"));
+        api.tool("hidden", makeTool("hidden"), { exposure: "deferred" });
+      })
+    );
+
+    expect(exposure.get("resident")).toBe("direct");
+    expect(exposure.get("hidden")).toBe("deferred");
+  });
+
+  test("takes the overriding extension's exposure, and drops it on dispose", async () => {
+    const { deps, exposure } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new TestExtension("first", (api) =>
+        api.tool("shared", makeTool("first"), { exposure: "deferred" })
+      )
+    );
+    await manager.add(
+      new TestExtension("second", (api) =>
+        api.tool("shared", makeTool("second"), { override: true })
+      )
+    );
+
+    expect(exposure.get("shared")).toBe("direct");
+
+    await manager.dispose("second");
+
+    // 卸载第二个扩展时工具跟着没了，暴露方式不能留下一条没有对应工具的记录。
+    expect(exposure.has("shared")).toBeFalsy();
   });
 
   test("applies prompt sections by priority, then registration order", async () => {

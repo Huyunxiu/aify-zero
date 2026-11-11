@@ -114,6 +114,8 @@
       "enabled": "启用",
       "autoApprove": "自动放行",
       "autoApproveDescription": "调用时不再询问。自述为破坏性的工具仍然会询问。",
+      "searchOnDemand": "按需搜索",
+      "searchOnDemandDescription": "这些工具只进工具目录，不随每一步请求声明给模型。模型搜到之后再调用。",
       "test": "测试连接",
       "testOk": "连接成功，共 {{count}} 个工具。",
       "testFailed": "失败：{{error}}",

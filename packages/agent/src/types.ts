@@ -1,3 +1,4 @@
+import type { CallToolToolType } from "@workspace/agent/tools/call-tool";
 import type {
   BashToolType,
   DeleteFileToolType,
@@ -15,6 +16,7 @@ import type {
   WriteFileToolType,
 } from "@workspace/agent/tools/index";
 import type { LoadSkillToolType } from "@workspace/agent/tools/load-skill";
+import type { SearchToolsToolType } from "@workspace/agent/tools/search-tools";
 
 export type AgentToolSet = {
   "delete-file": DeleteFileToolType;
@@ -32,4 +34,14 @@ export type AgentToolSet = {
   bash: BashToolType;
   powershell: PowerShellToolType;
   task: TaskToolType;
+  "search-tools": SearchToolsToolType;
+  "call-tool": CallToolToolType;
 };
+
+/**
+ * 一个工具怎么让模型看见。
+ *
+ * `direct` 随每一步请求一起声明给模型；`deferred` 不给模型，只进工具目录，
+ * 模型搜到之后靠转调去调它。
+ */
+export type ToolExposure = "direct" | "deferred";

@@ -229,4 +229,18 @@ describe("turn stream characterization", () => {
     expect(store.updated).toHaveLength(2);
     expect(finished).toStrictEqual(["done"]);
   });
+  test("declares only the tools that are not deferred", async () => {
+    const agent = makeAgent(new FakeStore());
+    agent.registerTool("host-tool", echoTool());
+    agent.registerTool("linear__list_issues", echoTool(), "deferred");
+
+    script(stepResult({ text: "Done." }));
+
+    await runTurn(agent, "Say hi.");
+
+    // 这一步交给 SDK 的工具集里没有 deferred 的那个，但它仍在工具集里。
+    const call = streamTextMock.mock.calls[0]?.[0];
+    expect(Object.keys(call?.tools ?? {})).toStrictEqual(["host-tool"]);
+    expect(agent.tools.linear__list_issues).toBeDefined();
+  });
 });

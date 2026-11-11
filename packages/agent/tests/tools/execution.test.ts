@@ -1,6 +1,6 @@
 import { AgentTurnAssembler } from "@workspace/agent-client";
 import type { AgentStreamEvent } from "@workspace/agent-client";
-import { tool } from "ai";
+import { jsonSchema, tool } from "ai";
 import type { ToolSet } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
@@ -9,8 +9,13 @@ import type { AgentContext } from "../../src/agent-context.js";
 import type { ToolStartDecision } from "../../src/hooks-manager.js";
 import { HooksManager, TOOL_DENIED_TEXT } from "../../src/hooks-manager.js";
 import type { ToolApprovalPattern } from "../../src/tool-approval.js";
-import type { AgentToolCall } from "../../src/tools/execution.js";
+import { resolveCatalogCall } from "../../src/tools/call-tool.js";
+import type {
+  AgentToolCall,
+  CallTargetResolver,
+} from "../../src/tools/execution.js";
 import {
+  declaredTools,
   executeToolCalls,
   stripToolExecution,
 } from "../../src/tools/execution.js";
@@ -54,6 +59,20 @@ const slowTool = (name: string, ms: number) =>
     toModelOutput: ({ output }) => ({ type: "text", value: output.output }),
   });
 
+/** 一个只回一句 ok 的工具，用来验声明集里有没有它。 */
+const quietEcho = () => ({ output: "ok", code: "ok" as const });
+
+/** 把 `call-tool({name, input})` 摊成一次真实调用。 */
+const routeTo = (toolCall: AgentToolCall) => {
+  if (toolCall.toolName !== "call-tool") {
+    return;
+  }
+
+  const input = toolCall.input as { name: string; input: unknown };
+
+  return { toolName: input.name, input: input.input };
+};
+
 /** A tool that reports twice before it is done, as `task` does. */
 const streamingTool = () =>
   tool({
@@ -70,7 +89,8 @@ function run(
   tools: ToolSet,
   toolCalls: AgentToolCall[],
   hooks = new HooksManager(),
-  decideToolApproval?: ToolApprovalPattern
+  decideToolApproval?: ToolApprovalPattern,
+  resolveCallTarget?: CallTargetResolver
 ) {
   const events: AgentStreamEvent<AgentToolSet>[] = [];
 
@@ -85,6 +105,7 @@ function run(
     hooks,
     extensionApi: {},
     decideToolApproval,
+    resolveCallTarget,
     write: (event) => {
       events.push(event);
       return Promise.resolve();
@@ -110,6 +131,29 @@ const decideByValue: ToolApprovalPattern = (request) => {
     : { decision: "allow" };
 };
 
+describe(declaredTools, () => {
+  test("leaves out a deferred tool and declares the rest", () => {
+    const tools = {
+      echo: echoTool(quietEcho),
+      linear__list_issues: echoTool(quietEcho),
+    };
+    const declared = declaredTools(
+      tools,
+      new Map([["linear__list_issues", "deferred" as const]])
+    );
+
+    expect(Object.keys(declared)).toStrictEqual(["echo"]);
+    // The real set is untouched: a deferred tool is still runnable by name.
+    expect(tools).toHaveProperty("linear__list_issues.execute");
+  });
+
+  test("treats a tool with no record as declared", () => {
+    const declared = declaredTools({ echo: echoTool(quietEcho) }, new Map());
+
+    expect(Object.keys(declared)).toStrictEqual(["echo"]);
+  });
+});
+
 describe(stripToolExecution, () => {
   test("drops execute and leaves everything else, original included", () => {
     const original = {
@@ -132,6 +176,193 @@ describe(stripToolExecution, () => {
 });
 
 describe(executeToolCalls, () => {
+  test("asks about the routed tool while recording the route", async () => {
+    const asked: string[] = [];
+    const hooks = new HooksManager();
+    hooks.on("pre_tool_call", (event) => {
+      asked.push(event.toolName);
+    });
+
+    const { result, events } = await run(
+      {
+        linear__list_issues: echoTool(({ value }) => ({
+          output: value,
+          code: "ok" as const,
+        })),
+      },
+      [
+        {
+          toolCallId: "call-1",
+          toolName: "call-tool",
+          input: { name: "linear__list_issues", input: { value: "x" } },
+        },
+      ],
+      hooks,
+      (request) => {
+        asked.push(`approval:${request.toolName}`);
+        return { decision: "allow" };
+      },
+      (toolCall) => {
+        if (toolCall.toolName !== "call-tool") {
+          return;
+        }
+
+        const input = toolCall.input as { name: string; input: unknown };
+
+        return { toolName: input.name, input: input.input };
+      }
+    );
+
+    // 钩子与审批看到的是带注解的真实工具名。
+    expect(asked).toStrictEqual([
+      "linear__list_issues",
+      "approval:linear__list_issues",
+    ]);
+    expect(result.outcomes[0]?.type).toBe("result");
+
+    // 事件与写回模型的 tool-result 仍然是模型发出那个名字，
+    // 否则助手消息里的调用和它的结果对不上。
+    expect(events[0]).toMatchObject({
+      type: "tool.result",
+      toolName: "call-tool",
+    });
+    expect(result.toolMessages[0]?.content[0]).toMatchObject({
+      type: "tool-result",
+      toolName: "call-tool",
+      toolCallId: "call-1",
+    });
+  });
+
+  test("routes a real catalogue call through approval under the real name", async () => {
+    // 用真正的解析函数，而不是测试里的桩：审批拿到的必须是真实工具名和真实入参，
+    // MCP 的注解就挂在那上面。
+    const asked: { input: unknown; toolName: string }[] = [];
+    const { result } = await run(
+      {
+        linear__list_issues: echoTool(({ value }) => ({
+          output: value,
+          code: "ok" as const,
+        })),
+      },
+      [
+        {
+          toolCallId: "call-1",
+          toolName: "call-tool",
+          input: { name: "linear__list_issues", input: { value: "x" } },
+        },
+      ],
+      new HooksManager(),
+      (request) => {
+        asked.push({ toolName: request.toolName, input: request.input });
+        return { decision: "allow" };
+      },
+      resolveCatalogCall
+    );
+
+    expect(asked).toStrictEqual([
+      { toolName: "linear__list_issues", input: { value: "x" } },
+    ]);
+    expect(result.outcomes[0]?.type).toBe("result");
+  });
+
+  test("refuses a routed input that breaks the real tool's schema", async () => {
+    const ran: string[] = [];
+    const { result } = await run(
+      {
+        linear__create_issue: echoTool(({ value }) => {
+          ran.push(value);
+          return { output: value, code: "ok" as const };
+        }),
+      },
+      [
+        {
+          toolCallId: "call-1",
+          toolName: "call-tool",
+          input: { name: "linear__create_issue", input: { value: 42 } },
+        },
+      ],
+      new HooksManager(),
+      () => ({ decision: "allow" }),
+      routeTo
+    );
+
+    // 校验发生在执行之前，所以真实工具一次都没跑。
+    expect(ran).toStrictEqual([]);
+    expect(result.outcomes[0]?.type).toBe("error");
+    // 错误要说清是哪个工具、哪个参数，否则模型只能靠猜。
+    expect(result.outcomes[0]?.errorText).toContain("linear__create_issue");
+    expect(result.outcomes[0]?.errorText).toContain("value");
+  });
+
+  test("passes a routed MCP input through to the server unchecked", async () => {
+    // MCP 工具带的是服务器给的 JSON Schema，本地没有校验器。这条测试把边界
+    // 钉住：入参原样送到服务器，由它拒绝，而不是在这里假装校验过。
+    const ran: unknown[] = [];
+    const mcp = tool({
+      description: "An MCP-shaped tool.",
+      inputSchema: jsonSchema({
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+      }),
+      execute: (input) => {
+        ran.push(input);
+        return { output: "ok", code: "ok" as const };
+      },
+      toModelOutput: ({ output }) => ({ type: "text", value: output.output }),
+    });
+
+    await run(
+      { linear__create_issue: mcp },
+      [
+        {
+          toolCallId: "call-1",
+          toolName: "call-tool",
+          input: { name: "linear__create_issue", input: { value: 42 } },
+        },
+      ],
+      new HooksManager(),
+      () => ({ decision: "allow" }),
+      routeTo
+    );
+
+    expect(ran).toStrictEqual([{ value: 42 }]);
+  });
+
+  test("runs a routed call with the schema's defaults applied", async () => {
+    const defaulted = tool({
+      description: "Takes an optional limit.",
+      inputSchema: z.object({
+        value: z.string(),
+        limit: z.number().default(5),
+      }),
+      execute: ({ value, limit }) => ({
+        output: `${value}:${limit}`,
+        code: "ok" as const,
+      }),
+      toModelOutput: ({ output }) => ({ type: "text", value: output.output }),
+    });
+
+    const { result } = await run(
+      { linear__create_issue: defaulted },
+      [
+        {
+          toolCallId: "call-1",
+          toolName: "call-tool",
+          input: { name: "linear__create_issue", input: { value: "x" } },
+        },
+      ],
+      new HooksManager(),
+      () => ({ decision: "allow" }),
+      routeTo
+    );
+
+    expect(result.outcomes[0]).toMatchObject({
+      type: "result",
+      output: { output: "x:5", code: "ok" },
+    });
+  });
+
   test("runs a step's calls concurrently", async () => {
     const startedAt = performance.now();
     const { result } = await run(

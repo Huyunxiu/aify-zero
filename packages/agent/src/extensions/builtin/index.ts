@@ -5,4 +5,5 @@ export * from "./questionnaire";
 export * from "./shell-tools";
 export * from "./subagent";
 export * from "./title";
+export * from "./tool-catalog";
 export * from "./web-tools";
