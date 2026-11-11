@@ -48,6 +48,7 @@ import {
 } from "../components/tooltip";
 import { useElapsedMs } from "../hooks/use-elapsed-ms";
 import { useTouchPrimary } from "../hooks/use-touch-primary";
+import { toolOutputText } from "../lib/tool-output-text";
 import { cn } from "../lib/utils";
 import { useSubagentPane } from "../stores/subagent-pane";
 import { splitAssistantMessageSteps } from "./assistant-entries";
@@ -335,7 +336,8 @@ const ToolPanels = ({
   renderOutput?: (text: string) => ReactNode;
 }) => {
   const input = JSON.stringify(part.input, null, 2) ?? "";
-  const output = (part.output as { output?: string } | undefined)?.output ?? "";
+  // 结构化结果也要能显示：search-tools 的 output 是对象，直接交给 React 会抛错。
+  const output = toolOutputText(part.output);
 
   return (
     <>
