@@ -12,6 +12,7 @@ import {
   ShellToolsExtension,
   SubagentExtension,
   TitleExtension,
+  ToolCatalogExtension,
   WebToolsExtension,
 } from "./extensions/builtin";
 import { EnvironmentExtension } from "./extensions/environment";
@@ -21,6 +22,7 @@ import type { AgentStore } from "./storage";
 import { appendSubagentPrompt } from "./subagent/definitions";
 import { createSubagentFactory } from "./subagent/factory";
 import type { ToolApprovalPattern } from "./tool-approval";
+import { catalogEntries } from "./tool-catalog/catalog";
 
 /** 默认在调用前询问用户的工具。 */
 const DEFAULT_TOOL_APPROVAL_TOOLS = new Set([
@@ -144,6 +146,14 @@ export async function createSessionAgent(
     await agent.registerExtension(new JobsToolsExtension());
     await agent.registerExtension(new QuestionnaireExtension());
     await agent.registerExtension(new SubagentExtension());
+    // 宿主扩展（MCP 等）在这一句之后注册，所以 `entries` 读的必须是活的工具集，
+    // 而不是此刻的条目快照。
+    await agent.registerExtension(
+      new ToolCatalogExtension({
+        id: "tool-catalog",
+        entries: () => catalogEntries(agent.tools, agent.toolExposure),
+      })
+    );
 
     for (const extension of options.extensions ?? []) {
       await agent.registerExtension(extension);

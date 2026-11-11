@@ -2,7 +2,8 @@ import type { AssemblerModule } from "@workspace/agent-client";
 import type { Tool } from "ai";
 
 import type { HookEventName, HookOptions, HooksMap } from "../hooks-manager";
-import type { AgentToolSet } from "../types";
+import type { CallTargetResolver } from "../tools/execution";
+import type { AgentToolSet, ToolExposure } from "../types";
 import type { CapabilityToken, ToolEnvironment } from "./capabilities";
 
 export interface ExtensionAgentInfo {
@@ -44,7 +45,26 @@ export interface ExtensionAPI {
   /** 工具构造需要的路径与会话身份。 */
   readonly environment: Readonly<ToolEnvironment>;
 
-  tool(name: string, tool: Tool, options?: { override?: boolean }): void;
+  /**
+   * 注册一个工具。
+   *
+   * `exposure` 缺省是 `direct`：工具随每一步请求声明给模型。写 `deferred`
+   * 时工具仍然注册、仍然可以被调用，只是不进声明集，模型要先在工具目录里
+   * 搜到它。
+   *
+   * `resolveCall` 让这个工具成为一个转调入口：模型调用它时，执行层先用它
+   * 算出真正要跑的调用。解析函数跟着工具注册走，不放进 capability——子会话
+   * 复制工具集但不跑扩展，只有挂在工具上的东西才活得下来。
+   */
+  tool(
+    name: string,
+    tool: Tool,
+    options?: {
+      override?: boolean;
+      exposure?: ToolExposure;
+      resolveCall?: CallTargetResolver;
+    }
+  ): void;
 
   /**
    * 读取一个 capability。
@@ -53,6 +73,14 @@ export interface ExtensionAPI {
    * 让扩展拿到 undefined 之后在调用点失败。
    */
   use<T>(token: CapabilityToken<T>): T;
+
+  /**
+   * 读取一个可能没有被提供的 capability。
+   *
+   * 工具目录问的是「哪些服务器的工具不在里面」，而只有 MCP 扩展会回答：
+   * 没有提供者时那是「没有 MCP」，不是错误。
+   */
+  optional<T>(token: CapabilityToken<T>): T | undefined;
 
   /**
    * 提供一个 capability。

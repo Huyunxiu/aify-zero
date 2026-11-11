@@ -202,6 +202,7 @@ const summarizeFileRead = (
     case "binary-file": {
       return "binary file";
     }
+
     default: {
       return undefined;
     }
@@ -462,6 +463,12 @@ export const getPartSummary = (
         return undefined;
       }
       return `${metadata.answered}/${metadata.total} answered`;
+    }
+
+    case "tool-search-tools":
+    case "tool-call-tool": {
+      // 目录工具没有可摘要的结果：一行的标题就是它在干什么。
+      return undefined;
     }
 
     default: {

@@ -12,7 +12,8 @@ import { Agent } from "../agents";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { AgentStore } from "../storage";
 import type { ToolApprovalPattern } from "../tool-approval";
-import type { AgentToolSet } from "../types";
+import type { CallTargetResolver } from "../tools/execution";
+import type { AgentToolSet, ToolExposure } from "../types";
 import {
   generateSessionId,
   generateStepId,
@@ -47,6 +48,27 @@ export function selectSubagentTools(
         !FORBIDDEN_SUBAGENT_TOOLS.has(name) && (!allowed || allowed.has(name))
     )
   );
+}
+
+/**
+ * 子 agent 继承的一组「按工具名存的值」，只保留它留下来的那些工具。
+ *
+ * 暴露方式和转调解析函数都按名字查，所以白名单丢掉的工具如果还留一条记录，
+ * 那条记录描述的是一个不存在的工具。只复制活下来的名字。
+ */
+export function restrictToTools<T>(
+  records: ReadonlyMap<string, T>,
+  tools: ToolSet
+): Map<string, T> {
+  const kept = new Map<string, T>();
+
+  for (const [name, value] of records) {
+    if (Object.hasOwn(tools, name)) {
+      kept.set(name, value);
+    }
+  }
+
+  return kept;
 }
 
 /**
@@ -85,6 +107,20 @@ export type SubagentParent = {
   context: AgentContext;
   /** The pool the subagent's own tool set is drawn from. */
   tools: ToolSet;
+  /**
+   * 父的工具暴露方式。
+   *
+   * 子 agent 不重新注册扩展，工具集是从父继承的；暴露方式一起继承，否则父里
+   * 藏进工具目录的 MCP 工具会在子会话里重新被声明，每步请求又背上它们的 schema。
+   */
+  toolExposure: ReadonlyMap<string, ToolExposure>;
+  /**
+   * 父的工具转调解析函数。
+   *
+   * 子 agent 不跑扩展，所以「转调」这件事只能跟着工具集过来；不继承的话
+   * 父身上被藏进目录的 MCP 工具，在子会话里既不在声明集，也调不动。
+   */
+  toolRoute: ReadonlyMap<string, CallTargetResolver>;
   /** The parent's credentials, so the child calls the same provider. */
   credentials: ProviderCredentials;
   /** 派生它的父会话 id。 */
@@ -264,13 +300,17 @@ export async function createSubagent(
     instructions = section.render(instructions);
   }
 
+  const subagentTools = selectSubagentTools(tools ?? parent.tools, definition);
+
   const agent = new Agent({
     name: `subagent:${definition.name}`,
     sessionId: childSessionId,
     instructions,
     context,
     session,
-    tools: selectSubagentTools(tools ?? parent.tools, definition),
+    tools: subagentTools,
+    toolExposure: restrictToTools(parent.toolExposure, subagentTools),
+    toolRoute: restrictToTools(parent.toolRoute, subagentTools),
     store,
     apiKey: parent.credentials.apiKey,
     apiUrl: parent.credentials.apiUrl,

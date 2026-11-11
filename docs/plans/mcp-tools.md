@@ -12,7 +12,7 @@ sampling 不做。
 | 连接归属   | 进程级共享，见 [ADR-0001](../adr/0001-mcp-connections-shared-across-sessions.md) |
 | 代码落点   | `packages/agent`，配置由宿主注入                                                 |
 | 工具名     | `服务器名__工具名`                                                               |
-| 暴露策略   | 全量注册，不懒加载                                                               |
+| 暴露方式   | 全量注册，但默认只进工具目录，见 [tool-catalog.md](./tool-catalog.md)            |
 | 审批默认   | 只读注解自动放行，其余 ask；`destructiveHint` 永远 ask                           |
 | 连接失败   | 会话照常启动，缺工具，状态进设置页                                               |
 | 结果内容   | 只交 text 与 structuredContent；超过 256 KB 截断                                 |

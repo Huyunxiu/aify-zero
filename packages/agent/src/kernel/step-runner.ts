@@ -28,8 +28,13 @@ import type {
   ToolStartDecision,
 } from "../hooks-manager";
 import { applyRuntimeSettingsPatches } from "../hooks-manager";
-import { executeToolCalls, stripToolExecution } from "../tools/execution";
-import type { AgentToolSet } from "../types";
+import type { CallTargetResolver } from "../tools/execution";
+import {
+  declaredTools,
+  executeToolCalls,
+  stripToolExecution,
+} from "../tools/execution";
+import type { AgentToolSet, ToolExposure } from "../types";
 import { toAgentEvent } from "../utils/to-agent-stream-event";
 import type { ModelGateway } from "./model-gateway";
 import type { TranscriptJournal } from "./transcript-journal";
@@ -81,6 +86,8 @@ export type StepInput = {
 export interface StepRunnerDeps {
   gateway: ModelGateway;
   tools: ToolSet;
+  /** 工具名到暴露方式；`deferred` 的工具不进声明集，但仍可执行。 */
+  toolExposure: ReadonlyMap<string, ToolExposure>;
   session: AgentSession;
   context: AgentContext;
   hooks: HooksManager;
@@ -95,6 +102,12 @@ export interface StepRunnerDeps {
   ): Promise<ToolStartDecision | undefined>;
   /** 模型报告上下文溢出时，交给压缩策略处理；返回是否已恢复。 */
   handleOverflow(error: unknown, turnId: string): Promise<boolean>;
+  /**
+   * 把一次调用解析成真正要跑的那次；没有转调入口时返回 undefined。
+   *
+   * 每次执行现读：扩展可能在会话装配之后才注册，构造 StepRunner 时它还不存在。
+   */
+  resolveCallTarget: CallTargetResolver;
 }
 
 /** Maps effort levels to the AI SDK's reasoning levels. */
@@ -182,6 +195,7 @@ export class StepRunner {
     const {
       gateway,
       tools,
+      toolExposure,
       session,
       context,
       hooks,
@@ -270,6 +284,7 @@ export class StepRunner {
           write: (event) =>
             context.controller?.write(event) ?? Promise.resolve(),
           skipApproval: true,
+          resolveCallTarget: this.#deps.resolveCallTarget,
         });
 
         for (const message of execution.toolMessages) {
@@ -332,7 +347,9 @@ export class StepRunner {
         model,
         // The SDK is given tools it can only describe: an `execute` in this set
         // would have it run the calls itself, out of `pre_tool_call`'s reach.
-        tools: stripToolExecution(tools),
+        // Deferred tools are left out altogether — the model has to search for
+        // them first, so they are not declared on every step.
+        tools: stripToolExecution(declaredTools(tools, toolExposure)),
         stopWhen: isStepCount(1),
         reasoning: context.modelEffort
           ? MODEL_EFFORT_TO_REASONING[context.modelEffort]
@@ -448,6 +465,7 @@ export class StepRunner {
         extensionApi,
         abortSignal: context.abortSignal,
         decideToolApproval: (request) => this.#deps.decideToolApproval(request),
+        resolveCallTarget: this.#deps.resolveCallTarget,
         write: (event) => context.controller?.write(event) ?? Promise.resolve(),
       });
 
