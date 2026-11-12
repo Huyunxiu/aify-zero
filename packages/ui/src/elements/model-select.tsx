@@ -1,4 +1,5 @@
 import { MODEL_EFFORT_LABELS, ModelEffort } from "@workspace/shared/constants";
+import type { ModelRef } from "@workspace/shared/model";
 import { ChevronLeftIcon, XIcon } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentRef } from "react";
@@ -15,26 +16,22 @@ import {
 } from "../components/command";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/popover";
 import { Slider } from "../components/slider";
+import { sameModel } from "../lib/models";
+import type { ModelOption } from "../lib/models";
 import { ModelLogo } from "./model-logo";
 import { PromptInputButton } from "./prompt-input";
 
-export interface AiModelItem {
-  id: string;
-  name: string;
-  provider: string;
-}
-
 export type ModelSelectProps = {
-  models: AiModelItem[];
-  modelId: string | undefined;
+  models: ModelOption[];
+  model: ModelRef | undefined;
   modelEffort: ModelEffort | undefined;
-  onModelChange: (modelId: string) => void;
+  onModelChange: (model: ModelRef) => void;
   onModelEffortChange: (effort: ModelEffort) => void;
 };
 
 export function ModelSelect({
   models,
-  modelId,
+  model,
   modelEffort = ModelEffort.Default,
   onModelChange,
   onModelEffortChange,
@@ -45,37 +42,36 @@ export function ModelSelect({
   const [effort, setEffor] = useState(modelEffort);
   const commandRef = useRef<ComponentRef<typeof Command>>(null);
 
-  const groupedModels = useMemo(() => {
-    const groups = new Map<string, AiModelItem[]>();
-    for (const model of models) {
-      const group = groups.get(model.provider);
+  // 选择器按供应商分组：同一家的模型排在一起。
+  const providerEntries = useMemo(() => {
+    const groups = new Map<string, ModelOption[]>();
+    for (const option of models) {
+      const group = groups.get(option.providerName);
       if (group) {
-        group.push(model);
+        group.push(option);
       } else {
-        groups.set(model.provider, [model]);
+        groups.set(option.providerName, [option]);
       }
     }
-    return groups;
+    return [...groups.entries()];
   }, [models]);
 
   const selectedModel = useMemo(
-    () => models.find((m) => m.id === modelId),
-    [models, modelId]
+    () => models.find((option) => sameModel(option.ref, model)),
+    [models, model]
   );
 
-  const providerEntries = useMemo(
-    () => [...groupedModels.entries()],
-    [groupedModels]
-  );
+  // 不支持推理的模型没有档位可选，直接选完即关。
+  const canPickEffort = selectedModel?.reasoning ?? false;
 
   // The popover's default focus lands on its container (cmdk's root is
   // tabIndex=-1, not tabbable), so cmdk's internal keydown handler would
   // never see arrow/enter keys. Focus the root whenever the list is shown.
   useEffect(() => {
-    if (open && (!selectedModel || effortClose)) {
+    if (open && (!selectedModel || effortClose || !canPickEffort)) {
       commandRef.current?.focus();
     }
-  }, [open, effortClose, selectedModel]);
+  }, [open, effortClose, selectedModel, canPickEffort]);
 
   return (
     <Popover
@@ -84,6 +80,7 @@ export function ModelSelect({
         setOpen(val);
         if (val) {
           setEffortClose(false);
+          setEffor(modelEffort);
         }
       }}
     >
@@ -92,24 +89,18 @@ export function ModelSelect({
           {selectedModel ? (
             <ModelLogo model={selectedModel.name} />
           ) : (
-            <span>Select model</span>
+            <span>{t("settings.provider.selectModel")}</span>
           )}
-          {selectedModel ? (
-            <>
-              <span>{selectedModel.name}</span>
-            </>
-          ) : null}
-          {selectedModel ? (
-            <>
-              <span className="text-muted-foreground">
-                {t(`modelEffort.values.${modelEffort}`)}
-              </span>
-            </>
+          {selectedModel ? <span>{selectedModel.name}</span> : null}
+          {selectedModel && canPickEffort ? (
+            <span className="text-muted-foreground">
+              {t(`modelEffort.values.${modelEffort}`)}
+            </span>
           ) : null}
         </PromptInputButton>
       </PopoverTrigger>
       <PopoverContent align="center" className="p-0">
-        {selectedModel && !effortClose ? (
+        {selectedModel && !effortClose && canPickEffort ? (
           <div className="flex flex-col gap-2 p-2">
             <div className="flex justify-between">
               <div className="flex">
@@ -168,21 +159,25 @@ export function ModelSelect({
         ) : (
           <Command ref={commandRef} className="p-0">
             <CommandList>
-              <CommandEmpty>No results found.</CommandEmpty>
-              {providerEntries.map(([provider, providerModels], index) => (
-                <Fragment key={provider}>
-                  <CommandGroup heading={provider}>
-                    {providerModels.map((model) => (
+              <CommandEmpty>{t("settings.provider.noModels")}</CommandEmpty>
+              {providerEntries.map(([providerName, providerModels], index) => (
+                <Fragment key={providerName}>
+                  <CommandGroup heading={providerName}>
+                    {providerModels.map((option) => (
                       <CommandItem
-                        key={model.id}
-                        value={model.id}
-                        onSelect={(_modelId) => {
+                        key={`${option.ref.providerId}/${option.ref.modelId}`}
+                        value={`${option.ref.providerId}/${option.ref.modelId}`}
+                        onSelect={() => {
                           setEffortClose(false);
-                          onModelChange(_modelId);
+                          setEffor(modelEffort);
+                          onModelChange(option.ref);
+                          if (!option.reasoning) {
+                            setOpen(false);
+                          }
                         }}
                       >
-                        <ModelLogo model={model.name} />
-                        <span>{model.name}</span>
+                        <ModelLogo model={option.name} />
+                        <span>{option.name}</span>
                       </CommandItem>
                     ))}
                   </CommandGroup>

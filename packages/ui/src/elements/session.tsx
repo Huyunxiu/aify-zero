@@ -18,6 +18,7 @@ import {
 import type { ForkSessionType } from "@workspace/server/routers/session/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
+import type { ModelRef } from "@workspace/shared/model";
 import type { LanguageModelUsage } from "ai";
 import { MessageSquareIcon, PanelRightIcon, XIcon } from "lucide-react";
 import * as React from "react";
@@ -73,6 +74,7 @@ import ProximitySidebar from "../components/ui/proximity-sidebar";
 import type { ProximitySection } from "../components/ui/proximity-sidebar";
 import { useAgentSession } from "../hooks/use-agent-session";
 import type { SubmitMode } from "../hooks/use-agent-session";
+import { flattenModels, parseModelRef, sameModel } from "../lib/models";
 import { client, queryClient } from "../lib/orpc";
 import { cn } from "../lib/utils";
 import { AssistantMessage } from "./assistant-message";
@@ -370,12 +372,16 @@ export function Session({
   });
 
   const models = React.useMemo(
-    () => getSettingsQuery.data?.models ?? [],
-    [getSettingsQuery.data?.models]
+    () => flattenModels(getSettingsQuery.data?.providers ?? []),
+    [getSettingsQuery.data?.providers]
   );
-  const [selectedModelId, setSelectedModelId] = React.useState<
-    string | undefined
-  >(() => localStorage.getItem(LOCAL_STORAGE_KEYS.MODEL_ID) ?? undefined);
+  const [selectedModel, setSelectedModel] = React.useState<
+    ModelRef | undefined
+  >(() => parseModelRef(localStorage.getItem(LOCAL_STORAGE_KEYS.MODEL_ID)));
+  const selectedModelOption = React.useMemo(
+    () => models.find((option) => sameModel(option.ref, selectedModel)),
+    [models, selectedModel]
+  );
   const [selectedModelEffort, setSelectedModelEffort] = React.useState<
     ModelEffort | undefined
   >(() => {
@@ -433,16 +439,24 @@ export function Session({
     }
   }, [panelOpen, panelRef]);
 
-  // Restore the last used model, falling back to the first one.
+  // 恢复上次用的模型。顺序：上次的选择 → 设置里的默认模型 → 第一个。
   React.useEffect(() => {
-    if (models.length > 0 && !models.some((m) => m.id === selectedModelId)) {
-      setSelectedModelId(models[0]!.id);
+    if (
+      models.length === 0 ||
+      models.some((option) => sameModel(option.ref, selectedModel))
+    ) {
+      return;
     }
-  }, [models, selectedModelId]);
+    const preferred = getSettingsQuery.data?.defaultModel;
+    const fallback = models.find((option) =>
+      sameModel(option.ref, preferred ?? undefined)
+    );
+    setSelectedModel(fallback?.ref ?? models[0]!.ref);
+  }, [models, selectedModel, getSettingsQuery.data?.defaultModel]);
 
-  const handleModelChange = (modelId: string) => {
-    localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_ID, modelId);
-    setSelectedModelId(modelId);
+  const handleModelChange = (next: ModelRef) => {
+    localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_ID, JSON.stringify(next));
+    setSelectedModel(next);
   };
 
   const handleModelEffortChange = (effort: ModelEffort) => {
@@ -539,7 +553,7 @@ export function Session({
         {
           sessionId: options.sessionId,
           turns: options.approvals?.length ? [] : [options.turns.at(-1)!],
-          model: options.model as string,
+          model: options.model as ModelRef,
           modelEffort: options.modelEffort as string,
           // 项目只在会话首次落库时写入；省略它，会话就落到默认项目。
           projectId,
@@ -745,9 +759,7 @@ export function Session({
       : (usage?.tokens ?? 0);
   }, [turns]);
 
-  const configuredContextWindow = models.find(
-    (model) => model.id === selectedModelId
-  )?.limit?.context;
+  const configuredContextWindow = selectedModelOption?.context;
   const contextWindow =
     configuredContextWindow !== undefined && configuredContextWindow > 0
       ? configuredContextWindow
@@ -785,7 +797,7 @@ export function Session({
    * record — so attaching to the stream and letting the assembler append it is
    * enough: the local transcript stays a prefix of the branch.
    */
-  const handleCompact = async (modelId: string): Promise<void> => {
+  const handleCompact = async (model: ModelRef): Promise<void> => {
     if (!sessionId) {
       toastManager.add({
         description: t("compaction.noSession"),
@@ -799,7 +811,7 @@ export function Session({
     try {
       ({ activeStreamId: compactionStreamId } =
         await client.session.compactSession({
-          model: modelId,
+          model,
           sessionId,
         }));
     } catch (error) {
@@ -837,8 +849,8 @@ export function Session({
   };
 
   const handleSubmit = async (message: PromptInputMessage) => {
-    const modelId = selectedModelId;
-    if (!modelId) {
+    const model = selectedModel;
+    if (!model) {
       return;
     }
 
@@ -858,7 +870,7 @@ export function Session({
 
       // The editor empties once this returns; the run continues on screen as
       // the compaction turn the stream writes.
-      void handleCompact(modelId);
+      void handleCompact(model);
       return;
     }
 
@@ -910,7 +922,7 @@ export function Session({
         turn,
         mode: isGenerating ? busyMode : undefined,
         payload: {
-          model: modelId,
+          model,
           modelEffort: selectedModelEffort,
           projectId: selectedProjectId,
         },
@@ -948,7 +960,7 @@ export function Session({
 
   const handleRespondToolApproval = React.useCallback(
     (approvalId: string, approved: boolean, answer?: ToolApprovalAnswer) => {
-      if (!selectedModelId) {
+      if (!selectedModel) {
         return;
       }
 
@@ -961,7 +973,7 @@ export function Session({
         reason: answer?.reason,
         data: answer?.data,
         payload: {
-          model: selectedModelId,
+          model: selectedModel,
           modelEffort: selectedModelEffort,
           projectId: selectedProjectId,
         },
@@ -969,7 +981,7 @@ export function Session({
     },
     [
       addToolApprovalResponse,
-      selectedModelId,
+      selectedModel,
       selectedModelEffort,
       selectedProjectId,
     ]
@@ -1208,7 +1220,11 @@ export function Session({
                                 <PromptInputActionMenu>
                                   <PromptInputActionMenuTrigger />
                                   <PromptInputActionMenuContent className="min-w-max">
-                                    <PromptInputActionAddAttachments />
+                                    <PromptInputActionAddAttachments
+                                      disabled={
+                                        !selectedModelOption?.acceptsImage
+                                      }
+                                    />
                                   </PromptInputActionMenuContent>
                                 </PromptInputActionMenu>
                                 <ProjectSelect
@@ -1219,7 +1235,7 @@ export function Session({
                                 />
                                 <ModelSelect
                                   models={models}
-                                  modelId={selectedModelId}
+                                  model={selectedModel}
                                   modelEffort={selectedModelEffort}
                                   onModelChange={handleModelChange}
                                   onModelEffortChange={handleModelEffortChange}
@@ -1260,7 +1276,7 @@ export function Session({
                                 )}
                                 <Context
                                   maxTokens={contextWindow}
-                                  modelId={selectedModelId}
+                                  modelId={selectedModelOption?.name}
                                   usage={tokenUsage}
                                   usedTokens={contextUsedTokens}
                                 >
@@ -1280,7 +1296,7 @@ export function Session({
                                   <PromptInputStop onStop={() => void stop()} />
                                 )}
                                 <PromptInputSubmit
-                                  disabled={isEditorEmpty || !selectedModelId}
+                                  disabled={isEditorEmpty || !selectedModel}
                                   label={submitLabel}
                                   status={status}
                                 />

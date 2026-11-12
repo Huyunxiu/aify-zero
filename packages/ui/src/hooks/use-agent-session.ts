@@ -12,10 +12,13 @@ import type {
   JSONObject,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
+import type { ModelRef } from "@workspace/shared/model";
 import { parseJsonEventStream } from "ai";
 import { nanoid } from "nanoid";
 import * as React from "react";
 import throttle from "throttleit";
+
+import { readModelRef } from "../lib/models";
 
 /** 运行中提交消息的投递方式。 */
 export type SubmitMode = "steering" | "followup";
@@ -33,7 +36,7 @@ export type InboxApi = {
     requestId: string;
     mode: SubmitMode;
     turn: AgentUserTurn;
-    model: string;
+    model: ModelRef;
     modelEffort?: string;
     projectId?: string;
   }) => Promise<{ message: InboxMessage }>;
@@ -802,8 +805,7 @@ export function createAgentSessionStore({
       throw new Error("This session is read-only.");
     }
 
-    const model =
-      typeof payload?.model === "string" ? payload.model : undefined;
+    const model = readModelRef(payload?.model);
     if (!model) {
       throw new Error("submit requires a model.");
     }

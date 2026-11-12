@@ -8,6 +8,9 @@ import { describe, expect, test, vi } from "vitest";
 import { createAgentSessionStore } from "../src/hooks/use-agent-session";
 import type { InboxApi } from "../src/hooks/use-agent-session";
 
+/** 测试里到处用的模型引用。 */
+const TEST_MODEL = { providerId: "test", modelId: "test-model" };
+
 const userTurn = (id: string, text: string): AgentUserTurn => ({
   id,
   type: "user",
@@ -36,7 +39,7 @@ const inboxMessage = (
   requestId: `request-${id}`,
   placement,
   content,
-  payload: { model: "test-model" },
+  payload: { model: TEST_MODEL },
   createdAt: 1,
 });
 
@@ -126,7 +129,7 @@ describe("createAgentSessionStore queue", () => {
 
     await store.submit({
       turn: userTurn("u1", "Hello"),
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
 
     expect(calls).toHaveLength(1);
@@ -152,16 +155,16 @@ describe("createAgentSessionStore queue", () => {
 
     await store.submit({
       turn: userTurn("u1", "Start"),
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
     await store.submit({
       turn: userTurn("u2", "Steer"),
       mode: "steering",
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
 
     expect(inbox.api.enqueue).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: "steering", model: "test-model" })
+      expect.objectContaining({ mode: "steering", model: TEST_MODEL })
     );
     expect(store.getInbox()).toHaveLength(1);
 
@@ -195,12 +198,12 @@ describe("createAgentSessionStore queue", () => {
 
     await store.submit({
       turn: userTurn("u1", "Start"),
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
     await store.submit({
       turn: userTurn("u2", "Steer"),
       mode: "steering",
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
 
     const [pending] = store.getInbox();
@@ -245,12 +248,12 @@ describe("createAgentSessionStore queue", () => {
 
     await store.submit({
       turn: userTurn("u1", "Start"),
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
     await store.submit({
       turn: userTurn("u2", "Steer"),
       mode: "steering",
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
     expect(store.getInbox()).toHaveLength(1);
 
@@ -286,12 +289,12 @@ describe("createAgentSessionStore queue", () => {
 
     await store.submit({
       turn: userTurn("u1", "Start"),
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
     await store.submit({
       turn: userTurn("u2", "One"),
       mode: "steering",
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
 
     const [firstPending] = store.getInbox();
@@ -301,7 +304,7 @@ describe("createAgentSessionStore queue", () => {
     await store.submit({
       turn: userTurn("u3", "Two"),
       mode: "steering",
-      payload: { model: "test-model" },
+      payload: { model: TEST_MODEL },
     });
     expect(store.getInbox()).toHaveLength(1);
 
