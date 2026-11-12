@@ -338,3 +338,79 @@ export type McpCredentialModel = InferSelectModel<typeof mcp_credential_table>;
 export type McpCredentialInsertModel = InferInsertModel<
   typeof mcp_credential_table
 >;
+
+/**
+ * 操作者。
+ *
+ * 单操作者时只有一行，登录态都挂在它下面。现在只存名字：以后真的要加第二个
+ * 人，补上 email、密码哈希之类的列即可，登录态表不用改。
+ */
+export const auth_user_table = sqliteTable("auth_user", {
+  id: text("id", { length: 36 })
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  name: text("name").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+export type AuthUserModel = InferSelectModel<typeof auth_user_table>;
+
+/**
+ * 登录态。
+ *
+ * `id` 是令牌的 SHA-256，令牌本身不落库：拿到数据库文件也换不来一次登录。
+ * 过期时间在写入时就固定，使用中才按 `last_used_at` 滑动续期。
+ */
+export const auth_session_table = sqliteTable(
+  "auth_session",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id", { length: 36 })
+      .notNull()
+      .references(() => auth_user_table.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    index("idx_auth_session_user").on(table.userId),
+    index("idx_auth_session_expires").on(table.expiresAt),
+  ]
+);
+
+export type AuthSessionModel = InferSelectModel<typeof auth_session_table>;
+
+/**
+ * 登录票据。
+ *
+ * 不按时间过期，只属于签发它的那次进程运行：`instance` 是进程启动时生成的
+ * 随机值，server 重启后旧链接查不到匹配的 instance，立即失效；同一次运行里
+ * 可以反复使用。`id` 同样是令牌的 SHA-256。
+ */
+export const auth_login_ticket_table = sqliteTable(
+  "auth_login_ticket",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id", { length: 36 })
+      .notNull()
+      .references(() => auth_user_table.id, { onDelete: "cascade" }),
+    instance: text("instance").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("idx_auth_login_ticket_instance").on(table.instance)]
+);
+
+export type AuthLoginTicketModel = InferSelectModel<
+  typeof auth_login_ticket_table
+>;

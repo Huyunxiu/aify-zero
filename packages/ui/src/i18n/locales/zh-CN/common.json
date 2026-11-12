@@ -23,6 +23,12 @@
       "language": {
         "title": "语言",
         "description": "更改显示语言"
+      },
+      "signIn": {
+        "title": "登录链接",
+        "description": "在另一台设备上打开这条链接即可登录。重启 server 后失效。",
+        "create": "生成链接",
+        "creating": "生成中…"
       }
     },
     "appearance": {
@@ -326,5 +332,14 @@
     "restart": "重启终端",
     "connectionFailed": "终端连接失败。",
     "inputBufferFull": "输入没有发出：缓冲区已满。"
+  },
+  "signIn": {
+    "checking": "正在检查登录态…",
+    "requiredTitle": "需要登录",
+    "requiredHint": "请用 server 启动时打印的链接打开。",
+    "unreachableTitle": "无法连接 server",
+    "unreachableHint": "server 没有响应，请确认它正在运行。",
+    "expiredTitle": "登录链接已失效",
+    "expiredHint": "这条链接属于上一次 server 运行。请用最近一次启动打印的链接。"
   }
 }

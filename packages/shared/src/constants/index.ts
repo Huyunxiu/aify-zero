@@ -103,3 +103,19 @@ export const DEFAULT_API_PORT = 18_086;
 
 /** apps/web 的开发服务器端口；桌面反代也用同一个值。 */
 export const DEFAULT_WEB_PORT = 3000;
+
+/**
+ * web 开发服务器端口的变量名。
+ *
+ * Vite 配置和 server 的来源白名单都要读它：前者据此监听，后者据此放行
+ * `http://127.0.0.1:<port>` 的登录态请求。
+ */
+export const WEB_PORT_ENV = "AIFY_WEB_PORT";
+
+/**
+ * 登录链接上的票据参数名。
+ *
+ * 链接落在 web 源上（`/?token=…`），页面读到后调 `/api/auth/login` 换
+ * cookie，然后立刻把参数从地址栏抹掉。
+ */
+export const SIGN_IN_TOKEN_PARAM = "token";

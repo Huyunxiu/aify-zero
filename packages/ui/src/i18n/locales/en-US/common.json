@@ -23,6 +23,12 @@
       "language": {
         "title": "Language",
         "description": "Change the display language"
+      },
+      "signIn": {
+        "title": "Sign-in link",
+        "description": "Open this link on another device to sign in. It stays valid until the server restarts.",
+        "create": "Create link",
+        "creating": "Creating…"
       }
     },
     "appearance": {
@@ -326,5 +332,14 @@
     "restart": "Restart shell",
     "connectionFailed": "The terminal connection failed.",
     "inputBufferFull": "Input was not sent because the buffer is full."
+  },
+  "signIn": {
+    "checking": "Checking sign-in…",
+    "requiredTitle": "Sign in required",
+    "requiredHint": "Open the link printed by the server when it started.",
+    "unreachableTitle": "Cannot reach the server",
+    "unreachableHint": "The server did not answer. Check that it is running.",
+    "expiredTitle": "Sign-in link expired",
+    "expiredHint": "This link belongs to a previous run of the server. Use the link printed at the latest start."
   }
 }
