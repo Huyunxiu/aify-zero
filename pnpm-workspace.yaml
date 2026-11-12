@@ -21,6 +21,9 @@ allowBuilds:
 catalog:
   "@ai-sdk/devtools": 1.0.42
   "@ai-sdk/mcp": ^2.0.74
+  # 钉住 4.0.92：它依赖的 provider / provider-utils 与 ai@7.0.138 完全一致，
+  # 混装会让 LanguageModelV4 出现两种互不兼容的类型。
+  "@ai-sdk/openai": 4.0.92
   "@ai-sdk/openai-compatible": ^3.0.68
   "@ai-sdk/react": 4.0.142
   "@base-ui/react": ^1.9.0

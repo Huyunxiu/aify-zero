@@ -11,6 +11,11 @@ import type { InstructionsSection } from "./extensions/types";
 import type { JobRegistry } from "./jobs/registry";
 import type { AgentToolSet } from "./types";
 
+/** 供应商 id → 模型 id → 上下文窗口。不拼字符串：模型 id 可以自带 `/`。 */
+export type ModelContextWindows = Readonly<
+  Record<string, Readonly<Record<string, number>>>
+>;
+
 export interface AgentStreamEventController {
   /**
    * Appends a data stream part to the stream.
@@ -67,10 +72,10 @@ export type AgentContextOptions = AgentStateOptions & {
    */
   summarize?: SummarizeFn;
   /**
-   * 每个已配置模型的上下文窗口，按 model id 索引。子 agent 跑在自己的模型上，
-   * 从这里解析自己的窗口。
+   * 每个已配置模型的上下文窗口，按供应商和模型两级索引。子 agent 跑在自己的
+   * 模型上，从这里解析自己的窗口。
    */
-  modelContextWindows?: Readonly<Record<string, number>>;
+  modelContextWindows?: ModelContextWindows;
   /**
    * 后台任务注册表。任务要比启动它的那次请求活得久，所以它由宿主创建并
    * 传给每个会话上下文；省略时 `bash` 等工具不提供后台执行，也不注册任务
@@ -90,7 +95,7 @@ export class AgentContext extends AgentState {
   compaction?: ResolvedCompactionPolicy;
   compactionOverrides?: CompactionPolicyOverrides;
   summarize?: SummarizeFn;
-  modelContextWindows?: Readonly<Record<string, number>>;
+  modelContextWindows?: ModelContextWindows;
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
   abortSignal?: AbortSignal;
   jobs?: JobRegistry;

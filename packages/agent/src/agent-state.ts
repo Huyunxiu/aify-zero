@@ -1,15 +1,16 @@
 import type { ModelEffort } from "@workspace/shared/constants";
+import type { ModelRef } from "@workspace/shared/model";
 
 export type AgentStateOptions = {
-  modelId: string;
+  model: ModelRef;
   modelEffort?: ModelEffort;
 };
 
 export class AgentState {
-  modelId: string;
+  model: ModelRef;
   modelEffort?: ModelEffort;
   constructor(options: AgentStateOptions) {
-    this.modelId = options.modelId;
+    this.model = options.model;
     this.modelEffort = options.modelEffort;
   }
 }

@@ -43,11 +43,7 @@ async function startSubagent(
     tools: agent.tools,
     toolExposure: agent.toolExposure,
     toolRoute: agent.toolRoute,
-    credentials: {
-      apiKey: agent.apiKey,
-      apiUrl: agent.apiUrl,
-      providerId: agent.providerId,
-    },
+    resolveModel: agent.resolveModel,
     sessionId: agent.sessionId,
     toolCallId: request.toolCallId,
     toolApprovalPattern: agent.toolApprovalPattern,
@@ -74,7 +70,7 @@ async function startSubagent(
   try {
     const stream = await subagent.stream({
       turns,
-      modelId: subagent.context.modelId,
+      model: subagent.context.model,
       streamId: activeStreamId,
       signal: { type: "turn" },
       onFinish: async (status) => {

@@ -148,7 +148,7 @@ export class StepRunner {
       turnId: input.turnId,
       stepId: input.stepId,
       stepType: input.stepType,
-      modelId: context.modelId,
+      model: context.model,
     };
 
     // 补丁只作用于这一步：模型和系统提示都不写回 context 与 turn 的默认值，
@@ -164,7 +164,7 @@ export class StepRunner {
       "step_end",
       {
         ...event,
-        modelId: runtime.modelId,
+        model: runtime.model,
         status: outcome.ok ? "done" : outcome.reason,
         ...(outcome.ok
           ? {
@@ -204,13 +204,14 @@ export class StepRunner {
       journal,
     } = this.#deps;
     const { turnId, stepId } = input;
-    const model = gateway.languageModel(runtime.modelId);
+    const model = gateway.languageModel(runtime.model);
     const messages = session.modelMessages;
 
     await context.controller?.write({
       type: "step.start",
       stepType: "assistant",
-      model: runtime.modelId,
+      model: runtime.model.modelId,
+      providerId: runtime.model.providerId,
       turnId,
       stepId,
       createdAt: Date.now(),

@@ -104,7 +104,7 @@ const emitTurnStart = (hooks: HooksManager) =>
       name: "main",
       projectDirs: ["/repo"],
       sessionDir: "/sessions/session-1",
-      modelId: "test-model",
+      model: { providerId: "test-provider", modelId: "test-model" },
     },
     {}
   );

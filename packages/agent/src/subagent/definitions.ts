@@ -1,3 +1,4 @@
+import type { ModelRef } from "@workspace/shared/model";
 /**
  * The subagents a `task` call can delegate to.
  *
@@ -18,7 +19,7 @@ export type SubagentDefinition = {
    */
   tools?: readonly string[];
   /** A model to run this subagent on, when it should differ from the parent's. */
-  modelId?: string;
+  model?: ModelRef;
 };
 
 const SUBAGENT_PREAMBLE = `You are a subagent launched by a parent agent to carry out one self-contained task.

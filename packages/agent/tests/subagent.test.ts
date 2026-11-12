@@ -20,6 +20,7 @@ import {
 import type { SubagentDefinition } from "../src/subagent/definitions.js";
 import type { CallTargetResolver } from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
+import { testModel, testResolveModel } from "./helpers/model-target.js";
 
 /** 一个什么都不解析的转调入口；用来验证它有没有跟着工具集走。 */
 const passthroughRoute: CallTargetResolver = (toolCall) => ({
@@ -274,12 +275,10 @@ describe("subagent 的 abort scope", () => {
         sessionId: "parent-session",
         projectDirs: ["/tmp"],
         sessionDir: "/tmp/sessions/parent-session",
-        modelId: "test-model",
+        model: testModel(),
       }),
-      apiKey: "test-key",
-      apiUrl: "http://localhost",
-      providerId: "test-provider",
-      modelId: "test-model",
+      model: testModel(),
+      resolveModel: testResolveModel,
     });
 
   const spawnChild = (parent: Agent) =>
@@ -289,11 +288,7 @@ describe("subagent 的 abort scope", () => {
         tools: {},
         toolExposure: new Map(),
         toolRoute: new Map(),
-        credentials: {
-          apiKey: parent.apiKey,
-          apiUrl: parent.apiUrl,
-          providerId: parent.providerId,
-        },
+        resolveModel: parent.resolveModel,
         sessionId: parent.sessionId,
         toolCallId: "call-1",
       },
@@ -347,16 +342,12 @@ describe("subagent 继承审批函数", () => {
           sessionId: "parent-session",
           projectDirs: ["/tmp"],
           sessionDir: "/tmp/sessions/parent-session",
-          modelId: "test-model",
+          model: testModel(),
         }),
         tools: {},
         toolExposure: new Map(),
         toolRoute: new Map(),
-        credentials: {
-          apiKey: "test-key",
-          apiUrl: "http://localhost",
-          providerId: "test-provider",
-        },
+        resolveModel: testResolveModel,
         sessionId: "parent-session",
         toolCallId: "call-1",
         toolApprovalPattern: askPattern,
@@ -383,16 +374,12 @@ describe("subagent 继承转调入口", () => {
           sessionId: "parent-session",
           projectDirs: ["/tmp"],
           sessionDir: "/tmp/sessions/parent-session",
-          modelId: "test-model",
+          model: testModel(),
         }),
         tools: { "call-tool": {} } as unknown as ToolSet,
         toolExposure: new Map([["call-tool", "direct" as const]]),
         toolRoute: new Map([["call-tool", passthroughRoute]]),
-        credentials: {
-          apiKey: "test-key",
-          apiUrl: "http://localhost",
-          providerId: "test-provider",
-        },
+        resolveModel: testResolveModel,
         sessionId: "parent-session",
         toolCallId: "call-1",
       },
@@ -429,13 +416,11 @@ describe("subagent 继承项目说明", () => {
         sessionId: "parent-session",
         projectDirs: ["/tmp"],
         sessionDir: "/tmp/sessions/parent-session",
-        modelId: "test-model",
+        model: testModel(),
         instructionsSections: [projectSection],
       }),
-      apiKey: "test-key",
-      apiUrl: "http://localhost",
-      providerId: "test-provider",
-      modelId: "test-model",
+      model: testModel(),
+      resolveModel: testResolveModel,
     });
 
   test("子 agent 拿到父加载的那份文件，并且写进了 system prompt", async () => {
@@ -446,11 +431,7 @@ describe("subagent 继承项目说明", () => {
         tools: {},
         toolExposure: new Map(),
         toolRoute: new Map(),
-        credentials: {
-          apiKey: parent.apiKey,
-          apiUrl: parent.apiUrl,
-          providerId: parent.providerId,
-        },
+        resolveModel: parent.resolveModel,
         sessionId: parent.sessionId,
         toolCallId: "call-1",
       },

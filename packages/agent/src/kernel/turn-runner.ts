@@ -85,7 +85,7 @@ export class TurnRunner {
     // turn 上。处理器自己决定是否真的启动，这里只报告事实。
     await this.#deps.hooks.emit(
       "turn_created",
-      { sessionId: this.#deps.sessionId, turnId, modelId: context.modelId },
+      { sessionId: this.#deps.sessionId, turnId, model: context.model },
       this.#deps.extensionApi
     );
 

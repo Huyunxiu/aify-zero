@@ -69,7 +69,7 @@ export class TitleExtension extends Extension {
   }
 
   async #generate(deps: TitleDeps, event: TurnCreatedEvent): Promise<void> {
-    const { sessionId, turnId, modelId } = event;
+    const { sessionId, turnId, model } = event;
 
     const session = await deps.store.getSessionById(sessionId);
     if (session?.title) {
@@ -87,7 +87,7 @@ export class TitleExtension extends Extension {
       turnId,
       stepId,
       stepType: "session.title",
-      modelId,
+      model,
     };
     let status: StepEndEvent["status"] = "error";
 
@@ -97,16 +97,17 @@ export class TitleExtension extends Extension {
         stepEvent,
         NO_HOOK_CONTEXT
       );
-      const { modelId: stepModelId } = applyRuntimeSettingsPatches(
-        { modelId, instructions: "" },
+      const { model: stepModel } = applyRuntimeSettingsPatches(
+        { model, instructions: "" },
         stepStart
       );
-      stepEvent.modelId = stepModelId;
+      stepEvent.model = stepModel;
 
       await deps.events.write({
         type: "step.start",
         stepType: "session.title",
-        model: stepModelId,
+        model: stepModel.modelId,
+        providerId: stepModel.providerId,
         turnId,
         stepId,
         createdAt: Date.now(),
@@ -122,8 +123,7 @@ export class TitleExtension extends Extension {
       });
 
       const signal = deps.abortSignal();
-      const generated = await deps.model.generateText({
-        modelId: stepModelId,
+      const generated = await deps.model.generateText(stepModel, {
         system: TITLE_PROMPT,
         prompt: textOfUserTurn(userTurn),
         // 标题是后台任务；回合被停时它没有理由继续跑。

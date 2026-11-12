@@ -14,10 +14,10 @@ import { Extension } from "../types";
  */
 export class CompactionExtension extends Extension {
   init(api: ExtensionAPI): void {
-    const model = api.use(Capabilities.model);
+    const gateway = api.use(Capabilities.model);
     const strategy: CompactionStrategy = {
       policy: (input) => resolvePolicy(input),
-      summarize: (modelId) => createSummarizer(model.languageModel(modelId)),
+      summarize: (model) => createSummarizer(gateway.languageModel(model)),
     };
 
     api.provide(Capabilities.compaction, strategy);

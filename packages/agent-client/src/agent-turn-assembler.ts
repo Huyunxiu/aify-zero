@@ -1308,6 +1308,7 @@ function createStep<TOOLS extends ToolSet>(
         status: "streaming",
         content: [],
         model: event.model,
+        ...(event.providerId ? { providerId: event.providerId } : {}),
       };
       return step;
     }
@@ -1319,6 +1320,7 @@ function createStep<TOOLS extends ToolSet>(
         status: "streaming",
         content: [],
         model: event.model,
+        ...(event.providerId ? { providerId: event.providerId } : {}),
       };
       return step;
     }
@@ -1330,6 +1332,7 @@ function createStep<TOOLS extends ToolSet>(
         status: "streaming",
         content: [],
         model: event.model,
+        ...(event.providerId ? { providerId: event.providerId } : {}),
       };
       return step;
     }

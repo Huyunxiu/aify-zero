@@ -8,6 +8,7 @@ import { AgentSession } from "../../src/agent-session.js";
 import { Agent } from "../../src/agents.js";
 import type { AgentStore } from "../../src/storage/index.js";
 import { asTurns, userTurn } from "../compaction/fixtures.js";
+import { testModel, testResolveModel } from "../helpers/model-target.js";
 import {
   script,
   stepResult,
@@ -100,12 +101,10 @@ const makeAgent = (store: FakeStore, tools = {}): Agent =>
       sessionId: "session-1",
       projectDirs: ["/tmp"],
       sessionDir: "/tmp/sessions/session-1",
-      modelId: "test-model",
+      model: testModel(),
     }),
-    apiKey: "test-key",
-    apiUrl: "http://localhost",
-    providerId: "test-provider",
-    modelId: "test-model",
+    model: testModel(),
+    resolveModel: testResolveModel,
   });
 
 const readAll = async (stream: ReadableStream): Promise<string[]> => {
@@ -127,7 +126,7 @@ const runTurn = async (agent: Agent, prompt: string) => {
   const finished: string[] = [];
   const stream = await agent.stream({
     turns: asTurns(userTurn("u1", prompt)),
-    modelId: "test-model",
+    model: testModel(),
     streamId: "stream-1",
     signal: { type: "turn" },
     onFinish: (status) => {

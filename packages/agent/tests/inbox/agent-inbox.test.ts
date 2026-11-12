@@ -35,7 +35,7 @@ const inboxInput = (
   requestId,
   placement,
   content: userTurn(`turn-${requestId}`, text),
-  payload: { model: "test-model" },
+  payload: { model: { providerId: "test-provider", modelId: "test-model" } },
 });
 
 /**

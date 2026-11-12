@@ -1,4 +1,5 @@
 import type { AgentTurn } from "@workspace/agent-client";
+import type { ModelRef } from "@workspace/shared/model";
 
 import type { SessionEndStatus } from "../storage";
 import type { AgentToolSet } from "../types";
@@ -18,7 +19,7 @@ export type AgentStreamSignal =
   | { readonly type: "compaction"; readonly trigger: "manual" };
 
 export type AgentStreamOptions = {
-  modelId: string;
+  model: ModelRef;
   turns: AgentTurn<AgentToolSet>[];
   /**
    * 这次运行的 id；就是会话行上的 `activeStreamId`。

@@ -4,12 +4,14 @@ import type {
   AgentTurn,
   AgentTurnStatus,
 } from "@workspace/agent-client";
+import type { ModelRef } from "@workspace/shared/model";
 import type { ToolSet } from "ai";
 
 import { AgentContext } from "../agent-context";
 import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
+import type { ModelTargetResolver } from "../kernel/model-gateway";
 import type { AgentStore } from "../storage";
 import type { ToolApprovalPattern } from "../tool-approval";
 import type { CallTargetResolver } from "../tools/execution";
@@ -95,12 +97,8 @@ export function buildPromptTurn(prompt: string): AgentTurn<AgentToolSet> {
   };
 }
 
-/** Where a subagent's calls are sent: the parent's own provider and key. */
-export type ProviderCredentials = {
-  apiKey: string;
-  apiUrl: string;
-  providerId: string;
-};
+/** 把模型引用解析成调用目标。子 agent 继承父的这份函数，跑在别家的模型上也能拿到地址和密钥。 */
+export type ProviderResolver = ModelTargetResolver;
 
 export type SubagentParent = {
   /** The parent's environment: its project/session directories, skills, and model. */
@@ -121,8 +119,8 @@ export type SubagentParent = {
    * 父身上被藏进目录的 MCP 工具，在子会话里既不在声明集，也调不动。
    */
   toolRoute: ReadonlyMap<string, CallTargetResolver>;
-  /** The parent's credentials, so the child calls the same provider. */
-  credentials: ProviderCredentials;
+  /** 父的模型解析函数：子 agent 用它解析自己的模型。 */
+  resolveModel: ModelTargetResolver;
   /** 派生它的父会话 id。 */
   sessionId: string;
   /** 父会话里这次 `task` 调用的 id。和父会话 id 一起唯一确定一个子会话。 */
@@ -153,7 +151,7 @@ export type CreateSubagentOptions = {
    * The model to run it on. Falls back to the definition's own, then to the
    * parent's.
    */
-  modelId?: string;
+  model?: ModelRef;
   store: AgentStore;
   description: string;
 };
@@ -235,7 +233,7 @@ export type Subagent = {
  */
 function subagentCompaction(
   parent: SubagentParent,
-  modelId: string
+  model: ModelRef
 ): Pick<AgentContext, "compaction" | "summarize"> {
   const { context } = parent;
   const strategy = parent.compaction;
@@ -245,10 +243,11 @@ function subagentCompaction(
 
   return {
     compaction: strategy.policy({
-      contextWindow: context.modelContextWindows?.[modelId],
+      contextWindow:
+        context.modelContextWindows?.[model.providerId]?.[model.modelId],
       overrides: context.compactionOverrides,
     }),
-    summarize: strategy.summarize(modelId),
+    summarize: strategy.summarize(model),
   };
 }
 
@@ -258,7 +257,7 @@ export async function createSubagent(
     definition,
     prompt,
     tools,
-    modelId,
+    model,
     store,
     description,
   }: CreateSubagentOptions
@@ -274,8 +273,7 @@ export async function createSubagent(
     }
   );
   const session = new AgentSession({ turns });
-  const resolvedModelId =
-    modelId ?? definition.modelId ?? parent.context.modelId;
+  const resolvedModel = model ?? definition.model ?? parent.context.model;
 
   const context = new AgentContext({
     sessionId: childSessionId,
@@ -283,12 +281,12 @@ export async function createSubagent(
     // 子 agent 共享父会话的目录：它产出的临时文件属于同一个会话。
     sessionDir: parent.context.sessionDir,
     projectId: parent.context.projectId,
-    modelId: resolvedModelId,
+    model: resolvedModel,
     modelEffort: parent.context.modelEffort,
     // 提示片段跟着父上下文走：子 agent 不重新加载资源，看到的就是父所用的
     // 那一套，只是以子 agent 自己的 instructions 作为起点重新渲染。
     instructionsSections: parent.context.instructionsSections,
-    ...subagentCompaction(parent, resolvedModelId),
+    ...subagentCompaction(parent, resolvedModel),
     modelContextWindows: parent.context.modelContextWindows,
     // 子 agent 继承父会话的工具集，工具闭包里绑定的是父上下文，所以后台
     // 任务同样归父会话所有。
@@ -312,10 +310,8 @@ export async function createSubagent(
     toolExposure: restrictToTools(parent.toolExposure, subagentTools),
     toolRoute: restrictToTools(parent.toolRoute, subagentTools),
     store,
-    apiKey: parent.credentials.apiKey,
-    apiUrl: parent.credentials.apiUrl,
-    providerId: parent.credentials.providerId,
-    modelId: resolvedModelId,
+    model: resolvedModel,
+    resolveModel: parent.resolveModel,
     modelEffort: parent.context.modelEffort,
     // 父的 abort scope 接进来：父会话被停时子 agent 跟着停。不接的话父的 stop
     // 要等这个子 agent 跑完才返回——父的 `#runStep` 卡在 `executeToolCalls` 上，
