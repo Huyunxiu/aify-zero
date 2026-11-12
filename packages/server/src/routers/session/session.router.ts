@@ -10,6 +10,7 @@ import type {
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { ModelEffort } from "@workspace/shared/constants";
+import type { ModelRef } from "@workspace/shared/model";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
@@ -18,7 +19,9 @@ import {
   createSessionLifecycle,
   SessionLifecycleError,
 } from "../../session/lifecycle";
-import { findAiModelById } from "../settings/settings.service";
+import { acceptedEffort, unsupportedInputIn } from "../../session/model-rules";
+import { modelRefSchema } from "../settings/settings.schema";
+import { findConfiguredModel } from "../settings/settings.service";
 import {
   cancelInboxMessage,
   clearInboxMessages,
@@ -86,6 +89,7 @@ const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
   .errors({
     MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+    MODEL_UNSUPPORTED_INPUT: ErrorMap.MODEL_UNSUPPORTED_INPUT,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
     INBOX_MESSAGE_NOT_FOUND: ErrorMap.INBOX_MESSAGE_NOT_FOUND,
@@ -95,7 +99,7 @@ const createSession = publicProcedure
       sessionId: string;
       turns: AgentTurn<AgentToolSet>[];
       approvals?: TextStreamToolApprovalResponseEvent[];
-      model: string;
+      model: ModelRef;
       modelEffort?: string;
       projectId?: string;
       inboxId?: string;
@@ -112,23 +116,31 @@ const createSession = publicProcedure
       inboxId,
     } = input;
 
-    const aiModel = await findAiModelById(model);
-    if (!aiModel) {
-      throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
+    const configured = await findConfiguredModel(model);
+    if (!configured) {
+      throw new ApiError("MODEL_NOT_FOUND", { data: model });
     }
 
-    const effort = Object.values(ModelEffort).includes(
-      modelEffort as ModelEffort
-    )
-      ? (modelEffort as ModelEffort)
-      : undefined;
+    const unsupported = unsupportedInputIn(configured, turns);
+    if (unsupported) {
+      throw new ApiError("MODEL_UNSUPPORTED_INPUT", {
+        data: { kind: unsupported },
+      });
+    }
+
+    const effort = acceptedEffort(
+      configured,
+      Object.values(ModelEffort).includes(modelEffort as ModelEffort)
+        ? (modelEffort as ModelEffort)
+        : undefined
+    );
 
     try {
       return await createSessionLifecycle().create({
         sessionId,
         turns,
         approvals,
-        aiModel,
+        configured,
         effort,
         projectId,
         inboxId,
@@ -233,16 +245,16 @@ export const compactSession = publicProcedure
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
     NOTHING_TO_COMPACT: ErrorMap.NOTHING_TO_COMPACT,
   })
-  .input(z.object({ sessionId: z.string(), model: z.string() }))
+  .input(z.object({ sessionId: z.string(), model: modelRefSchema }))
   .handler(async ({ input }) => {
     const { sessionId, model } = input;
-    const aiModel = await findAiModelById(model);
-    if (!aiModel) {
-      throw new ApiError("MODEL_NOT_FOUND", { data: { model } });
+    const configured = await findConfiguredModel(model);
+    if (!configured) {
+      throw new ApiError("MODEL_NOT_FOUND", { data: model });
     }
 
     try {
-      return await createSessionLifecycle().compact({ sessionId, aiModel });
+      return await createSessionLifecycle().compact({ sessionId, configured });
     } catch (error) {
       toApiError(error);
     }

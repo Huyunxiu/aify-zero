@@ -1,7 +1,10 @@
 import { mcpServerSchema } from "@workspace/agent/mcp/config";
+import { MODEL_PROTOCOLS } from "@workspace/shared/model";
 import z from "zod";
 
 export const Modality = z.enum(["text", "audio", "image", "video", "pdf"]);
+
+export type ModalityName = z.infer<typeof Modality>;
 
 export const Modalities = z
   .object({
@@ -16,22 +19,62 @@ const ModelLimit = z
   })
   .strict();
 
-/** A single AI model configuration */
-export const aiModelSchema = z.object({
+export const modelProtocolSchema = z.enum(MODEL_PROTOCOLS);
+
+/** 唯一确定一个可调用模型的引用。 */
+export const modelRefSchema = z
+  .object({
+    providerId: z.string(),
+    modelId: z.string(),
+  })
+  .strict();
+
+export type ModelRef = z.infer<typeof modelRefSchema>;
+
+/**
+ * 供应商下的一个模型。
+ *
+ * 它只描述模型本身：地址、协议和密钥都属于供应商。
+ */
+export const providerModelSchema = z.object({
+  /** 模型 id：上游用来标识它的字符串，可以自带 `/`。 */
   id: z.string(),
   name: z.string(),
-  provider: z.string(),
-  model: z.string(),
-  apiUrl: z.string(),
-  apiKey: z.string(),
-  compatibleType: z.templateLiteral(["openai"]),
   active: z.boolean().default(true),
+  /** 支持推理档位；为假时界面不显示 effort 滑杆。 */
   reasoning: z.boolean().optional(),
   modalities: Modalities.optional(),
   limit: ModelLimit.optional(),
 });
 
-export type AiModel = z.infer<typeof aiModelSchema>;
+export type ProviderModel = z.infer<typeof providerModelSchema>;
+
+/**
+ * 一个供应商：接入信息加它提供的模型。
+ *
+ * 一个供应商只有一种协议；同一家要用两种就配两条。
+ */
+export const providerSchema = z.object({
+  /** slug，不含 `/`。 */
+  id: z.string(),
+  name: z.string(),
+  protocol: modelProtocolSchema,
+  baseURL: z.string(),
+  apiKey: z.string(),
+  /** 额外请求头；OpenCode 一类网关要求的头由网关自己补。 */
+  headers: z.record(z.string(), z.string()).optional(),
+  active: z.boolean().default(true),
+  models: z.array(providerModelSchema),
+});
+
+export type Provider = z.infer<typeof providerSchema>;
+
+/** 一次调用要用的完整配置：模型加它所属的供应商。 */
+export interface ConfiguredModel {
+  ref: ModelRef;
+  provider: Provider;
+  model: ProviderModel;
+}
 
 /** 所有模型共用的上下文压缩策略。 */
 export const compactionSettingsSchema = z.object({
@@ -59,10 +102,10 @@ export const userSettingsSchema = z.object({
   theme: z.enum(["light", "dark", "system"]),
   /** Interface language */
   language: z.string(),
-  /** Default AI model ID to use */
-  defaultModel: z.string(),
-  /** Configured AI models */
-  models: z.array(aiModelSchema),
+  /** 新会话默认使用的模型；localStorage 里的选择优先。 */
+  defaultModel: modelRefSchema.nullable(),
+  /** 已配置的供应商，模型内嵌在它们下面。 */
+  providers: z.array(providerSchema),
   /** MCP 服务器；连接由进程共享，配置只存在这里。 */
   mcpServers: z.array(mcpServerSchema),
   /** 上下文压缩；默认开启，并使用保守的预算。 */
@@ -75,8 +118,8 @@ export type UserSettings = z.infer<typeof userSettingsSchema>;
 export const USER_SETTINGS_DEFAULTS: UserSettings = {
   theme: "system",
   language: "en-US",
-  defaultModel: "",
-  models: [],
+  defaultModel: null,
+  providers: [],
   mcpServers: [],
   compaction: {
     auto: true,

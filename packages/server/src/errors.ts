@@ -32,7 +32,17 @@ export const ErrorMap = {
   MODEL_NOT_FOUND: {
     status: 400,
     message: "The requested AI model was not found.",
-    data: z.object({ model: z.string() }),
+    data: z.object({ providerId: z.string(), modelId: z.string() }),
+  },
+  MODEL_UNSUPPORTED_INPUT: {
+    status: 400,
+    message: "The selected model does not accept this input.",
+    data: z.object({ kind: z.string() }),
+  },
+  MODEL_LIST_FAILED: {
+    status: 400,
+    message: "The provider's model list could not be read.",
+    data: z.object({ reason: z.string() }),
   },
   SESSION_NOT_FOUND: {
     status: 404,
