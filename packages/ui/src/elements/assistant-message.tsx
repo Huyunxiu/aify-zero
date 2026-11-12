@@ -48,6 +48,7 @@ import {
 } from "../components/tooltip";
 import { useElapsedMs } from "../hooks/use-elapsed-ms";
 import { useTouchPrimary } from "../hooks/use-touch-primary";
+import { toolOutputText } from "../lib/tool-output-text";
 import { cn } from "../lib/utils";
 import { useSubagentPane } from "../stores/subagent-pane";
 import { splitAssistantMessageSteps } from "./assistant-entries";
@@ -145,6 +146,21 @@ const getStepLabel = (action: string, detail?: string) => {
   }
 
   return <span className="text-foreground font-medium">{action}</span>;
+};
+
+/**
+ * 这一行讲的是哪个工具。
+ *
+ * 转调的调用从模型那边看是一次调用，从工具那边看是另一次：行里写真正跑过的
+ * 那个工具，因为 `call-tool` 什么都没说。真名在入参里；还没走到那一步的调用
+ * 退回自己的名字。
+ */
+const getDisplayedToolName = (part: AgentToolPart<AgentToolSet>): string => {
+  if (part.type !== "tool-call-tool" || !("input" in part)) {
+    return getToolName(part);
+  }
+
+  return part.input?.name || getToolName(part);
 };
 
 /** 把一个替换块摊平成 `-`/`+` 行，让步骤读起来像 diff。 */
@@ -320,7 +336,8 @@ const ToolPanels = ({
   renderOutput?: (text: string) => ReactNode;
 }) => {
   const input = JSON.stringify(part.input, null, 2) ?? "";
-  const output = (part.output as { output?: string } | undefined)?.output ?? "";
+  // 结构化结果也要能显示：search-tools 的 output 是对象，直接交给 React 会抛错。
+  const output = toolOutputText(part.output);
 
   return (
     <>
@@ -981,7 +998,8 @@ export const AssistantMessage = ({
               } else if (isAgentToolPart(part)) {
                 // 兜底分支：没有专属渲染的工具都走这里。MCP 工具的渲染因此
                 // 不需要逐个写，新加的内置工具也不会在面板里消失。
-                const toolName = getToolName(part);
+                // 转调的调用按它实际调用的工具显示，见 getDisplayedToolName。
+                const toolName = getDisplayedToolName(part);
                 const separator = toolName.indexOf("__");
                 const serverName =
                   separator > 0 ? toolName.slice(0, separator) : undefined;

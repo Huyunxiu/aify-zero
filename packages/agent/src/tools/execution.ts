@@ -1,6 +1,7 @@
 import { executeTool, isExecutableTool } from "@ai-sdk/provider-utils";
 import type { AgentStreamEvent } from "@workspace/agent-client";
 import { getErrorMessage } from "@workspace/shared/errors";
+import { asSchema } from "ai";
 import type {
   ModelMessage,
   Tool,
@@ -19,7 +20,7 @@ import type {
 } from "../hooks-manager";
 import { resolveToolStartDecision, TOOL_DENIED_TEXT } from "../hooks-manager";
 import type { ToolApprovalPattern } from "../tool-approval";
-import type { AgentToolSet } from "../types";
+import type { AgentToolSet, ToolExposure } from "../types";
 import { getOwn } from "../utils/get-own";
 import { generateEventId } from "../utils/id-util";
 
@@ -29,6 +30,23 @@ export type AgentToolCall = {
   toolName: string;
   input: unknown;
 };
+
+/**
+ * 真正要跑的那次调用。有转调工具时，它和模型发出的那次不是同一个名字。
+ *
+ * `call-tool({ name, input })` 从模型那边看是一次调用，从工具那边看是另一次。
+ * hook 和审批必须看到真实工具——注解在它身上——而历史保留模型用过的名字，助手
+ * 消息和它的结果才对得上。
+ */
+export type CallTarget = {
+  toolName: string;
+  input: unknown;
+};
+
+/** 把模型的调用解析成要跑的那次；返回 undefined 表示「照原样执行」。 */
+export type CallTargetResolver = (
+  toolCall: AgentToolCall
+) => CallTarget | undefined;
 
 /** How one tool call, or the decision not to run it, ended. */
 export type ToolCallOutcome = {
@@ -69,6 +87,13 @@ export type ExecuteToolCallsInput = {
    */
   decideToolApproval?: ToolApprovalPattern;
   skipApproval?: boolean;
+  /**
+   * 把模型的调用解析成真正要跑的那次调用。
+   *
+   * 没有解析器时两者相同。转调工具就是靠它把 `call-tool` 换成真实工具，
+   * 让 hook 与审批看见带注解的那个名字。
+   */
+  resolveCallTarget?: CallTargetResolver;
 };
 
 export type ExecuteToolCallsResult = {
@@ -94,6 +119,22 @@ export type ExecuteToolCallsResult = {
 
 const elapsed = (startedAt: number) =>
   Math.round(performance.now() - startedAt);
+
+/**
+ * 只留这一步声明给模型的工具。
+ *
+ * `deferred` 的工具仍然在真实的工具集里——agent 照旧按名字跑它——只是不交给
+ * SDK。暴露方式只在这里被读一次，所以一个工具要么声明、要么藏起来，不会两边
+ * 都在。
+ */
+export function declaredTools(
+  tools: ToolSet,
+  exposure: ReadonlyMap<string, ToolExposure>
+): ToolSet {
+  return Object.fromEntries(
+    Object.entries(tools).filter(([name]) => exposure.get(name) !== "deferred")
+  );
+}
 
 /**
  * Hands the SDK a tool set that can only describe tools, not run them.
@@ -145,6 +186,7 @@ export async function executeToolCalls(
   const plans: ToolCallPlan[] = input.skipApproval
     ? input.toolCalls.map((toolCall) => ({
         toolCall,
+        target: targetOf(toolCall, input.resolveCallTarget),
         decision: { decision: "allow" },
         startedAt: performance.now(),
       }))
@@ -211,11 +253,23 @@ type ToolRun = {
  */
 type ToolCallPlan = {
   toolCall: AgentToolCall;
+  /** The call to run; equal to `toolCall` unless a route tool was resolved. */
+  target: CallTarget;
   /** The decision, with an approval the user already gave folded in. */
   decision: ToolStartDecision | undefined;
   /** When the call was picked up, so its wall time still includes the hook. */
   startedAt: number;
 };
+
+/** 解析一次调用；没有解析结果时按模型发出的样子执行。 */
+function targetOf(
+  toolCall: AgentToolCall,
+  resolve: CallTargetResolver | undefined
+): CallTarget {
+  const resolved = resolve?.(toolCall);
+
+  return resolved ?? { toolName: toolCall.toolName, input: toolCall.input };
+}
 
 async function planToolCall(
   toolCall: AgentToolCall,
@@ -223,14 +277,17 @@ async function planToolCall(
 ): Promise<ToolCallPlan> {
   const { sessionId, turnId, stepId, messages, hooks, extensionApi } = input;
   const startedAt = performance.now();
+  const target = targetOf(toolCall, input.resolveCallTarget);
 
+  // 请求带的是目标，不是模型发出的那次调用：看到 `call-tool` 的钩子或审批规则
+  // 说不出它要跑哪个工具，而 MCP 的注解挂在真实名字上。
   const request: ToolCallHookEvent = {
     sessionId,
     turnId,
     stepId,
     toolCallId: toolCall.toolCallId,
-    toolName: toolCall.toolName,
-    input: toolCall.input,
+    toolName: target.toolName,
+    input: target.input,
     messages,
   };
 
@@ -247,7 +304,7 @@ async function planToolCall(
     policy ? [...decisions, policy] : decisions
   );
 
-  return { toolCall, decision, startedAt };
+  return { toolCall, target, decision, startedAt };
 }
 
 /**
@@ -320,17 +377,20 @@ async function runToolCall(
     abortSignal,
     write,
   } = input;
-  const { toolCall, decision, startedAt } = plan;
+  const { toolCall, target, decision, startedAt } = plan;
+  // `toolName` is the name the model used — it goes on the protocol events and
+  // on the result part. `target` is what runs, and what the hooks were asked
+  // about.
   const { toolCallId, toolName } = toolCall;
-  const tool = getOwn(tools, toolName);
+  const tool = getOwn(tools, target.toolName);
 
   const hookEvent = {
     sessionId,
     turnId,
     stepId,
     toolCallId,
-    toolName,
-    input: toolCall.input,
+    toolName: target.toolName,
+    input: target.input,
     messages,
   };
 
@@ -366,13 +426,20 @@ async function runToolCall(
   // A hook may rewrite the input, but only the execution sees the rewrite: the
   // call the model made — and the one the transcript replays — keeps the
   // original, so the assistant message and its tool message still line up.
-  const toolInput = toolCall.input;
+  // A route tool's input is the target's input for the same reason.
+  const toolInput = target.input;
+  const routed = target.toolName !== toolName;
 
   try {
+    // 服务端只校验过模型发出的那个外壳（`call-tool({name, input})`），真实工具
+    // 的 schema 从未套用。校验放在这里，签名才算承诺而不只是提示。
+    const runInput = routed
+      ? await validateRoutedInput(tool, target.toolName, toolInput)
+      : toolInput;
     const output = await runExecute(
       tool,
-      toolName,
-      toolInput,
+      target.toolName,
+      runInput,
       {
         toolCallId,
         messages,
@@ -429,7 +496,7 @@ async function runToolCall(
         // read-file result's attachments into model content.
         output: await createToolModelOutput({
           toolCallId,
-          input: toolInput,
+          input: runInput,
           output,
           tool,
           errorMode: "none",
@@ -478,6 +545,62 @@ async function runToolCall(
       },
     };
   }
+}
+
+/**
+ * 按真实工具自己的 schema 校验一次转调来的入参。
+ *
+ * 服务端校验的是模型发出的那次调用，而转调的那次是 `call-tool({ name, input })`
+ * ——里面的 `input` 一路没人看。这里返回校验后的值，所以 schema 声明的默认值和
+ * 直接调用一样会被补上。
+ *
+ * 只校验「能校验」的 schema。MCP 工具带的是服务器给的 JSON Schema，而这个 SDK
+ * 的 `jsonSchema()` 不提供校验器，它的入参仍然原样送到服务器，由服务器拒绝，
+ * 再把错误文本交回模型。
+ */
+async function validateRoutedInput(
+  tool: Tool | undefined,
+  toolName: string,
+  input: unknown
+): Promise<unknown> {
+  if (!tool || tool.inputSchema === undefined) {
+    return input;
+  }
+
+  const schema = asSchema(tool.inputSchema);
+  // 没有 `validate` 的 schema 什么都证明不了，只能放行：MCP 的 JSON Schema
+  // 就是这一档，它的入参由服务器自己拒绝。
+  if (!schema.validate) {
+    return input;
+  }
+
+  const result = await schema.validate(input);
+
+  if (result.success) {
+    return result.value;
+  }
+
+  throw new TypeError(
+    `Input for "${toolName}" does not match its schema: ${describeValidationError(result.error)}`
+  );
+}
+
+/** 校验失败时给模型看的那句话：哪个参数、为什么。 */
+function describeValidationError(error: unknown): string {
+  const { issues } = error as {
+    issues?: { message?: string; path?: unknown[] }[];
+  };
+
+  if (!Array.isArray(issues) || issues.length === 0) {
+    return getErrorMessage(error) ?? "input is not valid";
+  }
+
+  return issues
+    .map(
+      (issue) =>
+        `${(issue.path ?? []).join(".") || "input"}: ${issue.message ?? "is not valid"}`
+    )
+    .join("; ");
 }
 
 async function runExecute(

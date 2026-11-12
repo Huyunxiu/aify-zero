@@ -65,6 +65,18 @@ export interface SubagentFactory {
 }
 
 /**
+ * 一个装配时没就绪的服务器，以及模型搜不到它工具的原因。
+ *
+ * 「这台服务器上真的没有那个工具」和「这台服务器没连上」是两件事，搜索
+ * 结果必须分开说，否则模型会换个词继续搜一个根本搜不到的服务器。
+ */
+export type CatalogUnavailable = {
+  server: string;
+  /** 给模型看的原因短语，例如 `needs authorization`。 */
+  reason: string;
+};
+
+/**
  * 往当前流写协议事件。
  *
  * 没有正在运行的流时写入被丢弃：后台任务（标题、摘要）可能在流关闭后才
@@ -103,4 +115,12 @@ export const Capabilities = {
   abortSignal: capability<() => AbortSignal | undefined>("abortSignal"),
   /** 上下文压缩策略；没有提供者时压缩不可用。 */
   compaction: capability<CompactionStrategy>("compaction"),
+  /**
+   * 工具目录里搜不到的服务器。
+   *
+   * 只有 MCP 扩展会提供它；没有 MCP 的会话不存在这个能力，所以读的人是
+   * 用 `optional` 问，而不是 `use`。
+   */
+  catalogUnavailable:
+    capability<() => readonly CatalogUnavailable[]>("catalogUnavailable"),
 } as const;

@@ -114,6 +114,8 @@
       "enabled": "Enabled",
       "autoApprove": "Approve automatically",
       "autoApproveDescription": "Allow calls without asking. Tools that report themselves as destructive still ask.",
+      "searchOnDemand": "Search on demand",
+      "searchOnDemandDescription": "These tools stay in the tool catalog. The model searches for them, then calls them from there.",
       "test": "Test connection",
       "testOk": "Connected. {{count}} tools.",
       "testFailed": "Failed: {{error}}",

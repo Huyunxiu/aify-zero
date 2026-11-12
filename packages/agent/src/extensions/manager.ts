@@ -12,7 +12,8 @@ import type {
   HooksManager,
   HooksMap,
 } from "../hooks-manager";
-import type { AgentToolSet } from "../types";
+import type { CallTargetResolver } from "../tools/execution";
+import type { AgentToolSet, ToolExposure } from "../types";
 import type { CapabilityToken, ToolEnvironment } from "./capabilities";
 import type {
   Extension,
@@ -27,7 +28,12 @@ export interface ExtensionManagerDeps {
   /** 内核预先提供的 capability，例如 transcript。 */
   capabilities?: ReadonlyMap<string, unknown>;
   tools: ToolSet;
-  registerTool(name: string, tool: Tool): void;
+  registerTool(
+    name: string,
+    tool: Tool,
+    exposure: ToolExposure,
+    resolveCall?: CallTargetResolver
+  ): void;
   unregisterTool(name: string): void;
   hooks: HooksManager;
 }
@@ -172,7 +178,12 @@ export class ExtensionManager {
         if (name in this.#deps.tools && !options?.override) {
           throw new Error(`tool "${name}" is already registered`);
         }
-        this.#deps.registerTool(name, tool);
+        this.#deps.registerTool(
+          name,
+          tool,
+          options?.exposure ?? "direct",
+          options?.resolveCall
+        );
         record.tools.set(name, tool);
       },
       use: <T>(token: CapabilityToken<T>): T => {
@@ -182,6 +193,8 @@ export class ExtensionManager {
         }
         return value as T;
       },
+      optional: <T>(token: CapabilityToken<T>): T | undefined =>
+        this.#capabilities.get(token.id) as T | undefined,
       provide: <T>(
         token: CapabilityToken<T>,
         value: T,

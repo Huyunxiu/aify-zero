@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { ToolExposure } from "../types";
+
 /** 工具名前缀与工具名之间的分隔符。 */
 const MCP_TOOL_NAME_SEPARATOR = "__";
 
@@ -63,6 +65,13 @@ export const mcpServerSchema = z
     enabled: z.boolean().default(true),
     /** 放行没有只说读的工具；破坏性注解仍然询问。 */
     autoApprove: z.boolean().default(false),
+    /**
+     * 这些工具是否随每一步请求声明给模型。
+     *
+     * 字段可省略：旧设置里没有它，读的时候按 `deferred` 推断，不用迁移数据。
+     * 补默认值放在 {@link mcpExposureType}，和 `auth` 同一套做法。
+     */
+    exposure: z.enum(["direct", "deferred"]).optional(),
     auth: mcpAuthSchema.optional(),
     transport: z.discriminatedUnion("type", [
       mcpStdioTransportSchema,
@@ -108,6 +117,16 @@ export function needsMcpAuthorization(server: McpServerConfig): boolean {
     server.transport.type !== "stdio" &&
     server.enabled
   );
+}
+
+/**
+ * 这台服务器的工具是否声明给模型。
+ *
+ * 缺省 `deferred`：工具只进工具目录，模型搜到之后用转调调用它。改成 `direct`
+ * 就是退回全量声明，适合工具少又天天要用的服务器。
+ */
+export function mcpExposureType(server: McpServerConfig): ToolExposure {
+  return server.exposure ?? "deferred";
 }
 
 /** 模型看到的工具名。 */

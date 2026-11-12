@@ -28,6 +28,8 @@ import { createOpenAICompatibleGateway } from "./model/gateway";
 import type { AgentStore } from "./storage";
 import { evaluateToolApproval } from "./tool-approval";
 import type { ToolApprovalPattern } from "./tool-approval";
+import type { CallTargetResolver } from "./tools/execution";
+import type { ToolExposure } from "./types";
 
 export type { AgentStreamOptions, AgentStreamSignal } from "./kernel/run-types";
 export { NothingToCompactError } from "./kernel/run-types";
@@ -40,6 +42,15 @@ export type AgentOptions = {
   sessionId: string;
   session: AgentSession;
   tools?: ToolSet;
+  /**
+   * 工具名到暴露方式的表；缺省表示每个工具都是 `direct`。
+   *
+   * 子 agent 从这里继承父的暴露方式，否则父里藏起来的 MCP 工具会在子会话
+   * 里重新变成常驻工具。
+   */
+  toolExposure?: ReadonlyMap<string, ToolExposure>;
+  /** 工具名到转调解析函数；子 agent 从父继承。 */
+  toolRoute?: ReadonlyMap<string, CallTargetResolver>;
   store: AgentStore;
   instructions?: string;
   context: AgentContext;
@@ -78,6 +89,15 @@ export class Agent {
   sessionId: string;
   instructions?: string;
   tools: ToolSet;
+  /** 工具名到暴露方式，和 `tools` 同生共死：注册写入，注销删除。 */
+  toolExposure: Map<string, ToolExposure>;
+  /**
+   * 工具名到转调解析函数。
+   *
+   * 它是一个工具自己的性质，所以跟着工具集走：子会话复制工具集时，转调入口
+   * 才不会变成一个只会报错的空壳。
+   */
+  toolRoute: Map<string, CallTargetResolver>;
 
   store: AgentStore;
   readonly inbox: AgentInbox;
@@ -117,6 +137,8 @@ export class Agent {
     this.sessionId = options.sessionId;
     this.instructions = options.instructions;
     this.tools = options.tools ?? {};
+    this.toolExposure = new Map(options.toolExposure);
+    this.toolRoute = new Map(options.toolRoute);
     this.store = options.store;
     this.inbox = options.inbox ?? new AgentInbox(options.store);
     this.hooks = options.hooks ?? new HooksManager();
@@ -197,8 +219,8 @@ export class Agent {
       environment,
       capabilities,
       tools: this.tools,
-      registerTool: (name, tool) => {
-        this.registerTool(name, tool);
+      registerTool: (name, tool, exposure, resolveCall) => {
+        this.registerTool(name, tool, exposure, resolveCall);
       },
       unregisterTool: (name) => {
         this.unregisterTool(name);
@@ -220,6 +242,7 @@ export class Agent {
     this.#stepRunner = new StepRunner({
       gateway: this.gateway,
       tools: this.tools,
+      toolExposure: this.toolExposure,
       session: this.session,
       context: this.context,
       hooks: this.hooks,
@@ -231,6 +254,8 @@ export class Agent {
         evaluateToolApproval(this.#toolApprovalPattern, request),
       handleOverflow: (error, turnId) =>
         this.#compaction.handleOverflow(error, turnId),
+      resolveCallTarget: (toolCall) =>
+        this.toolRoute.get(toolCall.toolName)?.(toolCall),
     });
 
     this.#turnRunner = new TurnRunner({
@@ -262,13 +287,26 @@ export class Agent {
     });
   }
 
-  registerTool(name: string, tool: Tool) {
+  registerTool(
+    name: string,
+    tool: Tool,
+    exposure: ToolExposure = "direct",
+    resolveCall?: CallTargetResolver
+  ) {
     this.tools[name] = tool;
+    this.toolExposure.set(name, exposure);
+    if (resolveCall) {
+      this.toolRoute.set(name, resolveCall);
+    } else {
+      this.toolRoute.delete(name);
+    }
   }
 
   unregisterTool(name: string) {
     // oxlint-disable-next-line typescript/no-dynamic-delete
     delete this.tools[name];
+    this.toolExposure.delete(name);
+    this.toolRoute.delete(name);
   }
 
   /**

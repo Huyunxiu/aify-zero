@@ -13,6 +13,7 @@ import type { ToolCallHookEvent } from "../src/hooks-manager.js";
 import type { CompactionStrategy } from "../src/kernel/compaction-strategy.js";
 import type { AgentStore } from "../src/storage/index.js";
 import { evaluateToolApproval } from "../src/tool-approval.js";
+import { catalogEntries } from "../src/tool-catalog/catalog.js";
 
 const makeAgent = (
   options: Partial<Parameters<typeof createSessionAgent>[0]> = {}
@@ -43,6 +44,14 @@ const markerTool = (): Tool =>
 class HostExtension extends Extension {
   init(api: ExtensionAPI): void {
     api.tool("host-tool", markerTool());
+  }
+}
+
+/** 一个常驻工具加一个只进目录的宿主扩展。 */
+class DeferredExtension extends Extension {
+  init(api: ExtensionAPI): void {
+    api.tool("resident-tool", markerTool());
+    api.tool("hidden-tool", markerTool(), { exposure: "deferred" });
   }
 }
 
@@ -135,6 +144,42 @@ describe(createSessionAgent, () => {
     });
 
     expect(agent.tools["host-tool"]).toBeDefined();
+  });
+
+  test("keeps a deferred tool registered but out of the declared set", async () => {
+    const agent = await makeAgent({
+      extensions: [new DeferredExtension({ id: "host" })],
+    });
+
+    // 注册照旧：转调要按名字找到它。
+    expect(agent.tools["hidden-tool"]).toBeDefined();
+    expect(agent.toolExposure.get("hidden-tool")).toBe("deferred");
+    // 目录读的是同一份注册信息，所以宿主扩展后注册的工具也在里面。
+    expect(
+      catalogEntries(agent.tools, agent.toolExposure).map((entry) => entry.name)
+    ).toStrictEqual(["hidden-tool"]);
+  });
+
+  test("registers the two catalog tools and the paragraph that points at them", async () => {
+    const agent = await makeAgent();
+
+    // 两个常驻工具由目录扩展自己注册。
+    expect(agent.tools["search-tools"]).toBeDefined();
+    expect(agent.tools["call-tool"]).toBeDefined();
+    // 没有目录条目时这个片段什么都不加；别的片段照常写自己的段落。
+    expect(agent.extensions.renderInstructions("base")).not.toContain(
+      "## Tool catalog"
+    );
+  });
+
+  test("names the server in the paragraph once it has hidden tools", async () => {
+    const agent = await makeAgent({
+      extensions: [new DeferredExtension({ id: "host" })],
+    });
+
+    expect(agent.extensions.renderInstructions("base")).toContain(
+      "## Tool catalog"
+    );
   });
 
   test("provides the default compaction strategy", async () => {

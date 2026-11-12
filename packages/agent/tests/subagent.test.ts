@@ -1,4 +1,5 @@
 import type { AgentTurn } from "@workspace/agent-client";
+import type { ToolSet } from "ai";
 import { describe, expect, test } from "vitest";
 
 import { AgentContext } from "../src/agent-context.js";
@@ -11,12 +12,20 @@ import type { SessionRecord, SessionWrite } from "../src/storage/types.js";
 import {
   buildPromptTurn,
   createSubagent,
+  restrictToTools,
   readSubagentResult,
   resolveSubagentSession,
   selectSubagentTools,
 } from "../src/subagent/create.js";
 import type { SubagentDefinition } from "../src/subagent/definitions.js";
+import type { CallTargetResolver } from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
+
+/** 一个什么都不解析的转调入口；用来验证它有没有跟着工具集走。 */
+const passthroughRoute: CallTargetResolver = (toolCall) => ({
+  toolName: toolCall.toolName,
+  input: toolCall.input,
+});
 
 /** 父注册的审批函数；子 agent 应当原样继承。 */
 const askPattern = () => ({ decision: "ask" as const });
@@ -228,6 +237,28 @@ describe(selectSubagentTools, () => {
   });
 });
 
+describe(restrictToTools, () => {
+  test("keeps the record only for the tools the subagent kept", () => {
+    const kept = {
+      bash: {},
+      linear__list_issues: {},
+    } as unknown as ToolSet;
+    const inherited = restrictToTools(
+      new Map([
+        ["bash", "direct" as const],
+        ["linear__list_issues", "deferred" as const],
+        ["notion__search", "deferred" as const],
+      ]),
+      kept
+    );
+
+    expect([...inherited]).toStrictEqual([
+      ["bash", "direct"],
+      ["linear__list_issues", "deferred"],
+    ]);
+  });
+});
+
 describe("subagent 的 abort scope", () => {
   /**
    * 造一个真的父 agent：`context.abortSignal` 由它的构造函数设成自己的
@@ -256,6 +287,8 @@ describe("subagent 的 abort scope", () => {
       {
         context: parent.context,
         tools: {},
+        toolExposure: new Map(),
+        toolRoute: new Map(),
         credentials: {
           apiKey: parent.apiKey,
           apiUrl: parent.apiUrl,
@@ -317,6 +350,8 @@ describe("subagent 继承审批函数", () => {
           modelId: "test-model",
         }),
         tools: {},
+        toolExposure: new Map(),
+        toolRoute: new Map(),
         credentials: {
           apiKey: "test-key",
           apiUrl: "http://localhost",
@@ -335,6 +370,42 @@ describe("subagent 继承审批函数", () => {
     );
 
     expect(child.toolApprovalPattern).toBe(askPattern);
+  });
+});
+
+describe("subagent 继承转调入口", () => {
+  test("子 agent 不跑扩展，转调照样可用", async () => {
+    // 子会话复制工具集，但不注册扩展。转调解析若挂在扩展或 capability 上，
+    // 这里就会退化成「工具在册、声明集里没有、也调不动」。
+    const { agent: child } = await createSubagent(
+      {
+        context: new AgentContext({
+          sessionId: "parent-session",
+          projectDirs: ["/tmp"],
+          sessionDir: "/tmp/sessions/parent-session",
+          modelId: "test-model",
+        }),
+        tools: { "call-tool": {} } as unknown as ToolSet,
+        toolExposure: new Map([["call-tool", "direct" as const]]),
+        toolRoute: new Map([["call-tool", passthroughRoute]]),
+        credentials: {
+          apiKey: "test-key",
+          apiUrl: "http://localhost",
+          providerId: "test-provider",
+        },
+        sessionId: "parent-session",
+        toolCallId: "call-1",
+      },
+      {
+        definition,
+        prompt: "Find the thing.",
+        store: asStore(new FakeStore()),
+        description: taskLabel,
+      }
+    );
+
+    expect(child.toolRoute.get("call-tool")).toBe(passthroughRoute);
+    expect(child.toolExposure.get("call-tool")).toBe("direct");
   });
 });
 
@@ -373,6 +444,8 @@ describe("subagent 继承项目说明", () => {
       {
         context: parent.context,
         tools: {},
+        toolExposure: new Map(),
+        toolRoute: new Map(),
         credentials: {
           apiKey: parent.apiKey,
           apiUrl: parent.apiUrl,

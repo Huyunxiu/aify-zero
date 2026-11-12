@@ -4,6 +4,7 @@ import {
   findMcpServerProblems,
   isValidMcpServerName,
   mcpAuthType,
+  mcpExposureType,
   mcpServerSchema,
   mcpToolName,
   needsMcpAuthorization,
@@ -118,6 +119,32 @@ describe("MCP server config", () => {
         transport: { type: "stdio", command: "node" },
       }).success
     ).toBeFalsy();
+  });
+});
+
+describe(mcpExposureType, () => {
+  test("keeps the tools out of the declared set when the field is absent", () => {
+    // 旧设置里没有这个字段，读出来必须是 deferred，否则升级后行为不变。
+    expect(mcpExposureType({ ...oauthServer, exposure: undefined })).toBe(
+      "deferred"
+    );
+  });
+
+  test("reads the explicit value", () => {
+    expect(mcpExposureType({ ...oauthServer, exposure: "direct" })).toBe(
+      "direct"
+    );
+  });
+
+  test("parses a stored server that predates the field", () => {
+    const parsed = mcpServerSchema.parse({
+      id: "linear",
+      name: "linear",
+      transport: { type: "stdio", command: "node" },
+    });
+
+    expect(parsed.exposure).toBeUndefined();
+    expect(mcpExposureType(parsed)).toBe("deferred");
   });
 });
 
