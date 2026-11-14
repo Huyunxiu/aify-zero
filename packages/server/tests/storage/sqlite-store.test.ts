@@ -17,10 +17,6 @@ import {
 // 被加载之前；这里先设环境变量，再在 `beforeAll` 里动态导入。
 const dir = mkdtempSync(path.join(tmpdir(), "aify-store-"));
 process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
-process.env.AIFY_MIGRATIONS_DIR = path.resolve(
-  import.meta.dirname,
-  "../../../db/src/migrations"
-);
 
 let store: AgentStore;
 

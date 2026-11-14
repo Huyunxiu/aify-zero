@@ -22,10 +22,6 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const dir = mkdtempSync(path.join(tmpdir(), "aify-workspace-route-"));
 process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
-process.env.AIFY_MIGRATIONS_DIR = path.resolve(
-  import.meta.dirname,
-  "../../db/src/migrations"
-);
 
 const API_TOKEN = "test-api-token";
 const headers = { authorization: `Bearer ${API_TOKEN}` };
