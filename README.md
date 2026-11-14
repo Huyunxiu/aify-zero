@@ -118,14 +118,21 @@ the `aify-app://` forwarder, and reloads the page. The runtime switch only
 accepts loopback origins; configure remote servers with `AIFY_API_ORIGIN` and
 `AIFY_API_TOKEN` before launch.
 
-The packaged app creates/migrates `~/.aify-zero/aify-zero.db` from the
-migrations bundled at `Resources/migrations` (see
-`packagerConfig.extraResource`); the bundled server process runs the migration
-on startup. Development uses the repository `local.db` and never auto-migrates
-(`db:push` owns the dev schema). If a packaged database was created by
-`db:push` it has no migration history: point `DATABASE_URL` at it and run
-`vp run db#db:migrate` first, otherwise the packaged app shows a migration error
-on launch.
+Migration files are the only source of schema, and every server start applies
+them. The packaged app migrates `~/.aify-zero/aify-zero.db` from the migrations
+bundled at `Resources/migrations` (see `packagerConfig.extraResource`);
+`dev:server`, `dev:desktop` and the standalone `apps/server` build migrate the
+checkout's `local.db`, which every worktree owns. A failed migration stops
+startup instead of serving a stale schema.
+
+Schema changes therefore need a migration: run `vp run db#db:generate`, review
+the generated SQL, and commit it. `vp ready` runs `db:check`, which fails when
+the schema has changes without a migration. A database that has tables but no
+migration history cannot start, because it was built before this rule: run
+`vp run db#db:baseline` once to mark its existing schema as applied without
+replaying any SQL, or delete the file and let startup recreate it. The drizzle
+commands (`db:baseline`, `db:migrate`, `db:studio`) act on the checkout
+`local.db` by default; set `DATABASE_URL` to target another database.
 
 Environment variables are loaded by the process entry, not by library modules:
 `apps/server` reads `apps/server/.env` then the repository root `.env`, and the

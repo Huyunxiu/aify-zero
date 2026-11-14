@@ -16,10 +16,6 @@ import type { HonoEnv } from "../src/hono-env";
 
 const dir = mkdtempSync(path.join(tmpdir(), "aify-auth-session-"));
 process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
-process.env.AIFY_MIGRATIONS_DIR = path.resolve(
-  import.meta.dirname,
-  "../../db/src/migrations"
-);
 
 const API_TOKEN = "test-api-token";
 const WEB_ORIGIN = "http://127.0.0.1:3000";

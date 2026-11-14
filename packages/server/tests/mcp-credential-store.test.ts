@@ -8,21 +8,12 @@ import { afterAll, describe, expect, test } from "vitest";
 const directory = await mkdtemp(path.join(tmpdir(), "aify-mcp-credential-"));
 process.env.DATABASE_URL = `file:${path.join(directory, "test.db")}`;
 
-const { closeDb, db } = await import("@workspace/db");
-const { sql } = await import("drizzle-orm");
+const { closeDb, migrateDb } = await import("@workspace/db");
 const { SqliteMcpCredentialStore } = await import("../src/mcp/credentials");
 
-await db.run(sql`
-  create table mcp_credential (
-    server_id text not null,
-    kind text not null,
-    generation integer not null default 0,
-    content text not null,
-    created_at integer not null default (unixepoch() * 1000),
-    updated_at integer not null default (unixepoch() * 1000),
-    primary key (server_id, kind)
-  )
-`);
+// 表结构只有迁移一个来源；手写 DDL 会和 schema 各写一遍，schema 加列时这里
+// 仍然通过，测的就不是真正的表。
+await migrateDb();
 
 describe(SqliteMcpCredentialStore, () => {
   afterAll(async () => {

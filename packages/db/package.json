@@ -10,8 +10,8 @@
     }
   },
   "scripts": {
-    "db:local": "turso dev --db-file local.db",
-    "db:push": "drizzle-kit push",
+    "db:baseline": "tsx src/baseline.ts",
+    "db:check": "tsx src/check-drift.ts",
     "db:generate": "drizzle-kit generate",
     "db:studio": "drizzle-kit studio",
     "db:migrate": "drizzle-kit migrate"
@@ -26,6 +26,7 @@
   "devDependencies": {
     "@workspace/config": "workspace:*",
     "drizzle-kit": "^0.31.10",
+    "tsx": "catalog:",
     "typescript": "catalog:"
   }
 }
