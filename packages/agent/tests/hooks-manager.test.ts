@@ -1,3 +1,4 @@
+import type { ModelRef } from "@workspace/shared/model";
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 
 import {
@@ -24,12 +25,17 @@ declare module "../src/hooks-manager.js" {
 
 const api: HookContext = { projectDir: "/tmp/test-hooks" };
 
+const testModel: ModelRef = {
+  providerId: "test-provider",
+  modelId: "test-model",
+};
+
 const turnStart = (sessionId: string): TurnStartEvent => ({
   sessionId,
   name: "main",
   projectDirs: ["/tmp/test-hooks"],
   sessionDir: "/tmp/test-hooks-sessions",
-  modelId: "test-model",
+  model: testModel,
 });
 
 // One mock shape covers every event: the handlers here only record calls, and
@@ -57,7 +63,7 @@ describe(HooksManager, () => {
       hooks.on("turn_start", (event, apiParam) => {
         expectTypeOf(event).toEqualTypeOf<TurnStartEvent>();
         expectTypeOf(event.sessionId).toEqualTypeOf<string>();
-        expectTypeOf(event.modelId).toEqualTypeOf<string>();
+        expectTypeOf(event.model).toEqualTypeOf<ModelRef>();
         expectTypeOf(apiParam).toEqualTypeOf<HookContext>();
       });
 
@@ -525,30 +531,36 @@ describe(HooksManager, () => {
     test("should keep the base state when no handler has an opinion", () => {
       expect(
         applyRuntimeSettingsPatches(
-          { modelId: "base", instructions: "base prompt" },
+          { model: testModel, instructions: "base prompt" },
           []
         )
-      ).toStrictEqual({ modelId: "base", instructions: "base prompt" });
+      ).toStrictEqual({ model: testModel, instructions: "base prompt" });
       expect(
         applyRuntimeSettingsPatches(
-          { modelId: "base", instructions: "base prompt" },
-          [{}, { modelId: "" }]
+          { model: testModel, instructions: "base prompt" },
+          [{}, { instructions: "" }]
         )
-      ).toStrictEqual({ modelId: "base", instructions: "base prompt" });
+      ).toStrictEqual({ model: testModel, instructions: "base prompt" });
     });
 
-    test("should let the last non-empty model id win", () => {
+    test("should let the last model patch win", () => {
       const state = applyRuntimeSettingsPatches(
-        { modelId: "base", instructions: "" },
-        [{ modelId: "first" }, { modelId: "" }, { modelId: "last" }]
+        { model: testModel, instructions: "" },
+        [
+          { model: { providerId: "test-provider", modelId: "first" } },
+          { model: { providerId: "test-provider", modelId: "last" } },
+        ]
       );
 
-      expect(state.modelId).toBe("last");
+      expect(state.model).toStrictEqual({
+        providerId: "test-provider",
+        modelId: "last",
+      });
     });
 
     test("should apply string and function prompt patches in order", () => {
       const state = applyRuntimeSettingsPatches(
-        { modelId: "base", instructions: "base" },
+        { model: testModel, instructions: "base" },
         [
           { instructions: (prompt) => `${prompt}+one` },
           { instructions: "replaced" },
@@ -564,7 +576,7 @@ describe(HooksManager, () => {
         /* keep the test output clean */
       });
       const state = applyRuntimeSettingsPatches(
-        { modelId: "base", instructions: "base" },
+        { model: testModel, instructions: "base" },
         [
           { instructions: "changed" },
           {
@@ -608,12 +620,12 @@ describe(HooksManager, () => {
       const hooks = new HooksManager();
 
       hooks.on("turn_start", (event) => ({
-        modelId: event.modelId,
+        model: event.model,
         instructions: (prompt) => prompt,
       }));
       hooks.on("step_start", (event) => {
-        expectTypeOf(event.modelId).toEqualTypeOf<string>();
-        return { modelId: event.modelId };
+        expectTypeOf(event.model).toEqualTypeOf<ModelRef>();
+        return { model: event.model };
       });
     });
   });

@@ -1,6 +1,8 @@
 import type { ModelEffort } from "@workspace/shared/constants";
+import type { ModelRef } from "@workspace/shared/model";
 
 import { AgentContext } from "./agent-context";
+import type { ModelContextWindows } from "./agent-context";
 import type { AgentSession } from "./agent-session";
 import { Agent } from "./agents";
 import type { CompactionPolicyOverrides } from "./compaction/types";
@@ -18,6 +20,7 @@ import {
 import { EnvironmentExtension } from "./extensions/environment";
 import type { Extension } from "./extensions/types";
 import type { JobRegistry } from "./jobs/registry";
+import type { ModelTargetResolver } from "./kernel/model-gateway";
 import type { AgentStore } from "./storage";
 import { appendSubagentPrompt } from "./subagent/definitions";
 import { createSubagentFactory } from "./subagent/factory";
@@ -53,10 +56,8 @@ function createToolApprovalPattern(
 }
 
 export interface SessionModel {
-  id: string;
-  apiKey: string;
-  apiUrl: string;
-  providerId: string;
+  /** 会话起始使用的模型。 */
+  ref: ModelRef;
   effort?: ModelEffort;
 }
 
@@ -67,6 +68,8 @@ export interface SessionAgentOptions {
   store: AgentStore;
   session: AgentSession;
   model: SessionModel;
+  /** 把模型引用解析成供应商的接入信息。 */
+  resolveModel: ModelTargetResolver;
   /** 项目目录列表，第一项是主目录。 */
   projectDirs: readonly string[];
   /** 当前会话的私有目录。 */
@@ -74,8 +77,8 @@ export interface SessionAgentOptions {
   projectId?: string;
   /** 用户设置里的压缩开关；阈值由压缩策略按模型窗口解析。 */
   compactionOverrides?: CompactionPolicyOverrides;
-  /** 每个已配置模型的上下文窗口，按 model id 索引。 */
-  modelContextWindows?: Readonly<Record<string, number>>;
+  /** 每个已配置模型的上下文窗口，按供应商和模型两级索引。 */
+  modelContextWindows?: ModelContextWindows;
   jobs?: JobRegistry;
   /**
    * 宿主自己的工具审批函数：按调用入参决定 deny / ask / allow。
@@ -105,7 +108,7 @@ export async function createSessionAgent(
     projectDirs: options.projectDirs,
     sessionDir: options.sessionDir,
     projectId: options.projectId,
-    modelId: options.model.id,
+    model: options.model.ref,
     modelEffort: options.model.effort,
     compactionOverrides: options.compactionOverrides,
     modelContextWindows: options.modelContextWindows,
@@ -118,11 +121,9 @@ export async function createSessionAgent(
     context,
     session: options.session,
     store: options.store,
-    apiKey: options.model.apiKey,
-    apiUrl: options.model.apiUrl,
-    providerId: options.model.providerId,
-    modelId: options.model.id,
+    model: options.model.ref,
     modelEffort: options.model.effort,
+    resolveModel: options.resolveModel,
     subagentFactory: (owner) =>
       createSubagentFactory({ agent: owner, store: options.store }),
   });

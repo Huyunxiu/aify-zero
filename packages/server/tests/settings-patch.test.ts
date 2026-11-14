@@ -10,34 +10,33 @@ describe("settings patch", () => {
     const patch = updateUserSettingsSchema.parse({ mcpServers: [] });
 
     // 这是回归用例：默认值曾经写进字段定义，`partial()` 会把没提交的
-    // `models` 补成 `[]`，保存 MCP 服务器就把模型列表清空了。
+    // `providers` 补成 `[]`，保存 MCP 服务器就把供应商列表清空了。
     expect(Object.keys(patch)).toStrictEqual(["mcpServers"]);
   });
 
   test("keeps a submitted list intact", () => {
     const patch = updateUserSettingsSchema.parse({
-      models: [
+      providers: [
         {
-          id: "openai/gpt-5",
-          name: "GPT-5",
-          provider: "openai",
-          model: "gpt-5",
-          apiUrl: "https://api.example.com",
+          id: "openai",
+          name: "OpenAI",
+          protocol: "openai-responses",
+          baseURL: "https://api.example.com",
           apiKey: "sk-test",
-          compatibleType: "openai",
           active: true,
+          models: [{ id: "gpt-5", name: "GPT-5" }],
         },
       ],
     });
 
-    expect(patch.models).toHaveLength(1);
+    expect(patch.providers).toHaveLength(1);
     expect(patch.mcpServers).toBeUndefined();
   });
 
   test("drops an explicit undefined", () => {
-    const patch = updateUserSettingsSchema.parse({ models: undefined });
+    const patch = updateUserSettingsSchema.parse({ providers: undefined });
 
-    expect(patch.models).toBeUndefined();
+    expect(patch.providers).toBeUndefined();
   });
 });
 

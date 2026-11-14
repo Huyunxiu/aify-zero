@@ -18,6 +18,8 @@
   "BAD_GATEWAY": "服务暂时不可用，请稍后重试。",
   "SERVICE_UNAVAILABLE": "服务正在维护中，请稍后重试。",
   "GATEWAY_TIMEOUT": "服务响应超时，请稍后重试。",
+  "MODEL_UNSUPPORTED_INPUT": "所选模型不接受这类输入。",
+  "MODEL_LIST_FAILED": "读不到该供应商的模型列表。",
   "MODEL_NOT_FOUND": "所选模型未配置，请重新选择模型。",
   "SESSION_NOT_FOUND": "未找到该会话，请检查后重试。",
   "PROJECT_NOT_FOUND": "未找到该项目，请检查后重试。",

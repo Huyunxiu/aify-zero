@@ -6,6 +6,7 @@
 
 - [packages/ui](./packages/ui/GLOSSARY.md)：会话面板与其中的各个视图（文件、改动、终端）。
 - [packages/agent](./packages/agent/GLOSSARY.md)：会话里的模型循环，以及进入循环的工具、MCP 服务器和扩展。
+- [packages/server](./packages/server/GLOSSARY.md)：设置、项目、会话行与凭据；模型和供应商在这里定义。
 
 ## Relationships
 

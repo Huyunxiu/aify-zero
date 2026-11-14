@@ -8,12 +8,16 @@ import {
   findDictByCode,
   updateDict,
 } from "../dict/dict.repository";
+import { normalizeUserSettings } from "./settings.normalize";
 import {
   updateUserSettingsSchema,
   USER_SETTINGS_DEFAULTS,
-  userSettingsSchema,
 } from "./settings.schema";
-import type { AiModel, UserSettings } from "./settings.schema";
+import type {
+  ConfiguredModel,
+  ModelRef,
+  UserSettings,
+} from "./settings.schema";
 
 const USER_SETTINGS_CODE = "user.settings";
 const USER_SETTINGS_NAME = "User Settings";
@@ -27,11 +31,8 @@ const USER_SETTINGS_NAME = "User Settings";
 async function ensureUserSettings(): Promise<UserSettings> {
   const existing = await findDictByCode(USER_SETTINGS_CODE);
   if (existing) {
-    // 旧版本写下的设置缺字段，用默认值补齐再交给调用方。
-    return userSettingsSchema.parse({
-      ...USER_SETTINGS_DEFAULTS,
-      ...(existing.content as Partial<UserSettings>),
-    });
+    // 旧版本写下的设置缺字段，用默认值补齐、再按当前形状收敛，才交给调用方。
+    return normalizeUserSettings(existing.content, USER_SETTINGS_DEFAULTS);
   }
 
   await createDict({
@@ -44,7 +45,7 @@ async function ensureUserSettings(): Promise<UserSettings> {
 
 /** Persist updated settings back to the dict store. */
 async function saveUserSettings(settings: UserSettings): Promise<UserSettings> {
-  const parsed = userSettingsSchema.parse(settings);
+  const parsed = normalizeUserSettings(settings, USER_SETTINGS_DEFAULTS);
   await updateDict(USER_SETTINGS_CODE, { content: parsed });
   return parsed;
 }
@@ -95,10 +96,18 @@ export async function getUserSettings(): Promise<UserSettings> {
   return await ensureUserSettings();
 }
 
-/** Look up an AI model by id from the UserSettings store. */
-export async function findAiModelById(
-  id: string
-): Promise<AiModel | undefined> {
+/** 按引用找出一个已配置的模型，连同它所属的供应商。 */
+export async function findConfiguredModel(
+  ref: ModelRef
+): Promise<ConfiguredModel | undefined> {
   const settings = await ensureUserSettings();
-  return settings.models.find((m) => m.id === id);
+  const provider = settings.providers.find(
+    (entry) => entry.id === ref.providerId
+  );
+  const model = provider?.models.find((entry) => entry.id === ref.modelId);
+  // 关掉的供应商或模型不能被调用：界面不显示它们，服务端也要拒绝。
+  if (!provider?.active || !model?.active) {
+    return undefined;
+  }
+  return { ref, provider, model };
 }

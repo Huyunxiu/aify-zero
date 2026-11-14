@@ -1,3 +1,4 @@
+import type { ModelProtocol, ModelRef } from "@workspace/shared/model";
 import type {
   FinishReason,
   LanguageModel,
@@ -16,7 +17,6 @@ export interface GeneratedText {
 }
 
 export interface GenerateTextRequest {
-  readonly modelId: string;
   readonly prompt: string;
   readonly system?: string;
   readonly temperature?: number;
@@ -25,16 +25,37 @@ export interface GenerateTextRequest {
 }
 
 /**
+ * 一次模型调用的目标：供应商那一侧的接入信息，加上要用的模型。
+ *
+ * 它由宿主的设置解析而来，`packages/agent` 只声明形状。
+ */
+export interface ModelTarget {
+  readonly ref: ModelRef;
+  /** 供应商名字，出现在请求头和事件里。 */
+  readonly name: string;
+  readonly protocol: ModelProtocol;
+  readonly baseURL: string;
+  readonly apiKey: string;
+  /** 供应商自带的自定义请求头。 */
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
+/** 把模型引用解析成调用目标；没配置时返回 `undefined`。 */
+export type ModelTargetResolver = (ref: ModelRef) => ModelTarget | undefined;
+
+/**
  * 模型调用的端口。
  *
- * 内核和扩展都通过它拿模型、发一次性的文本生成请求；具体连哪家 provider、
- * 用什么鉴权是组合根的事，不写进 `agents.ts` 之外的调用点。
+ * 内核和扩展都通过它拿模型、发一次性的文本生成请求；具体连哪家供应商、用
+ * 什么协议和鉴权是组合根的事。
  *
- * `languageModel` 返回 AI SDK 的模型对象，供 `streamText` 这类需要自己控制
- * 流和工具循环的调用方使用；`generateText` 是后台任务（标题、摘要）用的简化
- * 入口。
+ * 入参是模型引用而不是裸 id：运行中的补丁可以把模型换到另一家供应商，地址
+ * 和密钥必须跟着换。
  */
 export interface ModelGateway {
-  languageModel(modelId: string): LanguageModel;
-  generateText(request: GenerateTextRequest): Promise<GeneratedText>;
+  languageModel(ref: ModelRef): LanguageModel;
+  generateText(
+    ref: ModelRef,
+    request: GenerateTextRequest
+  ): Promise<GeneratedText>;
 }

@@ -223,7 +223,7 @@ export class CompactionController {
       turnId: placement.turnId,
       stepId,
       stepType: "compaction",
-      modelId: context.modelId,
+      model: context.model,
     };
     let stepStatus: StepEndEvent["status"] = "error";
     const stepStart = await this.#deps.hooks.emitAsyncHooks(
@@ -231,15 +231,16 @@ export class CompactionController {
       stepEvent,
       this.#deps.extensionApi
     );
-    const { modelId: stepModelId } = applyRuntimeSettingsPatches(
-      { modelId: context.modelId, instructions: "" },
+    const { model: stepModel } = applyRuntimeSettingsPatches(
+      { model: context.model, instructions: "" },
       stepStart
     );
-    stepEvent.modelId = stepModelId;
+    stepEvent.model = stepModel;
     await context.controller?.write({
       type: "step.start",
       stepType: "compaction",
-      model: stepModelId,
+      model: stepModel.modelId,
+      providerId: stepModel.providerId,
       turnId: placement.turnId,
       stepId,
       createdAt,
@@ -267,8 +268,8 @@ export class CompactionController {
         },
         policy,
         trigger: input.trigger,
-        modelId: stepModelId,
-        summarize: this.summarize(stepModelId),
+        modelId: stepModel.modelId,
+        summarize: this.summarize(stepModel),
         region: { start, end: regionEnd },
         signal: context.abortSignal,
       });
@@ -389,9 +390,9 @@ export class CompactionController {
     return policy;
   }
 
-  summarize(modelId = this.#deps.context.modelId): SummarizeFn {
+  summarize(model = this.#deps.context.model): SummarizeFn {
     const summarize =
-      this.#deps.context.summarize ?? this.#deps.strategy()?.summarize(modelId);
+      this.#deps.context.summarize ?? this.#deps.strategy()?.summarize(model);
     if (!summarize) {
       throw new Error("no compaction strategy is registered");
     }
@@ -404,7 +405,10 @@ export class CompactionController {
     return (
       context.compaction ??
       strategy?.policy({
-        contextWindow: context.modelContextWindows?.[context.modelId],
+        contextWindow:
+          context.modelContextWindows?.[context.model.providerId]?.[
+            context.model.modelId
+          ],
         overrides: context.compactionOverrides,
       })
     );

@@ -213,6 +213,8 @@ export type TextStreamStartStepEvent = TextStreamEventBase & {
    * step object is — while it is still streaming.
    */
   model: string;
+  /** 提供这个模型的供应商。模型 id 相同的模型可能来自不同的供应商。 */
+  providerId?: string;
 };
 export type TextStreamFinishStepEvent = AgentStepStatus &
   TextStreamEventBase & {
@@ -939,6 +941,7 @@ export type AgentSessionTitleStep = AgentStepBase & {
    * when the runtime falls back to another model mid-turn.
    */
   model: string;
+  providerId?: string;
 };
 
 /**
@@ -956,6 +959,7 @@ export type AgentCompactionStep = AgentStepBase & {
 
   /** 生成摘要的模型。 */
   model: string;
+  providerId?: string;
 };
 
 export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase & {
@@ -971,6 +975,7 @@ export type AgentAssistantStep<TOOLS extends ToolSet> = AgentStepBase & {
    * when the runtime falls back to another model mid-turn.
    */
   model: string;
+  providerId?: string;
 };
 
 /**

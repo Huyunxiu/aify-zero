@@ -1,6 +1,6 @@
 import { createAvatar } from "@oreo-design/avatar";
 
-import Logo from "../assets/logo/icon.svg";
+import Logo from "../assets/app-icon.svg";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/avatar";
 
 // 头像按角色固定，只在模块加载时生成一次：每个 turn 都会渲染一次，

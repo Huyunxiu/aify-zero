@@ -3,6 +3,7 @@ import type {
   CompactionRecord,
   CompactionTrigger,
 } from "@workspace/agent-client";
+import type { ModelRef } from "@workspace/shared/model";
 import type {
   FinishReason,
   LanguageModelUsage,
@@ -23,7 +24,7 @@ export type TurnStartEvent = {
   projectDirs: readonly string[];
   sessionDir: string;
   /** 请求为这个 turn 选择的模型；补丁可以覆盖它。 */
-  modelId: string;
+  model: ModelRef;
 };
 
 /**
@@ -37,7 +38,7 @@ export type TurnCreatedEvent = {
   sessionId: string;
   turnId: string;
   /** 这个 turn 的模型；`turn_start` 的补丁已经生效。 */
-  modelId: string;
+  model: ModelRef;
 };
 
 export type TurnEndEvent = {
@@ -54,7 +55,7 @@ export type StepStartEvent = {
   stepId: string;
   stepType: AgentStep<ToolSet>["type"];
   /** 这一步默认使用的模型；补丁可以覆盖它。 */
-  modelId: string;
+  model: ModelRef;
 };
 
 /**
@@ -94,7 +95,7 @@ export type PatchRules<T> = {
  * `#runtimeSettings()`，合并逻辑不需要改。
  */
 export type RuntimeSettings = {
-  modelId: string;
+  model: ModelRef;
   instructions: string;
 };
 
@@ -293,7 +294,7 @@ export type HookResultsOf<K extends HookEventName> = Exclude<
 
 /** `RuntimeSettings` 里空字符串不应覆盖的字段。 */
 const RUNTIME_SETTINGS_PATCH_RULES: PatchRules<RuntimeSettings> = {
-  modelId: { skipBlank: true },
+  instructions: { skipBlank: true },
 };
 
 /**

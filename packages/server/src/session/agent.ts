@@ -17,13 +17,17 @@ import { getSessionDir } from "../config";
 import { JOB_REGISTRY } from "../jobs";
 import { getMcpManager } from "../mcp/registry";
 import { getProjectDirs } from "../routers/project/project.service";
-import type { AiModel } from "../routers/settings/settings.schema";
+import type { ConfiguredModel } from "../routers/settings/settings.schema";
 import { getUserSettings } from "../routers/settings/settings.service";
 import type { SQLiteStore } from "../storage/sqlite-store";
+import {
+  createModelTargetResolver,
+  modelContextWindows,
+} from "./model-targets";
 
 export interface BuildSessionAgentInput {
   sessionId: string;
-  aiModel: AiModel;
+  configured: ConfiguredModel;
   effort?: ModelEffort;
   projectId?: string;
   session: AgentSession;
@@ -38,7 +42,7 @@ export interface BuildSessionAgentInput {
  */
 export async function buildSessionAgent({
   sessionId,
-  aiModel,
+  configured,
   effort,
   projectId,
   session,
@@ -53,11 +57,6 @@ export async function buildSessionAgent({
   const projectDirs = await getProjectDirs(projectId);
 
   const settings = await getUserSettings();
-  const modelContextWindows = Object.fromEntries(
-    settings.models
-      .filter((configured) => (configured.limit?.context ?? 0) > 0)
-      .map((configured) => [configured.model, configured.limit?.context ?? 0])
-  );
 
   // 默认扩展和工具装配由 agent 包的组合根决定；这里只提供宿主才能知道的
   // 东西：目录、模型、设置和文件系统资源。
@@ -69,18 +68,13 @@ export async function buildSessionAgent({
     sessionId,
     store,
     session,
-    model: {
-      id: aiModel.model,
-      apiKey: aiModel.apiKey,
-      apiUrl: aiModel.apiUrl,
-      providerId: aiModel.provider,
-      effort,
-    },
+    model: { ref: configured.ref, effort },
+    resolveModel: createModelTargetResolver(settings),
     projectDirs,
     sessionDir,
     projectId,
     compactionOverrides: settings.compaction,
-    modelContextWindows,
+    modelContextWindows: modelContextWindows(settings),
     jobs: JOB_REGISTRY,
     // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。
     toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),

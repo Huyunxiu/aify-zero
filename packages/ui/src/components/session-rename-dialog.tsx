@@ -74,7 +74,7 @@ export function SessionRenameDialog({
         }
       }}
     >
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="medium">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {t("sessions.renameTitle")}

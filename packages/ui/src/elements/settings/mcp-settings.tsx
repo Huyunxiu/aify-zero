@@ -563,7 +563,7 @@ export function McpSettings() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent size="medium">
           <DialogHeader>
             <DialogTitle>
               {editingId

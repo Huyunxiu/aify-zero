@@ -8,6 +8,12 @@
     },
     "strictNullChecks": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.json", "tests/**/*.ts"],
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.json",
+    "tests/**/*.ts",
+    "tests/**/*.tsx"
+  ],
   "exclude": ["node_modules"]
 }

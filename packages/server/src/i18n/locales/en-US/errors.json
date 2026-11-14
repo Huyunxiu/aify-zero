@@ -19,6 +19,8 @@
   "SERVICE_UNAVAILABLE": "The service is under maintenance. Please try again later.",
   "GATEWAY_TIMEOUT": "The service took too long to respond. Please try again.",
   "MODEL_NOT_FOUND": "The selected model is not configured. Please pick another model.",
+  "MODEL_UNSUPPORTED_INPUT": "The selected model does not accept this kind of input.",
+  "MODEL_LIST_FAILED": "The provider's model list could not be read.",
   "SESSION_NOT_FOUND": "The requested chat was not found. Please check the session and try again.",
   "PROJECT_NOT_FOUND": "The requested project was not found.",
   "PROJECT_DIR_EXISTS": "A project already uses this directory.",

@@ -178,7 +178,9 @@ describe("SQLiteStore", () => {
       requestId,
       placement: "next-turn",
       content: userTurn(`turn-${requestId}`, text),
-      payload: { model: "test-model" },
+      payload: {
+        model: { providerId: "test-provider", modelId: "test-model" },
+      },
     });
 
     test("入队按 (sessionId, requestId) 幂等", async () => {

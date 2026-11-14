@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import { AppearanceSettings } from "./appearance-settings";
 import { GeneralSettings } from "./general-settings";
 import { McpSettings } from "./mcp-settings";
-import { ModelSettings } from "./model-settings";
+import { ProviderSettings } from "./provider-settings";
 
 const data = {
   nav: [
@@ -34,8 +34,8 @@ const data = {
       icon: Palette,
     },
     {
-      key: "model",
-      titleKey: "settings.model.title" as const,
+      key: "provider",
+      titleKey: "settings.provider.title" as const,
       icon: Package,
     },
     {
@@ -95,7 +95,7 @@ export const Settings = ({ onClose }: SettingsProps) => {
             {activeTab === "appearance" && <AppearanceSettings />}
             {activeTab === "general" && <GeneralSettings />}
             {activeTab === "mcp" && <McpSettings />}
-            {activeTab === "model" && <ModelSettings />}
+            {activeTab === "provider" && <ProviderSettings />}
           </Island>
         </IslandGroup>
       </SidebarInset>

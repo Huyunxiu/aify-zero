@@ -1,6 +1,7 @@
 import { type } from "@orpc/server";
 import { AgentInbox, STREAM_REGISTRY } from "@workspace/agent";
 import type { AgentUserTurn } from "@workspace/agent-client";
+import type { ModelRef } from "@workspace/shared/model";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
@@ -39,7 +40,7 @@ export const enqueueInboxMessage = publicProcedure
       requestId: string;
       mode: InboxMode;
       turn: AgentUserTurn;
-      model: string;
+      model: ModelRef;
       modelEffort?: string;
       projectId?: string;
     }>()

@@ -1,3 +1,5 @@
+import type { ModelRef } from "@workspace/shared/model";
+
 import type { AgentUserTurn } from "./types";
 
 /**
@@ -10,7 +12,7 @@ export type InboxPlacement = "next-step" | "next-turn";
 
 /** 发送一条排队消息所需的模型信息。 */
 export type InboxPayload = {
-  model: string;
+  model: ModelRef;
   modelEffort?: string;
   projectId?: string;
 };

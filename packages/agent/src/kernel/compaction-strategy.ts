@@ -1,3 +1,5 @@
+import type { ModelRef } from "@workspace/shared/model";
+
 import type {
   CompactionPolicyOverrides,
   ResolvedCompactionPolicy,
@@ -23,5 +25,5 @@ export interface CompactionStrategy {
     overrides?: CompactionPolicyOverrides;
   }): ResolvedCompactionPolicy;
   /** 摘要器；按模型解析，因为一个 turn 中途可能换模型。 */
-  summarize(modelId: string): SummarizeFn;
+  summarize(model: ModelRef): SummarizeFn;
 }

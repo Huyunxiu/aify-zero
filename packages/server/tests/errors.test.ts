@@ -4,14 +4,17 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 
 import { ApiError, errors } from "../src/errors";
 
+/** MODEL_NOT_FOUND 的 data：模型用引用表示，所以缺的是供应商和模型两个 id。 */
+const missingModel = { providerId: "test-provider", modelId: "gpt" };
+
 describe("errors factory map", () => {
   test("should build an error carrying its declared status and default message", () => {
-    const error = errors.MODEL_NOT_FOUND({ data: { model: "gpt" } });
+    const error = errors.MODEL_NOT_FOUND({ data: missingModel });
 
     expect(error.code).toBe("MODEL_NOT_FOUND");
     expect(error.status).toBe(400);
     expect(error.message).toBe("The requested AI model was not found.");
-    expect(error.data).toStrictEqual({ model: "gpt" });
+    expect(error.data).toStrictEqual(missingModel);
   });
 
   test("should allow overriding the message", () => {
@@ -77,9 +80,11 @@ describe(ApiError, () => {
   });
 
   test("should take the payload from a data-only options object", () => {
-    const error = new ApiError("MODEL_NOT_FOUND", { data: { model: "gpt" } });
+    const error = new ApiError("MODEL_NOT_FOUND", { data: missingModel });
 
-    expectTypeOf(error.data).toEqualTypeOf<{ model: string } | undefined>();
+    expectTypeOf(error.data).toEqualTypeOf<
+      { providerId: string; modelId: string } | undefined
+    >();
     expect(error.message).toBe("The requested AI model was not found.");
   });
 
@@ -120,7 +125,7 @@ describe(ApiError, () => {
 
 describe("ApiError.getLocalizedMessage", () => {
   test("should read the code's message in the language asked for", () => {
-    const error = new ApiError("MODEL_NOT_FOUND", { data: { model: "gpt" } });
+    const error = new ApiError("MODEL_NOT_FOUND", { data: missingModel });
 
     expect(error.getLocalizedMessage("en-US")).toBe(
       "The selected model is not configured. Please pick another model."

@@ -15,7 +15,7 @@ import { generateSessionId } from "@workspace/agent/utils/id-util";
 import type { ModelEffort } from "@workspace/shared/constants";
 import { logger } from "@workspace/shared/logger";
 
-import type { AiModel } from "../routers/settings/settings.schema";
+import type { ConfiguredModel } from "../routers/settings/settings.schema";
 import { SQLiteStore } from "../storage/sqlite-store";
 import { buildSessionAgent } from "./agent";
 import type { BuildSessionAgentInput } from "./agent";
@@ -43,7 +43,7 @@ export type CreateSessionInput = {
   sessionId: string;
   turns: AgentTurn<AgentToolSet>[];
   approvals?: TextStreamToolApprovalResponseEvent[];
-  aiModel: AiModel;
+  configured: ConfiguredModel;
   effort?: ModelEffort;
   projectId?: string;
   inboxId?: string;
@@ -56,7 +56,7 @@ export type CreateSessionResult = {
 
 export type CompactSessionInput = {
   sessionId: string;
-  aiModel: AiModel;
+  configured: ConfiguredModel;
 };
 
 export type ForkSessionInput = {
@@ -91,7 +91,7 @@ export class SessionLifecycle {
    * 数量，不启动新的流。
    */
   async create(input: CreateSessionInput): Promise<CreateSessionResult> {
-    const { sessionId, turns, approvals, aiModel, effort, inboxId } = input;
+    const { sessionId, turns, approvals, configured, effort, inboxId } = input;
     const { store, inbox, registry, buildAgent } = this.#deps;
 
     const mostRecentTurn = turns.at(-1);
@@ -144,7 +144,7 @@ export class SessionLifecycle {
 
     const agent = await buildAgent({
       sessionId,
-      aiModel,
+      configured,
       effort,
       projectId: sessionProjectId,
       session,
@@ -157,7 +157,7 @@ export class SessionLifecycle {
     try {
       stream = await agent.stream({
         turns: originalTurns,
-        modelId: aiModel.model,
+        model: configured.ref,
         streamId: activeStreamId,
         signal: { type: "turn" },
         inboxId,
@@ -229,7 +229,7 @@ export class SessionLifecycle {
   async compact(
     input: CompactSessionInput
   ): Promise<{ activeStreamId: string }> {
-    const { sessionId, aiModel } = input;
+    const { sessionId, configured } = input;
     const { store, inbox, registry, buildAgent } = this.#deps;
 
     const session = await store.getSessionById(sessionId);
@@ -259,7 +259,7 @@ export class SessionLifecycle {
 
     const agent = await buildAgent({
       sessionId,
-      aiModel,
+      configured,
       projectId: session.projectId ?? undefined,
       session: new AgentSession({ turns }),
       store,
@@ -276,7 +276,7 @@ export class SessionLifecycle {
     try {
       stream = await agent.stream({
         turns,
-        modelId: aiModel.model,
+        model: configured.ref,
         streamId: activeStreamId,
         signal: { type: "compaction", trigger: "manual" },
         onFinish: async () => {

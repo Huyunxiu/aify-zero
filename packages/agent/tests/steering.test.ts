@@ -17,6 +17,7 @@ import { executeToolCalls } from "../src/tools/execution.js";
 import type * as ExecutionModule from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
 import { asTurns, userTurn } from "./compaction/fixtures.js";
+import { testModel, testResolveModel } from "./helpers/model-target.js";
 import {
   script,
   stepResult,
@@ -147,7 +148,7 @@ const steeringMessage = (id: string, text: string): InboxMessage => ({
   requestId: id,
   placement: "next-step",
   content: userTurn(`turn-${id}`, text),
-  payload: { model: "test-model" },
+  payload: { model: testModel() },
   createdAt: 1,
 });
 
@@ -156,7 +157,7 @@ const makeAgent = (inbox: FakeInbox) => {
   const session = new AgentSession({ turns: [] });
   const context = new AgentContext({
     sessionId: "session-1",
-    modelId: "test-model",
+    model: testModel(),
     projectDirs: ["/tmp"],
     sessionDir: "/tmp/session-1",
   });
@@ -168,10 +169,8 @@ const makeAgent = (inbox: FakeInbox) => {
     store: store as unknown as AgentStore,
     inbox: inbox as unknown as AgentInbox,
     context,
-    apiKey: "test-key",
-    apiUrl: "http://127.0.0.1:1",
-    providerId: "test-provider",
-    modelId: "test-model",
+    model: testModel(),
+    resolveModel: testResolveModel,
   });
 
   return { agent, store, session };
@@ -180,7 +179,7 @@ const makeAgent = (inbox: FakeInbox) => {
 const runTurn = async (agent: Agent, turns: AgentTurn<AgentToolSet>[]) => {
   const stream = await agent.stream({
     turns,
-    modelId: "test-model",
+    model: testModel(),
     streamId: "stream-1",
     signal: { type: "turn" },
     onFinish: () => Promise.resolve(),

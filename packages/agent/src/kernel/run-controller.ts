@@ -101,7 +101,7 @@ export class RunController {
   /** turn / step 的默认运行时设置；hook 补丁在这个对象上合并。 */
   runtimeSettings(): RuntimeSettings {
     return {
-      modelId: this.#deps.context.modelId,
+      model: this.#deps.context.model,
       instructions: this.#instructions ?? "",
     };
   }
@@ -194,7 +194,7 @@ export class RunController {
 
   async #startTurnStream({
     turns,
-    modelId,
+    model,
     onFinish,
     inboxId,
   }: AgentStreamOptions) {
@@ -207,7 +207,7 @@ export class RunController {
       extensions,
       turnRunner,
     } = this.#deps;
-    context.modelId = modelId;
+    context.model = model;
     session.turns = turns;
     // 提示片段在 turn 开始时拼一次：同一 turn 的每一步看到同一份提示词，
     // 扩展在 turn 中途改数据也不会让后续步骤的缓存失效。
@@ -233,12 +233,12 @@ export class RunController {
           name: this.#deps.name,
           projectDirs: context.projectDirs,
           sessionDir: context.sessionDir,
-          modelId: context.modelId,
+          model: context.model,
         },
         extensionApi
       )
     );
-    context.modelId = runtime.modelId;
+    context.model = runtime.model;
     this.#instructions = runtime.instructions;
 
     const sessionRow = await store.getSessionById(this.#deps.sessionId);
@@ -354,14 +354,14 @@ export class RunController {
    * branch, so the stored turn list stays linear.
    */
   async #startCompactionStream(options: AgentStreamOptions) {
-    const { turns, modelId, signal, onFinish } = options;
+    const { turns, model, signal, onFinish } = options;
     if (signal.type !== "compaction") {
       throw new Error("not a compaction signal");
     }
 
     const { session, context, store, hooks, extensionApi, compaction } =
       this.#deps;
-    context.modelId = modelId;
+    context.model = model;
     await session.loadTurns({ turns });
 
     const policy = compaction.policy();
@@ -384,7 +384,7 @@ export class RunController {
         turnId,
         stepId,
         stepType: "compaction",
-        modelId,
+        model,
       };
 
       try {
@@ -401,17 +401,18 @@ export class RunController {
           stepEvent,
           extensionApi
         );
-        const { modelId: stepModelId } = applyRuntimeSettingsPatches(
-          { modelId, instructions: "" },
+        const { model: stepModelId } = applyRuntimeSettingsPatches(
+          { model, instructions: "" },
           stepStart
         );
-        stepEvent.modelId = stepModelId;
+        stepEvent.model = stepModelId;
         await write({
           type: "step.start",
           stepId,
           turnId,
           stepType: "compaction",
-          model: stepModelId,
+          model: stepModelId.modelId,
+          providerId: stepModelId.providerId,
           createdAt: startedAt,
         });
         await write({
@@ -432,7 +433,7 @@ export class RunController {
           projected: session.projected,
           policy,
           trigger: signal.trigger,
-          modelId: stepModelId,
+          modelId: stepModelId.modelId,
           summarize: compaction.summarize(stepModelId),
           region: plan.region,
           signal: context.abortSignal,
@@ -465,7 +466,7 @@ export class RunController {
               createdAt: startedAt,
               completedAt,
               status: "done",
-              model: stepModelId,
+              model: stepModelId.modelId,
               content: [
                 {
                   type: "compaction",

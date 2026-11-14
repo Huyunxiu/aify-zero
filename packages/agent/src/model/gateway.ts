@@ -1,36 +1,74 @@
+import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { ModelRef } from "@workspace/shared/model";
 import { generateText } from "ai";
+import type { LanguageModel } from "ai";
 
-import type { ModelGateway } from "../kernel/model-gateway";
+import type {
+  GenerateTextRequest,
+  GeneratedText,
+  ModelGateway,
+  ModelTarget,
+  ModelTargetResolver,
+} from "../kernel/model-gateway";
+import { withOpencodeHeaders } from "./opencode";
 
-export interface OpenAICompatibleGatewayOptions {
-  apiKey: string;
-  /** 兼容 OpenAI 协议的服务地址。 */
-  baseURL: string;
-  /** provider 名字，出现在请求头和事件里。 */
-  name: string;
+export interface ModelGatewayOptions {
+  /** 由宿主按设置解析：引用 → 供应商的接入信息。 */
+  resolve: ModelTargetResolver;
+  /** 会话 id；OpenCode 的网关按它路由。 */
+  sessionId: string;
+  /** 会话主目录；OpenCode 的网关要求带上。 */
+  projectDir?: string;
 }
 
 /**
- * OpenAI 兼容协议的 {@link ModelGateway} 适配器。
+ * 按协议构造模型的 {@link ModelGateway}。
  *
  * 适配器只做协议转换，不缓存模型对象：同一次 turn 可能因为补丁换模型，缓存
  * 会把换模型变成隐式失败。
  */
-export function createOpenAICompatibleGateway(
-  options: OpenAICompatibleGatewayOptions
-): ModelGateway {
-  const provider = createOpenAICompatible({
-    apiKey: options.apiKey,
-    baseURL: options.baseURL,
-    name: options.name,
-  });
+export function createModelGateway(options: ModelGatewayOptions): ModelGateway {
+  const resolve = (ref: ModelRef): ModelTarget => {
+    const target = options.resolve(ref);
+    if (!target) {
+      throw new Error(
+        `model is not configured: ${ref.providerId}/${ref.modelId}`
+      );
+    }
+    return target;
+  };
+
+  const headersOf = (target: ModelTarget): Record<string, string> =>
+    withOpencodeHeaders({
+      baseURL: target.baseURL,
+      sessionId: options.sessionId,
+      projectDir: options.projectDir,
+      headers: target.headers,
+    });
+
+  const languageModel = (ref: ModelRef): LanguageModel => {
+    const target = resolve(ref);
+    const settings = {
+      apiKey: target.apiKey,
+      baseURL: target.baseURL,
+      name: target.name,
+      headers: headersOf(target),
+    };
+
+    return target.protocol === "openai-responses"
+      ? createOpenAI(settings).responses(ref.modelId)
+      : createOpenAICompatible(settings).chatModel(ref.modelId);
+  };
 
   return {
-    languageModel: (modelId) => provider.chatModel(modelId),
-    async generateText(request) {
+    languageModel,
+    async generateText(
+      ref: ModelRef,
+      request: GenerateTextRequest
+    ): Promise<GeneratedText> {
       const result = await generateText({
-        model: provider.chatModel(request.modelId),
+        model: languageModel(ref),
         ...(request.system === undefined ? {} : { system: request.system }),
         prompt: request.prompt,
         ...(request.temperature === undefined

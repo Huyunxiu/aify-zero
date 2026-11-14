@@ -22,6 +22,13 @@ const generated = (text: string): GeneratedText => ({
 
 const userTurns = () => asTurns(userTurn("u1", "what is the weather in NYC"));
 
+/** turn_created 事件的替身；标题任务只读 sessionId、turnId 和 model。 */
+const turnCreatedEvent = {
+  sessionId: "s1",
+  turnId: "t1",
+  model: { providerId: "test-provider", modelId: "m1" },
+};
+
 /** 只实现标题路径用到的读写。 */
 const makeStore = (existing: string | undefined) => {
   const titles: string[] = [];
@@ -87,7 +94,7 @@ describe(TitleExtension, () => {
 
     const turnCreated = handlers.get("turn_created");
     expect(turnCreated).toBeDefined();
-    turnCreated?.({ sessionId: "s1", turnId: "t1", modelId: "m1" }, {});
+    turnCreated?.(turnCreatedEvent, {});
 
     await vi.waitFor(() => {
       expect(titles).toStrictEqual(["Weather in NYC"]);
@@ -127,10 +134,7 @@ describe(TitleExtension, () => {
       ])
     );
 
-    handlers.get("turn_created")?.(
-      { sessionId: "s1", turnId: "t1", modelId: "m1" },
-      {}
-    );
+    handlers.get("turn_created")?.(turnCreatedEvent, {});
 
     // 处理器的第一件事是读会话行；等它跑完这一轮再断言。
     await new Promise((resolve) => {

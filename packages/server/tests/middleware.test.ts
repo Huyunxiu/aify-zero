@@ -66,7 +66,9 @@ describe("publicProcedure pipeline", () => {
 
   test("should answer an inherited message in the language the request asked for", async () => {
     const procedure = publicProcedure.handler(() => {
-      throw new ApiError("MODEL_NOT_FOUND", { data: { model: "gpt" } });
+      throw new ApiError("MODEL_NOT_FOUND", {
+        data: { providerId: "test-provider", modelId: "gpt" },
+      });
     });
 
     await expect(

@@ -1,5 +1,6 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
 import type { ModelEffort } from "@workspace/shared/constants";
+import type { ModelRef } from "@workspace/shared/model";
 import { registerTelemetry } from "ai";
 import type { Tool, ToolSet } from "ai";
 
@@ -18,13 +19,13 @@ import type { HookContext } from "./hooks-manager";
 import { HooksManager } from "./hooks-manager";
 import { AgentInbox } from "./inbox/agent-inbox";
 import { CompactionController } from "./kernel/compaction-controller";
-import type { ModelGateway } from "./kernel/model-gateway";
+import type { ModelGateway, ModelTargetResolver } from "./kernel/model-gateway";
 import { RunController } from "./kernel/run-controller";
 import type { AgentStreamOptions, AgentStreamSignal } from "./kernel/run-types";
 import { StepRunner } from "./kernel/step-runner";
 import { TranscriptJournal } from "./kernel/transcript-journal";
 import { TurnRunner } from "./kernel/turn-runner";
-import { createOpenAICompatibleGateway } from "./model/gateway";
+import { createModelGateway } from "./model/gateway";
 import type { AgentStore } from "./storage";
 import { evaluateToolApproval } from "./tool-approval";
 import type { ToolApprovalPattern } from "./tool-approval";
@@ -56,10 +57,8 @@ export type AgentOptions = {
   context: AgentContext;
   hooks?: HooksManager;
   extensionApi?: HookContext;
-  apiKey: string;
-  apiUrl: string;
-  providerId: string;
-  modelId: string;
+  /** 起始模型。运行中的补丁可以把它换到另一家供应商。 */
+  model: ModelRef;
   modelEffort?: ModelEffort;
   /**
    * 这个 agent 所属的外部 abort scope，由派生它的父传进来。父停时它跟着停；和它
@@ -78,8 +77,12 @@ export type AgentOptions = {
    */
   subagentFactory?: (agent: Agent) => SubagentFactory;
   /**
-   * 覆盖模型网关。默认按 `apiKey` / `apiUrl` / `providerId` 构造 OpenAI 兼容
-   * 适配器；测试在这里注入替身。
+   * 把模型引用解析成调用目标。网关按它取地址、协议和密钥，所以补丁换到别家
+   * 供应商时，请求会跟着换。
+   */
+  resolveModel: ModelTargetResolver;
+  /**
+   * 覆盖模型网关。默认按 `resolveModel` 构造适配器；测试在这里注入替身。
    */
   gateway?: ModelGateway;
 };
@@ -104,11 +107,10 @@ export class Agent {
   hooks: HooksManager;
   extensionApi: HookContext;
 
-  apiKey: string;
-  apiUrl: string;
-  providerId: string;
   /** 模型调用的端口；具体协议由适配器决定。 */
   readonly gateway: ModelGateway;
+  /** 模型引用 → 调用目标。子 agent 继承它，才能跑在别家的模型上。 */
+  readonly resolveModel: ModelTargetResolver;
 
   context: AgentContext;
   session: AgentSession;
@@ -143,12 +145,10 @@ export class Agent {
     this.inbox = options.inbox ?? new AgentInbox(options.store);
     this.hooks = options.hooks ?? new HooksManager();
     this.extensionApi = options.extensionApi ?? {};
-    this.apiKey = options.apiKey;
-    this.apiUrl = options.apiUrl;
-    this.providerId = options.providerId;
+    this.resolveModel = options.resolveModel;
 
     this.context = options.context;
-    this.context.modelId = options.modelId;
+    this.context.model = options.model;
     this.context.modelEffort = options.modelEffort;
     // 这一轮的 abort scope 属于跑它的 agent：`abort()` 是入口，每一步都从 context
     // 上把 signal 读回去。子 agent 由父把自己的 signal 传进来，两者取并集——父一停
@@ -172,10 +172,10 @@ export class Agent {
 
     this.gateway =
       options.gateway ??
-      createOpenAICompatibleGateway({
-        apiKey: this.apiKey,
-        baseURL: this.apiUrl,
-        name: this.providerId,
+      createModelGateway({
+        resolve: options.resolveModel,
+        sessionId: this.sessionId,
+        projectDir: this.context.primaryProjectDir,
       });
 
     this.#journal = new TranscriptJournal({

@@ -16,6 +16,7 @@ import { executeToolCalls } from "../src/tools/execution.js";
 import type * as ExecutionModule from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
 import { asTurns, userTurn } from "./compaction/fixtures.js";
+import { testModel, testResolveModel } from "./helpers/model-target.js";
 import {
   script,
   stepResult,
@@ -112,7 +113,7 @@ const makeAgent = () => {
   const session = new AgentSession({ turns: [] });
   const context = new AgentContext({
     sessionId: "session-1",
-    modelId: "test-model",
+    model: testModel(),
     projectDirs: ["/tmp"],
     sessionDir: "/tmp/session-1",
   });
@@ -124,10 +125,8 @@ const makeAgent = () => {
     store: store as unknown as AgentStore,
     inbox: new FakeInbox() as unknown as AgentInbox,
     context,
-    apiKey: "test-key",
-    apiUrl: "http://127.0.0.1:1",
-    providerId: "test-provider",
-    modelId: "test-model",
+    model: testModel(),
+    resolveModel: testResolveModel,
   });
 
   return { agent, store };
@@ -136,7 +135,7 @@ const makeAgent = () => {
 const runTurn = async (agent: Agent, turns: AgentTurn<AgentToolSet>[]) => {
   const stream = await agent.stream({
     turns,
-    modelId: "test-model",
+    model: testModel(),
     streamId: "stream-1",
     signal: { type: "turn" },
     onFinish: () => Promise.resolve(),
@@ -206,7 +205,10 @@ describe("start hook patches", () => {
   test("turn_start can replace the model and append to the system prompt", async () => {
     const { agent } = makeAgent();
     agent.hooks.on("turn_start", (event) => ({
-      modelId: `${event.modelId}-switched`,
+      model: {
+        providerId: event.model.providerId,
+        modelId: `${event.model.modelId}-switched`,
+      },
       instructions: (prompt) => `${prompt}\n\n# Injected turn note`,
     }));
 
@@ -230,7 +232,10 @@ describe("start hook patches", () => {
       }
       assistantSteps += 1;
       return assistantSteps === 1
-        ? { modelId: "step-model", instructions: "step instructions" }
+        ? {
+            model: { providerId: "test-provider", modelId: "step-model" },
+            instructions: "step instructions",
+          }
         : undefined;
     });
 
@@ -252,7 +257,7 @@ describe("start hook patches", () => {
       instructions: (prompt) => `${prompt}A`,
     }));
     agent.hooks.on("turn_start", () => ({
-      modelId: "second-model",
+      model: { providerId: "test-provider", modelId: "second-model" },
       instructions: (prompt) => `${prompt}B`,
     }));
 

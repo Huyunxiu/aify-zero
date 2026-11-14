@@ -17,6 +17,7 @@ import {
   assistantTurn,
   userTurn,
 } from "./compaction/fixtures.js";
+import { testModel, testResolveModel } from "./helpers/model-target.js";
 
 const longText = "x".repeat(20_000);
 
@@ -68,14 +69,12 @@ const buildAgent = (
       sessionId: "session-1",
       projectDirs: ["/tmp"],
       sessionDir: "/tmp/sessions/session-1",
-      modelId: "test-model",
+      model: testModel(),
       compaction: policy(),
       summarize,
     }),
-    apiKey: "test-key",
-    apiUrl: "http://localhost",
-    providerId: "test-provider",
-    modelId: "test-model",
+    model: testModel(),
+    resolveModel: testResolveModel,
   });
 
 const readAll = async (
@@ -103,7 +102,7 @@ describe("手工压缩的 stream signal", () => {
 
     const stream = await agent.stream({
       turns: compactableTurns(),
-      modelId: "test-model",
+      model: testModel(),
       streamId: "test-stream",
       signal: { type: "compaction", trigger: "manual" },
       onFinish: (status) => {
@@ -173,7 +172,7 @@ describe("手工压缩的 stream signal", () => {
 
     const stream = await agent.stream({
       turns: compactableTurns(),
-      modelId: "test-model",
+      model: testModel(),
       streamId: "test-stream",
       signal: { type: "compaction", trigger: "manual" },
       onFinish: async () => {},
@@ -183,18 +182,20 @@ describe("手工压缩的 stream signal", () => {
     expect(stepHooks).toStrictEqual(["start:compaction", "end:done"]);
   });
 
-  test("step_start 的 modelId 补丁决定摘要模型", async () => {
+  test("step_start 的 model 补丁决定摘要模型", async () => {
     const store = new FakeStore();
     const agent = buildAgent(store);
     agent.hooks.on("step_start", (event) =>
       event.stepType === "compaction"
-        ? { modelId: "compaction-model" }
+        ? {
+            model: { providerId: "test-provider", modelId: "compaction-model" },
+          }
         : undefined
     );
 
     const stream = await agent.stream({
       turns: compactableTurns(),
-      modelId: "test-model",
+      model: testModel(),
       streamId: "test-stream",
       signal: { type: "compaction", trigger: "manual" },
       onFinish: async () => {},
@@ -217,7 +218,7 @@ describe("手工压缩的 stream signal", () => {
     await expect(
       agent.stream({
         turns: asTurns(userTurn("u1", "hi")),
-        modelId: "test-model",
+        model: testModel(),
         streamId: "test-stream",
         signal: { type: "compaction", trigger: "manual" },
         onFinish: async () => {},
@@ -250,7 +251,7 @@ describe("手工压缩的 stream signal", () => {
 
     const stream = await agent.stream({
       turns: compactableTurns(),
-      modelId: "test-model",
+      model: testModel(),
       streamId: "test-stream",
       signal: { type: "compaction", trigger: "manual" },
       onFinish: (status) => {

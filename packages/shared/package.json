@@ -28,6 +28,7 @@
     "./constants": "./src/constants/index.ts",
     "./errors": "./src/errors.ts",
     "./logger": "./src/logger/index.ts",
+    "./model": "./src/model.ts",
     "./terminal-protocol": "./src/terminal-protocol.ts",
     "./ws-protocol": "./src/ws-protocol.ts"
   },
