@@ -15,6 +15,7 @@ import { Input } from "@workspace/ui/components/input";
 import {
   InputGroup,
   InputGroupAddon,
+  InputGroupButton,
   InputGroupInput,
   InputGroupText,
 } from "@workspace/ui/components/input-group";
@@ -31,13 +32,15 @@ import { client } from "@workspace/ui/lib/orpc";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   ChevronRight,
+  Eye,
+  EyeOff,
   Pencil,
   PlusIcon,
   RefreshCw,
   Trash,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ProviderPresetSelect } from "./provider-preset-select";
@@ -109,6 +112,17 @@ function formatContext(tokens: number): string {
     return `${Number((tokens / 1_000_000).toFixed(1))}M`;
   }
   return `${Math.round(tokens / CONTEXT_UNIT)}k`;
+}
+
+/** 隐藏密钥时留在两头的字符数。 */
+const KEY_EDGE = 4;
+
+/** 藏起中段，只露首尾四位；短过两头的密钥整串遮住，不然等于没遮。 */
+function maskSecret(value: string): string {
+  if (value.length <= KEY_EDGE * 2) {
+    return "•".repeat(value.length);
+  }
+  return `${value.slice(0, KEY_EDGE)}...${value.slice(-KEY_EDGE)}`;
 }
 
 /** "Key: value" 逐行 → 请求头。空行忽略。 */
@@ -205,6 +219,9 @@ export function ProviderSettings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [listError, setListError] = useState<string | undefined>();
+  // 列表开关的序号：只认最后一次切换的回包。
+  const toggleSeq = useRef(0);
 
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -214,11 +231,25 @@ export function ProviderSettings() {
   const providers = settingsQuery.data?.providers ?? [];
 
   const saveMutation = useMutation({
+    // 每次保存都提交整份 providers。同作用域的保存排队执行，否则乱序落地时
+    // 旧快照会把新改动盖回去。
+    scope: { id: "settings-save" },
     mutationFn: async (input: {
       providers: ProviderRow[];
       defaultModel?: ModelRef | null;
     }) => await client.setting.update(input),
-    onSuccess: () => {
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
+    },
+  });
+
+  /** 列表开关的保存：乐观改动已经在缓存里，成功就不再拉一次，免得闪回。 */
+  const toggleMutation = useMutation({
+    scope: { id: "settings-save" },
+    mutationFn: async (input: { providers: ProviderRow[] }) =>
+      await client.setting.update(input),
+    onError: () => {
+      // 失败后回到服务端的值：缓存里的乐观改动不成立。
       void queryClient.invalidateQueries({ queryKey: ["settings"] });
     },
   });
@@ -230,11 +261,34 @@ export function ProviderSettings() {
     });
   };
 
-  const patchProvider = async (id: string, patch: Partial<ProviderRow>) => {
-    await save(
-      providers.map((provider) =>
-        provider.id === id ? { ...provider, ...patch } : provider
-      )
+  /** 列表上的开关：先改缓存，再排队存。连续切换读的是最新缓存，不会互相覆盖。 */
+  const toggleProvider = (id: string, active: boolean) => {
+    const data = queryClient.getQueryData<SettingsData>(["settings"]);
+    if (!data) {
+      return;
+    }
+    const next = data.providers.map((provider) =>
+      provider.id === id ? { ...provider, active } : provider
+    );
+    queryClient.setQueryData<SettingsData>(["settings"], {
+      ...data,
+      providers: next,
+    });
+    setListError(undefined);
+    const seq = ++toggleSeq.current;
+    toggleMutation.mutate(
+      { providers: next },
+      {
+        onSuccess: (saved) => {
+          // 只认最后一次切换的回包：更早的回包已经不含后来的改动。
+          if (seq === toggleSeq.current) {
+            queryClient.setQueryData<SettingsData>(["settings"], saved);
+          }
+        },
+        onError: (error) => {
+          setListError(error instanceof Error ? error.message : String(error));
+        },
+      }
     );
   };
 
@@ -268,7 +322,7 @@ export function ProviderSettings() {
               key={provider.id}
             >
               <button
-                className="group flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2.5 text-left outline-none transition-colors"
+                className="group flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2.5 text-left outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50"
                 onClick={() =>
                   setEditor({ mode: "edit", providerId: provider.id })
                 }
@@ -306,7 +360,7 @@ export function ProviderSettings() {
                 aria-label={`${t("settings.provider.active")} ${provider.name}`}
                 checked={provider.active}
                 onCheckedChange={(active) =>
-                  void patchProvider(provider.id, { active })
+                  toggleProvider(provider.id, active)
                 }
               />
               <ChevronRight
@@ -317,6 +371,12 @@ export function ProviderSettings() {
           ))
         )}
       </SettingFrame>
+
+      {listError ? (
+        <p className="mt-2 text-destructive text-xs" role="alert">
+          {listError}
+        </p>
+      ) : null}
 
       {editor ? (
         <ProviderWorkbench
@@ -378,7 +438,8 @@ function ProviderWorkbench(props: {
           name: provider.name,
           protocol: provider.protocol,
           baseURL: provider.baseURL,
-          apiKey: "",
+          // 密钥跟着草稿走：界面上看到的就是会存下去的那一把。
+          apiKey: provider.apiKey,
           headersText: stringifyHeaders(provider.headers),
           active: provider.active,
           models: provider.models.map((model) => ({ ...model })),
@@ -398,23 +459,32 @@ function ProviderWorkbench(props: {
       PROVIDER_PRESETS.find((entry) => entry.baseURL === provider?.baseURL)?.id
   );
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
-  const [showAdd, setShowAdd] = useState(
-    !provider || provider.models.length === 0
-  );
+  // 新建时不自动展开添加区：先看模型清单，要加再点按钮。编辑时没有模型的
+  // 供应商仍然直接给添加区，省一次点击。
+  const [showAdd, setShowAdd] = useState(provider?.models.length === 0);
   const [showHeaders, setShowHeaders] = useState(
     Object.keys(provider?.headers ?? {}).length > 0
   );
   const [saving, setSaving] = useState(false);
+  const [keyRevealed, setKeyRevealed] = useState(false);
+  const [keyFocused, setKeyFocused] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
   const nameRef = useRef<HTMLInputElement | null>(null);
+  const keyRef = useRef<HTMLInputElement | null>(null);
+  const keyInputId = useId();
   const editorRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const addPanelRef = useRef<HTMLDivElement | null>(null);
   const lastCount = useRef(draft.models.length);
 
   const preset = PROVIDER_PRESETS.find((entry) => entry.id === presetId);
+  // 选了预设之后，新建弹窗的头部就和编辑弹窗一样：图标、名字、模型数、控制台。
+  const hasIdentity = provider !== undefined || preset !== undefined;
+  const headerName = draft.name || provider?.name || preset?.name || "";
+  // 密钥的三种状态：失焦是遮罩预览，聚焦后的隐藏态是密码模式，点眼睛才是明文。
+  const keyPreviewed = !(keyRevealed || keyFocused);
   const canSubmit =
     draft.name.trim().length > 0 && draft.baseURL.trim().length > 0;
 
@@ -440,6 +510,19 @@ function ProviderWorkbench(props: {
 
   const patch = (values: Partial<Draft>) =>
     setDraft((current) => ({ ...current, ...values }));
+
+  /**
+   * 从遮罩预览进到编辑：整把密钥先选中，接着打字或粘贴就是换一把，不会接在旧
+   * 密钥后面变成一把无效的密钥。
+   */
+  const handleKeyFocus = () => {
+    const fromPreview = keyPreviewed;
+    setKeyFocused(true);
+    if (!fromPreview || draft.apiKey.length === 0) {
+      return;
+    }
+    requestAnimationFrame(() => keyRef.current?.select());
+  };
 
   const applyPreset = (id: string | undefined) => {
     setPresetId(id);
@@ -485,8 +568,7 @@ function ProviderWorkbench(props: {
         name: draft.name.trim(),
         protocol: draft.protocol,
         baseURL: draft.baseURL.trim(),
-        apiKey:
-          draft.apiKey.length > 0 ? draft.apiKey : (provider?.apiKey ?? ""),
+        apiKey: draft.apiKey,
         headers: parseHeaders(draft.headersText),
         active: draft.active,
         models: draft.models,
@@ -536,19 +618,17 @@ function ProviderWorkbench(props: {
         <DialogHeader className="flex shrink-0 flex-row items-center gap-3 border-b px-5 py-3.5 pr-12">
           <div className="min-w-0 flex-1">
             <DialogTitle className="flex min-w-0 items-center gap-2">
-              {provider ? (
+              {hasIdentity ? (
                 <ProviderLogo
                   className="size-5"
                   icon={preset?.icon}
-                  name={draft.name || provider.name}
+                  name={headerName}
                 />
               ) : null}
               <span className="truncate">
-                {provider
-                  ? draft.name || provider.name
-                  : t("settings.provider.createTitle")}
+                {hasIdentity ? headerName : t("settings.provider.createTitle")}
               </span>
-              {provider ? (
+              {hasIdentity ? (
                 <span className="shrink-0 font-normal text-muted-foreground text-xs tabular-nums">
                   {t("settings.provider.modelCount", {
                     count: draft.models.length,
@@ -556,32 +636,31 @@ function ProviderWorkbench(props: {
                 </span>
               ) : null}
             </DialogTitle>
-            {provider ? null : (
+            {hasIdentity ? null : (
               <DialogDescription className="mt-0.5 truncate text-xs">
                 {t("settings.provider.createDescription")}
               </DialogDescription>
             )}
           </div>
 
+          {preset ? (
+            <a
+              className="shrink-0 text-muted-foreground text-xs underline underline-offset-2 transition-colors hover:text-foreground"
+              href={preset.website}
+              rel="noreferrer"
+              target="_blank"
+              title={preset.website}
+            >
+              {t("settings.provider.console")}
+            </a>
+          ) : null}
+
           {provider ? (
-            <>
-              {preset ? (
-                <a
-                  className="shrink-0 text-muted-foreground text-xs underline underline-offset-2 transition-colors hover:text-foreground"
-                  href={preset.website}
-                  rel="noreferrer"
-                  target="_blank"
-                  title={preset.website}
-                >
-                  {t("settings.provider.console")}
-                </a>
-              ) : null}
-              <Switch
-                aria-label={`${t("settings.provider.active")} ${provider.name}`}
-                checked={draft.active}
-                onCheckedChange={(active) => patch({ active })}
-              />
-            </>
+            <Switch
+              aria-label={`${t("settings.provider.active")} ${provider.name}`}
+              checked={draft.active}
+              onCheckedChange={(active) => patch({ active })}
+            />
           ) : null}
         </DialogHeader>
 
@@ -643,20 +722,48 @@ function ProviderWorkbench(props: {
               </div>
 
               <div>
-                <label className="mb-1 block text-muted-foreground text-xs">
+                <label
+                  className="mb-1 block text-muted-foreground text-xs"
+                  htmlFor={keyInputId}
+                >
                   {t("settings.provider.apiKey")}
                 </label>
-                <Input
-                  autoComplete="off"
-                  onChange={(event) => patch({ apiKey: event.target.value })}
-                  placeholder={
-                    provider
-                      ? t("settings.provider.apiKeyUnchanged")
-                      : t("settings.provider.apiKeyPlaceholder")
-                  }
-                  type="password"
-                  value={draft.apiKey}
-                />
+                {/* 失焦时是遮罩预览，聚焦后切到密码模式：能输入，但不显示明文。
+                    明文只有右边的按钮能切出来。 */}
+                <InputGroup>
+                  <InputGroupInput
+                    autoComplete="off"
+                    className={cn(
+                      "font-mono",
+                      keyPreviewed ? "cursor-default select-none" : undefined
+                    )}
+                    id={keyInputId}
+                    onBlur={() => setKeyFocused(false)}
+                    onChange={(event) => patch({ apiKey: event.target.value })}
+                    onFocus={handleKeyFocus}
+                    placeholder={t("settings.provider.apiKeyPlaceholder")}
+                    readOnly={keyPreviewed}
+                    ref={keyRef}
+                    spellCheck={false}
+                    type={keyRevealed || keyPreviewed ? "text" : "password"}
+                    value={
+                      keyPreviewed ? maskSecret(draft.apiKey) : draft.apiKey
+                    }
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                      aria-label={
+                        keyRevealed
+                          ? t("settings.provider.hideApiKey")
+                          : t("settings.provider.showApiKey")
+                      }
+                      onClick={() => setKeyRevealed((current) => !current)}
+                      size="icon-xs"
+                    >
+                      {keyRevealed ? <EyeOff /> : <Eye />}
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                </InputGroup>
                 {preset ? (
                   <div className="mt-1.5 flex gap-3 text-xs">
                     <a
@@ -716,19 +823,17 @@ function ProviderWorkbench(props: {
               <span className="text-muted-foreground text-xs tabular-nums">
                 {draft.models.length}
               </span>
-              {provider ? (
-                <Button
-                  className="ml-auto"
-                  onClick={() => setShowAdd((open) => !open)}
-                  size="xs"
-                  variant="ghost"
-                >
-                  {showAdd ? <X /> : <PlusIcon />}
-                  {showAdd
-                    ? t("settings.provider.collapse")
-                    : t("settings.provider.addModels")}
-                </Button>
-              ) : null}
+              <Button
+                className="ml-auto"
+                onClick={() => setShowAdd((open) => !open)}
+                size="xs"
+                variant="ghost"
+              >
+                {showAdd ? <X /> : <PlusIcon />}
+                {showAdd
+                  ? t("settings.provider.collapse")
+                  : t("settings.provider.addModels")}
+              </Button>
             </div>
 
             {draft.models.length === 0 ? (
@@ -829,16 +934,13 @@ function ProviderWorkbench(props: {
             {showAdd ? (
               <div ref={addPanelRef}>
                 <AddModelsPanel
-                  apiKey={
-                    draft.apiKey.length > 0
-                      ? draft.apiKey
-                      : (provider?.apiKey ?? "")
-                  }
+                  apiKey={draft.apiKey}
                   baseURL={draft.baseURL}
                   className="mt-3"
                   existingIds={draft.models.map((model) => model.id)}
                   headers={parseHeaders(draft.headersText)}
                   onAdd={addModels}
+                  onCollapse={() => setShowAdd(false)}
                 />
               </div>
             ) : null}
@@ -886,7 +988,11 @@ function ProviderWorkbench(props: {
 
           <div className="ml-auto flex items-center gap-2">
             {error ? (
-              <span className="max-w-64 truncate text-destructive text-xs">
+              <span
+                className="max-w-64 truncate text-destructive text-xs"
+                role="alert"
+                title={error}
+              >
                 {error}
               </span>
             ) : null}
@@ -1046,6 +1152,8 @@ function AddModelsPanel(props: {
   headers?: Record<string, string>;
   existingIds: readonly string[];
   onAdd: (models: ModelRow[]) => void;
+  /** 全部加完后收起面板：这时已经没有可选项了。 */
+  onCollapse?: () => void;
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -1076,7 +1184,7 @@ function AddModelsPanel(props: {
       model.id.toLowerCase().includes(needle) ||
       model.name.toLowerCase().includes(needle)
   );
-  const chosen = available.filter((model) => selected.has(model.id));
+  const chosen = unfiltered.filter((model) => selected.has(model.id));
 
   const load = async () => {
     setPhase("loading");
@@ -1117,6 +1225,7 @@ function AddModelsPanel(props: {
   const addAll = () => {
     props.onAdd(unfiltered.map((model) => listedModelToRow(model)));
     setSelected(new Set());
+    props.onCollapse?.();
   };
 
   const addManual = () => {
@@ -1165,6 +1274,7 @@ function AddModelsPanel(props: {
       {phase === "ready" ? (
         <div className="mt-2">
           <Input
+            aria-label={t("settings.provider.filterModels")}
             className="h-7 text-xs"
             onChange={(event) => setFilter(event.target.value)}
             placeholder={t("settings.provider.filterModels")}
@@ -1174,7 +1284,9 @@ function AddModelsPanel(props: {
       ) : null}
 
       {phase === "error" ? (
-        <p className="mt-2 text-destructive text-xs">{error}</p>
+        <p className="mt-2 text-destructive text-xs" role="alert">
+          {error}
+        </p>
       ) : null}
 
       {phase === "ready" ? (
@@ -1216,6 +1328,7 @@ function AddModelsPanel(props: {
 
       <div className="mt-2 flex items-center gap-1.5">
         <Input
+          aria-label={t("settings.provider.manualModel")}
           className="h-7 text-xs"
           onChange={(event) => setManual(event.target.value)}
           onKeyDown={(event) => {
@@ -1225,6 +1338,7 @@ function AddModelsPanel(props: {
             }
           }}
           placeholder={t("settings.provider.manualModelPlaceholder")}
+          spellCheck={false}
           value={manual}
         />
         <Button
