@@ -111,7 +111,7 @@ export async function startServer(
   // desktop then reads to authenticate against a standalone server.
   resolveApiToken();
 
-  // 表结构是启动的前置条件：迁移失败就不再往下走，避免带着落后的结构提供服务。
+  // 表结构是启动的前置条件：迁移失败就不再往下走，避免在结构漂移的库上提供服务。
   if (options.migrate !== false) {
     await migrateDb();
   }
@@ -135,8 +135,8 @@ export async function startServer(
   const trustedOrigins = resolveTrustedOrigins();
   const app = createApp({ authStore, trustedOrigins });
 
-  // 清掉过期的登录态和票据。表还没迁移时只告警：开发库可以用 `db:push`
-  // 补上，不该因此拒绝启动。
+  // 清掉过期的登录态和票据。迁移已经跑过，这里失败只可能是写库本身出了问题，
+  // 不该因此拒绝启动，但要说清楚。
   try {
     await authStore.pruneExpired();
   } catch (error) {

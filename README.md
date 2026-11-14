@@ -123,7 +123,7 @@ them. The packaged app migrates `~/.aify-zero/aify-zero.db` from the migrations
 bundled at `Resources/migrations` (see `packagerConfig.extraResource`);
 `dev:server`, `dev:desktop` and the standalone `apps/server` build migrate the
 checkout's `local.db`, which every worktree owns. A failed migration stops
-startup instead of serving a stale schema.
+startup instead of serving tables that do not match the code.
 
 Schema changes therefore need a migration: run `vp run db#db:generate`, review
 the generated SQL, and commit it. `vp ready` runs `db:check`, which fails when
