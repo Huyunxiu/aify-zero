@@ -9,7 +9,7 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@workspace/ui/components/combobox";
-import { ModelLogo } from "@workspace/ui/elements/model-logo";
+import { ProviderLogo } from "@workspace/ui/elements/provider-logo";
 import { cn } from "@workspace/ui/lib/utils";
 import { Pencil } from "lucide-react";
 import { useMemo } from "react";
@@ -27,11 +27,11 @@ interface PresetOption {
 const CUSTOM_ID = "";
 
 /** 预设的图标；自定义行没有品牌图，用铅笔表示自己填。 */
-function PresetMark(props: { icon?: string }) {
-  if (props.icon) {
-    return <ModelLogo icon={props.icon} model={props.icon} />;
+function PresetMark(props: { icon?: string; name: string }) {
+  if (!props.icon) {
+    return <Pencil className="size-4 shrink-0 text-muted-foreground" />;
   }
-  return <Pencil className="size-4 shrink-0 text-muted-foreground" />;
+  return <ProviderLogo icon={props.icon} name={props.name} />;
 }
 
 /**
@@ -87,7 +87,7 @@ export function ProviderPresetSelect(props: {
         aria-label={`${t("settings.provider.preset")}: ${value.name}`}
         className="flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 data-popup-open:border-ring data-popup-open:ring-3 data-popup-open:ring-ring/50 dark:bg-input/30"
       >
-        <PresetMark icon={value.icon} />
+        <PresetMark icon={value.icon} name={value.name} />
         <span
           className={cn(
             "min-w-0 flex-1 truncate text-left",
@@ -106,7 +106,7 @@ export function ProviderPresetSelect(props: {
         <ComboboxList>
           {(item: PresetOption) => (
             <ComboboxItem key={item.id || "custom"} value={item}>
-              <PresetMark icon={item.icon} />
+              <PresetMark icon={item.icon} name={item.name} />
               <span
                 className={cn(
                   "truncate",

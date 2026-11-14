@@ -20,6 +20,7 @@ import { sameModel } from "../lib/models";
 import type { ModelOption } from "../lib/models";
 import { ModelLogo } from "./model-logo";
 import { PromptInputButton } from "./prompt-input";
+import { providerKeyFor } from "./provider-logo";
 
 export type ModelSelectProps = {
   models: ModelOption[];
@@ -87,7 +88,10 @@ export function ModelSelect({
       <PopoverTrigger className="w-fit" render={<div />} nativeButton={false}>
         <PromptInputButton>
           {selectedModel ? (
-            <ModelLogo model={selectedModel.name} />
+            <ModelLogo
+              model={selectedModel.name}
+              providerIcon={providerKeyFor(selectedModel.providerName)}
+            />
           ) : (
             <span>{t("settings.provider.selectModel")}</span>
           )}
@@ -109,7 +113,10 @@ export function ModelSelect({
                   onClick={() => setEffortClose(true)}
                 >
                   <ChevronLeftIcon className="pointer-events-none size-4 text-muted-foreground" />
-                  <ModelLogo model={selectedModel.name} />
+                  <ModelLogo
+                    model={selectedModel.name}
+                    providerIcon={providerKeyFor(selectedModel.providerName)}
+                  />
                   <span>{selectedModel.name}</span>
                 </PromptInputButton>
               </div>
@@ -176,7 +183,10 @@ export function ModelSelect({
                           }
                         }}
                       >
-                        <ModelLogo model={option.name} />
+                        <ModelLogo
+                          model={option.name}
+                          providerIcon={providerKeyFor(providerName)}
+                        />
                         <span>{option.name}</span>
                       </CommandItem>
                     ))}

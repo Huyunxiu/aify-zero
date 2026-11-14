@@ -25,7 +25,8 @@ import {
 import { Spinner } from "@workspace/ui/components/spinner";
 import { Switch } from "@workspace/ui/components/switch";
 import { Textarea } from "@workspace/ui/components/textarea";
-import { ModelLogo, logoKeyFor } from "@workspace/ui/elements/model-logo";
+import { ModelLogo } from "@workspace/ui/elements/model-logo";
+import { ProviderLogo } from "@workspace/ui/elements/provider-logo";
 import { client } from "@workspace/ui/lib/orpc";
 import { cn } from "@workspace/ui/lib/utils";
 import {
@@ -178,27 +179,6 @@ function revealNode(node: HTMLElement | null) {
   });
 }
 
-/** 有 logo 的品牌用它；其余名字用首字母，避免所有供应商顶着同一个图标。 */
-function BrandMark(props: { name: string; icon?: string; className?: string }) {
-  const key = props.icon ?? logoKeyFor(props.name);
-  if (key) {
-    return (
-      <ModelLogo className={props.className} icon={key} model={props.name} />
-    );
-  }
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-md bg-muted font-medium text-[10px] text-foreground/70",
-        props.className
-      )}
-    >
-      {props.name.trim().slice(0, 1).toUpperCase()}
-    </span>
-  );
-}
-
 function ProtocolPicker(props: {
   value: ModelProtocol;
   onChange: (value: ModelProtocol) => void;
@@ -294,7 +274,7 @@ export function ProviderSettings() {
                 }
                 type="button"
               >
-                <BrandMark
+                <ProviderLogo
                   className="size-5"
                   icon={presetIconFor(provider.baseURL)}
                   name={provider.name}
@@ -557,7 +537,7 @@ function ProviderWorkbench(props: {
           <div className="min-w-0 flex-1">
             <DialogTitle className="flex min-w-0 items-center gap-2">
               {provider ? (
-                <BrandMark
+                <ProviderLogo
                   className="size-5"
                   icon={preset?.icon}
                   name={draft.name || provider.name}
@@ -760,7 +740,11 @@ function ProviderWorkbench(props: {
                 {draft.models.map((model) => (
                   <div key={model.id}>
                     <div className="flex items-center gap-2 rounded-md px-1.5 py-2 hover:bg-muted/40">
-                      <BrandMark className="size-4" name={model.name} />
+                      <ModelLogo
+                        className="size-4"
+                        model={model.name}
+                        providerIcon={preset?.icon}
+                      />
                       <button
                         className="min-w-0 flex-1 text-left outline-none focus-visible:underline"
                         onClick={() =>

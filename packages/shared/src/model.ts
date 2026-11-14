@@ -31,7 +31,7 @@ export function slugifyProviderId(name: string): string {
 export interface ProviderPreset {
   id: string;
   name: string;
-  /** 界面用的品牌图标键，对应 UI 里的 logo 表。 */
+  /** 界面用的品牌图标键，对应 UI 里的图标表。 */
   icon: string;
   protocol: ModelProtocol;
   /** API 地址。协议决定 SDK 追加的路径。 */
@@ -74,7 +74,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "deepseek",
     name: "DeepSeek",
-    icon: "deepseek",
+    icon: "deepseek-color",
     protocol: "openai-chat",
     baseURL: "https://api.deepseek.com/v1",
     website: "https://platform.deepseek.com",
@@ -92,7 +92,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "google",
     name: "Google Gemini",
-    icon: "gemini",
+    icon: "gemini-color",
     protocol: "openai-chat",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
     website: "https://ai.google.dev",
@@ -101,7 +101,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "zhipu",
     name: "智谱 AI",
-    icon: "zhipu",
+    icon: "zhipu-color",
     protocol: "openai-chat",
     baseURL: "https://open.bigmodel.cn/api/paas/v4",
     website: "https://open.bigmodel.cn",
@@ -119,7 +119,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "volcengine",
     name: "火山方舟",
-    icon: "volcengine",
+    icon: "volcengine-color",
     protocol: "openai-chat",
     baseURL: "https://ark.cn-beijing.volces.com/api/v3",
     website: "https://www.volcengine.com/product/ark",
@@ -128,7 +128,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "tencent",
     name: "腾讯云 TokenHub",
-    icon: "tencentcloud",
+    icon: "tencentcloud-color",
     protocol: "openai-chat",
     baseURL: "https://tokenhub.tencentmaas.com/v1",
     website: "https://cloud.tencent.com/document/product/1823",
