@@ -31,8 +31,10 @@ export function slugifyProviderId(name: string): string {
 export interface ProviderPreset {
   id: string;
   name: string;
+  /** 界面用的品牌图标键，对应 UI 里的 logo 表。 */
+  icon: string;
   protocol: ModelProtocol;
-  /** 基地址。协议决定 SDK 追加的路径。 */
+  /** API 地址。协议决定 SDK 追加的路径。 */
   baseURL: string;
   website: string;
   keysURL: string;
@@ -45,6 +47,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "openrouter",
     name: "OpenRouter",
+    icon: "openrouter",
     protocol: "openai-chat",
     baseURL: "https://openrouter.ai/api/v1",
     website: "https://openrouter.ai",
@@ -53,6 +56,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "opencode-zen",
     name: "OpenCode Zen",
+    icon: "opencode",
     protocol: "openai-chat",
     baseURL: "https://opencode.ai/zen/v1",
     website: "https://opencode.ai/docs/zen",
@@ -61,6 +65,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "opencode-go",
     name: "OpenCode Go",
+    icon: "opencode",
     protocol: "openai-chat",
     baseURL: "https://opencode.ai/zen/go/v1",
     website: "https://opencode.ai/docs/go",
@@ -69,6 +74,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "deepseek",
     name: "DeepSeek",
+    icon: "deepseek",
     protocol: "openai-chat",
     baseURL: "https://api.deepseek.com/v1",
     website: "https://platform.deepseek.com",
@@ -77,6 +83,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "openai",
     name: "OpenAI",
+    icon: "openai",
     protocol: "openai-responses",
     baseURL: "https://api.openai.com/v1",
     website: "https://platform.openai.com",
@@ -85,6 +92,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "google",
     name: "Google Gemini",
+    icon: "gemini",
     protocol: "openai-chat",
     baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
     website: "https://ai.google.dev",
@@ -93,6 +101,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "zhipu",
     name: "智谱 AI",
+    icon: "zhipu",
     protocol: "openai-chat",
     baseURL: "https://open.bigmodel.cn/api/paas/v4",
     website: "https://open.bigmodel.cn",
@@ -101,6 +110,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "moonshot",
     name: "Kimi",
+    icon: "kimi",
     protocol: "openai-chat",
     baseURL: "https://api.moonshot.cn/v1",
     website: "https://platform.moonshot.cn",
@@ -109,6 +119,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "volcengine",
     name: "火山方舟",
+    icon: "volcengine",
     protocol: "openai-chat",
     baseURL: "https://ark.cn-beijing.volces.com/api/v3",
     website: "https://www.volcengine.com/product/ark",
@@ -117,6 +128,7 @@ export const PROVIDER_PRESETS: readonly ProviderPreset[] = [
   {
     id: "tencent",
     name: "腾讯云 TokenHub",
+    icon: "tencentcloud",
     protocol: "openai-chat",
     baseURL: "https://tokenhub.tencentmaas.com/v1",
     website: "https://cloud.tencent.com/document/product/1823",

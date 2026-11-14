@@ -285,7 +285,7 @@ export function ProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent size="medium">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FolderIcon open={Boolean(project)} size={20} />

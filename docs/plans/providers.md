@@ -1,6 +1,6 @@
 # 供应商为主的模型配置
 
-把「模型」这一层从接入信息里拆出来。供应商持有基地址、协议、密钥和请求头，
+把「模型」这一层从接入信息里拆出来。供应商持有 API 地址、协议、密钥和请求头，
 模型只描述模型本身，并挂在供应商下面。加一家供应商不再等于把同一个密钥和地址
 重复填进它的每个模型。
 
@@ -13,8 +13,8 @@
 | 供应商身份     | 内置预设加自定义；预设给地址、控制台地址、Key 申请地址                       |
 | 接入信息       | 供应商持有 `baseURL`、`protocol`、`apiKey`、`headers`                        |
 | 协议           | `openai-chat` 与 `openai-responses`；不做 Anthropic Messages                 |
-| Responses 实现 | `@ai-sdk/openai`；基地址仍填 base，SDK 追加路径                              |
-| 基地址规范化   | 去尾斜杠，按协议去掉误填的 `/chat/completions`、`/responses`                 |
+| Responses 实现 | `@ai-sdk/openai`；API 地址仍填 base，SDK 追加路径                            |
+| API 地址规范化 | 去尾斜杠，按协议去掉误填的 `/chat/completions`、`/responses`                 |
 | 加模型         | 拉 `GET {baseURL}/models` 勾选，手填兜底；拉取兼作连接测试                   |
 | 能力字段       | `limit.context`、`modalities`、`reasoning` 全部接线                          |
 | 能力来源       | 从列表响应尽力解析，其余手填；不接 models.dev                                |
@@ -94,7 +94,7 @@ OpenCode 的网关要求额外的请求头，缺 `x-opencode-session` 直接 400
 | ------------------------------------------------------------ | ----------------------------------------------- |
 | `packages/shared/src/model.ts`                               | `ModelRef`、`ModelProtocol`、`PROVIDER_PRESETS` |
 | `packages/server/src/routers/settings/settings.schema.ts`    | 供应商与模型的 schema，设置形状                 |
-| `packages/server/src/routers/settings/settings.normalize.ts` | 旧设置归一化与基地址规范化                      |
+| `packages/server/src/routers/settings/settings.normalize.ts` | 旧设置归一化与 API 地址规范化                   |
 | `packages/server/src/routers/settings/settings.service.ts`   | 读写设置、按引用找模型                          |
 | `packages/server/src/routers/settings/model-list.ts`         | 拉取并解析 `/models`                            |
 | `packages/server/src/session/agent.ts`                       | 把供应商配置解析成网关目标                      |
@@ -103,7 +103,7 @@ OpenCode 的网关要求额外的请求头，缺 `x-opencode-session` 直接 400
 
 ## 预设
 
-| 供应商          | 基地址                                                    | 默认协议  |
+| 供应商          | API 地址                                                  | 默认协议  |
 | --------------- | --------------------------------------------------------- | --------- |
 | OpenRouter      | `https://openrouter.ai/api/v1`                            | chat      |
 | OpenCode Zen    | `https://opencode.ai/zen/v1`                              | chat      |

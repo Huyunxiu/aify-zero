@@ -1,53 +1,45 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PROVIDER_PRESETS, slugifyProviderId } from "@workspace/shared/model";
 import type { ModelProtocol, ModelRef } from "@workspace/shared/model";
+import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@workspace/ui/components/dialog";
-import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field";
 import { Input } from "@workspace/ui/components/input";
 import {
   InputGroup,
-  InputGroupInput,
   InputGroupAddon,
+  InputGroupInput,
   InputGroupText,
 } from "@workspace/ui/components/input-group";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@workspace/ui/components/select";
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@workspace/ui/components/segmented-control";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { Switch } from "@workspace/ui/components/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-} from "@workspace/ui/components/table";
+import { Textarea } from "@workspace/ui/components/textarea";
+import { ModelLogo, logoKeyFor } from "@workspace/ui/elements/model-logo";
 import { client } from "@workspace/ui/lib/orpc";
+import { cn } from "@workspace/ui/lib/utils";
 import {
-  ChevronDown,
   ChevronRight,
   Pencil,
   PlusIcon,
   RefreshCw,
   Trash,
+  X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ModelLogo } from "../model-logo";
+import { ProviderPresetSelect } from "./provider-preset-select";
 import { SettingFrame } from "./setting-frame";
 
 type SettingsData = Awaited<ReturnType<typeof client.setting.get>>;
@@ -60,12 +52,62 @@ type ListedModel = Awaited<
 const MODALITIES = ["text", "audio", "image", "video", "pdf"] as const;
 type Modality = (typeof MODALITIES)[number];
 
+const MODALITY_KEYS = {
+  text: "modelCapability.modalities.text",
+  audio: "modelCapability.modalities.audio",
+  image: "modelCapability.modalities.image",
+  video: "modelCapability.modalities.video",
+  pdf: "modelCapability.modalities.pdf",
+} as const;
+
+/** 保存后只剩地址和名字：地址对得上预设就用预设的图标。 */
+function presetIconFor(baseURL: string): string | undefined {
+  return PROVIDER_PRESETS.find((entry) => entry.baseURL === baseURL)?.icon;
+}
+
 const DEFAULT_CONTEXT = 131_072;
 const CONTEXT_UNIT = 1024;
+const DEFAULT_INPUT: Modality[] = ["text", "image"];
+const DEFAULT_OUTPUT: Modality[] = ["text"];
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+
+/** SDK 追加在 API 地址后的路径：换协议时地址不变，只换这一截。 */
+const PROTOCOL_PATHS = {
+  "openai-chat": "/chat/completions",
+  "openai-responses": "/responses",
+} as const satisfies Record<ModelProtocol, string>;
+
+const PROTOCOLS = [
+  { value: "openai-chat", label: "settings.provider.protocols.openai-chat" },
+  {
+    value: "openai-responses",
+    label: "settings.provider.protocols.openai-responses",
+  },
+] as const satisfies readonly { value: ModelProtocol; label: string }[];
+
+type Editor = { mode: "create" } | { mode: "edit"; providerId: string };
+
+interface Draft {
+  name: string;
+  protocol: ModelProtocol;
+  baseURL: string;
+  apiKey: string;
+  headersText: string;
+  active: boolean;
+  models: ModelRow[];
+}
 
 /** Tokens 到界面上的 k；去掉浮点噪声。 */
 function toKilotokens(tokens: number) {
   return Number((tokens / CONTEXT_UNIT).toFixed(2));
+}
+
+/** 128k / 1M 这种写法比裸数字好读。 */
+function formatContext(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${Number((tokens / 1_000_000).toFixed(1))}M`;
+  }
+  return `${Math.round(tokens / CONTEXT_UNIT)}k`;
 }
 
 /** "Key: value" 逐行 → 请求头。空行忽略。 */
@@ -90,15 +132,99 @@ function stringifyHeaders(headers: Record<string, string> | undefined): string {
     .join("\n");
 }
 
+/** slug 撞了就加序号，和保存时服务端的收敛规则一致。 */
+function uniqueProviderId(name: string, taken: readonly string[]): string {
+  const base = slugifyProviderId(name);
+  if (!taken.includes(base)) {
+    return base;
+  }
+  let index = 2;
+  while (taken.includes(`${base}-${index}`)) {
+    index += 1;
+  }
+  return `${base}-${index}`;
+}
+
+function listedModelToRow(model: ListedModel): ModelRow {
+  return {
+    id: model.id,
+    name: model.name,
+    active: true,
+    reasoning: true,
+    modalities: {
+      input: model.input ?? [...DEFAULT_INPUT],
+      output: model.output ?? [...DEFAULT_OUTPUT],
+    },
+    limit: { context: model.context ?? DEFAULT_CONTEXT },
+  };
+}
+
+function manualModel(id: string): ModelRow {
+  return {
+    id,
+    name: id,
+    active: true,
+    reasoning: true,
+    modalities: { input: [...DEFAULT_INPUT], output: [...DEFAULT_OUTPUT] },
+    limit: { context: DEFAULT_CONTEXT },
+  };
+}
+
+/** 新内容出现后把它带进视野，用最短距离。 */
+function revealNode(node: HTMLElement | null) {
+  node?.scrollIntoView({
+    behavior: window.matchMedia(REDUCED_MOTION).matches ? "auto" : "smooth",
+    block: "nearest",
+  });
+}
+
+/** 有 logo 的品牌用它；其余名字用首字母，避免所有供应商顶着同一个图标。 */
+function BrandMark(props: { name: string; icon?: string; className?: string }) {
+  const key = props.icon ?? logoKeyFor(props.name);
+  if (key) {
+    return (
+      <ModelLogo className={props.className} icon={key} model={props.name} />
+    );
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-md bg-muted font-medium text-[10px] text-foreground/70",
+        props.className
+      )}
+    >
+      {props.name.trim().slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+function ProtocolPicker(props: {
+  value: ModelProtocol;
+  onChange: (value: ModelProtocol) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <SegmentedControl className="w-full" size="sm">
+      {PROTOCOLS.map((option) => (
+        <SegmentedControlItem
+          aria-pressed={props.value === option.value}
+          className="flex-1"
+          data-checked={props.value === option.value ? "" : undefined}
+          key={option.value}
+          onClick={() => props.onChange(option.value)}
+        >
+          {t(option.label)}
+        </SegmentedControlItem>
+      ))}
+    </SegmentedControl>
+  );
+}
+
 export function ProviderSettings() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [providerDraft, setProviderDraft] = useState<ProviderDraft | null>(
-    null
-  );
-  const [modelDraft, setModelDraft] = useState<ModelDraft | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ProviderRow | null>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
 
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -124,16 +250,6 @@ export function ProviderSettings() {
     });
   };
 
-  const toggleExpanded = (id: string) => {
-    const next = new Set(expanded);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setExpanded(next);
-  };
-
   const patchProvider = async (id: string, patch: Partial<ProviderRow>) => {
     await save(
       providers.map((provider) =>
@@ -142,688 +258,861 @@ export function ProviderSettings() {
     );
   };
 
-  const removeProvider = async (id: string) => {
-    await save(providers.filter((provider) => provider.id !== id));
-    setDeleteTarget(null);
-  };
-
-  const patchModel = async (
-    providerId: string,
-    modelId: string,
-    patch: Partial<ModelRow>
-  ) => {
-    await save(
-      providers.map((provider) =>
-        provider.id === providerId
-          ? {
-              ...provider,
-              models: provider.models.map((model) =>
-                model.id === modelId ? { ...model, ...patch } : model
-              ),
-            }
-          : provider
-      )
-    );
-  };
-
-  const removeModel = async (providerId: string, modelId: string) => {
-    await save(
-      providers.map((provider) =>
-        provider.id === providerId
-          ? {
-              ...provider,
-              models: provider.models.filter((model) => model.id !== modelId),
-            }
-          : provider
-      )
-    );
-  };
-
-  const addModels = async (providerId: string, models: ModelRow[]) => {
-    const [first] = models;
-    const next = providers.map((provider) =>
-      provider.id === providerId
-        ? {
-            ...provider,
-            models: [
-              ...provider.models,
-              ...models.filter(
-                (model) =>
-                  !provider.models.some((existing) => existing.id === model.id)
-              ),
-            ],
-          }
-        : provider
-    );
-    // 第一个模型顺带成为默认模型：没有默认值时新会话才有东西可选。
-    const needsDefault =
-      (settingsQuery.data?.defaultModel ?? null) === null &&
-      first !== undefined;
-    await save(
-      next,
-      needsDefault ? { providerId, modelId: first.id } : undefined
-    );
-    setExpanded(new Set([...expanded, providerId]));
-  };
-
-  const uniqueProviderId = (name: string): string => {
-    const base = slugifyProviderId(name);
-    const taken = new Set(providers.map((provider) => provider.id));
-    if (!taken.has(base)) {
-      return base;
-    }
-    let index = 2;
-    while (taken.has(`${base}-${index}`)) {
-      index += 1;
-    }
-    return `${base}-${index}`;
-  };
+  const editing =
+    editor?.mode === "edit"
+      ? providers.find((provider) => provider.id === editor.providerId)
+      : undefined;
 
   return (
     <div className="mx-auto flex w-2xl flex-col">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="font-bold text-xl">{t("settings.provider.title")}</h1>
-        <Button size="sm" onClick={() => setProviderDraft({ mode: "create" })}>
+        <Button size="sm" onClick={() => setEditor({ mode: "create" })}>
           <PlusIcon />
           {t("settings.provider.addProvider")}
         </Button>
       </div>
 
-      <SettingFrame>
-        <Table>
-          <TableBody>
-            {providers.length === 0 ? (
-              <TableRow>
-                <TableCell className="h-24 text-center">
-                  {t("settings.provider.empty")}
-                </TableCell>
-              </TableRow>
-            ) : (
-              providers.map((provider) => (
-                <ProviderRows
-                  key={provider.id}
-                  provider={provider}
-                  expanded={expanded.has(provider.id)}
-                  onToggle={() => toggleExpanded(provider.id)}
-                  onActiveChange={(active) =>
-                    void patchProvider(provider.id, { active })
-                  }
-                  onEdit={() => setProviderDraft({ mode: "edit", provider })}
-                  onDelete={() => setDeleteTarget(provider)}
-                  onAddModels={() =>
-                    setModelDraft({ mode: "create", providerId: provider.id })
-                  }
-                  onModelActiveChange={(modelId, active) =>
-                    void patchModel(provider.id, modelId, { active })
-                  }
-                  onModelEdit={(model) =>
-                    setModelDraft({
-                      mode: "edit",
-                      providerId: provider.id,
-                      model,
-                    })
-                  }
-                  onModelDelete={(modelId) =>
-                    void removeModel(provider.id, modelId)
-                  }
+      <SettingFrame className="overflow-hidden">
+        {providers.length === 0 ? (
+          <div className="flex h-24 items-center justify-center text-muted-foreground text-sm">
+            {t("settings.provider.empty")}
+          </div>
+        ) : (
+          providers.map((provider, index) => (
+            <div
+              className={cn(
+                "flex items-center gap-1 pr-2 pl-1",
+                index > 0 && "border-t"
+              )}
+              key={provider.id}
+            >
+              <button
+                className="group flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2.5 text-left outline-none transition-colors"
+                onClick={() =>
+                  setEditor({ mode: "edit", providerId: provider.id })
+                }
+                type="button"
+              >
+                <BrandMark
+                  className="size-5"
+                  icon={presetIconFor(provider.baseURL)}
+                  name={provider.name}
                 />
-              ))
-            )}
-          </TableBody>
-        </Table>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2">
+                    <span className="truncate font-medium">
+                      {provider.name}
+                    </span>
+                    {provider.active ? null : (
+                      <span className="text-muted-foreground text-xs">
+                        {t("settings.provider.inactive")}
+                      </span>
+                    )}
+                  </span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-muted-foreground text-xs">
+                      {provider.baseURL}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+                      {t("settings.provider.modelCount", {
+                        count: provider.models.length,
+                      })}
+                    </span>
+                  </span>
+                </span>
+              </button>
+              <Switch
+                aria-label={`${t("settings.provider.active")} ${provider.name}`}
+                checked={provider.active}
+                onCheckedChange={(active) =>
+                  void patchProvider(provider.id, { active })
+                }
+              />
+              <ChevronRight
+                aria-hidden="true"
+                className="size-4 shrink-0 text-muted-foreground/60"
+              />
+            </div>
+          ))
+        )}
       </SettingFrame>
 
-      {providerDraft ? (
-        <ProviderDialog
-          draft={providerDraft}
-          takenIds={providers.map((provider) => provider.id)}
-          onClose={() => setProviderDraft(null)}
-          onSave={async (values) => {
-            if (providerDraft.mode === "edit") {
-              await patchProvider(providerDraft.provider.id, values);
-            } else {
-              const created: ProviderRow = {
-                ...values,
-                id: uniqueProviderId(values.name),
-                active: true,
-                models: [],
-              };
-              await save([...providers, created]);
-              setExpanded(new Set([...expanded, created.id]));
-            }
-            setProviderDraft(null);
-          }}
-        />
-      ) : null}
-
-      {modelDraft ? (
-        <ModelDialog
-          key={`${modelDraft.providerId}:${modelDraft.mode === "edit" ? modelDraft.model.id : "new"}`}
-          provider={providers.find(
-            (provider) => provider.id === modelDraft.providerId
-          )}
-          draft={modelDraft}
-          onClose={() => setModelDraft(null)}
-          onSave={async (rows) => {
-            await addModels(modelDraft.providerId, rows);
-            setModelDraft(null);
-          }}
-          onEditSave={async (modelId, patch) => {
-            await patchModel(modelDraft.providerId, modelId, patch);
-            setModelDraft(null);
-          }}
-        />
-      ) : null}
-
-      <Dialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteTarget(null);
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("settings.provider.deleteConfirm")}</DialogTitle>
-            <DialogDescription>
-              {t("settings.provider.deleteDescription")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline" />}>
-              {t("settings.provider.cancel")}
-            </DialogClose>
-            <Button
-              variant="destructive"
-              loading={saveMutation.isPending}
-              onClick={() => {
-                if (deleteTarget) {
-                  void removeProvider(deleteTarget.id);
+      {editor ? (
+        <ProviderWorkbench
+          key={editing?.id ?? "new"}
+          onClose={() => setEditor(null)}
+          onDelete={
+            editing
+              ? async () => {
+                  await save(
+                    providers.filter((provider) => provider.id !== editing.id)
+                  );
+                  setEditor(null);
                 }
-              }}
-            >
-              {t("settings.provider.delete")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              : undefined
+          }
+          onSave={async (values) => {
+            const id =
+              editing?.id ??
+              uniqueProviderId(
+                values.name,
+                providers.map((provider) => provider.id)
+              );
+            const saved: ProviderRow = { ...values, id };
+            const next = editing
+              ? providers.map((provider) =>
+                  provider.id === editing.id ? saved : provider
+                )
+              : [...providers, saved];
+            const [first] = saved.models;
+            // 没有默认模型时，新加的第一个模型顺带成为默认：
+            // 新会话才有东西可选。
+            const needsDefault =
+              (settingsQuery.data?.defaultModel ?? null) === null &&
+              first !== undefined;
+            await save(
+              next,
+              needsDefault ? { providerId: id, modelId: first.id } : undefined
+            );
+            setEditor(null);
+          }}
+          provider={editing}
+        />
+      ) : null}
     </div>
   );
 }
 
-type ProviderDraft =
-  | { mode: "create" }
-  | { mode: "edit"; provider: ProviderRow };
-
-type ModelDraft =
-  | { mode: "create"; providerId: string }
-  | { mode: "edit"; providerId: string; model: ModelRow };
-
-function ProviderRows(props: {
-  provider: ProviderRow;
-  expanded: boolean;
-  onToggle: () => void;
-  onActiveChange: (active: boolean) => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onAddModels: () => void;
-  onModelActiveChange: (modelId: string, active: boolean) => void;
-  onModelEdit: (model: ModelRow) => void;
-  onModelDelete: (modelId: string) => void;
+function ProviderWorkbench(props: {
+  provider: ProviderRow | undefined;
+  onClose: () => void;
+  onSave: (values: Omit<ProviderRow, "id">) => Promise<void>;
+  onDelete?: () => Promise<void>;
 }) {
   const { t } = useTranslation();
   const { provider } = props;
-  const Chevron = props.expanded ? ChevronDown : ChevronRight;
-
-  return (
-    <>
-      <TableRow>
-        <TableCell>
-          <div className="flex items-center gap-2">
-            <button
-              className="flex items-center gap-1 text-left"
-              onClick={props.onToggle}
-              type="button"
-            >
-              <Chevron className="size-4 text-muted-foreground" />
-              <ModelLogo model={provider.name} />
-              <span>{provider.name}</span>
-            </button>
-            <span className="text-muted-foreground text-xs">
-              {provider.baseURL}
-            </span>
-          </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex items-center justify-end gap-1">
-            <Switch
-              checked={provider.active}
-              onCheckedChange={props.onActiveChange}
-            />
-            <Button variant="ghost" size="icon-sm" onClick={props.onEdit}>
-              <Pencil />
-            </Button>
-            <Button variant="ghost" size="icon-sm" onClick={props.onDelete}>
-              <Trash />
-            </Button>
-          </div>
-        </TableCell>
-      </TableRow>
-
-      {props.expanded
-        ? provider.models.map((model) => (
-            <TableRow key={`${provider.id}/${model.id}`}>
-              <TableCell>
-                <div className="flex items-center gap-2 pl-6">
-                  <ModelLogo model={model.name} />
-                  <span>{model.name}</span>
-                  {(model.limit?.context ?? 0) > 0 ? (
-                    <span className="text-muted-foreground text-xs">
-                      {toKilotokens(model.limit?.context ?? 0)}k
-                    </span>
-                  ) : null}
-                </div>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center justify-end gap-1">
-                  <Switch
-                    checked={model.active}
-                    onCheckedChange={(active) =>
-                      props.onModelActiveChange(model.id, active)
-                    }
-                  />
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => props.onModelEdit(model)}
-                  >
-                    <Pencil />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => props.onModelDelete(model.id)}
-                  >
-                    <Trash />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))
-        : null}
-
-      {props.expanded ? (
-        <TableRow>
-          <TableCell colSpan={2}>
-            <Button
-              className="ml-6"
-              size="sm"
-              variant="ghost"
-              onClick={props.onAddModels}
-            >
-              <PlusIcon />
-              {t("settings.provider.addModels")}
-            </Button>
-          </TableCell>
-        </TableRow>
-      ) : null}
-    </>
+  const [draft, setDraft] = useState<Draft>(() =>
+    provider
+      ? {
+          name: provider.name,
+          protocol: provider.protocol,
+          baseURL: provider.baseURL,
+          apiKey: "",
+          headersText: stringifyHeaders(provider.headers),
+          active: provider.active,
+          models: provider.models.map((model) => ({ ...model })),
+        }
+      : {
+          name: "",
+          protocol: "openai-chat",
+          baseURL: "",
+          apiKey: "",
+          headersText: "",
+          active: true,
+          models: [],
+        }
   );
-}
-
-function ProviderDialog(props: {
-  draft: ProviderDraft;
-  takenIds: readonly string[];
-  onClose: () => void;
-  onSave: (
-    values: Pick<
-      ProviderRow,
-      "name" | "protocol" | "baseURL" | "apiKey" | "headers"
-    >
-  ) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const editing =
-    props.draft.mode === "edit" ? props.draft.provider : undefined;
-  const [presetId, setPresetId] = useState<string | undefined>();
-  const [name, setName] = useState(editing?.name ?? "");
-  const [protocol, setProtocol] = useState<ModelProtocol>(
-    editing?.protocol ?? "openai-chat"
+  const [presetId, setPresetId] = useState<string | undefined>(
+    () =>
+      PROVIDER_PRESETS.find((entry) => entry.baseURL === provider?.baseURL)?.id
   );
-  const [baseURL, setBaseURL] = useState(editing?.baseURL ?? "");
-  const [apiKey, setApiKey] = useState("");
-  const [headersText, setHeadersText] = useState(
-    stringifyHeaders(editing?.headers)
+  const [editingModelId, setEditingModelId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(
+    !provider || provider.models.length === 0
+  );
+  const [showHeaders, setShowHeaders] = useState(
+    Object.keys(provider?.headers ?? {}).length > 0
   );
   const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const addPanelRef = useRef<HTMLDivElement | null>(null);
+  const lastCount = useRef(draft.models.length);
+
+  const preset = PROVIDER_PRESETS.find((entry) => entry.id === presetId);
+  const canSubmit =
+    draft.name.trim().length > 0 && draft.baseURL.trim().length > 0;
+
+  useEffect(() => {
+    if (editingModelId) {
+      revealNode(editorRef.current);
+    }
+  }, [editingModelId]);
+
+  // 新加的模型在上方，回到列表，不让它被下方的添加区挡住。
+  useEffect(() => {
+    if (draft.models.length > lastCount.current) {
+      revealNode(listRef.current);
+    }
+    lastCount.current = draft.models.length;
+  }, [draft.models.length]);
+
+  useEffect(() => {
+    if (showAdd) {
+      revealNode(addPanelRef.current);
+    }
+  }, [showAdd]);
+
+  const patch = (values: Partial<Draft>) =>
+    setDraft((current) => ({ ...current, ...values }));
 
   const applyPreset = (id: string | undefined) => {
     setPresetId(id);
-    const preset = PROVIDER_PRESETS.find((entry) => entry.id === id);
-    if (!preset) {
+    const next = PROVIDER_PRESETS.find((entry) => entry.id === id);
+    if (!next) {
       return;
     }
-    setName(preset.name);
-    setProtocol(preset.protocol);
-    setBaseURL(preset.baseURL);
-    setHeadersText(stringifyHeaders(preset.headers));
+    patch({
+      name: next.name,
+      protocol: next.protocol,
+      baseURL: next.baseURL,
+      headersText: stringifyHeaders(next.headers),
+    });
   };
 
-  // 预设自带申请地址与控制台：只填空值时这两个链接就是入口。
-  const selectedPreset = PROVIDER_PRESETS.find(
-    (entry) => entry.id === presetId
-  );
-  const canSubmit = name.trim().length > 0 && baseURL.trim().length > 0;
+  const patchModel = (id: string, values: Partial<ModelRow>) => {
+    setDraft((current) => ({
+      ...current,
+      models: current.models.map((model) =>
+        model.id === id ? { ...model, ...values } : model
+      ),
+    }));
+  };
+
+  const addModels = (models: ModelRow[]) => {
+    setDraft((current) => ({
+      ...current,
+      models: [
+        ...current.models,
+        ...models.filter(
+          (model) =>
+            !current.models.some((existing) => existing.id === model.id)
+        ),
+      ],
+    }));
+  };
 
   const submit = async () => {
     setSaving(true);
+    setError(undefined);
     try {
       await props.onSave({
-        name: name.trim(),
-        protocol,
-        baseURL: baseURL.trim(),
-        // 留空表示不改：编辑时沿用已存的密钥。
-        apiKey: apiKey.length > 0 ? apiKey : (editing?.apiKey ?? ""),
-        headers: parseHeaders(headersText),
+        name: draft.name.trim(),
+        protocol: draft.protocol,
+        baseURL: draft.baseURL.trim(),
+        apiKey:
+          draft.apiKey.length > 0 ? draft.apiKey : (provider?.apiKey ?? ""),
+        headers: parseHeaders(draft.headersText),
+        active: draft.active,
+        models: draft.models,
       });
+    } catch (saveError) {
+      // 保存失败时保留弹窗，让用户改完再存。
+      setError(
+        saveError instanceof Error ? saveError.message : String(saveError)
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!props.onDelete) {
+      return;
+    }
+    setSaving(true);
+    setError(undefined);
+    try {
+      await props.onDelete();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error ? deleteError.message : String(deleteError)
+      );
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Dialog open onOpenChange={(open) => !open && props.onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {editing
-              ? t("settings.provider.editTitle")
-              : t("settings.provider.createTitle")}
-          </DialogTitle>
-          <DialogDescription>
-            {t("settings.provider.createDescription")}
-          </DialogDescription>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !saving) {
+          props.onClose();
+        }
+      }}
+    >
+      <DialogContent
+        className="flex h-[min(50rem,calc(100vh-9rem))] flex-col gap-0 overflow-hidden p-0"
+        initialFocus={nameRef}
+        showCloseButton
+        size="large"
+      >
+        <DialogHeader className="flex shrink-0 flex-row items-center gap-3 border-b px-5 py-3.5 pr-12">
+          <div className="min-w-0 flex-1">
+            <DialogTitle className="flex min-w-0 items-center gap-2">
+              {provider ? (
+                <BrandMark
+                  className="size-5"
+                  icon={preset?.icon}
+                  name={draft.name || provider.name}
+                />
+              ) : null}
+              <span className="truncate">
+                {provider
+                  ? draft.name || provider.name
+                  : t("settings.provider.createTitle")}
+              </span>
+              {provider ? (
+                <span className="shrink-0 font-normal text-muted-foreground text-xs tabular-nums">
+                  {t("settings.provider.modelCount", {
+                    count: draft.models.length,
+                  })}
+                </span>
+              ) : null}
+            </DialogTitle>
+            {provider ? null : (
+              <DialogDescription className="mt-0.5 truncate text-xs">
+                {t("settings.provider.createDescription")}
+              </DialogDescription>
+            )}
+          </div>
+
+          {provider ? (
+            <>
+              {preset ? (
+                <a
+                  className="shrink-0 text-muted-foreground text-xs underline underline-offset-2 transition-colors hover:text-foreground"
+                  href={preset.website}
+                  rel="noreferrer"
+                  target="_blank"
+                  title={preset.website}
+                >
+                  {t("settings.provider.console")}
+                </a>
+              ) : null}
+              <Switch
+                aria-label={`${t("settings.provider.active")} ${provider.name}`}
+                checked={draft.active}
+                onCheckedChange={(active) => patch({ active })}
+              />
+            </>
+          ) : null}
         </DialogHeader>
 
-        <div className="-mx-4 max-h-[50vh] overflow-y-auto px-4">
-          <FieldGroup>
-            {editing ? null : (
-              <Field>
-                <FieldLabel htmlFor="provider-preset">
-                  {t("settings.provider.preset")}
-                </FieldLabel>
-                <Select
-                  items={PROVIDER_PRESETS.map((preset) => ({
-                    label: preset.name,
-                    value: preset.id,
-                  }))}
-                  value={presetId}
-                  onValueChange={(value) => applyPreset(value ?? undefined)}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {provider ? null : (
+            <section className="px-5 py-4">
+              <span className="mb-1 block text-muted-foreground text-xs">
+                {t("settings.provider.preset")}
+              </span>
+              <ProviderPresetSelect
+                onSelect={applyPreset}
+                presetId={presetId}
+              />
+            </section>
+          )}
+
+          <section
+            className={cn("px-5 py-4", provider ? undefined : "border-t")}
+          >
+            <div className="flex flex-col gap-4">
+              <label className="block">
+                <span className="mb-1 block text-muted-foreground text-xs">
+                  {t("settings.provider.name")}
+                </span>
+                <Input
+                  onChange={(event) => patch({ name: event.target.value })}
+                  placeholder={t("settings.provider.namePlaceholder")}
+                  ref={nameRef}
+                  value={draft.name}
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-muted-foreground text-xs">
+                  {t("settings.provider.baseURL")}
+                </span>
+                <InputGroup>
+                  <InputGroupInput
+                    onChange={(event) => patch({ baseURL: event.target.value })}
+                    placeholder="https://api.example.com/v1"
+                    value={draft.baseURL}
+                  />
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupText className="font-mono text-xs">
+                      {PROTOCOL_PATHS[draft.protocol]}
+                    </InputGroupText>
+                  </InputGroupAddon>
+                </InputGroup>
+              </label>
+
+              <div>
+                <span className="mb-1 block text-muted-foreground text-xs">
+                  {t("settings.provider.protocol")}
+                </span>
+                <ProtocolPicker
+                  onChange={(protocol) => patch({ protocol })}
+                  value={draft.protocol}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-muted-foreground text-xs">
+                  {t("settings.provider.apiKey")}
+                </label>
+                <Input
+                  autoComplete="off"
+                  onChange={(event) => patch({ apiKey: event.target.value })}
+                  placeholder={
+                    provider
+                      ? t("settings.provider.apiKeyUnchanged")
+                      : t("settings.provider.apiKeyPlaceholder")
+                  }
+                  type="password"
+                  value={draft.apiKey}
+                />
+                {preset ? (
+                  <div className="mt-1.5 flex gap-3 text-xs">
+                    <a
+                      className="underline underline-offset-2"
+                      href={preset.keysURL}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {t("settings.provider.getKey")}
+                    </a>
+                    <a
+                      className="underline underline-offset-2"
+                      href={preset.website}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      {t("settings.provider.console")}
+                    </a>
+                  </div>
+                ) : null}
+              </div>
+
+              <div>
+                <button
+                  className="flex items-center gap-1 text-muted-foreground text-xs transition-colors hover:text-foreground"
+                  onClick={() => setShowHeaders((open) => !open)}
+                  type="button"
                 >
-                  <SelectTrigger id="provider-preset">
-                    <SelectValue
-                      placeholder={t("settings.provider.presetPlaceholder")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PROVIDER_PRESETS.map((preset) => (
-                      <SelectItem key={preset.id} value={preset.id}>
-                        {preset.name}
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="custom">
-                      {t("settings.provider.custom")}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
+                  <ChevronRight
+                    className={cn(
+                      "size-3 transition-transform duration-150",
+                      showHeaders && "rotate-90"
+                    )}
+                  />
+                  {t("settings.provider.headers")}
+                </button>
+                {showHeaders ? (
+                  <Textarea
+                    aria-label={t("settings.provider.headers")}
+                    className="mt-2 min-h-16 font-mono text-xs"
+                    onChange={(event) =>
+                      patch({ headersText: event.target.value })
+                    }
+                    placeholder={t("settings.provider.headersPlaceholder")}
+                    value={draft.headersText}
+                  />
+                ) : null}
+              </div>
+            </div>
+          </section>
+
+          <section className="border-t px-5 py-4">
+            <div className="mb-2 flex items-center gap-2">
+              <h3 className="text-muted-foreground text-xs">
+                {t("settings.provider.models")}
+              </h3>
+              <span className="text-muted-foreground text-xs tabular-nums">
+                {draft.models.length}
+              </span>
+              {provider ? (
+                <Button
+                  className="ml-auto"
+                  onClick={() => setShowAdd((open) => !open)}
+                  size="xs"
+                  variant="ghost"
+                >
+                  {showAdd ? <X /> : <PlusIcon />}
+                  {showAdd
+                    ? t("settings.provider.collapse")
+                    : t("settings.provider.addModels")}
+                </Button>
+              ) : null}
+            </div>
+
+            {draft.models.length === 0 ? (
+              <p className="py-2 text-muted-foreground text-xs">
+                {t("settings.provider.noModels")}
+              </p>
+            ) : (
+              <div className="flex flex-col" ref={listRef}>
+                {draft.models.map((model) => (
+                  <div key={model.id}>
+                    <div className="flex items-center gap-2 rounded-md px-1.5 py-2 hover:bg-muted/40">
+                      <BrandMark className="size-4" name={model.name} />
+                      <button
+                        className="min-w-0 flex-1 text-left outline-none focus-visible:underline"
+                        onClick={() =>
+                          setEditingModelId((current) =>
+                            current === model.id ? null : model.id
+                          )
+                        }
+                        type="button"
+                      >
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-sm">{model.name}</span>
+                          {(model.reasoning ?? true) ? (
+                            <Badge
+                              className="h-4 shrink-0 px-1 text-[10px]"
+                              variant="outline"
+                            >
+                              {t("modelCapability.reasoning")}
+                            </Badge>
+                          ) : null}
+                        </span>
+                        {model.name === model.id ? null : (
+                          <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                            {model.id}
+                          </span>
+                        )}
+                      </button>
+                      {(model.limit?.context ?? 0) > 0 ? (
+                        <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+                          {formatContext(model.limit?.context ?? 0)}
+                        </span>
+                      ) : null}
+                      <Switch
+                        aria-label={`${t("settings.provider.active")} ${model.name}`}
+                        checked={model.active}
+                        onCheckedChange={(active) =>
+                          patchModel(model.id, { active })
+                        }
+                        size="sm"
+                      />
+                      <Button
+                        aria-label={t("settings.provider.editModelTitle")}
+                        onClick={() =>
+                          setEditingModelId((current) =>
+                            current === model.id ? null : model.id
+                          )
+                        }
+                        size="icon-sm"
+                        variant="ghost"
+                      >
+                        <Pencil />
+                      </Button>
+                      <Button
+                        aria-label={t("settings.provider.delete")}
+                        onClick={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            models: current.models.filter(
+                              (entry) => entry.id !== model.id
+                            ),
+                          }))
+                        }
+                        size="icon-sm"
+                        variant="ghost"
+                      >
+                        <Trash />
+                      </Button>
+                    </div>
+                    {editingModelId === model.id ? (
+                      <div ref={editorRef}>
+                        <ModelEditor
+                          model={model}
+                          onChange={(values) => patchModel(model.id, values)}
+                          onDone={() => setEditingModelId(null)}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
             )}
 
-            <Field>
-              <FieldLabel htmlFor="provider-name">
-                {t("settings.provider.name")}
-              </FieldLabel>
-              <Input
-                id="provider-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t("settings.provider.namePlaceholder")}
-              />
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="provider-protocol">
-                {t("settings.provider.protocol")}
-              </FieldLabel>
-              <Select
-                items={[
-                  {
-                    label: t("settings.provider.protocols.openai-chat"),
-                    value: "openai-chat",
-                  },
-                  {
-                    label: t("settings.provider.protocols.openai-responses"),
-                    value: "openai-responses",
-                  },
-                ]}
-                value={protocol}
-                onValueChange={(value) => {
-                  if (value) {
-                    setProtocol(value);
+            {showAdd ? (
+              <div ref={addPanelRef}>
+                <AddModelsPanel
+                  apiKey={
+                    draft.apiKey.length > 0
+                      ? draft.apiKey
+                      : (provider?.apiKey ?? "")
                   }
-                }}
-              >
-                <SelectTrigger id="provider-protocol">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="openai-chat">
-                    {t("settings.provider.protocols.openai-chat")}
-                  </SelectItem>
-                  <SelectItem value="openai-responses">
-                    {t("settings.provider.protocols.openai-responses")}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="provider-base-url">
-                {t("settings.provider.baseURL")}
-              </FieldLabel>
-              <Input
-                id="provider-base-url"
-                value={baseURL}
-                onChange={(event) => setBaseURL(event.target.value)}
-                placeholder="https://api.example.com/v1"
-              />
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="provider-api-key">
-                {t("settings.provider.apiKey")}
-              </FieldLabel>
-              <Input
-                id="provider-api-key"
-                type="password"
-                autoComplete="off"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-                placeholder={
-                  editing?.apiKey
-                    ? t("settings.provider.apiKeyUnchanged")
-                    : t("settings.provider.apiKeyPlaceholder")
-                }
-              />
-              {selectedPreset ? (
-                <div className="flex gap-3 text-xs">
-                  <a
-                    className="underline"
-                    href={selectedPreset.keysURL}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {t("settings.provider.getKey")}
-                  </a>
-                  <a
-                    className="underline"
-                    href={selectedPreset.website}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {t("settings.provider.console")}
-                  </a>
-                </div>
-              ) : null}
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="provider-headers">
-                {t("settings.provider.headers")}
-              </FieldLabel>
-              <textarea
-                aria-label={t("settings.provider.headers")}
-                className="min-h-16 w-full rounded-md border border-input bg-transparent p-2 font-mono text-xs"
-                id="provider-headers"
-                value={headersText}
-                onChange={(event) => setHeadersText(event.target.value)}
-                placeholder={t("settings.provider.headersPlaceholder")}
-              />
-            </Field>
-          </FieldGroup>
+                  baseURL={draft.baseURL}
+                  className="mt-3"
+                  existingIds={draft.models.map((model) => model.id)}
+                  headers={parseHeaders(draft.headersText)}
+                  onAdd={addModels}
+                />
+              </div>
+            ) : null}
+          </section>
         </div>
 
-        <DialogFooter>
-          <DialogClose render={<Button type="button" variant="outline" />}>
-            {t("settings.provider.cancel")}
-          </DialogClose>
-          <Button disabled={!canSubmit || saving} onClick={() => void submit()}>
-            {saving && <Spinner data-icon="inline-start" />}
-            {editing
-              ? t("settings.provider.update")
-              : t("settings.provider.create")}
-          </Button>
-        </DialogFooter>
+        <footer className="flex shrink-0 items-center gap-2 border-t px-5 py-3">
+          {props.onDelete ? (
+            confirmingDelete ? (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-muted-foreground">
+                  {draft.models.length > 0
+                    ? t("settings.provider.deleteWithModels", {
+                        count: draft.models.length,
+                      })
+                    : t("settings.provider.deleteConfirm")}
+                </span>
+                <Button
+                  onClick={() => setConfirmingDelete(false)}
+                  size="xs"
+                  variant="ghost"
+                >
+                  {t("settings.provider.cancel")}
+                </Button>
+                <Button
+                  disabled={saving}
+                  onClick={() => void remove()}
+                  size="xs"
+                  variant="destructive"
+                >
+                  {t("settings.provider.delete")}
+                </Button>
+              </div>
+            ) : (
+              <Button
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setConfirmingDelete(true)}
+                size="sm"
+                variant="ghost"
+              >
+                {t("settings.provider.deleteProvider")}
+              </Button>
+            )
+          ) : null}
+
+          <div className="ml-auto flex items-center gap-2">
+            {error ? (
+              <span className="max-w-64 truncate text-destructive text-xs">
+                {error}
+              </span>
+            ) : null}
+            <Button disabled={saving} onClick={props.onClose} variant="outline">
+              {t("settings.provider.cancel")}
+            </Button>
+            <Button
+              disabled={!canSubmit || saving}
+              loading={saving}
+              onClick={() => void submit()}
+            >
+              {provider
+                ? t("settings.provider.update")
+                : t("settings.provider.create")}
+            </Button>
+          </div>
+        </footer>
       </DialogContent>
     </Dialog>
   );
 }
 
-function ModelDialog(props: {
-  provider: ProviderRow | undefined;
-  draft: ModelDraft;
-  onClose: () => void;
-  onSave: (rows: ModelRow[]) => Promise<void>;
-  onEditSave: (modelId: string, patch: Partial<ModelRow>) => Promise<void>;
-}) {
-  const { provider } = props;
-  const editing = props.draft.mode === "edit" ? props.draft.model : undefined;
-
-  if (editing) {
-    return (
-      <ModelEditDialog
-        model={editing}
-        onClose={props.onClose}
-        onSave={(patch) => props.onEditSave(editing.id, patch)}
-      />
-    );
-  }
-
-  return (
-    <ModelPickerDialog
-      provider={provider}
-      onClose={props.onClose}
-      onSave={props.onSave}
-    />
-  );
-}
-
-function ModelPickRow(props: {
-  model: ListedModel;
-  checked: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 py-1">
-      <Checkbox checked={props.checked} onCheckedChange={props.onToggle} />
-      <span>{props.model.name}</span>
-      <span className="text-muted-foreground text-xs">{props.model.id}</span>
-      {props.model.context ? (
-        <span className="text-muted-foreground text-xs">
-          {Math.round(props.model.context / 1000)}k
-        </span>
-      ) : null}
-    </label>
-  );
-}
-
-/** 从供应商拉取模型列表并勾选；拉不到时退回手填。 */
-function ModelPickerDialog(props: {
-  provider: ProviderRow | undefined;
-  onClose: () => void;
-  onSave: (rows: ModelRow[]) => Promise<void>;
+function ModalityPicker(props: {
+  label: string;
+  value: readonly Modality[];
+  onChange: (next: Modality[]) => void;
 }) {
   const { t } = useTranslation();
-  const { provider } = props;
-  const [listed, setListed] = useState<ListedModel[]>([]);
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
-  const [filter, setFilter] = useState("");
-  const [manual, setManual] = useState("");
-  const [listError, setListError] = useState<string | undefined>();
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  return (
+    <div>
+      <span className="mb-1 block text-muted-foreground text-xs">
+        {props.label}
+      </span>
+      <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+        {MODALITIES.map((modality) => (
+          <label className="flex items-center gap-1.5 text-xs" key={modality}>
+            <Checkbox
+              checked={props.value.includes(modality)}
+              className="size-3.5"
+              onCheckedChange={(checked) =>
+                props.onChange(
+                  checked
+                    ? [...props.value, modality]
+                    : props.value.filter((entry) => entry !== modality)
+                )
+              }
+            />
+            {t(MODALITY_KEYS[modality])}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-  const fetchModels = async () => {
-    if (!provider) {
-      return;
-    }
-    setLoading(true);
-    setListError(undefined);
-    try {
-      const { models } = await client.setting.listModels({
-        baseURL: provider.baseURL,
-        apiKey: provider.apiKey,
-        ...(provider.headers ? { headers: provider.headers } : {}),
-      });
-      setListed(models);
-    } catch (error) {
-      setListError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setLoading(false);
+/** 模型的就地编辑器：改动写回弹窗草稿。 */
+function ModelEditor(props: {
+  model: ModelRow;
+  onChange: (patch: Partial<ModelRow>) => void;
+  onDone: () => void;
+}) {
+  const { t } = useTranslation();
+  const { model, onChange } = props;
+  const [context, setContext] = useState(
+    String(toKilotokens(model.limit?.context ?? DEFAULT_CONTEXT))
+  );
+  const input = model.modalities?.input ?? DEFAULT_INPUT;
+  const output = model.modalities?.output ?? DEFAULT_OUTPUT;
+
+  const commitContext = (value: string) => {
+    const kilotokens = Number(value.trim());
+    if (Number.isFinite(kilotokens) && kilotokens > 0) {
+      onChange({ limit: { context: Math.round(kilotokens * CONTEXT_UNIT) } });
     }
   };
 
-  const visible = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    const added = new Set(provider?.models.map((model) => model.id));
-    return listed
-      .filter((model) => !added.has(model.id))
-      .filter(
-        (model) =>
-          needle.length === 0 ||
-          model.id.toLowerCase().includes(needle) ||
-          model.name.toLowerCase().includes(needle)
-      );
-  }, [listed, filter, provider]);
+  return (
+    <div className="mt-1 mb-2 rounded-lg border bg-muted/30 p-3">
+      <div className="flex items-end gap-2">
+        <label className="min-w-0 flex-1">
+          <span className="mb-1 block text-muted-foreground text-xs">
+            {t("settings.provider.name")}
+          </span>
+          <Input
+            className="h-7"
+            onChange={(event) => onChange({ name: event.target.value })}
+            value={model.name}
+          />
+        </label>
+        <label className="w-24">
+          <span className="mb-1 block text-muted-foreground text-xs">
+            {t("modelCapability.contextWindow")}
+          </span>
+          <InputGroup className="h-7">
+            <InputGroupInput
+              inputMode="decimal"
+              onBlur={() =>
+                setContext(
+                  String(toKilotokens(model.limit?.context ?? DEFAULT_CONTEXT))
+                )
+              }
+              onChange={(event) => {
+                setContext(event.target.value);
+                commitContext(event.target.value);
+              }}
+              value={context}
+            />
+            <InputGroupAddon align="inline-end">
+              <InputGroupText>k</InputGroupText>
+            </InputGroupAddon>
+          </InputGroup>
+        </label>
+      </div>
 
-  const rows = useMemo(() => {
-    const chosen = listed.filter((model) => selected.has(model.id));
-    if (manual.trim().length > 0) {
-      chosen.push({ id: manual.trim(), name: manual.trim() });
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <ModalityPicker
+          label={t("modelCapability.input")}
+          onChange={(next) =>
+            onChange({
+              modalities: { input: next, output },
+            })
+          }
+          value={input}
+        />
+        <ModalityPicker
+          label={t("modelCapability.output")}
+          onChange={(next) =>
+            onChange({
+              modalities: { input, output: next },
+            })
+          }
+          value={output}
+        />
+      </div>
+
+      <div className="mt-3 flex items-center justify-between">
+        <label className="flex items-center gap-2 text-xs">
+          <Checkbox
+            checked={model.reasoning ?? true}
+            className="size-3.5"
+            onCheckedChange={(checked) => onChange({ reasoning: checked })}
+          />
+          {t("modelCapability.reasoning")}
+        </label>
+        <Button size="xs" variant="ghost" onClick={props.onDone}>
+          {t("settings.provider.done")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** 拉取供应商的模型列表并勾选；拉不到时退到手填。 */
+function AddModelsPanel(props: {
+  baseURL: string;
+  apiKey: string;
+  headers?: Record<string, string>;
+  existingIds: readonly string[];
+  onAdd: (models: ModelRow[]) => void;
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const [phase, setPhase] = useState<"idle" | "loading" | "ready" | "error">(
+    "idle"
+  );
+  const [catalog, setCatalog] = useState<ListedModel[]>([]);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [filter, setFilter] = useState("");
+  const [manual, setManual] = useState("");
+  const [error, setError] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // 结果回到列表后整块会变高，把它带回视野。
+  useEffect(() => {
+    if (phase === "ready") {
+      revealNode(rootRef.current);
     }
-    return chosen.map((model) => ({
-      id: model.id,
-      name: model.name,
-      active: true,
-      reasoning: true,
-      modalities: {
-        input: model.input ?? ["text", "image"],
-        output: model.output ?? ["text"],
-      },
-      limit: { context: model.context ?? DEFAULT_CONTEXT },
-    }));
-  }, [listed, selected, manual]);
+  }, [phase]);
+
+  const unfiltered = catalog.filter(
+    (model) => !props.existingIds.includes(model.id)
+  );
+  const needle = filter.trim().toLowerCase();
+  const available = unfiltered.filter(
+    (model) =>
+      needle.length === 0 ||
+      model.id.toLowerCase().includes(needle) ||
+      model.name.toLowerCase().includes(needle)
+  );
+  const chosen = available.filter((model) => selected.has(model.id));
+
+  const load = async () => {
+    setPhase("loading");
+    setError("");
+    try {
+      const { models } = await client.setting.listModels({
+        baseURL: props.baseURL,
+        apiKey: props.apiKey,
+        ...(props.headers ? { headers: props.headers } : {}),
+      });
+      setCatalog(models);
+      setSelected(new Set());
+      setPhase("ready");
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : String(loadError)
+      );
+      setPhase("error");
+    }
+  };
 
   const toggle = (id: string) => {
     const next = new Set(selected);
@@ -835,216 +1124,135 @@ function ModelPickerDialog(props: {
     setSelected(next);
   };
 
-  return (
-    <Dialog open onOpenChange={(open) => !open && props.onClose()}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{t("settings.provider.addModelsTitle")}</DialogTitle>
-          <DialogDescription>{provider?.name}</DialogDescription>
-        </DialogHeader>
+  const addChosen = () => {
+    props.onAdd(chosen.map((model) => listedModelToRow(model)));
+    setSelected(new Set());
+  };
 
-        <div className="flex items-center gap-2">
+  // 全部按拉取结果算，不受过滤影响；数量写在按钮上，避免歧义。
+  const addAll = () => {
+    props.onAdd(unfiltered.map((model) => listedModelToRow(model)));
+    setSelected(new Set());
+  };
+
+  const addManual = () => {
+    const id = manual.trim();
+    if (id.length === 0) {
+      return;
+    }
+    props.onAdd([manualModel(id)]);
+    setManual("");
+  };
+
+  return (
+    <div
+      className={cn("rounded-lg border border-dashed p-3", props.className)}
+      ref={rootRef}
+    >
+      <div className="flex items-center gap-2">
+        <span className="text-muted-foreground text-xs">
+          {t("settings.provider.addModels")}
+        </span>
+        <div className="ml-auto flex items-center gap-1">
+          {phase === "ready" && unfiltered.length > 0 ? (
+            <Button onClick={addAll} size="xs" variant="ghost">
+              {t("settings.provider.addAll", { count: unfiltered.length })}
+            </Button>
+          ) : null}
+          {phase === "ready" && chosen.length > 0 ? (
+            <Button onClick={addChosen} size="xs">
+              {t("settings.provider.addSelected", { count: chosen.length })}
+            </Button>
+          ) : null}
+          <Button
+            disabled={phase === "loading"}
+            onClick={() => void load()}
+            size="xs"
+            variant="ghost"
+          >
+            {phase === "loading" ? <Spinner /> : <RefreshCw />}
+            {phase === "ready"
+              ? t("settings.provider.refetch")
+              : t("settings.provider.fetchModels")}
+          </Button>
+        </div>
+      </div>
+
+      {phase === "ready" ? (
+        <div className="mt-2">
           <Input
-            value={filter}
+            className="h-7 text-xs"
             onChange={(event) => setFilter(event.target.value)}
             placeholder={t("settings.provider.filterModels")}
+            value={filter}
           />
-          <Button
-            disabled={loading}
-            variant="secondary"
-            onClick={() => void fetchModels()}
-          >
-            {loading ? <Spinner /> : <RefreshCw />}
-            {t("settings.provider.fetchModels")}
-          </Button>
         </div>
+      ) : null}
 
-        {listError ? (
-          <p className="text-destructive text-xs">{listError}</p>
-        ) : null}
+      {phase === "error" ? (
+        <p className="mt-2 text-destructive text-xs">{error}</p>
+      ) : null}
 
-        <div className="-mx-4 max-h-[40vh] overflow-y-auto px-4">
-          {visible.length === 0 ? (
-            <p className="py-2 text-muted-foreground text-xs">
-              {t("settings.provider.noFetchedModels")}
-            </p>
-          ) : (
-            visible.map((model) => (
-              <ModelPickRow
+      {phase === "ready" ? (
+        available.length === 0 ? (
+          <p className="mt-2 text-muted-foreground text-xs">
+            {unfiltered.length === 0
+              ? catalog.length === 0
+                ? t("settings.provider.noFetchedModels")
+                : t("settings.provider.allAdded")
+              : t("settings.provider.noMatches")}
+          </p>
+        ) : (
+          <div className="mt-2 max-h-44 overflow-y-auto">
+            {available.map((model) => (
+              <label
+                className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/50"
                 key={model.id}
-                model={model}
-                checked={selected.has(model.id)}
-                onToggle={() => toggle(model.id)}
-              />
-            ))
-          )}
-        </div>
-
-        <Field>
-          <FieldLabel htmlFor="manual-model">
-            {t("settings.provider.manualModel")}
-          </FieldLabel>
-          <Input
-            id="manual-model"
-            value={manual}
-            onChange={(event) => setManual(event.target.value)}
-            placeholder={t("settings.provider.manualModelPlaceholder")}
-          />
-        </Field>
-
-        <DialogFooter>
-          <DialogClose render={<Button type="button" variant="outline" />}>
-            {t("settings.provider.cancel")}
-          </DialogClose>
-          <Button
-            disabled={rows.length === 0 || saving}
-            onClick={() => {
-              setSaving(true);
-              void props.onSave(rows).finally(() => setSaving(false));
-            }}
-          >
-            {saving && <Spinner data-icon="inline-start" />}
-            {t("settings.provider.addSelected", { count: rows.length })}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ModalityCheckboxes(props: {
-  label: string;
-  value: readonly Modality[];
-  onChange: (next: Modality[]) => void;
-}) {
-  return (
-    <Field>
-      <FieldLabel>{props.label}</FieldLabel>
-      <div className="flex flex-wrap gap-3">
-        {MODALITIES.map((modality) => (
-          <label className="flex items-center gap-1 text-xs" key={modality}>
-            <Checkbox
-              checked={props.value.includes(modality)}
-              onCheckedChange={(checked) =>
-                props.onChange(
-                  checked
-                    ? [...props.value, modality]
-                    : props.value.filter((entry) => entry !== modality)
-                )
-              }
-            />
-            {modality}
-          </label>
-        ))}
-      </div>
-    </Field>
-  );
-}
-
-function ModelEditDialog(props: {
-  model: ModelRow;
-  onClose: () => void;
-  onSave: (patch: Partial<ModelRow>) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [name, setName] = useState(props.model.name);
-  const [context, setContext] = useState(
-    String(toKilotokens(props.model.limit?.context ?? DEFAULT_CONTEXT))
-  );
-  const [modalities, setModalities] = useState({
-    input: props.model.modalities?.input ?? ["text", "image"],
-    output: props.model.modalities?.output ?? ["text"],
-  });
-  const [reasoning, setReasoning] = useState(props.model.reasoning ?? true);
-  const [saving, setSaving] = useState(false);
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && props.onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>{t("settings.provider.editModelTitle")}</DialogTitle>
-          <DialogDescription>{props.model.id}</DialogDescription>
-        </DialogHeader>
-
-        <div className="-mx-4 max-h-[50vh] overflow-y-auto px-4">
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="model-name">
-                {t("settings.provider.name")}
-              </FieldLabel>
-              <Input
-                id="model-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="model-context">
-                {t("modelCapability.contextWindow")}
-              </FieldLabel>
-              <InputGroup>
-                <InputGroupInput
-                  id="model-context"
-                  inputMode="decimal"
-                  value={context}
-                  onChange={(event) => setContext(event.target.value)}
+              >
+                <Checkbox
+                  checked={selected.has(model.id)}
+                  onCheckedChange={() => toggle(model.id)}
                 />
-                <InputGroupAddon align="inline-end">
-                  <InputGroupText>k</InputGroupText>
-                </InputGroupAddon>
-              </InputGroup>
-            </Field>
+                <span className="truncate text-sm">{model.name}</span>
+                {model.name === model.id ? null : (
+                  <span className="truncate font-mono text-muted-foreground text-xs">
+                    {model.id}
+                  </span>
+                )}
+                {model.context === undefined ? null : (
+                  <span className="ml-auto shrink-0 text-muted-foreground text-xs tabular-nums">
+                    {formatContext(model.context)}
+                  </span>
+                )}
+              </label>
+            ))}
+          </div>
+        )
+      ) : null}
 
-            <ModalityCheckboxes
-              label={t("modelCapability.input")}
-              value={modalities.input}
-              onChange={(input) => setModalities({ ...modalities, input })}
-            />
-            <ModalityCheckboxes
-              label={t("modelCapability.output")}
-              value={modalities.output}
-              onChange={(output) => setModalities({ ...modalities, output })}
-            />
-
-            <Field orientation="horizontal">
-              <Checkbox
-                checked={reasoning}
-                onCheckedChange={(checked) => setReasoning(checked)}
-              />
-              <FieldLabel>{t("modelCapability.reasoning")}</FieldLabel>
-            </Field>
-          </FieldGroup>
-        </div>
-
-        <DialogFooter>
-          <DialogClose render={<Button type="button" variant="outline" />}>
-            {t("settings.provider.cancel")}
-          </DialogClose>
-          <Button
-            disabled={saving || name.trim().length === 0}
-            onClick={() => {
-              setSaving(true);
-              const kilotokens = Number(context.trim());
-              void props
-                .onSave({
-                  name: name.trim(),
-                  modalities,
-                  reasoning,
-                  limit: {
-                    context: Number.isFinite(kilotokens)
-                      ? Math.round(kilotokens * CONTEXT_UNIT)
-                      : DEFAULT_CONTEXT,
-                  },
-                })
-                .finally(() => setSaving(false));
-            }}
-          >
-            {saving && <Spinner data-icon="inline-start" />}
-            {t("settings.provider.update")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <div className="mt-2 flex items-center gap-1.5">
+        <Input
+          className="h-7 text-xs"
+          onChange={(event) => setManual(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              addManual();
+            }
+          }}
+          placeholder={t("settings.provider.manualModelPlaceholder")}
+          value={manual}
+        />
+        <Button
+          aria-label={t("settings.provider.addModel")}
+          disabled={manual.trim().length === 0}
+          onClick={addManual}
+          size="icon-sm"
+          variant="ghost"
+        >
+          <PlusIcon />
+        </Button>
+      </div>
+    </div>
   );
 }

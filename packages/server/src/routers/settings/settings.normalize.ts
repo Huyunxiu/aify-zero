@@ -27,9 +27,9 @@ const LEGACY_RESPONSE_SUFFIX = "/responses";
 const LEGACY_CHAT_SUFFIX = "/chat/completions";
 
 /**
- * 把用户粘进来的地址收敛成基地址。
+ * 把用户粘进来的地址收敛成 API 地址。
  *
- * SDK 会在基地址后追加协议路径；用户粘完整端点时，不收敛就会得到
+ * SDK 会在 API 地址后追加协议路径；用户粘完整端点时，不收敛就会得到
  * `/chat/completions/chat/completions`。
  */
 export function normalizeBaseURL(

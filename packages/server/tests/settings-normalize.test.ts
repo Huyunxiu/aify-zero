@@ -24,7 +24,7 @@ function legacyModel(overrides: Record<string, unknown>) {
   };
 }
 
-describe("基地址规范化", () => {
+describe("API 地址规范化", () => {
   test("去掉协议追加的那段路径", () => {
     expect(
       normalizeBaseURL(
