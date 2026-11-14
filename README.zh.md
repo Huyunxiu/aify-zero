@@ -66,7 +66,11 @@ API 位于 `apps/server`（`@workspace/server-app`），是唯一的监听者。
 
 渲染窗口会在内置 server 还在启动时就显示。`aify-app://` handler 会把这段时间的 API 请求挂起，等 server ready 后再转发；只有在确实不可用时才返回带 `retry-after` 的 `503`。ready 之后意外退出的内置 server 会按退避最多重启 3 次；这段窗口期里的瞬时 503 会被 query client 重试几秒。主进程还会向渲染端推送 `server-status`，启动/重连期间会显示一个小状态条。
 
-API 的每个请求都必须带 `Authorization: Bearer <token>`。桌面主进程在转发 `aify-app://` 请求时注入，渲染端永远看不到令牌；`dev:web` 的 Vite 代理也会注入。令牌优先取 `AIFY_API_TOKEN`，未设置时读取 `~/.aify-zero/api-token`（首次启动 server 时以 `0600` 创建），因此同一台机器上的 `dev:server` 和桌面端共享同一个令牌。连接另一台机器上的 server 时，必须在桌面端环境里显式设置 `AIFY_API_TOKEN`。如果覆盖了 `AIFY_API_TOKEN`，请给所有访问 server 的进程（`dev:server`、`dev:web`、桌面端）设置同一个值，或者全部不设置、统一使用共享文件。
+浏览器用链接登录。server 每次启动都会打印一行 `[auth] sign in: http://…/?token=…`。地址就是应用本身：页面把 token 交给 `/api/auth/login`，拿到 HttpOnly 的 `aify_session` cookie，然后把 token 从地址栏抹掉。之后的请求、`<img src>` 和 WebSocket 握手都会自动带上这个 cookie。token 不按时间过期：重启 server 之前一直可用，也可以给多台设备用；登录态三十天有效，使用中续期。已登录页面的「设置 → 通用」可以再生成一条链接，对应 `POST /api/auth/login-link`。
+
+机器客户端仍用 `Authorization: Bearer <token>`：桌面主进程在转发 `aify-app://` 请求时注入，渲染端永远看不到令牌；CLI 同理。令牌优先取 `AIFY_API_TOKEN`，未设置时读取 `~/.aify-zero/api-token`（首次启动 server 时以 `0600` 创建）。`dev:web` 的 Vite 代理现在只做转发，不再注入令牌。
+
+前端产物存在时（`apps/web/dist` 或 `AIFY_WEB_ROOT`），server 会从 `/` 托管它，远程访问因此同源，不需要 CORS。远程部署要设置 `AIFY_PUBLIC_ORIGIN`：它决定打印链接的主机名，也决定 cookie 是否加 `Secure`。页面由单独的开发服务器提供时，设置 `AIFY_WEB_ORIGIN`。局域网明文 http 可用，但票据和 cookie 会明文过网；不可信网络请上 HTTPS。
 
 因此，打包后的应用默认自带并拥有自己的服务器，而 `dev:server` + `dev:desktop` 则共享同一个进程。桌面端同时只允许一个实例：再次启动只会聚焦已有窗口，不会另起一套 server，也不会打开同一个数据库。要把正在运行的桌面端从内置服务器迁移走，可在渲染器或 DevTools 中调用 `aifyDesktop.useServer("http://127.0.0.1:18086")`：主进程会校验 `/health`、停止归自己所有的子进程、切换 `aify-app://` 转发器并重新加载页面。运行期切换只接受回环地址；远程 server 必须在启动前通过 `AIFY_API_ORIGIN` + `AIFY_API_TOKEN` 配置。
 

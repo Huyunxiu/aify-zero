@@ -25,6 +25,7 @@
     "./api-status": "./src/api-status.ts",
     "./api-token": "./src/api-token.ts",
     "./app-url": "./src/app-url.ts",
+    "./auth-session": "./src/auth-session.ts",
     "./constants": "./src/constants/index.ts",
     "./errors": "./src/errors.ts",
     "./logger": "./src/logger/index.ts",

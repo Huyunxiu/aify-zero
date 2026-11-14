@@ -5,12 +5,13 @@
  *
  * - `/api/ws`：应用通道的 `{ type, data }` 文本消息（见 `ws-channel.ts`）。
  * - `/api/terminal`：终端会话，二进制输入/输出加文本控制消息（见
- *   `terminal/session.ts`）。终端会启动真实 shell，所以除了 token 之外还要
- *   检查连接来自回环地址，并检查浏览器给的 `Origin`。
+ *   `terminal/session.ts`）。终端会启动真实 shell，所以两条通道都检查
+ *   浏览器给的 `Origin`；访问令牌本身已经能启动 shell，回环限制不再多加
+ *   一层安全感。
  *
- * 凭据和 HTTP 请求逐字相同：`Authorization: Bearer <AIFY_API_TOKEN>`。
- * 浏览器的 WebSocket API 设不了请求头，所以令牌由同源代理在升级请求上注入，
- * 页面始终不持有它。
+ * 凭据和 HTTP 请求逐字相同：桌面、CLI 用 `Authorization: Bearer
+ * <访问令牌>`；浏览器带 `aify_session` cookie。升级请求里的 cookie 由浏览器
+ * 自动带上，不需要代理注入。
  *
  * `@hono/node-server` 的 `serve()` 返回的就是 node 的 `http.Server`，但它只
  * 为普通请求注册了监听器；升级事件由这里接管。
@@ -18,17 +19,15 @@
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 
-import {
-  extractBearerToken,
-  resolveApiToken,
-  tokensEqual,
-} from "@workspace/shared/api-token";
-import { isAppUrl } from "@workspace/shared/app-url";
+import { isTrustedSessionRequest } from "@workspace/shared/auth-session";
+import type { AuthEnv } from "@workspace/shared/auth-session";
 import { logger } from "@workspace/shared/logger";
 import { TERMINAL_MAX_DIMENSION } from "@workspace/shared/terminal-protocol";
 import { WebSocketServer } from "ws";
 import type { RawData, WebSocket } from "ws";
 
+import { resolveAuth, sessionOrigins } from "./auth";
+import type { AuthStore } from "./auth-store";
 import { ApiError } from "./errors";
 import { resolveSessionWorkspace } from "./routers/workspace/workspace.service";
 import { spawnShellPty } from "./terminal/pty";
@@ -65,29 +64,101 @@ export interface TerminalWebSocketOptions {
 /** 通道选项。 */
 export interface WebSocketOptions {
   /**
-   * 每次升级解析一次令牌。默认走 `AIFY_API_TOKEN` / 令牌文件，和 HTTP
+   * 每次升级解析一次访问令牌。默认走 `AIFY_API_TOKEN` / 令牌文件，和 HTTP
    * 中间件是同一个函数；测试注入固定值。
    */
   readonly apiToken?: () => string;
+  /** 登录态存储；浏览器用 cookie 连上来的那条路。 */
+  readonly authStore?: AuthStore;
+  /** 来源白名单；默认从环境推导。 */
+  readonly trustedOrigins?: ReadonlySet<string>;
+  /** 环境变量表；测试注入。 */
+  readonly env?: AuthEnv;
   /** 终端通道的注入点。 */
   readonly terminal?: TerminalWebSocketOptions;
 }
 
+/** 一次升级鉴权的结果：通过，或者要回给客户端的 401 / 403。 */
+type UpgradeAuth =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly status: 401 | 403 };
+
 /**
- * 从升级请求里取凭据。
+ * 把 Node 的请求头转成 fetch 的 `Headers`。
  *
- * 浏览器的 WebSocket API 设不了请求头，所以令牌由同源代理在升级请求上注入
- * ——HTTP 请求也是这么做的。
+ * `resolveAuth` 只认 `Headers`——HTTP 和升级两条路必须走同一个判断。
  *
  * @param request - 升级请求。
- * @param apiToken - 当前进程的令牌。
- * @returns 令牌对得上时才为 true。
  */
-const isAuthorized = (
+const toWebHeaders = (request: IncomingMessage): Headers => {
+  const headers = new Headers();
+  const entries = [
+    ["authorization", request.headers.authorization],
+    ["cookie", request.headers.cookie],
+    ["origin", request.headers.origin],
+    ["sec-fetch-site", request.headers["sec-fetch-site"]],
+  ] as const;
+
+  for (const [name, value] of entries) {
+    if (value === undefined) {
+      continue;
+    }
+
+    headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+  }
+
+  return headers;
+};
+
+/**
+ * 升级请求自身的源，用于把同源连接并入白名单。
+ *
+ * TLS 直连时协议是 https；反代后面拿到的是 http，这时靠
+ * `AIFY_PUBLIC_ORIGIN` 兜住。
+ *
+ * @param request - 升级请求。
+ */
+const requestOrigin = (request: IncomingMessage): string => {
+  const { encrypted } = request.socket as Duplex & { encrypted?: boolean };
+  const scheme = encrypted === true ? "https" : "http";
+
+  return `${scheme}://${request.headers.host ?? "127.0.0.1"}${request.url ?? "/"}`;
+};
+
+/**
+ * 鉴权一次升级。
+ *
+ * 和 HTTP 中间件共用 `resolveAuth`：访问令牌给桌面、CLI 和脚本，登录态
+ * cookie 给浏览器。两条路的规则必须一样，否则“能调接口但开不了通道”这种
+ * 差异极难排查。
+ *
+ * @param request - 升级请求。
+ * @param options - 依赖注入。
+ * @returns 通过，或要回给客户端的状态码。
+ */
+const authorizeUpgrade = async (
   request: IncomingMessage,
-  apiToken: () => string
-): boolean =>
-  tokensEqual(apiToken(), extractBearerToken(request.headers.authorization));
+  options: WebSocketOptions
+): Promise<UpgradeAuth> => {
+  const headers = toWebHeaders(request);
+  const identity = await resolveAuth(headers, {
+    apiToken: options.apiToken,
+    authStore: options.authStore,
+    env: options.env,
+    trustedOrigins: options.trustedOrigins,
+  });
+
+  if (identity === undefined) {
+    return { ok: false, status: 401 };
+  }
+
+  return isTrustedSessionRequest(
+    headers,
+    sessionOrigins(requestOrigin(request), options)
+  )
+    ? { ok: true }
+    : { ok: false, status: 403 };
+};
 
 /**
  * 手写一个 HTTP 拒绝响应。此时 socket 还没有交给 `ws`，只能自己回话。
@@ -114,78 +185,6 @@ const rejectUpgrade = (socket: Duplex, status: number): void => {
       "",
     ].join("\r\n")
   );
-};
-
-/**
- * 回环地址判断。
- *
- * 终端的威胁模型比普通 API 高：拿到 token 就能启动 shell。即使 API 绑在
- * `0.0.0.0` 上，也不允许远程连接打开终端。
- *
- * @param address - `request.socket.remoteAddress`。
- * @returns 本地连接时为 true。
- */
-const isLoopbackAddress = (address: string | undefined): boolean => {
-  if (address === undefined) {
-    return false;
-  }
-
-  return (
-    address === "::1" ||
-    /^127(?:\.\d{1,3}){3}$/.test(address) ||
-    address.startsWith("::ffff:127.")
-  );
-};
-
-/**
- * 浏览器来源的主机名是不是回环。
- *
- * @param hostname - `URL.hostname`；IPv6 可能带方括号。
- * @returns `localhost`、`127.x` 或 `::1` 时为 true。
- */
-const isLoopbackHostname = (hostname: string): boolean => {
-  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-
-  return (
-    normalized === "localhost" ||
-    normalized === "::1" ||
-    /^127(?:\.\d{1,3}){3}$/.test(normalized)
-  );
-};
-
-/**
- * 终端连接的来源校验。
- *
- * Vite 代理会替页面向升级请求注入 token，所以只校验 token 不够：任意网页都
- * 能借代理开一条终端。浏览器的 `Origin` 不能被脚本改写，这里只放行回环页面
- * 和桌面自己的文档源。没有 `Origin` 的客户端只可能是本机原生客户端（测试、
- * curl），已经被回环地址检查覆盖。
- *
- * @param origin - 升级请求的 `Origin`。
- * @returns 可以继续升级时为 true。
- */
-const isAllowedTerminalOrigin = (origin: string | undefined): boolean => {
-  if (origin === undefined || origin === "") {
-    return true;
-  }
-
-  if (isAppUrl(origin)) {
-    return true;
-  }
-
-  let url: URL;
-
-  try {
-    url = new URL(origin);
-  } catch {
-    return false;
-  }
-
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    return false;
-  }
-
-  return isLoopbackHostname(url.hostname);
 };
 
 /**
@@ -291,8 +290,9 @@ const closeWebSocketServer = async (
  */
 export const attachWebSocket = (
   server: Server,
-  { apiToken = resolveApiToken, terminal = {} }: WebSocketOptions = {}
+  options: WebSocketOptions = {}
 ): (() => Promise<void>) => {
+  const { terminal = {} } = options;
   const channelServer = new WebSocketServer({ noServer: true });
   const terminalServer = new WebSocketServer({
     maxPayload: TERMINAL_FRAME_LIMIT,
@@ -315,18 +315,6 @@ export const attachWebSocket = (
     head: Buffer,
     url: URL
   ): Promise<void> => {
-    if (!isLoopbackAddress(request.socket.remoteAddress)) {
-      rejectUpgrade(socket, 403);
-
-      return;
-    }
-
-    if (!isAllowedTerminalOrigin(request.headers.origin)) {
-      rejectUpgrade(socket, 403);
-
-      return;
-    }
-
     const sessionId = url.searchParams.get("sessionId")?.trim() ?? "";
 
     if (sessionId === "" || sessionId.length > 128) {
@@ -392,46 +380,49 @@ export const attachWebSocket = (
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "/", "http://aify.invalid");
 
-    if (url.pathname === WEBSOCKET_CHANNEL_PATH) {
-      if (!isAuthorized(request, apiToken)) {
-        rejectUpgrade(socket, 401);
+    void (async () => {
+      if (
+        url.pathname !== WEBSOCKET_CHANNEL_PATH &&
+        url.pathname !== TERMINAL_WEBSOCKET_PATH
+      ) {
+        rejectUpgrade(socket, 404);
 
         return;
       }
 
-      channelServer.handleUpgrade(request, socket, head, (websocket) => {
-        try {
-          upgradeChannel(websocket);
-        } catch (error) {
-          logger.error("[ws] upgrade failed", error);
-          websocket.close(1011, "upgrade failed");
-        }
-      });
+      const auth = await authorizeUpgrade(request, options);
 
-      return;
-    }
-
-    if (url.pathname === TERMINAL_WEBSOCKET_PATH) {
-      if (!isAuthorized(request, apiToken)) {
-        rejectUpgrade(socket, 401);
+      if (!auth.ok) {
+        rejectUpgrade(socket, auth.status);
 
         return;
       }
 
-      void handleTerminalUpgrade(request, socket, head, url).catch(
-        (error: unknown) => {
-          logger.error("[ws] terminal upgrade failed", error);
+      if (socket.destroyed) {
+        return;
+      }
 
-          if (!socket.destroyed) {
-            rejectUpgrade(socket, 500);
+      if (url.pathname === WEBSOCKET_CHANNEL_PATH) {
+        channelServer.handleUpgrade(request, socket, head, (websocket) => {
+          try {
+            upgradeChannel(websocket);
+          } catch (error) {
+            logger.error("[ws] upgrade failed", error);
+            websocket.close(1011, "upgrade failed");
           }
-        }
-      );
+        });
 
-      return;
-    }
+        return;
+      }
 
-    rejectUpgrade(socket, 404);
+      await handleTerminalUpgrade(request, socket, head, url);
+    })().catch((error: unknown) => {
+      logger.error("[ws] upgrade failed", error);
+
+      if (!socket.destroyed) {
+        rejectUpgrade(socket, 500);
+      }
+    });
   });
 
   return async () => {

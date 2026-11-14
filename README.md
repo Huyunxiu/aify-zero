@@ -85,16 +85,28 @@ transient 503s from that window are retried by the query client for a few
 seconds. The main process also pushes `server-status` to the renderer, which
 shows a small banner while the server is starting or reconnecting.
 
-Every request to the API must carry `Authorization: Bearer <token>`. The
-desktop's main process injects it while forwarding `aify-app://` requests (the
-renderer never sees the value), and `dev:web`'s Vite proxy does the same. The
-token is read from `AIFY_API_TOKEN` when set; otherwise it is read from
-`~/.aify-zero/api-token`, created with mode `0600` on the first server start.
-That means `dev:server` and the desktop share one token on the same machine.
-Attaching to a server on another machine requires `AIFY_API_TOKEN` in the
-desktop's environment. When you override `AIFY_API_TOKEN`, set it for every
-process that talks to the server (`dev:server`, `dev:web`, the desktop), or
-leave it unset everywhere and use the shared file.
+The browser signs in with a link. At every start the server prints
+`[auth] sign in: http://…/?token=…`. The address is the web app itself: the page
+posts the token to `/api/auth/login`, receives the HttpOnly `aify_session`
+cookie, and strips the token from the address bar. Later requests, `<img src>`
+loads and WebSocket handshakes carry that cookie automatically. The token does
+not expire with time: it stays usable until the server restarts, and works for
+more than one device. Sessions last 30 days and renew on use. Settings → General
+can mint another link; the same call is `POST /api/auth/login-link`.
+
+Machine clients still send `Authorization: Bearer <token>`: the desktop's main
+process injects it while forwarding `aify-app://` requests (the renderer never
+sees the value), and the CLI does the same. The token is read from
+`AIFY_API_TOKEN` when set; otherwise it is read from `~/.aify-zero/api-token`,
+created with mode `0600` on the first server start. The Vite dev proxy only
+forwards now: browsers carry the cookie, not the token.
+
+When the built web app exists (`apps/web/dist` or `AIFY_WEB_ROOT`), the server
+serves it from `/`, so remote access stays same-origin and needs no CORS. Set
+`AIFY_PUBLIC_ORIGIN` for remote deployments: it decides the printed link's
+host and whether the cookie gets `Secure`. Set `AIFY_WEB_ORIGIN` when the page
+is served by a separate dev server. Plain http works on a LAN, but the ticket
+and cookie cross the network unencrypted; use HTTPS beyond a trusted network.
 
 So the packaged app ships and owns its server by default, while `dev:server` +
 `dev:desktop` share one process. Only one desktop instance runs at a time: a

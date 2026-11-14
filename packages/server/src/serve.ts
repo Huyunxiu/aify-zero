@@ -18,12 +18,19 @@ import {
 } from "@workspace/shared/api-endpoint";
 import { resolveApiToken } from "@workspace/shared/api-token";
 import {
+  PUBLIC_ORIGIN_ENV,
+  resolvePublicOrigin,
+  resolveTrustedOrigins,
+} from "@workspace/shared/auth-session";
+import {
   DEFAULT_API_HOST,
   DEFAULT_API_PORT,
 } from "@workspace/shared/constants";
 import { logger } from "@workspace/shared/logger";
 
-import { app } from "./app";
+import { createApp } from "./app";
+import { createAuthStore } from "./auth-store";
+import { issueLoginLink, resolveLoginWebOrigin } from "./login-link";
 import { setMcpOAuthRedirectUrl } from "./mcp/oauth";
 import { shutdownMcp } from "./mcp/registry";
 import { SQLiteStore } from "./storage/sqlite-store";
@@ -57,7 +64,21 @@ export interface ServerHandle {
   readonly port: number;
   /** 停止监听并关闭连接。可重复调用。 */
   close(): Promise<void>;
+  /**
+   * 生成本次运行的登录链接。
+   *
+   * 票据绑定在这次进程上：重启后旧链接失效，所以每次启动都打印一条新的。
+   */
+  loginUrl(): Promise<string>;
 }
+
+/** 通配地址：打印链接时不能原样使用 `0.0.0.0`。 */
+const isWildcardHost = (host: string): boolean =>
+  host === "0.0.0.0" || host === "::" || host === "[::]";
+
+/** 回环地址：这些地址上的链接本机就能打开，不需要额外配置。 */
+const isLoopbackHost = (host: string): boolean =>
+  host === "127.0.0.1" || host === "::1" || host === "localhost";
 
 /** 从环境变量解析监听地址，非法端口在启动前就报错。 */
 export function resolveListenAddress(): ListenAddress {
@@ -107,6 +128,20 @@ export async function startServer(
     logger.warn("[startup] interrupted-session recovery failed", error);
   }
 
+  // 浏览器登录态和访问令牌共用同一套来源白名单；放进 `createApp` 和
+  // `attachWebSocket`，HTTP 与升级两条路的判断才一致。
+  const authStore = createAuthStore();
+  const trustedOrigins = resolveTrustedOrigins();
+  const app = createApp({ authStore, trustedOrigins });
+
+  // 清掉过期的登录态和票据。表还没迁移时只告警：开发库可以用 `db:push`
+  // 补上，不该因此拒绝启动。
+  try {
+    await authStore.pruneExpired();
+  } catch (error) {
+    logger.warn("[auth] session cleanup failed", error);
+  }
+
   const server = await new Promise<ServerType>((resolve, reject) => {
     const onError = (error: Error): void => reject(error);
     const created = serve({ fetch: app.fetch, hostname: host, port }, () => {
@@ -124,7 +159,10 @@ export async function startServer(
   });
 
   // 升级事件由 WebSocket 通道独占：别的路径在这里就被断开，不会漏给下一个人。
-  const closeWebSocket = attachWebSocket(server as unknown as Server);
+  const closeWebSocket = attachWebSocket(server as unknown as Server, {
+    authStore,
+    trustedOrigins,
+  });
 
   const address = server.address();
 
@@ -160,6 +198,20 @@ export async function startServer(
     });
   };
 
+  // 打印链接时用对外可达的地址。显式配置优先；否则用绑定地址——绑在某个
+  // 具体网卡上时回环并不通，这时候退回 127.0.0.1 只会打印一条打不开的链接。
+  // 只有绑通配地址时才无从得知该用哪个网卡，退回回环并提醒配置。
+  const publicOrigin = resolvePublicOrigin();
+  const printableOrigin =
+    publicOrigin ??
+    formatOrigin(isWildcardHost(host) ? DEFAULT_API_HOST : host, address.port);
+
+  if (publicOrigin === undefined && !isLoopbackHost(host)) {
+    logger.warn(
+      `[auth] set ${PUBLIC_ORIGIN_ENV} so login links work outside this machine`
+    );
+  }
+
   return {
     close: () => {
       closing ??= close();
@@ -167,6 +219,16 @@ export async function startServer(
       return closing;
     },
     host,
+    loginUrl: async () => {
+      const userId = await authStore.ensureOperator();
+      const link = await issueLoginLink({
+        authStore,
+        userId,
+        webOrigin: await resolveLoginWebOrigin(printableOrigin),
+      });
+
+      return link.url;
+    },
     origin: formatOrigin(host, address.port),
     port: address.port,
   };
@@ -188,6 +250,15 @@ export async function runServerProcess(): Promise<void> {
       type: "ready",
     })}\n`
   );
+
+  // 登录链接单独一行，方便从终端里整行复制。生成失败不该阻止服务启动。
+  try {
+    const loginUrl = await handle.loginUrl();
+
+    process.stdout.write(`[auth] sign in: ${loginUrl}\n`);
+  } catch (error) {
+    logger.warn("[auth] failed to create a login link", error);
+  }
 
   let closing: Promise<void> | undefined;
   const shutdown = (): void => {

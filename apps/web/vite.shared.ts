@@ -9,8 +9,10 @@ import type { ProxyOptions, UserConfig } from "vite";
 // 配置文件由 Vite 用 esbuild 打包，这里直接相对引用同一份端口常量，免得为
 // 两个端口再抄一遍字面量，或把 node 端的包拖进配置的解析链路。
 import { resolveApiEndpoint } from "../../packages/shared/src/api-endpoint";
-import { resolveApiToken } from "../../packages/shared/src/api-token";
-import { DEFAULT_WEB_PORT } from "../../packages/shared/src/constants";
+import {
+  DEFAULT_WEB_PORT,
+  WEB_PORT_ENV,
+} from "../../packages/shared/src/constants";
 
 /**
  * apps/web 的 Vite 配置只有一份：独立浏览器构建和桌面壳的 renderer 构建
@@ -23,34 +25,22 @@ const webRoot = __dirname;
 const workspaceRoot = path.resolve(webRoot, "../..");
 
 /** 开发服务器端口：独立 web 和桌面反代共用同一个值。 */
-const devPort = Number(process.env.AIFY_WEB_PORT ?? DEFAULT_WEB_PORT);
+const devPort = Number(process.env[WEB_PORT_ENV] ?? DEFAULT_WEB_PORT);
 
 /**
- * API 现在要求 bearer token，而浏览器不应该持有它。Vite 代理在服务端注入，
- * 和 Electron 主进程的转发保持同一条规则。
+ * 代理只做转发，不再注入凭据。
  *
- * 普通请求和升级请求是两个不同的事件，令牌两处都要注入：WebSocket 握手也是
- * 一条 HTTP 请求，只是浏览器不让我们自己设这个头。
+ * 浏览器自己带 `aify_session` cookie：普通请求、`<img src>` 和 WebSocket
+ * 握手都会自动带上它，代理不需要知道令牌的存在。这也意味着开发期和
+ * 生产期的鉴权走同一条路——生产期页面由 server 同源托管。
  */
-const createApiProxy = (target: string): Record<string, ProxyOptions> => {
-  const entry = (): ProxyOptions => ({
+const createApiProxy = (target: string): Record<string, ProxyOptions> => ({
+  "/api": {
     target,
     // `/api/ws` 的升级请求也要转发，否则页面只能拿到 HTTP。
     ws: true,
-    configure: (proxy) => {
-      proxy.on("proxyReq", (request) => {
-        request.setHeader("authorization", `Bearer ${resolveApiToken()}`);
-      });
-      proxy.on("proxyReqWs", (request) => {
-        request.setHeader("authorization", `Bearer ${resolveApiToken()}`);
-      });
-    },
-  });
-
-  return {
-    "/api": entry(),
-  };
-};
+  },
+});
 
 export interface WebViteOptions {
   readonly desktop?: boolean;
