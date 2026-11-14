@@ -74,7 +74,7 @@ API 位于 `apps/server`（`@workspace/server-app`），是唯一的监听者。
 
 因此，打包后的应用默认自带并拥有自己的服务器，而 `dev:server` + `dev:desktop` 则共享同一个进程。桌面端同时只允许一个实例：再次启动只会聚焦已有窗口，不会另起一套 server，也不会打开同一个数据库。要把正在运行的桌面端从内置服务器迁移走，可在渲染器或 DevTools 中调用 `aifyDesktop.useServer("http://127.0.0.1:18086")`：主进程会校验 `/health`、停止归自己所有的子进程、切换 `aify-app://` 转发器并重新加载页面。运行期切换只接受回环地址；远程 server 必须在启动前通过 `AIFY_API_ORIGIN` + `AIFY_API_TOKEN` 配置。
 
-迁移文件是表结构的唯一来源，每次启动 server 都会应用它们。打包后的应用基于 `Resources/migrations` 中随包携带的迁移（见 `packagerConfig.extraResource`）迁移 `~/.aify-zero/aify-zero.db`；`dev:server`、`dev:desktop` 和独立打包的 `apps/server` 迁移当前 checkout 的 `local.db`，每个 worktree 各有一份。迁移失败会中止启动，不会带着落后的结构提供服务。
+迁移文件是表结构的唯一来源，每次启动 server 都会应用它们。打包后的应用基于 `Resources/migrations` 中随包携带的迁移（见 `packagerConfig.extraResource`）迁移 `~/.aify-zero/aify-zero.db`；`dev:server`、`dev:desktop` 和独立打包的 `apps/server` 迁移当前 checkout 的 `local.db`，每个 worktree 各有一份。迁移失败会中止启动，不会在结构漂移的库上提供服务。
 
 因此改 schema 就要有迁移：运行 `vp run db#db:generate`，检查生成的 SQL 并提交。`vp ready` 会跑 `db:check`，schema 改了却没生成迁移时它会失败。有表但没有迁移历史的库无法启动——它是这条规则之前建的：运行一次 `vp run db#db:baseline`，把已有结构标记为已应用而不重放 SQL，或者删掉文件让启动过程重建。drizzle 的几个命令（`db:baseline`、`db:migrate`、`db:studio`）默认操作 checkout 的 `local.db`；要操作别的库用 `DATABASE_URL` 指过去。
 

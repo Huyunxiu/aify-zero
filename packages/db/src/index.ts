@@ -2,11 +2,13 @@ import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
+import type { Client } from "@libsql/client";
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import Database from "libsql";
 
+import { findMigrationsDirectory } from "./paths";
 import * as schema from "./schema";
 import { serializeClient } from "./serialize-client";
 
@@ -16,8 +18,8 @@ import { serializeClient } from "./serialize-client";
 /** drizzle 的 migrator 记录已应用迁移的表；基线脚本必须写同一个表。 */
 export const MIGRATIONS_TABLE = "__drizzle_migrations";
 
-/** 判断「库里已经有表」用的哨兵表：`0000` 建出的第一张业务表。 */
-const PROBE_TABLE = "session";
+/** 历史表的建表语句，与 drizzle 的 migrator 写下的完全一致。 */
+export const MIGRATIONS_TABLE_DDL = `create table if not exists "${MIGRATIONS_TABLE}" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)`;
 
 // Ensure the ~/.aify-zero user data directory exists.
 const ensureDataDir = () => {
@@ -76,34 +78,6 @@ export function closeDb(): void {
 }
 
 /**
- * 从 `start` 向上找带 `meta/_journal.json` 的 `migrations/` 目录。
- *
- * 只看四层：够覆盖 `<out>/assets/`、`<out>/` 和源码目录，又不会一路爬到仓库
- * 外面去撞上一个不相关的同名目录。
- */
-function findMigrationsDirectory(start: string): string | undefined {
-  let directory = start;
-
-  for (let depth = 0; depth < 4; depth += 1) {
-    const candidate = path.join(directory, "migrations");
-
-    if (existsSync(path.join(candidate, "meta", "_journal.json"))) {
-      return candidate;
-    }
-
-    const parent = path.dirname(directory);
-
-    if (parent === directory) {
-      break;
-    }
-
-    directory = parent;
-  }
-
-  return undefined;
-}
-
-/**
  * 迁移文件目录。
  *
  * 默认取本模块附近带 `meta/_journal.json` 的 `migrations/`：源码态是
@@ -128,26 +102,92 @@ export function resolveMigrationsDirectory(): string {
   );
 }
 
+/**
+ * 把 libsql 的单元格转成指纹里的一段文本。
+ *
+ * 列可能为 NULL（例如 `dflt_value`），统一记成空串，免得和字符串 "null" 混淆。
+ */
+const cell = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  return typeof value === "string" ? value : JSON.stringify(value);
+};
+
+/** 业务表清单，不含 SQLite 内部表和迁移历史表。 */
+export async function listTables(
+  client: Client = db.$client
+): Promise<string[]> {
+  const result = await client.execute(
+    `select name from sqlite_master where type = 'table' and name not like 'sqlite%' and name <> '${MIGRATIONS_TABLE}' order by name`
+  );
+
+  return result.rows.map((row) => cell(row.name));
+}
+
 /** 统计已应用的迁移条数；历史表不存在时算 0 条。 */
-async function countAppliedMigrations(): Promise<number> {
+export async function countAppliedMigrations(
+  client: Client = db.$client
+): Promise<number> {
   try {
-    const result = await db.$client.execute(
+    const result = await client.execute(
       `select count(*) as applied from ${MIGRATIONS_TABLE}`
     );
 
     return Number(result.rows[0]?.applied ?? 0);
-  } catch {
-    return 0;
+  } catch (error) {
+    // 只有「表还不存在」算空历史。锁冲突之类的失败必须抛出去，否则会被当成
+    // 「这个库没有迁移历史」，给出错误的修复指令。
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (message.includes("no such table")) {
+      return 0;
+    }
+
+    throw error;
   }
 }
 
-/** 库里有哨兵表就说明它建过表：正常迁移会自己建，这里只会命中旧库。 */
-async function hasApplicationTables(): Promise<boolean> {
-  const result = await db.$client.execute(
-    `select count(*) as found from sqlite_master where type = 'table' and name = '${PROBE_TABLE}'`
+/**
+ * 结构指纹：每张表记录「列名|类型|非空|默认值|主键」，外加索引清单。
+ *
+ * 基线要回答的问题是「这个库和迁移文件产出的结构是不是同一个」，所以指纹
+ * 按列比对，不比建表语句的文本——`db:push` 与 migrator 写下的 SQL 排版不同，
+ * 但结构可以完全一致。
+ */
+export async function readSchema(
+  client: Client = db.$client
+): Promise<Map<string, string>> {
+  const fingerprint = new Map<string, string>();
+
+  for (const table of await listTables(client)) {
+    const columns = await client.execute(`pragma table_info("${table}")`);
+
+    fingerprint.set(
+      table,
+      columns.rows
+        .map((row) =>
+          [row.name, row.type, row.notnull, row.dflt_value, row.pk]
+            .map((value) => cell(value))
+            .join("|")
+        )
+        .join(",")
+    );
+  }
+
+  const indexes = await client.execute(
+    "select name, tbl_name from sqlite_master where type = 'index' and name not like 'sqlite%' order by name"
   );
 
-  return Number(result.rows[0]?.found ?? 0) > 0;
+  fingerprint.set(
+    "indexes",
+    indexes.rows
+      .map((row) => `${cell(row.name)}@${cell(row.tbl_name)}`)
+      .join(",")
+  );
+
+  return fingerprint;
 }
 
 /** 给迁移失败补上库地址；跨进程争用要能一眼看出是别人在迁移。 */
@@ -172,10 +212,10 @@ const migrationFailure = (error: unknown, url: string): Error => {
  *
  * 迁移文件是表结构的唯一来源：开发态和打包后的应用启动时都走这里，不再有
  * 第二条建表路径。迁移是幂等的：drizzle 用 `__drizzle_migrations` 记录已应用
- * 的版本，重复调用只会补上落后的部分。
+ * 的版本，重复调用只会补上还没应用的部分。
  *
- * 迁移目录和数据库地址都不对时立刻抛错——表结构是启动的前置条件，带着落后的
- * 结构提供服务只会把错误推迟到第一个请求。
+ * 迁移目录和数据库地址都不对时立刻抛错——表结构是启动的前置条件，在结构漂移
+ * 的库上提供服务只会把错误推迟到第一个请求。
  */
 export async function migrateDb(): Promise<void> {
   const migrationsFolder = resolveMigrationsDirectory();
@@ -190,14 +230,16 @@ export async function migrateDb(): Promise<void> {
   const url = resolveDatabaseUrl();
 
   // 空历史 + 有表 = 这个库由 `db:push` 或更早的版本建过，重放迁移会和已有表
-  // 冲突。基线只能由人执行一次，不能在这里自动做：自动基线等于把「结构落后」
+  // 冲突。基线只能由人执行一次，不能在这里自动做：自动基线等于把「结构漂移」
   // 也一起标记成「已应用」。
-  if (
-    (await countAppliedMigrations()) === 0 &&
-    (await hasApplicationTables())
-  ) {
+  const [appliedMigrations, tables] = await Promise.all([
+    countAppliedMigrations(),
+    listTables(),
+  ]);
+
+  if (appliedMigrations === 0 && tables.length > 0) {
     throw new Error(
-      `Database ${url} has tables but no migration history. Run \`vp run db#db:baseline\` once to mark the existing schema as applied.`
+      `Database ${url} has tables but no migration history. Run \`vp run db#db:baseline\` from a repository checkout to mark the existing schema as applied, or delete the file and start again to rebuild it.`
     );
   }
 

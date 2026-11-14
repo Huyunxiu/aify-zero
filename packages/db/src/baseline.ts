@@ -5,36 +5,43 @@
  * 留下的开发库。正常情况下启动时的迁移会自己建表，这个脚本只会被手动调用
  * 一次。
  *
+ * 标记之前先把迁移重放到一个临时库，比对两边的结构指纹：基线是「承认这个库
+ * 就是迁移的产物」，不是「跳过检查」。结构不一致就拒绝，否则一个缺列的库会被
+ * 标记成最新，从此再也不会被迁移。
+ *
  * 用法：`vp run db#db:baseline`。默认操作 checkout 根部的 `local.db`，与
  * `drizzle.config.ts` 一致；操作别的库时用 `DATABASE_URL` 指过去。
  */
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
-// 先定库再加载数据层：`./index` 在导入时就按 `DATABASE_URL` 建连接。
-const checkoutRoot = path.resolve(import.meta.dirname, "..", "..", "..");
+import { resolveDevelopmentDatabaseUrl, WORKSPACE_ROOT } from "./paths";
 
-if (process.env.DATABASE_URL === undefined || process.env.DATABASE_URL === "") {
-  process.env.DATABASE_URL = `file:${path.join(checkoutRoot, "local.db")}`;
-}
+// 先定库再加载数据层：`./index` 在导入时就按 `DATABASE_URL` 建连接。
+process.env.DATABASE_URL = resolveDevelopmentDatabaseUrl(WORKSPACE_ROOT);
 
 const {
   closeDb,
+  countAppliedMigrations,
   db,
-  MIGRATIONS_TABLE,
+  listTables,
   migrateDb,
+  MIGRATIONS_TABLE,
+  MIGRATIONS_TABLE_DDL,
+  readSchema,
   resolveDatabaseUrl,
   resolveMigrationsDirectory,
 } = await import("./index");
 
-/** 与 drizzle 的 migrator 建出的历史表保持一致，否则它的查询读不到。 */
-const migrationsTableDdl = `create table if not exists "${MIGRATIONS_TABLE}" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)`;
-
 const url = resolveDatabaseUrl();
-const migrations = readMigrationFiles({
-  migrationsFolder: resolveMigrationsDirectory(),
-});
+const migrationsFolder = resolveMigrationsDirectory();
+const migrations = readMigrationFiles({ migrationsFolder });
 
 function fail(message: string): never {
   console.error(`[db] ${message}`);
@@ -42,12 +49,64 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-await db.$client.execute(migrationsTableDdl);
+/** 把迁移重放到一个临时库，得到「正确的结构」用来比对。 */
+async function readMigratedSchema(): Promise<Map<string, string>> {
+  const directory = await mkdtemp(path.join(tmpdir(), "aify-baseline-"));
+  const client = createClient({
+    url: `file:${path.join(directory, "expected.db")}`,
+  });
 
-const applied = await db.$client.execute(
-  `select count(*) as applied from ${MIGRATIONS_TABLE}`
-);
-const appliedCount = Number(applied.rows[0]?.applied ?? 0);
+  try {
+    await migrate(drizzle({ client }), { migrationsFolder });
+
+    return await readSchema(client);
+  } finally {
+    client.close();
+    await rm(directory, { force: true, recursive: true });
+  }
+}
+
+/** 两套结构指纹的差异；空数组表示结构一致。 */
+function compareSchemas(
+  expected: Map<string, string>,
+  actual: Map<string, string>
+): string[] {
+  const differences: string[] = [];
+
+  for (const table of new Set([...expected.keys(), ...actual.keys()])) {
+    const want = expected.get(table);
+    const have = actual.get(table);
+
+    if (want === have) {
+      continue;
+    }
+
+    if (have === undefined) {
+      differences.push(`missing: ${table}`);
+      continue;
+    }
+
+    if (want === undefined) {
+      differences.push(`unexpected: ${table}`);
+      continue;
+    }
+
+    const wanted = new Set(want.split(","));
+    const present = new Set(have.split(","));
+    const missing = [...wanted].filter((column) => !present.has(column));
+    const extra = [...present].filter((column) => !wanted.has(column));
+
+    differences.push(
+      `differs: ${table} (missing ${missing.join(" / ") || "-"}; extra ${extra.join(" / ") || "-"})`
+    );
+  }
+
+  return differences;
+}
+
+await db.$client.execute(MIGRATIONS_TABLE_DDL);
+
+const appliedCount = await countAppliedMigrations();
 
 if (appliedCount > 0) {
   fail(
@@ -56,12 +115,21 @@ if (appliedCount > 0) {
 }
 
 // 全新库没有表：启动 server 就会迁移，基线在这里没有意义。
-const probe = await db.$client.execute(
-  "select count(*) as found from sqlite_master where type = 'table' and name = 'session'"
+const tables = await listTables();
+
+if (tables.length === 0) {
+  fail(`${url} has no tables. Start the server to create and migrate it.`);
+}
+
+const differences = compareSchemas(
+  await readMigratedSchema(),
+  await readSchema()
 );
 
-if (Number(probe.rows[0]?.found ?? 0) === 0) {
-  fail(`${url} has no tables. Start the server to create and migrate it.`);
+if (differences.length > 0) {
+  fail(
+    `${url} does not match the migrations, so it cannot be baselined:\n  ${differences.slice(0, 10).join("\n  ")}\nDelete the file and start the server to rebuild it.`
+  );
 }
 
 // 一次性写入全部历史：`created_at` 用 `_journal.json` 的 when，与 migrator 的
@@ -77,12 +145,8 @@ await db.$client.batch(
 // 用真正的入口验一遍：它应该无事可做。
 await migrateDb();
 
-const verified = await db.$client.execute(
-  `select count(*) as applied from ${MIGRATIONS_TABLE}`
-);
-
 console.log(
-  `[db] baselined ${migrations.length} migration(s) for ${url} (${Number(verified.rows[0]?.applied ?? 0)} recorded)`
+  `[db] baselined ${migrations.length} migration(s) for ${url} (${await countAppliedMigrations()} recorded)`
 );
 
 closeDb();
