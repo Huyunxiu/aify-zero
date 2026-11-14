@@ -13,6 +13,7 @@ import {
 } from "@workspace/ui/components/toast";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
 import { LayoutProvider } from "@workspace/ui/elements/layout-provider";
+import { SignInGate } from "@workspace/ui/elements/sign-in-gate";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -62,7 +63,10 @@ createRoot(rootElement).render(
           <TooltipProvider>
             <ToastProvider>
               <AnchoredToastProvider>
-                <App />
+                {/* 登录态就是整个应用的开关：没登录时不建通道、不发查询。 */}
+                <SignInGate>
+                  <App />
+                </SignInGate>
               </AnchoredToastProvider>
             </ToastProvider>
           </TooltipProvider>
