@@ -77,8 +77,9 @@ const isDev = !app.isPackaged;
 const useProtocol = !isDev || process.env.AIFY_APP_PROTOCOL !== "0";
 
 /**
- * 打包后没有仓库里的 `.env` / `local.db`，数据库落在 `~/.aify-zero`，
- * 首次启动要用随包携带的迁移建表；开发期沿用 `db:push` 的本地库。
+ * 迁移目录：打包后是随包携带的 `Resources/migrations`，开发期直接指向仓库里的
+ * 迁移文件。server-entry 被打包进 `.vite/build`，`@workspace/db` 默认的「与本
+ * 模块同级的 migrations」在那里不成立，所以两种形态都要显式指定。
  */
 const migrationsDirectory = app.isPackaged
   ? path.join(process.resourcesPath, "migrations")
@@ -120,17 +121,20 @@ const server = new DesktopServer({
 /**
  * 内置 server 子进程的环境。
  *
- * 开发期显式给 `DATABASE_URL`，否则子进程会落到 `~/.aify-zero`，和
- * `dev:server` / `db:push` 使用的仓库 `local.db` 不是同一个库。迁移目录
- * 只在打包后提供：开发库由 `db:push` 维护，重放迁移会和已有表冲突。
+ * 迁移目录两种形态都传：子进程的启动迁移和 `dev:server` 走同一条路径。开发期
+ * 还要显式给 `DATABASE_URL`，否则子进程会落到 `~/.aify-zero`，和 `dev:server`
+ * 使用的 checkout 根部 `local.db` 不是同一个库。
  */
 const serverEnvironment = (): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = { ...process.env };
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    AIFY_MIGRATIONS_DIR: migrationsDirectory,
+  };
 
-  if (app.isPackaged) {
-    env.AIFY_MIGRATIONS_DIR = migrationsDirectory;
-  } else if (env.DATABASE_URL === undefined || env.DATABASE_URL === "") {
-    // 开发期的内置 server 必须和 `dev:server` / `db:push` 用同一个库。
+  if (
+    !app.isPackaged &&
+    (env.DATABASE_URL === undefined || env.DATABASE_URL === "")
+  ) {
     env.DATABASE_URL = `file:${path.resolve(app.getAppPath(), "../../local.db")}`;
   }
 

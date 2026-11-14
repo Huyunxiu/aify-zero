@@ -13,6 +13,12 @@ import { serializeClient } from "./serialize-client";
 // 环境变量由进程入口加载：`dotenv.config()` 会按 cwd 找 `.env`，让同一个
 // 数据层在仓库根、`apps/server`、打包后的资源目录下连到不同的库。
 
+/** drizzle 的 migrator 记录已应用迁移的表；基线脚本必须写同一个表。 */
+export const MIGRATIONS_TABLE = "__drizzle_migrations";
+
+/** 判断「库里已经有表」用的哨兵表：`0000` 建出的第一张业务表。 */
+const PROBE_TABLE = "session";
+
 // Ensure the ~/.aify-zero user data directory exists.
 const ensureDataDir = () => {
   const dataDir = path.join(homedir(), ".aify-zero");
@@ -24,10 +30,25 @@ const ensureDataDir = () => {
   return dataDir;
 };
 
+/**
+ * 解析数据库地址：显式 `DATABASE_URL` 优先，否则落在 `~/.aify-zero/aify-zero.db`。
+ *
+ * 开发期的进程入口会先把 `DATABASE_URL` 指到 checkout 根部的 `local.db`，所以
+ * 同一个表达式在开发态和打包态各自命中正确的文件。空字符串按「没有设置」
+ * 处理：`.env` 里留一行空的 `DATABASE_URL=` 不应该变成一个空地址。
+ */
+export function resolveDatabaseUrl(): string {
+  const url = process.env.DATABASE_URL;
+
+  if (url !== undefined && url !== "") {
+    return url;
+  }
+
+  return `file:${path.join(ensureDataDir(), "aify-zero.db")}`;
+}
+
 export function createDb() {
-  const dataDir = ensureDataDir();
-  const url =
-    process.env.DATABASE_URL ?? `file:${path.join(dataDir, "aify-zero.db")}`;
+  const url = resolveDatabaseUrl();
   // libsql 只在真正连接时才建文件；开一个句柄再立刻关掉，让 drizzle 和
   // 迁移在首次运行时能打开一个已存在的库，而不是泄漏一个永不关闭的连接。
   if (url.startsWith("file:")) {
@@ -55,22 +76,136 @@ export function closeDb(): void {
 }
 
 /**
- * 应用数据库的迁移入口。
+ * 从 `start` 向上找带 `meta/_journal.json` 的 `migrations/` 目录。
  *
- * 打包后的应用没有仓库里的 `.env`，数据库默认落在
- * `~/.aify-zero/aify-zero.db`，首次启动必须自己建表。迁移目录由桌面
- * 主进程通过 `AIFY_MIGRATIONS_DIR` 指定（打包后是 `Resources/migrations`）。
- *
- * 迁移是幂等的：drizzle 用 `__drizzle_migrations` 记录已应用的版本。
+ * 只看四层：够覆盖 `<out>/assets/`、`<out>/` 和源码目录，又不会一路爬到仓库
+ * 外面去撞上一个不相关的同名目录。
  */
-export async function migrateDb(): Promise<void> {
-  const migrationsFolder = process.env.AIFY_MIGRATIONS_DIR;
+function findMigrationsDirectory(start: string): string | undefined {
+  let directory = start;
 
-  if (migrationsFolder === undefined || migrationsFolder === "") {
-    throw new Error("AIFY_MIGRATIONS_DIR is not set");
+  for (let depth = 0; depth < 4; depth += 1) {
+    const candidate = path.join(directory, "migrations");
+
+    if (existsSync(path.join(candidate, "meta", "_journal.json"))) {
+      return candidate;
+    }
+
+    const parent = path.dirname(directory);
+
+    if (parent === directory) {
+      break;
+    }
+
+    directory = parent;
   }
 
-  await migrate(db, { migrationsFolder });
+  return undefined;
+}
+
+/**
+ * 迁移文件目录。
+ *
+ * 默认取本模块附近带 `meta/_journal.json` 的 `migrations/`：源码态是
+ * `packages/db/src/migrations`；`apps/server` 的构建产物由
+ * `scripts/stage-server-dist.ts` 复制到 `dist/migrations`，而打包器把本模块
+ * 放进 `dist/assets/`，所以两个位置都要能命中。只有代码被打包搬离自己的目录
+ * 时才需要覆盖——Electron 的 server 入口在 `.vite/build` 里运行，主进程会用
+ * `AIFY_MIGRATIONS_DIR` 指定 `Resources/migrations`。
+ */
+export function resolveMigrationsDirectory(): string {
+  const override = process.env.AIFY_MIGRATIONS_DIR;
+
+  if (override !== undefined && override !== "") {
+    return override;
+  }
+
+  // 打包器会把本模块放进 `<out>/assets/`，所以「同级」要向上找一层；源码态
+  // 第一层就命中，循环立刻结束。
+  return (
+    findMigrationsDirectory(import.meta.dirname) ??
+    path.join(import.meta.dirname, "migrations")
+  );
+}
+
+/** 统计已应用的迁移条数；历史表不存在时算 0 条。 */
+async function countAppliedMigrations(): Promise<number> {
+  try {
+    const result = await db.$client.execute(
+      `select count(*) as applied from ${MIGRATIONS_TABLE}`
+    );
+
+    return Number(result.rows[0]?.applied ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** 库里有哨兵表就说明它建过表：正常迁移会自己建，这里只会命中旧库。 */
+async function hasApplicationTables(): Promise<boolean> {
+  const result = await db.$client.execute(
+    `select count(*) as found from sqlite_master where type = 'table' and name = '${PROBE_TABLE}'`
+  );
+
+  return Number(result.rows[0]?.found ?? 0) > 0;
+}
+
+/** 给迁移失败补上库地址；跨进程争用要能一眼看出是别人在迁移。 */
+const migrationFailure = (error: unknown, url: string): Error => {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (
+    message.includes("SQLITE_BUSY") ||
+    message.includes("database is locked")
+  ) {
+    return new Error(
+      `Migration for ${url} failed: another process is migrating the same database. Stop it and start again.`,
+      { cause: error }
+    );
+  }
+
+  return new Error(`Migration for ${url} failed: ${message}`, { cause: error });
+};
+
+/**
+ * 应用数据库的迁移入口。
+ *
+ * 迁移文件是表结构的唯一来源：开发态和打包后的应用启动时都走这里，不再有
+ * 第二条建表路径。迁移是幂等的：drizzle 用 `__drizzle_migrations` 记录已应用
+ * 的版本，重复调用只会补上落后的部分。
+ *
+ * 迁移目录和数据库地址都不对时立刻抛错——表结构是启动的前置条件，带着落后的
+ * 结构提供服务只会把错误推迟到第一个请求。
+ */
+export async function migrateDb(): Promise<void> {
+  const migrationsFolder = resolveMigrationsDirectory();
+  const journalPath = path.join(migrationsFolder, "meta", "_journal.json");
+
+  if (!existsSync(journalPath)) {
+    throw new Error(
+      `Migration files are missing at ${migrationsFolder}. Run \`vp install\`, then start again.`
+    );
+  }
+
+  const url = resolveDatabaseUrl();
+
+  // 空历史 + 有表 = 这个库由 `db:push` 或更早的版本建过，重放迁移会和已有表
+  // 冲突。基线只能由人执行一次，不能在这里自动做：自动基线等于把「结构落后」
+  // 也一起标记成「已应用」。
+  if (
+    (await countAppliedMigrations()) === 0 &&
+    (await hasApplicationTables())
+  ) {
+    throw new Error(
+      `Database ${url} has tables but no migration history. Run \`vp run db#db:baseline\` once to mark the existing schema as applied.`
+    );
+  }
+
+  try {
+    await migrate(db, { migrationsFolder });
+  } catch (error) {
+    throw migrationFailure(error, url);
+  }
 }
 
 export * from "./schema";

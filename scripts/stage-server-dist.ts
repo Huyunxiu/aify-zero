@@ -13,6 +13,8 @@ import { stageRipgrep } from "./stage-ripgrep";
 //     `spawn-helper` must stay an executable file outside the bundle;
 //   - `bin/rg` — the ripgrep binary the agent's grep/glob tools execute, which
 //     cannot be executed from inside a bundle;
+//   - `migrations/` — the SQL files the startup migration applies. They sit next
+//     to `index.js` so `@workspace/db` finds them without an env var;
 //   - `package.json` — marks the output as ESM even outside this repository.
 //
 // Invoked as `tsx ../../scripts/stage-server-dist.ts dist` from `apps/server`.
@@ -20,6 +22,13 @@ const workspaceRoot = path.resolve(import.meta.dirname, "..");
 const outputDirectory = path.resolve(process.argv[2] ?? "dist");
 const libsqlSource = path.join(workspaceRoot, "node_modules", "@libsql");
 const ptySource = path.join(workspaceRoot, "node_modules", "@lydell");
+const migrationsSource = path.join(
+  workspaceRoot,
+  "packages",
+  "db",
+  "src",
+  "migrations"
+);
 
 if (!existsSync(libsqlSource)) {
   throw new Error(
@@ -30,6 +39,12 @@ if (!existsSync(libsqlSource)) {
 if (!existsSync(ptySource)) {
   throw new Error(
     `@lydell packages missing at ${ptySource}; run \`vp install\` first.`
+  );
+}
+
+if (!existsSync(migrationsSource)) {
+  throw new Error(
+    `migration files missing at ${migrationsSource}; run \`vp run db#db:generate\` if the schema changed.`
   );
 }
 
@@ -60,6 +75,13 @@ if (existsSync(spawnHelper)) {
 }
 
 await stageRipgrep(path.join(outputDirectory, "bin"));
+
+// The startup migration resolves `<entry dir>/migrations`; keep that rule true
+// for this artifact without an env var.
+await cp(migrationsSource, path.join(outputDirectory, "migrations"), {
+  preserveTimestamps: true,
+  recursive: true,
+});
 
 // Without this, Node treats the copied `dist/*.js` files as CommonJS.
 await writeFile(

@@ -49,8 +49,8 @@ export interface ServerOptions {
   /** 监听端口；默认 `AIFY_API_PORT`，再默认 18086。传 0 让系统分配。 */
   readonly port?: number;
   /**
-   * 启动前是否执行数据库迁移。默认在提供了 `AIFY_MIGRATIONS_DIR` 时执行：
-   * 打包后的 Electron 总会提供它，独立开发进程默认不迁移（沿用 `db:push`）。
+   * 启动前是否执行数据库迁移。默认执行：迁移文件是表结构的唯一来源，开发态
+   * 和打包态走同一条路径。嵌入到别人的数据库时才可以关掉。
    */
   readonly migrate?: boolean;
 }
@@ -111,7 +111,8 @@ export async function startServer(
   // desktop then reads to authenticate against a standalone server.
   resolveApiToken();
 
-  if (options.migrate ?? process.env.AIFY_MIGRATIONS_DIR !== undefined) {
+  // 表结构是启动的前置条件：迁移失败就不再往下走，避免带着落后的结构提供服务。
+  if (options.migrate !== false) {
     await migrateDb();
   }
 
