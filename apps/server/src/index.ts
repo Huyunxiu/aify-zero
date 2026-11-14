@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { resolveDevelopmentDatabaseUrl } from "@workspace/db/paths";
 import { RIPGREP_PATH_ENV } from "@workspace/shared/constants";
 import dotenv from "dotenv";
 
@@ -45,9 +46,7 @@ if (
 // 开发库钉在当前 checkout 根部：worktree 不会带上被 gitignore 的 `local.db`，
 // 一旦回落到 `~/.aify-zero`，几个 worktree 会共享同一个库并互相打断迁移。
 // 文件不存在时 libsql 首次连接就会创建它，随后的启动迁移负责建表。
-if (process.env.DATABASE_URL === undefined || process.env.DATABASE_URL === "") {
-  process.env.DATABASE_URL = `file:${resolve(workspaceRoot, "local.db")}`;
-}
+process.env.DATABASE_URL = resolveDevelopmentDatabaseUrl(workspaceRoot);
 
 const { runServerProcess } = await import("@workspace/server/serve");
 

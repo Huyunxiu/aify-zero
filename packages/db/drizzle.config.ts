@@ -1,21 +1,18 @@
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 import dotenv from "dotenv";
 import { defineConfig } from "drizzle-kit";
 
-// 与运行期入口保持一致的查找顺序：`apps/server/.env` → 仓库根 `.env` →
+import { resolveDevelopmentDatabaseUrl, WORKSPACE_ROOT } from "./src/paths";
+
+// 与运行期入口一致的查找顺序：`apps/server/.env` → 仓库根 `.env` →
 // 旧的 `packages/server/.env`（仅作兼容）。用绝对路径，避免 drizzle-kit
 // 从不同目录启动时读到不同的库。
-// Drizzle Kit's config loader may not expose import.meta.dirname.
-// oxlint-disable-next-line unicorn/prefer-import-meta-properties
-const here = import.meta.dirname ?? dirname(fileURLToPath(import.meta.url));
-
 dotenv.config({
   path: [
-    resolve(here, "../../apps/server/.env"),
-    resolve(here, "../../.env"),
-    resolve(here, "../server/.env"),
+    resolve(WORKSPACE_ROOT, "apps/server/.env"),
+    resolve(WORKSPACE_ROOT, ".env"),
+    resolve(WORKSPACE_ROOT, "packages/server/.env"),
   ],
   quiet: true,
 });
@@ -24,14 +21,9 @@ dotenv.config({
 // `apps/server` 用的同一个文件。运行期的默认值（`~/.aify-zero`）属于用户库，
 // 不能拿来做 CLI 的默认值：仓库里没有 `.env`，留空会让 drizzle-kit 以「缺少
 // url」退出。要操作别的库就设 `DATABASE_URL`。
-const configuredUrl = process.env.DATABASE_URL;
-
 export default defineConfig({
   dbCredentials: {
-    url:
-      configuredUrl === undefined || configuredUrl === ""
-        ? `file:${resolve(here, "../../local.db")}`
-        : configuredUrl,
+    url: resolveDevelopmentDatabaseUrl(WORKSPACE_ROOT),
   },
   dialect: "turso",
   out: "./src/migrations",

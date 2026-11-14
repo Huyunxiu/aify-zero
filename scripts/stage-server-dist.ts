@@ -2,33 +2,24 @@ import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { MIGRATIONS_DIRECTORY, WORKSPACE_ROOT } from "../packages/db/src/paths";
 import { stageRipgrep } from "./stage-ripgrep";
 
-// `vp build` only emits JS. This post-build step adds the files a bundle
-// cannot carry, so the output directory is deployable on its own:
+// `vp build` 只产出 JS。这一步补上打包器带不走的东西，让输出目录可以独立部署：
 //
-//   - `node_modules/@libsql/` — the native binding the bundled client loads at
-//     runtime, which cannot be inlined into JS;
-//   - `node_modules/@lydell/` — the PTY native binding and its platform package;
-//     `spawn-helper` must stay an executable file outside the bundle;
-//   - `bin/rg` — the ripgrep binary the agent's grep/glob tools execute, which
-//     cannot be executed from inside a bundle;
-//   - `migrations/` — the SQL files the startup migration applies. They sit next
-//     to `index.js` so `@workspace/db` finds them without an env var;
-//   - `package.json` — marks the output as ESM even outside this repository.
+//   - `node_modules/@libsql/`：打包后的客户端在运行期加载的原生绑定，没法内联
+//     进 JS；
+//   - `node_modules/@lydell/`：PTY 原生绑定和它的平台包；`spawn-helper` 必须是
+//     包外的可执行文件；
+//   - `bin/rg`：agent 的 grep/glob 工具要执行的 ripgrep 二进制，不能从包里跑；
+//   - `migrations/`：启动迁移要应用的 SQL，放在 `index.js` 旁边，
+//     `@workspace/db` 不用环境变量就能找到；
+//   - `package.json`：让输出目录在仓库之外也被当成 ESM。
 //
-// Invoked as `tsx ../../scripts/stage-server-dist.ts dist` from `apps/server`.
-const workspaceRoot = path.resolve(import.meta.dirname, "..");
+// 调用方式：在 `apps/server` 下执行 `tsx ../../scripts/stage-server-dist.ts dist`。
 const outputDirectory = path.resolve(process.argv[2] ?? "dist");
-const libsqlSource = path.join(workspaceRoot, "node_modules", "@libsql");
-const ptySource = path.join(workspaceRoot, "node_modules", "@lydell");
-const migrationsSource = path.join(
-  workspaceRoot,
-  "packages",
-  "db",
-  "src",
-  "migrations"
-);
+const libsqlSource = path.join(WORKSPACE_ROOT, "node_modules", "@libsql");
+const ptySource = path.join(WORKSPACE_ROOT, "node_modules", "@lydell");
 
 if (!existsSync(libsqlSource)) {
   throw new Error(
@@ -42,9 +33,9 @@ if (!existsSync(ptySource)) {
   );
 }
 
-if (!existsSync(migrationsSource)) {
+if (!existsSync(MIGRATIONS_DIRECTORY)) {
   throw new Error(
-    `migration files missing at ${migrationsSource}; run \`vp run db#db:generate\` if the schema changed.`
+    `migration files missing at ${MIGRATIONS_DIRECTORY}; run \`vp run db#db:generate\` if the schema changed.`
   );
 }
 
@@ -61,8 +52,8 @@ await cp(ptySource, ptyDestination, {
   preserveTimestamps: true,
 });
 
-// npm preserves this bit, but a copied tree does not guarantee it on every
-// platform. The native module execs this helper directly.
+// npm 会保留这个权限位，但复制出来的目录树在不同平台上不保证。原生模块直接
+// 执行这个辅助程序。
 const spawnHelper = path.join(
   ptyDestination,
   `node-pty-${process.platform}-${process.arch}`,
@@ -76,14 +67,14 @@ if (existsSync(spawnHelper)) {
 
 await stageRipgrep(path.join(outputDirectory, "bin"));
 
-// The startup migration resolves `<entry dir>/migrations`; keep that rule true
-// for this artifact without an env var.
-await cp(migrationsSource, path.join(outputDirectory, "migrations"), {
+// 启动迁移在本模块附近找 `migrations/`：把这个规则对这个产物也成立，就不用
+// 环境变量。
+await cp(MIGRATIONS_DIRECTORY, path.join(outputDirectory, "migrations"), {
   preserveTimestamps: true,
   recursive: true,
 });
 
-// Without this, Node treats the copied `dist/*.js` files as CommonJS.
+// 没有这个文件，Node 会把复制出来的 `dist/*.js` 当成 CommonJS。
 await writeFile(
   path.join(outputDirectory, "package.json"),
   `${JSON.stringify({ type: "module", private: true }, null, 2)}\n`
