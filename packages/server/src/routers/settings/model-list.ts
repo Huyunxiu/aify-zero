@@ -38,13 +38,31 @@ const KNOWN_MODALITIES = new Set<ModalityName>([
   "pdf",
 ]);
 
+/**
+ * 模态的写法有两种：直接的五个名字，或者 MIME 类型。
+ *
+ * OpenCode 用 `audio/wav`、`image/jpeg`、`application/pdf` 这种写法，
+ * 按第一段收敛成界面用的名字。
+ */
+function toModality(value: unknown): ModalityName | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  if (value === "application/pdf") {
+    return "pdf";
+  }
+  const [family] = value.split("/");
+  return family && KNOWN_MODALITIES.has(family as ModalityName)
+    ? (family as ModalityName)
+    : undefined;
+}
+
 function modalityList(input: unknown): ModalityName[] | undefined {
   if (!Array.isArray(input)) {
     return undefined;
   }
-  const values = input.filter(
-    (item): item is ModalityName =>
-      typeof item === "string" && KNOWN_MODALITIES.has(item as ModalityName)
+  const values = [...new Set(input.map(toModality))].filter(
+    (item): item is ModalityName => item !== undefined
   );
   return values.length > 0 ? values : undefined;
 }
