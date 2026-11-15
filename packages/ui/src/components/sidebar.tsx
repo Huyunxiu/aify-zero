@@ -22,8 +22,9 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
 import * as React from "react";
 
-import { TitleBar } from "../elements/title-bar";
+import { DesktopTitleBar } from "../elements/title-bar";
 import { useLayout } from "../elements/layout-provider";
+import { isDesktopShell } from "../lib/desktop";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -241,14 +242,18 @@ function Sidebar({
         )}
         {...props}
       >
-        <TitleBar className="bg-sidebar" />
-        {/* TitleBar 与本层同级且高度固定，所以本层只能占剩余空间。
+        <DesktopTitleBar className="bg-sidebar" />
+        {/* 有拖拽区时，本层与它同级且高度固定，所以本层只能占剩余空间。
             若用 size-full，内容变高时 min-height: auto 会阻止收缩，本层会
             溢出标题栏的高度，把 footer 顶出视口。 */}
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex min-h-0 w-full flex-1 flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border p-2 pt-0"
+          className={cn(
+            "flex min-h-0 w-full flex-1 flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border p-2",
+            // 有拖拽区时，顶端的留白由它提供，这里不能再叠一层。
+            isDesktopShell && "pt-0"
+          )}
         >
           {children}
         </div>

@@ -110,7 +110,7 @@ export function SidebarRowMenu({
         // 贴着鼠标时向右展开；贴着齿轮时向右收，免得顶出侧边栏。
         align={anchor ? "start" : "end"}
         sideOffset={anchor ? 2 : 4}
-        className="w-auto min-w-50"
+        className="w-auto min-w-64"
       >
         {children}
       </DropdownMenuContent>
