@@ -11,6 +11,7 @@ import {
   isAgentCustomContentPart,
   isAgentFilePart,
   isAgentReasoningPart,
+  isAgentRetryPart,
   isAgentTextPart,
   isAgentToolPart,
 } from "@workspace/agent-client";
@@ -173,6 +174,12 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
             const content: AssistantContent = [];
 
             for (const part of block) {
+              // 重试记录是给读者看的一行，不是模型说的话：它既不进内容，也
+              // 不该落到下面的兜底告警里。
+              if (isAgentRetryPart(part)) {
+                continue;
+              }
+
               if (isAgentTextPart(part)) {
                 content.push({
                   type: "text" as const,
@@ -430,6 +437,12 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
 
             // 压缩 step 和标题 step 都不是 assistant 内容。
             if (step.type !== "assistant") {
+              continue;
+            }
+
+            // 失败的一步不是历史：模型没有说完，记录里也没有它的行。它的文字
+            // 留在屏幕上，但不该被当成模型说过的话。
+            if (step.status === "error") {
               continue;
             }
             for (const part of step.content) {

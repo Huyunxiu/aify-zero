@@ -20,6 +20,7 @@ import type {
   AgentDynamicToolPart,
   AgentPart,
   AgentReasoningPart,
+  AgentRetryPart,
   AgentSessionTitlePart,
   AgentSessionTitleStep,
   AgentStaticToolPart,
@@ -459,10 +460,7 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
     }
 
     for (const step of this.stepsMap.values()) {
-      const { status } = step;
-      if (status === "streaming") {
-        (step as { status: string }).status = outcome;
-      }
+      this.settleStepStatus(step, outcome);
     }
 
     // 模块自己的状态先收尾，它可能顺带用 `ctx.abandonPart` 撤掉 part；
@@ -471,9 +469,55 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
       settle(outcome);
     }
 
-    const open = [...this.openPartMap.values()];
-    this.openPartMap.clear();
-    for (const entry of open) {
+    this.closeOpenParts(this.openPartMap.keys());
+  }
+
+  /**
+   * 把一步就地收尾成失败，不动同一回合的其他步。
+   *
+   * 失败的一步在记录里不留行——没有结果就没有行。但它已经流出的 part 还在
+   * 屏幕上：留着 `streaming` 会得到一个永远转圈的旧行，所以这里只收尾那一步
+   * 打开的 part。
+   *
+   * 和 `settle` 一样，只改仍为 `"streaming"` 的 step。它不负责落库：调用方
+   * 决定这一步要不要写行。
+   */
+  settleStep(turnId: string, stepId: string): void {
+    const step = this.stepsMap.get(stepId);
+    if (step) {
+      this.settleStepStatus(step, "error");
+    }
+
+    const prefix = partRefPrefix(turnId, stepId);
+    this.closeOpenParts(
+      [...this.openPartMap.keys()].filter((key) => key.startsWith(prefix))
+    );
+  }
+
+  /** 把一步改成终态；已经落定的不动。 */
+  private settleStepStatus(
+    step: AgentStep<TOOLS>,
+    outcome: "aborted" | "error"
+  ): void {
+    const { status } = step;
+    if (status === "streaming") {
+      (step as { status: string }).status = outcome;
+    }
+  }
+
+  /** 执行这些 part 打开时登记的收尾动作。 */
+  private closeOpenParts(keys: Iterable<string>): void {
+    const settled: { onSettle: () => void }[] = [];
+    for (const key of keys) {
+      const entry = this.openPartMap.get(key);
+      if (!entry) {
+        continue;
+      }
+      this.openPartMap.delete(key);
+      settled.push(entry);
+    }
+
+    for (const entry of settled) {
       entry.onSettle();
     }
   }
@@ -624,8 +668,15 @@ export class AgentTurnAssembler<TOOLS extends ToolSet> {
 }
 
 /** 带 `\u0000` 的 key 拼不出歧义，因为 id 里不会有这个字符。 */
+const PART_REF_SEPARATOR = "\u0000";
+
 function partRefKey(ref: PartRef): string {
-  return [ref.turnId, ref.stepId, ref.id].join("\u0000");
+  return [ref.turnId, ref.stepId, ref.id].join(PART_REF_SEPARATOR);
+}
+
+/** 同一个 step 的全部 part：前缀匹配就够，id 不会带分隔符。 */
+function partRefPrefix(turnId: string, stepId: string): string {
+  return [turnId, stepId, ""].join(PART_REF_SEPARATOR);
 }
 
 function toolPartKey(
@@ -737,6 +788,24 @@ function stepModule<TOOLS extends ToolSet>() {
         if (step) {
           ctx.insertStep(event.turnId, step);
         }
+      },
+
+      // 重试记录挂在发起它的那一步上。事件总是在 `step.start` 之后到达，所以
+      // 这一步已经存在；不在就说明流错位了，没有地方可以画。
+      "step.retry": (ctx, event) => {
+        const step = ctx.findStep(event.stepId);
+        if (!step || step.type !== "assistant") {
+          return;
+        }
+
+        const part: AgentRetryPart = {
+          type: "retry",
+          index: event.index,
+          maxRetries: event.maxRetries,
+          reason: event.reason,
+          createdAt: event.createdAt,
+        };
+        ctx.appendPart(event.stepId, part);
       },
 
       "step.finish": (ctx, event) => {

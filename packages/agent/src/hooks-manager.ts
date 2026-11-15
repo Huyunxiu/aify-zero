@@ -56,6 +56,13 @@ export type StepStartEvent = {
   stepType: AgentStep<ToolSet>["type"];
   /** 这一步默认使用的模型；补丁可以覆盖它。 */
   model: ModelRef;
+  /**
+   * 这一步是第几次重试，从 1 起。第一次请求没有这个字段。
+   *
+   * 重试是一步，所以钩子照常收到一次 `step_start`；这个字段说明它不是第一
+   * 次发同一个请求。
+   */
+  retryIndex?: number;
 };
 
 /**

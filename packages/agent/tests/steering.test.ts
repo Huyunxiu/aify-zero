@@ -4,6 +4,7 @@ import type {
   AgentTurn,
   InboxMessage,
 } from "@workspace/agent-client";
+import { APICallError } from "ai";
 import type * as AiModule from "ai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -37,6 +38,11 @@ vi.mock(import("ai"), async (importOriginal) => {
     >() as unknown as typeof actual.streamText,
   };
 });
+
+// 重试之间的等待由 `wait-for` 自己的测试盯住；这里不让它花真实时间。
+vi.mock(import("../src/utils/wait-for.js"), () => ({
+  waitFor: () => Promise.resolve(),
+}));
 
 // Tool execution is replaced for the approval case: the real one decides by
 // running the tool, which is not the loop's concern here.
@@ -272,6 +278,35 @@ describe("agent steering", () => {
     expect(
       store.updated.every((entry) => entry.stepIds.size === 0)
     ).toBeTruthy();
+  });
+
+  test("does not hand a steering message to the retry step", async () => {
+    const inbox = new FakeInbox();
+    inbox.messages = [steeringMessage("steer-1", "Try the other path.")];
+    const { agent } = makeAgent(inbox);
+
+    streamTextMock.mockImplementationOnce(() => {
+      throw new APICallError({
+        message: "Too Many Requests",
+        url: "https://example.test/v1/chat",
+        requestBodyValues: {},
+        statusCode: 429,
+        isRetryable: true,
+      });
+    });
+    script(
+      stepResult({ text: "Recovered." }),
+      stepResult({ text: "With steering." })
+    );
+
+    const events = await runTurn(agent, asTurns(userTurn("u1", "Hi.")));
+    const types = events.map((event) => event.type);
+    const retry = types.indexOf("step.retry");
+    const steer = types.indexOf("turn.steer");
+
+    // 引导消息在重试之后才被领：重试是把同一个请求重新请求一次，不夹带新消息。
+    expect(retry).toBeGreaterThan(-1);
+    expect(steer).toBeGreaterThan(retry);
   });
 
   test("ends the turn when no steering message is waiting", async () => {

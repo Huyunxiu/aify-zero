@@ -17,11 +17,15 @@ import type { AgentToolSet } from "../types";
 export function journaledStepTarget(
   event: AgentStreamEvent<AgentToolSet>
 ): { turnId: string; stepId: string } | undefined {
-  if (
-    event.type === "step.finish" ||
-    event.type === "step.metadata" ||
-    event.type === "tool.output-denied"
-  ) {
+  if (event.type === "step.finish") {
+    // 失败的一步不落行：它没有结果，写下来的只会是一段没有结论的半截内容。
+    // 事件本身照发，装配器靠它把这一步行收尾。
+    return event.status === "error"
+      ? undefined
+      : { turnId: event.turnId, stepId: event.stepId };
+  }
+
+  if (event.type === "step.metadata" || event.type === "tool.output-denied") {
     return { turnId: event.turnId, stepId: event.stepId };
   }
 
