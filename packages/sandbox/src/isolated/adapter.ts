@@ -6,15 +6,14 @@
  * 文件系统——这是已知缺口：隔离约束的是命令派生的进程，不是 server 进程自己
  * 的 `node:fs` 调用。
  */
-import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
 
-import { SandboxWriteDeniedError } from "../errors";
+import { SandboxPathDeniedError } from "../errors";
 import { runShell } from "../exec";
 import { createHostSandbox } from "../host/adapter";
 import { defaultShellProgram, shellProgramArgv } from "../host/shell-program";
 import { resolveSandboxPath } from "../paths";
+import { resolveTargetPath } from "../roots";
 import type {
   AcquireSandboxInput,
   DirEntry,
@@ -273,9 +272,9 @@ class IsolatedSandbox implements Sandbox {
     followFinalLink: boolean
   ): Promise<string> {
     const absolute = this.resolvePath(path);
-    const target = await resolveWriteTarget(absolute, followFinalLink);
+    const target = await resolveTargetPath(absolute, followFinalLink);
     if (!isWritablePath(target, this.#roots)) {
-      throw new SandboxWriteDeniedError({
+      throw new SandboxPathDeniedError({
         operation,
         path: absolute,
         roots: this.#roots,
@@ -283,29 +282,4 @@ class IsolatedSandbox implements Sandbox {
     }
     return absolute;
   }
-}
-
-/**
- * 目标路径的真实位置。
- *
- * 写入会跟随符号链接，所以 `followFinalLink` 为 true 时连最终链接一起解析——
- * 工作区里放一个指向外面的链接，不能让它把写入带到外面。删除只看目录项本身：
- * 删链接不会碰到链接的目标，链接指向外面也必须能删。
- */
-async function resolveWriteTarget(
-  absolute: string,
-  followFinalLink: boolean
-): Promise<string> {
-  if (followFinalLink) {
-    try {
-      return await realpath(absolute);
-    } catch {
-      // 目标还不存在，走父目录那条路。
-    }
-  }
-
-  const parent = await realpath(dirname(absolute)).catch(() =>
-    dirname(absolute)
-  );
-  return join(parent, basename(absolute));
 }

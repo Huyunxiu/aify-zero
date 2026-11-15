@@ -9,6 +9,8 @@ import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { isInsideRoots } from "../roots";
+
 /** 平台原生的隔离手段。 */
 export type IsolationBackend = "seatbelt" | "bwrap";
 
@@ -80,19 +82,13 @@ function resolvedForms(path: string | undefined): string[] {
 /**
  * 判断一个绝对路径是否落在可写根里。
  *
- * 逐段比较而不是看前缀字符串：`/work/alpha-sibling` 不该被 `/work/alpha` 放行。
+ * 判断本身与容器适配器共用：两边的越界语义必须一致。
  */
 export function isWritablePath(
   path: string,
   roots: readonly string[]
 ): boolean {
-  return roots.some((root) => {
-    if (path === root) {
-      return true;
-    }
-    const prefix = root.endsWith("/") ? root : `${root}/`;
-    return path.startsWith(prefix);
-  });
+  return isInsideRoots(path, roots);
 }
 
 /** SBPL 字符串里的双引号与反斜杠要转义，否则策略语法会被路径截断。 */
