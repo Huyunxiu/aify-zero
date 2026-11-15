@@ -3,18 +3,12 @@ import type * as AiModule from "ai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 
-import { AgentContext } from "../../src/agent-context.js";
-import { AgentSession } from "../../src/agent-session.js";
-import { Agent } from "../../src/agents.js";
-import type { AgentStore } from "../../src/storage/index.js";
-import { asTurns, userTurn } from "../compaction/fixtures.js";
-import { testModel, testResolveModel } from "../helpers/model-target.js";
-import { testSandbox } from "../helpers/sandbox.js";
 import {
   script,
   stepResult,
   streamTextMock,
 } from "../helpers/stream-harness.js";
+import { FakeStore, makeAgent, runTurn } from "../helpers/turn-agent.js";
 
 // `streamText` is the only model call the loop makes; the scripted steps below
 // keep this test on the turn/step machinery.
@@ -27,119 +21,6 @@ vi.mock(import("ai"), async (importOriginal) => {
     >() as unknown as typeof actual.streamText,
   };
 });
-
-const sessionRow = {
-  id: "session-1",
-  title: "Test session",
-  metadata: {},
-  projectId: null,
-  kind: "main" as const,
-  activeHeadId: null,
-  activeStreamId: null,
-  status: "idle" as const,
-  forkedFromSessionId: null,
-  forkedFromMessageId: null,
-  parentSessionId: null,
-  parentToolCallId: null,
-  createdAt: new Date(0),
-  updatedAt: new Date(0),
-};
-
-/** 只实现 turn 循环会碰到的写入，并把它们记下来供断言。 */
-class FakeStore {
-  readonly begun: unknown[] = [];
-  readonly savedSteps: { stepId: string; seq: number; status: string }[] = [];
-  readonly updated: { id: string; stepIds: ReadonlySet<string> }[] = [];
-
-  getSessionById(): Promise<typeof sessionRow> {
-    return Promise.resolve(sessionRow);
-  }
-
-  saveTurn(): Promise<number> {
-    return Promise.resolve(1);
-  }
-
-  listInboxMessages(): Promise<never[]> {
-    return Promise.resolve([]);
-  }
-
-  beginTurn({ turn }: { turn: unknown }): Promise<void> {
-    this.begun.push(turn);
-    return Promise.resolve();
-  }
-
-  saveStep(step: {
-    stepId: string;
-    seq: number;
-    status: string;
-  }): Promise<number> {
-    this.savedSteps.push(step);
-    return Promise.resolve(1);
-  }
-
-  updateTurn(
-    _sessionId: string,
-    id: string,
-    _turn: unknown,
-    { stepIds }: { stepIds?: ReadonlySet<string> } = {}
-  ): Promise<number> {
-    this.updated.push({ id, stepIds: stepIds ?? new Set() });
-    return Promise.resolve(1);
-  }
-}
-
-const asStore = (store: FakeStore): AgentStore =>
-  store as unknown as AgentStore;
-
-const makeAgent = (store: FakeStore, tools = {}): Agent =>
-  new Agent({
-    name: "main",
-    sessionId: "session-1",
-    session: new AgentSession({ turns: [] }),
-    store: asStore(store),
-    tools,
-    context: new AgentContext({
-      sandbox: testSandbox("/tmp", "/tmp/sessions/session-1"),
-
-      sessionId: "session-1",
-      projectDirs: ["/tmp"],
-      sessionDir: "/tmp/sessions/session-1",
-      model: testModel(),
-    }),
-    model: testModel(),
-    resolveModel: testResolveModel,
-  });
-
-const readAll = async (stream: ReadableStream): Promise<string[]> => {
-  const types: string[] = [];
-  const reader = stream.getReader();
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    types.push((value as { type: string }).type);
-  }
-
-  return types;
-};
-
-const runTurn = async (agent: Agent, prompt: string) => {
-  const finished: string[] = [];
-  const stream = await agent.stream({
-    turns: asTurns(userTurn("u1", prompt)),
-    model: testModel(),
-    streamId: "stream-1",
-    signal: { type: "turn" },
-    onFinish: (status) => {
-      finished.push(status);
-      return Promise.resolve();
-    },
-  });
-
-  return { events: await readAll(stream), finished };
-};
 
 const echoTool = () =>
   tool({
@@ -156,7 +37,7 @@ describe("turn stream characterization", () => {
 
   test("a text-only step ends the turn and is journaled once", async () => {
     const store = new FakeStore();
-    const agent = makeAgent(store);
+    const { agent } = makeAgent(store);
 
     script(stepResult({ text: "Hello." }));
 
@@ -185,7 +66,8 @@ describe("turn stream characterization", () => {
 
   test("a resolved tool call runs another step before the turn ends", async () => {
     const store = new FakeStore();
-    const agent = makeAgent(store, { echo: echoTool() });
+    const { agent } = makeAgent(store);
+    agent.registerTool("echo", echoTool());
 
     script(
       stepResult({
@@ -232,7 +114,7 @@ describe("turn stream characterization", () => {
     expect(finished).toStrictEqual(["done"]);
   });
   test("declares only the tools that are not deferred", async () => {
-    const agent = makeAgent(new FakeStore());
+    const { agent } = makeAgent(new FakeStore());
     agent.registerTool("host-tool", echoTool());
     agent.registerTool("linear__list_issues", echoTool(), "deferred");
 

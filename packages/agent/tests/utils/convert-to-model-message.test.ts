@@ -1,5 +1,5 @@
 import type { AgentTurn } from "@workspace/agent-client";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import type { AgentToolSet } from "../../src/types.js";
 import { convertAgentTurnToModalMessage } from "../../src/utils/convert-to-model-message.js";
@@ -130,5 +130,39 @@ describe(convertAgentTurnToModalMessage, () => {
       role: "assistant",
       content: [{ type: "text", text: "after" }],
     });
+  });
+
+  test("leaves the retry record out of the model's history", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const messages = await convertAgentTurnToModalMessage([
+      assistantTurn("turn-1", [
+        {
+          id: "step-1",
+          type: "assistant",
+          model: "test-model",
+          createdAt: 1,
+          status: "done",
+          content: [
+            {
+              type: "retry",
+              index: 1,
+              maxRetries: 5,
+              reason: "429 Too Many Requests",
+              createdAt: 2,
+            },
+            { type: "text", text: "recovered", state: "done", createdAt: 3 },
+          ],
+        },
+      ]),
+    ]);
+
+    // 记录只是给读者看的一行：它不进历史，也不该落到兜底告警里。
+    expect(messages).toStrictEqual([
+      { role: "assistant", content: [{ type: "text", text: "recovered" }] },
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+
+    warn.mockRestore();
   });
 });

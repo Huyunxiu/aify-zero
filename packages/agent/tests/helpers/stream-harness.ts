@@ -19,34 +19,55 @@ export const usage = (inputTokens = 10) => ({
   totalTokens: inputTokens + 5,
 });
 
-/** 一步的假结果：空的流，加上循环会读的 finalStep 与 responseMessages。 */
+/**
+ * 一步的假结果：流，加上循环会读的 finalStep 与 responseMessages。
+ *
+ * 给了 `error` 就是失败的一步：流里先给出一段文字再报这个错，`finalStep` 以
+ * `finishReason: "error"` 结束，正是 `step-runner` 判失败的那条路。
+ */
 export const stepResult = (options: {
   text?: string;
   toolCalls?: unknown[];
   responseMessages?: unknown[];
-}) => ({
-  stream: new ReadableStream({
-    start(controller) {
-      controller.close();
-    },
-  }),
-  finalStep: Promise.resolve({
-    finishReason: "stop",
-    rawFinishReason: "stop",
-    usage: usage(),
-    toolCalls: options.toolCalls ?? [],
-    providerMetadata: undefined,
-    performance: { toolExecutionMs: {} },
-  }),
-  responseMessages: Promise.resolve(
-    options.responseMessages ?? [
-      {
-        role: "assistant",
-        content: [{ type: "text", text: options.text ?? "" }],
+  error?: unknown;
+}) => {
+  const failed = options.error !== undefined;
+
+  return {
+    stream: new ReadableStream({
+      start(controller) {
+        if (failed) {
+          controller.enqueue({ type: "text-start", id: "text-1" });
+          controller.enqueue({
+            type: "text-delta",
+            id: "text-1",
+            text: options.text ?? "",
+          });
+          controller.enqueue({ type: "error", error: options.error });
+        }
+        controller.close();
       },
-    ]
-  ),
-});
+    }),
+    finalStep: Promise.resolve({
+      finishReason: failed ? "error" : "stop",
+      rawFinishReason: failed ? "error" : "stop",
+      usage: usage(),
+      toolCalls: options.toolCalls ?? [],
+      providerMetadata: undefined,
+      performance: { toolExecutionMs: {} },
+    }),
+    responseMessages: Promise.resolve(
+      failed
+        ? []
+        : (options.responseMessages ?? [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: options.text ?? "" }],
+            },
+          ])
+    ),
+  };
+};
 
 /** 按顺序把每一步的结果交给下一次 `streamText` 调用。 */
 export const script = (...steps: ReturnType<typeof stepResult>[]): void => {

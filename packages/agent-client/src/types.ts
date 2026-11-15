@@ -230,6 +230,16 @@ export type TextStreamStepMetadataEvent = TextStreamEventBase & {
   metadata: StepMetadata;
 };
 /**
+ * 这一步要重试：它在等退避，等完就重新请求同一个。
+ *
+ * 事件在这一步的 `step.start` 之后、请求发出之前到达。等待期间屏幕上就要
+ * 有这一行，所以它不能等到 `step.finish` 才发。
+ */
+type TextStreamRetryEvent = TextStreamEventBase &
+  AgentRetryAttempt & {
+    type: "step.retry";
+  };
+/**
  * turn 级事件的地址：它们没有 step 可指，只带自己的 `turnId`。
  */
 type TextStreamTurnEventBase = {
@@ -328,6 +338,7 @@ export type AgentStreamEvent<TOOLS extends ToolSet> =
   | TextStreamStartStepEvent
   | TextStreamFinishStepEvent
   | TextStreamStepMetadataEvent
+  | TextStreamRetryEvent
   | TextStreamSteerEvent
   | TextStreamStartTurnEvent
   | TextStreamFinishTurnEvent
@@ -387,6 +398,37 @@ export function isAgentCompactionPart<TOOLS extends ToolSet>(
   part: AgentPart<TOOLS>
 ): part is AgentCompactionPart {
   return part.type === "compaction";
+}
+
+/**
+ * 一次重试的计数与原因：事件、part、内核的输入共用这一份。
+ *
+ * 它不带时间，也不带等待：等待只在做了等待的那一层出现，记录里不重复。
+ */
+export type AgentRetryAttempt = {
+  /** 第几次重试，从 1 起。第一次请求不算重试。 */
+  index: number;
+  /** 一个回合允许的重试次数，也就是行上分母的数。 */
+  maxRetries: number;
+  /** 上一次失败的首行，过长截断。 */
+  reason: string;
+};
+
+/**
+ * 一次重试的记录。
+ *
+ * 一步失败之后，内核在同一个回合里再开一步、重新请求同一个。这一步一开始
+ * 就带上这个 part，所以等待期间屏幕上已经有一行可读。它不是模型内容，投影
+ * 显式跳过它。
+ */
+export type AgentRetryPart = AgentRetryAttempt & {
+  type: "retry";
+  createdAt: number;
+};
+export function isAgentRetryPart<TOOLS extends ToolSet>(
+  part: AgentPart<TOOLS>
+): part is AgentRetryPart {
+  return part.type === "retry";
 }
 
 /**
@@ -787,6 +829,7 @@ export type AgentAssistantPart<TOOLS extends ToolSet> =
   | AgentReasoningPart
   | AgentStaticToolPart<TOOLS>
   | AgentDynamicToolPart
+  | AgentRetryPart
   | AgentSessionTitlePart;
 /**
  * Every part a step can hold, whichever side produced it.

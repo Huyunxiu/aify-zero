@@ -20,6 +20,7 @@ import {
   FilePenIcon,
   ListChecksIcon,
   Minimize2Icon,
+  RotateCwIcon,
   WrenchIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -454,6 +455,33 @@ export const AssistantMessage = ({
                       <FramePanel>
                         <MessageResponse controls={FRAME_CONTROLS}>
                           {record?.summary ?? ""}
+                        </MessageResponse>
+                      </FramePanel>
+                    </Frame>
+                  </AgentActivityStep>
+                );
+              }
+
+              if (part.type === "retry") {
+                // 一次重试已经发生：失败的那一步没有留下记录，留下来的是
+                // 这一次。它跟着答复一起进历史，答案慢了才有解释。
+                return (
+                  <AgentActivityStep
+                    key={i}
+                    path={`${i}`}
+                    icon={RotateCwIcon}
+                    label={getStepLabel(
+                      "Retry",
+                      `${part.index}/${part.maxRetries}`
+                    )}
+                    status={status}
+                    summary={part.reason}
+                    duration={duration}
+                  >
+                    <Frame variant="default" overflowBehavior="scroll">
+                      <FramePanel>
+                        <MessageResponse controls={FRAME_CONTROLS}>
+                          {part.reason}
                         </MessageResponse>
                       </FramePanel>
                     </Frame>

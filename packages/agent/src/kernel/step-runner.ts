@@ -1,5 +1,6 @@
 import { findToolPartByToolCallId } from "@workspace/agent-client";
 import type {
+  AgentRetryAttempt,
   AgentRuntimeContext,
   AgentStep,
   AgentStreamEvent,
@@ -36,6 +37,7 @@ import {
 } from "../tools/execution";
 import type { AgentToolSet, ToolExposure } from "../types";
 import { toAgentEvent } from "../utils/to-agent-stream-event";
+import { waitFor } from "../utils/wait-for";
 import type { ModelGateway } from "./model-gateway";
 import type { TranscriptJournal } from "./transcript-journal";
 
@@ -74,13 +76,36 @@ export type StepOutcome =
   | { readonly ok: true; readonly result: AgentStepResult }
   /** The turn was aborted: nothing failed, the caller stopped it. */
   | { readonly ok: false; readonly reason: "aborted" }
-  /** The model call failed, or the model ended the step with an error. */
-  | { readonly ok: false; readonly reason: "error"; readonly error: unknown };
+  /**
+   * The model call failed, or the model ended the step with an error.
+   *
+   * `overflowRecovered` 说明这次失败是上下文溢出、压缩已经把它修好了。循环
+   * 读这个字段决定要不要重试，而不是读错误文案。
+   */
+  | {
+      readonly ok: false;
+      readonly reason: "error";
+      readonly error: unknown;
+      readonly overflowRecovered?: boolean;
+    };
+
+/**
+ * 这一步带着的退避信息。
+ *
+ * 计数与原因随事件进记录；`delayMs` 只留在这里：它描述这一次等待，不是记录
+ * 的一部分。
+ */
+export type StepRetryInput = AgentRetryAttempt & {
+  /** 发出这次请求之前要等多久。 */
+  readonly delayMs: number;
+};
 
 export type StepInput = {
   readonly turnId: string;
   readonly stepId: string;
   readonly stepType: AgentStep<AgentToolSet>["type"];
+  /** 这一步是重试时才存在。 */
+  readonly retry?: StepRetryInput;
 };
 
 export interface StepRunnerDeps {
@@ -149,6 +174,7 @@ export class StepRunner {
       stepId: input.stepId,
       stepType: input.stepType,
       model: context.model,
+      ...(input.retry ? { retryIndex: input.retry.index } : {}),
     };
 
     // 补丁只作用于这一步：模型和系统提示都不写回 context 与 turn 的默认值，
@@ -216,6 +242,28 @@ export class StepRunner {
       stepId,
       createdAt: Date.now(),
     });
+
+    // 重试记录先落在这一步上，然后才等：等待期间屏幕上就要有这一行，否则
+    // 那几秒只是一段没有任何解释的空白。
+    if (input.retry) {
+      await context.controller?.write({
+        type: "step.retry",
+        turnId,
+        stepId,
+        index: input.retry.index,
+        maxRetries: input.retry.maxRetries,
+        reason: input.retry.reason,
+        createdAt: Date.now(),
+      });
+
+      await waitFor(input.retry.delayMs, context.abortSignal);
+
+      // 等待被停掉和等待走完走同一条路：这里再查一次，停了就当作这一步没有
+      // 发生，回合照常收尾。
+      if (context.abortSignal?.aborted) {
+        return { ok: false, reason: "aborted" };
+      }
+    }
 
     // 处理工具调用
     // A stream that carries approvals is a resumption: a previous turn's step
@@ -352,6 +400,10 @@ export class StepRunner {
         // them first, so they are not declared on every step.
         tools: stripToolExecution(declaredTools(tools, toolExposure)),
         stopWhen: isStepCount(1),
+        // 重试只在这一层发生：关掉 SDK 自己的两处重试，否则一次失败会被暗中
+        // 重试，请求次数和记录都对不上。判定、退避和预算都在回合循环里。
+        maxRetries: 0,
+        streamRetries: 0,
         reasoning: context.modelEffort
           ? MODEL_EFFORT_TO_REASONING[context.modelEffort]
           : undefined,
@@ -427,6 +479,11 @@ export class StepRunner {
       // The step did end, but a step the model ended with `error` has no calls
       // worth running and cannot be reported as a whole turn either.
       if (finishReason === "error") {
+        const failure = streamError ?? new Error("The model stream failed.");
+
+        // 这一步以失败收尾，就记成失败：`status: "done"` 会让它落行，而失败
+        // 的一步没有结果，记录里不该有它。`step.finish` 仍然发，因为装配器要
+        // 靠它把这一步行收尾。
         await context.controller?.write({
           stepId,
           turnId,
@@ -436,14 +493,12 @@ export class StepRunner {
           finishReason: step.finishReason,
           rawFinishReason: step.rawFinishReason,
           providerMetadata: step.providerMetadata,
-          status: "done",
+          status: "error",
+          error: failure,
           metadata: { performance: step.performance },
         });
 
-        return await this.#stepFailure(
-          streamError ?? new Error("The model stream failed."),
-          turnId
-        );
+        return await this.#stepFailure(failure, turnId);
       }
 
       // The calls this loop owns. A provider-executed call arrives with its
@@ -579,12 +634,15 @@ export class StepRunner {
     }
 
     if (await this.#deps.handleOverflow(error, turnId)) {
+      // 压缩修好了历史，但这一步还是失败了：把这件事说清楚，而不是让错误
+      // 文案去指挥人重试。要不要重试由回合循环按预算决定。
       return {
         ok: false,
         reason: "error",
         error: new Error(
-          "The model's context window was exceeded. The history has been compacted; retry the request."
+          "The model's context window was exceeded. The history has been compacted."
         ),
+        overflowRecovered: true,
       };
     }
 

@@ -10,7 +10,13 @@ import type { AgentToolSet } from "../types";
 import { convertStepToModelMessages } from "../utils/convert-to-model-message";
 import { generateStepId } from "../utils/id-util";
 import type { CompactionController } from "./compaction-controller";
-import type { StepRunner } from "./step-runner";
+import {
+  delayForRetry,
+  MAX_RETRIES_PER_TURN,
+  retryReason,
+  shouldRetry,
+} from "./retry-policy";
+import type { StepRetryInput, StepRunner } from "./step-runner";
 import type { TranscriptJournal } from "./transcript-journal";
 
 export type TurnInput = {
@@ -95,8 +101,14 @@ export class TurnRunner {
     // 插进当前 turn。
     let steeringAllowed = false;
     let firstStep = true;
+    /** 这个回合已经用掉的重试次数。预算是回合级的，溢出也共用它。 */
+    let retriesUsed = 0;
+    /** 下一步是重试时就带着退避信息；没有它就是普通一步。 */
+    let retry: StepRetryInput | undefined;
     while (true) {
-      if (!firstStep) {
+      // 重试是把同一份历史重新请求一次：不压缩、不领引导消息。两者都会改掉要
+      // 发出去的东西，那样就不再是同一个请求了。
+      if (!firstStep && !retry) {
         await compaction.maybeCompact({
           trigger: "pressure",
           mode: "end",
@@ -108,6 +120,7 @@ export class TurnRunner {
       // 但如果这里领到了引导消息，ending 被清掉，循环继续跑下一步。
       if (
         !firstStep &&
+        !retry &&
         steeringAllowed &&
         (await this.#applySteering(turnId))
       ) {
@@ -121,23 +134,50 @@ export class TurnRunner {
       firstStep = false;
 
       const stepId = generateStepId();
+      const pendingRetry = retry;
+      retry = undefined;
 
       const outcome = await stepRunner.run({
         turnId,
         stepId,
         stepType: "assistant",
+        ...(pendingRetry ? { retry: pendingRetry } : {}),
       });
 
       if (!outcome.ok) {
         if (outcome.reason === "aborted") {
           status = { status: "aborted" };
-        } else {
-          status = { status: "error", error: outcome.error };
-          status.error =
-            status.error instanceof APICallError
-              ? status.error.responseBody
-              : getErrorMessage(status.error);
+          break;
         }
+
+        // 失败先过一遍预算和判定。还要再试就留在同一个回合里开下一步，让
+        // 那一步去等、去重试；回合状态不翻成 error。
+        if (
+          shouldRetry({
+            error: outcome.error,
+            overflowRecovered: outcome.overflowRecovered,
+            retriesUsed,
+          })
+        ) {
+          // 失败的那一步不落行，但它的 part 已经画出来了：就地收尾，别让
+          // 旧行永远停在 streaming。
+          session.assembler?.settleStep(turnId, stepId);
+
+          retriesUsed += 1;
+          retry = {
+            index: retriesUsed,
+            maxRetries: MAX_RETRIES_PER_TURN,
+            reason: retryReason(outcome.error),
+            delayMs: delayForRetry(retriesUsed, outcome.error),
+          };
+          continue;
+        }
+
+        status = { status: "error", error: outcome.error };
+        status.error =
+          status.error instanceof APICallError
+            ? status.error.responseBody
+            : getErrorMessage(status.error);
         break;
       }
 
