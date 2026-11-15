@@ -45,6 +45,9 @@ const provider = await startFakeProvider({
       }
     : {}),
   port,
+  log: (message) => {
+    process.stdout.write(`[fake] ${message}\n`);
+  },
 });
 
 const parts = [`[fake-provider] baseURL=${provider.baseURL}`];

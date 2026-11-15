@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { Recorder, ReplayBook } from "./record.js";
 import { RuleBook } from "./rules.js";
 import { loadScenario } from "./scenario.js";
-import type { Scenario } from "./scenario.js";
+import type { Rule, Scenario } from "./scenario.js";
 import { writeChatCompletions } from "./writers/chat-completions.js";
 
 /** 一次进来的请求里，场景与断言关心的部分。 */
@@ -41,6 +41,12 @@ export type FakeProviderOptions = {
   readonly record?: FakeProviderRecordOptions;
   /** 端口；缺省是 0，由系统挑一个。 */
   readonly port?: number;
+  /**
+   * 每处理一次请求喊一声。
+   *
+   * 手动验的时候，人最想知道的是「应用到底发了几次、每次拿到什么」；测试不传它。
+   */
+  readonly log?: (message: string) => void;
 };
 
 /**
@@ -124,6 +130,9 @@ export async function startFakeProvider(
       ...(typeof parsed.model === "string" ? { model: parsed.model } : {}),
     };
     requests.push(seen);
+    options.log?.(
+      `${seen.method} ${seen.path} stream=${seen.stream} model=${seen.model ?? "-"}`
+    );
 
     if (options.record) {
       await proxy({ request, response, body, seen, url });
@@ -131,6 +140,7 @@ export async function startFakeProvider(
     }
 
     const rule = book?.take({ stream: seen.stream, model: seen.model });
+    options.log?.(describeRule(rule));
     await writeChatCompletions({
       response,
       rule,
@@ -208,6 +218,30 @@ export async function startFakeProvider(
     },
   };
 }
+
+/** 一条规则在终端里怎么念；场景用完时也要说清楚。 */
+const describeRule = (rule: Rule | undefined): string => {
+  if (!rule) {
+    return "-> no rule left";
+  }
+  if (rule.fail !== undefined) {
+    return `-> fail ${rule.fail}`;
+  }
+  if (rule.failMidStream) {
+    return "-> fail mid-stream";
+  }
+  if (rule.replay !== undefined) {
+    return `-> replay ${rule.replay}`;
+  }
+  if (rule.reset) {
+    return "-> reset";
+  }
+  if (rule.corrupt) {
+    return "-> corrupt";
+  }
+
+  return "-> answer";
+};
 
 const readBody = async (
   request: IncomingMessage
