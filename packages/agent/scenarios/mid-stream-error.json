@@ -1,0 +1,14 @@
+{
+  "name": "mid-stream-error",
+  "models": ["fake-fast"],
+  "rules": [
+    { "when": { "stream": false }, "answer": "假标题" },
+    {
+      "failMidStream": {
+        "text": "先给你半句，",
+        "error": { "message": "overloaded" }
+      }
+    },
+    { "answer": "这次说完了。" }
+  ]
+}

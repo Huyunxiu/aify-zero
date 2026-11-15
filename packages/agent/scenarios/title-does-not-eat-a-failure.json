@@ -1,0 +1,9 @@
+{
+  "name": "title-does-not-eat-a-failure",
+  "models": ["fake-fast"],
+  "rules": [
+    { "when": { "stream": false }, "answer": "假标题" },
+    { "fail": 503 },
+    { "answer": "第二次就成功了。" }
+  ]
+}

@@ -1,0 +1,173 @@
+import type { ServerResponse } from "node:http";
+
+import type { ReplayBook } from "../record.js";
+import type { Rule } from "../scenario.js";
+
+const wait = async (ms: number | undefined): Promise<void> => {
+  if (ms === undefined || ms <= 0) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+};
+
+/** 一个 SSE 数据块，形状按 chat completions。 */
+const chunk = (
+  model: string,
+  delta: Record<string, unknown>,
+  finishReason: string | null = null
+): string =>
+  `data: ${JSON.stringify({
+    id: "chatcmpl-fake",
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{ index: 0, delta, finish_reason: finishReason }],
+  })}\n\n`;
+
+const startStream = (response: ServerResponse): void => {
+  response.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+};
+
+const failureMessage = (status: number): string => {
+  switch (status) {
+    case 401: {
+      return "Incorrect API key provided";
+    }
+    case 429: {
+      return "Rate limit reached for requests";
+    }
+    case 503: {
+      return "Service Unavailable";
+    }
+    default: {
+      return `fake provider returned ${status}`;
+    }
+  }
+};
+
+/** 响应头里不该跟着回放的头：改由当前连接决定。 */
+const HOP_BY_HOP = new Set([
+  "connection",
+  "content-length",
+  "keep-alive",
+  "transfer-encoding",
+]);
+
+/**
+ * 把一条规则写到 chat completions 的线上。
+ *
+ * 场景说意图（失败、慢一点、断掉、说这段话），这个函数说这种协议怎么表达它。
+ * 加一种协议就写一个同形状的写手，场景不用改。
+ */
+export async function writeChatCompletions(options: {
+  response: ServerResponse;
+  rule: Rule | undefined;
+  model: string;
+  replay: ReplayBook;
+}): Promise<void> {
+  const { response, rule, model, replay } = options;
+
+  if (!rule) {
+    response.writeHead(500, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        error: { message: "fake provider: the scenario ran out of rules" },
+      })
+    );
+    return;
+  }
+
+  if (rule.fail !== undefined) {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (rule.retryAfterMs !== undefined) {
+      headers["retry-after-ms"] = String(rule.retryAfterMs);
+    }
+    if (rule.retryAfter !== undefined) {
+      headers["retry-after"] = String(rule.retryAfter);
+    }
+
+    response.writeHead(rule.fail, headers);
+    response.end(
+      JSON.stringify({
+        error: {
+          message: failureMessage(rule.fail),
+          type: "fake_provider_error",
+          code: rule.fail,
+        },
+      })
+    );
+    return;
+  }
+
+  if (rule.reset) {
+    // 直接断连接：客户端看到的是网络错误，不是一条 HTTP 响应。
+    response.socket?.destroy();
+    return;
+  }
+
+  if (rule.corrupt) {
+    startStream(response);
+    // 半截 JSON：解析器会报错，而这条路径的错误不是供应商错误。
+    response.end(
+      'data: {"id":"chatcmpl-fake","object":"chat.completion.chunk"\n\n'
+    );
+    return;
+  }
+
+  if (rule.replay !== undefined) {
+    const entry = await replay.take(rule.replay);
+    if (!entry) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            message: `fake provider: recording ${rule.replay} is used up`,
+          },
+        })
+      );
+      return;
+    }
+
+    const headers = Object.fromEntries(
+      Object.entries(entry.response.headers).filter(
+        ([name]) => !HOP_BY_HOP.has(name.toLowerCase())
+      )
+    );
+    response.writeHead(entry.response.status, headers);
+    response.end(entry.response.body);
+    return;
+  }
+
+  startStream(response);
+  await wait(rule.slow?.firstChunkMs);
+
+  if (rule.failMidStream) {
+    response.write(chunk(model, { role: "assistant" }));
+    for (const piece of rule.failMidStream.text ?? "") {
+      await wait(rule.slow?.chunkMs);
+      response.write(chunk(model, { content: piece }));
+    }
+    // 这个形状会被 `@ai-sdk/openai-compatible` 认成供应商错误，再由 `streamText`
+    // 归一成 `StreamProviderError`，按 statusCode 与消息文本分类。
+    const error = rule.failMidStream.error ?? { message: "overloaded" };
+    response.end(`data: ${JSON.stringify({ error })}\n\n`);
+    return;
+  }
+
+  response.write(chunk(model, { role: "assistant" }));
+  for (const piece of rule.answer ?? "") {
+    await wait(rule.slow?.chunkMs);
+    response.write(chunk(model, { content: piece }));
+  }
+  response.write(chunk(model, {}, "stop"));
+  response.end("data: [DONE]\n\n");
+}
