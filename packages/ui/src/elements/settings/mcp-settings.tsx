@@ -51,12 +51,6 @@ import {
 } from "@workspace/ui/components/select";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { Switch } from "@workspace/ui/components/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableRow,
-} from "@workspace/ui/components/table";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { client } from "@workspace/ui/lib/orpc";
 import { cn } from "@workspace/ui/lib/utils";
@@ -69,10 +63,19 @@ import {
   PlugZap,
   Trash,
 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { SettingFrame } from "./setting-frame";
+import {
+  SettingGroup,
+  SettingGroupHeader,
+  SettingGroupTitle,
+  SettingItem,
+  SettingItemActions,
+  SettingItemContent,
+  SettingItemTitle,
+  SettingSeparator,
+} from "./setting-frame";
 
 type McpServerRow = NonNullable<
   Awaited<ReturnType<typeof client.setting.get>>["mcpServers"]
@@ -368,191 +371,180 @@ export function McpSettings() {
 
   return (
     <div className="mx-auto flex w-2xl flex-col">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-bold text-xl">{t("settings.mcp.title")}</h1>
+      <SettingGroupHeader className="flex-row items-center justify-between">
+        <SettingGroupTitle>{t("settings.mcp.title")}</SettingGroupTitle>
         <Button size="sm" onClick={openCreate}>
           <PlusIcon />
           {t("settings.mcp.addServer")}
         </Button>
-      </div>
+      </SettingGroupHeader>
 
-      <SettingFrame>
-        <Table>
-          <TableBody>
-            {servers.length === 0 ? (
-              <TableRow>
-                <TableCell className="h-24 text-center text-muted-foreground">
-                  {t("settings.mcp.empty")}
-                </TableCell>
-              </TableRow>
-            ) : (
-              servers.map((server) => {
-                const status = statusOf(server.id);
-                const label: McpServerStatus = status?.status ?? "idle";
-                const isOAuth = mcpAuthType(server) === "oauth";
+      <SettingGroup>
+        {servers.length === 0 ? (
+          <div className="flex h-24 items-center justify-center text-muted-foreground text-sm">
+            {t("settings.mcp.empty")}
+          </div>
+        ) : (
+          servers.map((server, index) => {
+            const status = statusOf(server.id);
+            const label: McpServerStatus = status?.status ?? "idle";
+            const isOAuth = mcpAuthType(server) === "oauth";
 
-                return (
-                  <TableRow key={server.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "size-2 rounded-full",
-                            STATUS_DOT[label] ?? STATUS_DOT.idle
-                          )}
-                        />
-                        <span className="font-medium">{server.name}</span>
-                        <Badge variant="secondary">
-                          {server.transport.type}
-                        </Badge>
-                      </div>
-                      {status?.error ? (
-                        <p className="mt-1 text-destructive text-xs">
-                          {status.error}
-                        </p>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      <div className="flex items-center gap-2">
-                        {status?.toolCount ? (
-                          <span>
-                            {t("settings.mcp.toolCount", {
-                              count: status.toolCount,
-                            })}
-                            {mcpExposureType(server) === "direct" &&
-                            status.toolCount > MANY_RESIDENT_TOOLS ? (
-                              <span className="ml-2 text-amber-600">
-                                {t("settings.mcp.manyTools")}
-                              </span>
-                            ) : null}
-                          </span>
-                        ) : null}
-
-                        {isOAuth ? (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  className="h-7 gap-1 px-2 text-muted-foreground"
-                                  size="sm"
-                                  variant="ghost"
-                                />
-                              }
-                            >
-                              {status?.toolCount
-                                ? t("settings.mcp.authMenu")
-                                : t(STATUS_LABEL_KEY[label])}
-                              <ChevronDown />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="start"
-                              className="w-auto min-w-44"
-                            >
-                              <DropdownMenuItem
-                                disabled={authorizeMutation.isPending}
-                                onClick={() => {
-                                  void authorizeMutation.mutateAsync(server.id);
-                                }}
-                              >
-                                <KeyRound />
-                                {label === "needs-auth" || !status?.authorized
-                                  ? t("settings.mcp.authorize")
-                                  : t("settings.mcp.reauthorize")}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={
-                                  !status?.authorized ||
-                                  revokeMutation.isPending
-                                }
-                                onClick={() => {
-                                  void revokeMutation.mutateAsync(server.id);
-                                }}
-                              >
-                                <LogOut />
-                                {t("settings.mcp.revoke")}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        ) : status?.toolCount ? null : (
-                          t(STATUS_LABEL_KEY[label])
+            return (
+              <Fragment key={server.id}>
+                {index > 0 ? <SettingSeparator /> : null}
+                <SettingItem variant="muted">
+                  <SettingItemContent>
+                    <SettingItemTitle>
+                      <span
+                        className={cn(
+                          "size-2 rounded-full",
+                          STATUS_DOT[label] ?? STATUS_DOT.idle
                         )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        <Switch
-                          checked={server.enabled ?? true}
-                          disabled={saveMutation.isPending}
-                          onCheckedChange={(checked) => {
-                            void saveMutation.mutateAsync(
-                              servers.map((row) =>
-                                row.id === server.id
-                                  ? { ...row, enabled: checked }
-                                  : row
-                              )
-                            );
-                          }}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={saveMutation.isPending}
-                          onClick={() => {
-                            openEdit(server);
-                          }}
-                        >
-                          <Pencil />
-                        </Button>
-                        <AlertDialog
-                          open={deleteTarget === server.id}
-                          onOpenChange={(open) => {
-                            setDeleteTarget(open ? server.id : null);
-                          }}
-                        >
-                          <AlertDialogTrigger
+                      />
+                      <span className="font-medium">{server.name}</span>
+                      <Badge variant="secondary">{server.transport.type}</Badge>
+                    </SettingItemTitle>
+                    <div className="flex items-center gap-2 text-muted-foreground text-xs">
+                      {status?.toolCount ? (
+                        <span>
+                          {t("settings.mcp.toolCount", {
+                            count: status.toolCount,
+                          })}
+                          {mcpExposureType(server) === "direct" &&
+                          status.toolCount > MANY_RESIDENT_TOOLS ? (
+                            <span className="ml-2 text-amber-600">
+                              {t("settings.mcp.manyTools")}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : null}
+
+                      {isOAuth ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
                             render={
-                              <Button variant="ghost" size="icon-sm">
-                                <Trash />
-                              </Button>
+                              <Button
+                                className="h-7 gap-1 px-2 text-muted-foreground"
+                                size="sm"
+                                variant="ghost"
+                              />
                             }
-                          />
-                          <AlertDialogContent size="sm">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                {t("settings.mcp.deleteConfirm")}
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {t("settings.mcp.deleteDescription", {
-                                  name: server.name,
-                                })}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>
-                                {t("settings.mcp.cancel")}
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                variant="destructive"
-                                loading={saveMutation.isPending}
-                                disabled={saveMutation.isPending}
-                                onClick={() => {
-                                  void removeServer(server.id);
-                                }}
-                              >
-                                {t("settings.mcp.delete")}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </SettingFrame>
+                          >
+                            {status?.toolCount
+                              ? t("settings.mcp.authMenu")
+                              : t(STATUS_LABEL_KEY[label])}
+                            <ChevronDown />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="start"
+                            className="w-auto min-w-44"
+                          >
+                            <DropdownMenuItem
+                              disabled={authorizeMutation.isPending}
+                              onClick={() => {
+                                void authorizeMutation.mutateAsync(server.id);
+                              }}
+                            >
+                              <KeyRound />
+                              {label === "needs-auth" || !status?.authorized
+                                ? t("settings.mcp.authorize")
+                                : t("settings.mcp.reauthorize")}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              disabled={
+                                !status?.authorized || revokeMutation.isPending
+                              }
+                              onClick={() => {
+                                void revokeMutation.mutateAsync(server.id);
+                              }}
+                            >
+                              <LogOut />
+                              {t("settings.mcp.revoke")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : status?.toolCount ? null : (
+                        <span>{t(STATUS_LABEL_KEY[label])}</span>
+                      )}
+                    </div>
+                    {status?.error ? (
+                      <p className="text-destructive text-xs">{status.error}</p>
+                    ) : null}
+                  </SettingItemContent>
+                  <SettingItemActions>
+                    <Switch
+                      aria-label={`${t("settings.mcp.enabled")} ${server.name}`}
+                      checked={server.enabled ?? true}
+                      disabled={saveMutation.isPending}
+                      onCheckedChange={(checked) => {
+                        void saveMutation.mutateAsync(
+                          servers.map((row) =>
+                            row.id === server.id
+                              ? { ...row, enabled: checked }
+                              : row
+                          )
+                        );
+                      }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={saveMutation.isPending}
+                      onClick={() => {
+                        openEdit(server);
+                      }}
+                    >
+                      <Pencil />
+                    </Button>
+                    <AlertDialog
+                      open={deleteTarget === server.id}
+                      onOpenChange={(open) => {
+                        setDeleteTarget(open ? server.id : null);
+                      }}
+                    >
+                      <AlertDialogTrigger
+                        render={
+                          <Button variant="ghost" size="icon-sm">
+                            <Trash />
+                          </Button>
+                        }
+                      />
+                      <AlertDialogContent size="sm">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            {t("settings.mcp.deleteConfirm")}
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {t("settings.mcp.deleteDescription", {
+                              name: server.name,
+                            })}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>
+                            {t("settings.mcp.cancel")}
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            variant="destructive"
+                            loading={saveMutation.isPending}
+                            disabled={saveMutation.isPending}
+                            onClick={() => {
+                              void removeServer(server.id);
+                            }}
+                          >
+                            {t("settings.mcp.delete")}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </SettingItemActions>
+                </SettingItem>
+              </Fragment>
+            );
+          })
+        )}
+      </SettingGroup>
 
       <Dialog
         open={dialogOpen}

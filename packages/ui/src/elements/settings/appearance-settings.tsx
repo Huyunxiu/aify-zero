@@ -1,11 +1,4 @@
 import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@workspace/ui/components/item";
-import {
   Select,
   SelectContent,
   SelectGroup,
@@ -16,7 +9,16 @@ import {
 import { useTheme } from "@workspace/ui/components/theme-provider";
 import { useTranslation } from "react-i18next";
 
-import { SettingFrame } from "./setting-frame";
+import {
+  SettingGroup,
+  SettingGroupHeader,
+  SettingGroupTitle,
+  SettingItem,
+  SettingItemActions,
+  SettingItemContent,
+  SettingItemDescription,
+  SettingItemTitle,
+} from "./setting-frame";
 
 export function AppearanceSettings() {
   const { t } = useTranslation();
@@ -30,51 +32,48 @@ export function AppearanceSettings() {
 
   return (
     <div className="mx-auto flex w-2xl flex-col">
-      <div className="mb-6 flex">
-        <h1 className="font-bold text-xl">{t("settings.appearance.title")}</h1>
-      </div>
-      <SettingFrame>
-        <ItemGroup>
-          <Item variant="muted">
-            <ItemContent>
-              <ItemTitle className="line-clamp-1">
-                {t("settings.appearance.theme.title")}
-              </ItemTitle>
-              <ItemDescription>
-                {t("settings.appearance.theme.description")}
-              </ItemDescription>
-            </ItemContent>
-            <ItemContent className="flex-none text-center">
-              <ItemDescription>
-                <Select
-                  items={items}
-                  onValueChange={(value) => {
-                    if (!value) {
-                      return;
-                    }
+      <SettingGroupHeader>
+        <SettingGroupTitle>{t("settings.appearance.title")}</SettingGroupTitle>
+      </SettingGroupHeader>
+      <SettingGroup>
+        <SettingItem variant="muted">
+          <SettingItemContent>
+            <SettingItemTitle className="line-clamp-1">
+              {t("settings.appearance.theme.title")}
+            </SettingItemTitle>
+            <SettingItemDescription>
+              {t("settings.appearance.theme.description")}
+            </SettingItemDescription>
+          </SettingItemContent>
+          {/* 控件放在 actions 里：描述的 line-clamp 带 overflow: hidden，会裁掉外阴影 */}
+          <SettingItemActions>
+            <Select
+              items={items}
+              onValueChange={(value) => {
+                if (!value) {
+                  return;
+                }
 
-                    themeContext.setTheme(value);
-                  }}
-                  value={themeContext.theme}
-                >
-                  <SelectTrigger className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger>
-                    <SelectGroup>
-                      {themeContext.themes.map((theme) => (
-                        <SelectItem key={theme} value={theme}>
-                          {t(`settings.appearance.theme.${theme}`)}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </ItemDescription>
-            </ItemContent>
-          </Item>
-        </ItemGroup>
-      </SettingFrame>
+                themeContext.setTheme(value);
+              }}
+              value={themeContext.theme}
+            >
+              <SelectTrigger className="w-36 border-none shadow-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger>
+                <SelectGroup>
+                  {themeContext.themes.map((theme) => (
+                    <SelectItem key={theme} value={theme}>
+                      {t(`settings.appearance.theme.${theme}`)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </SettingItemActions>
+        </SettingItem>
+      </SettingGroup>
     </div>
   );
 }

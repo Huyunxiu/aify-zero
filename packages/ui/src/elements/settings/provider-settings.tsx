@@ -40,11 +40,22 @@ import {
   Trash,
   X,
 } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ProviderPresetSelect } from "./provider-preset-select";
-import { SettingFrame } from "./setting-frame";
+import {
+  SettingGroup,
+  SettingGroupHeader,
+  SettingGroupTitle,
+  SettingItem,
+  SettingItemActions,
+  SettingItemContent,
+  SettingItemDescription,
+  SettingItemMedia,
+  SettingItemTitle,
+  SettingSeparator,
+} from "./setting-frame";
 
 type SettingsData = Awaited<ReturnType<typeof client.setting.get>>;
 type ProviderRow = SettingsData["providers"][number];
@@ -299,78 +310,86 @@ export function ProviderSettings() {
 
   return (
     <div className="mx-auto flex w-2xl flex-col">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-bold text-xl">{t("settings.provider.title")}</h1>
+      <SettingGroupHeader className="flex-row items-center justify-between">
+        <SettingGroupTitle>{t("settings.provider.title")}</SettingGroupTitle>
         <Button size="sm" onClick={() => setEditor({ mode: "create" })}>
           <PlusIcon />
           {t("settings.provider.addProvider")}
         </Button>
-      </div>
+      </SettingGroupHeader>
 
-      <SettingFrame className="overflow-hidden">
+      <SettingGroup>
         {providers.length === 0 ? (
           <div className="flex h-24 items-center justify-center text-muted-foreground text-sm">
             {t("settings.provider.empty")}
           </div>
         ) : (
           providers.map((provider, index) => (
-            <div
-              className={cn(
-                "flex items-center gap-1 pr-2 pl-1",
-                index > 0 && "border-t"
-              )}
-              key={provider.id}
-            >
-              <button
-                className="group flex min-w-0 flex-1 items-center gap-3 rounded-md px-2 py-2.5 text-left outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50"
+            <Fragment key={provider.id}>
+              {index > 0 ? <SettingSeparator /> : null}
+              <SettingItem
+                className="pr-2"
+                variant="muted"
+                render={<a href="#" />}
                 onClick={() =>
                   setEditor({ mode: "edit", providerId: provider.id })
                 }
-                type="button"
               >
-                <ProviderLogo
-                  className="size-5"
-                  icon={presetIconFor(provider.baseURL)}
-                  name={provider.name}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate font-medium">
-                      {provider.name}
-                    </span>
-                    {provider.active ? null : (
-                      <span className="text-muted-foreground text-xs">
-                        {t("settings.provider.inactive")}
+                <SettingItemMedia>
+                  <ProviderLogo
+                    className="size-5"
+                    icon={presetIconFor(provider.baseURL)}
+                    name={provider.name}
+                  />
+                </SettingItemMedia>
+                <SettingItemContent>
+                  <SettingItemTitle>
+                    <span className="flex items-center gap-2">
+                      <span className="truncate font-medium">
+                        {provider.name}
                       </span>
-                    )}
-                  </span>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-muted-foreground text-xs">
-                      {provider.baseURL}
+                      {provider.active ? null : (
+                        <span className="text-muted-foreground text-xs">
+                          {t("settings.provider.inactive")}
+                        </span>
+                      )}
                     </span>
-                    <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-                      {t("settings.provider.modelCount", {
-                        count: provider.models.length,
-                      })}
+                  </SettingItemTitle>
+                  <SettingItemDescription>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-muted-foreground text-xs">
+                        {provider.baseURL}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
+                        {t("settings.provider.modelCount", {
+                          count: provider.models.length,
+                        })}
+                      </span>
                     </span>
-                  </span>
-                </span>
-              </button>
-              <Switch
-                aria-label={`${t("settings.provider.active")} ${provider.name}`}
-                checked={provider.active}
-                onCheckedChange={(active) =>
-                  toggleProvider(provider.id, active)
-                }
-              />
-              <ChevronRight
-                aria-hidden="true"
-                className="size-4 shrink-0 text-muted-foreground/60"
-              />
-            </div>
+                  </SettingItemDescription>
+                </SettingItemContent>
+                <SettingItemActions className="gap-1">
+                  <Switch
+                    aria-label={`${t("settings.provider.active")} ${provider.name}`}
+                    checked={provider.active}
+                    onCheckedChange={(active) =>
+                      toggleProvider(provider.id, active)
+                    }
+                    onClick={(event) => {
+                      // 开关只切换启用状态，不要冒泡成整行的点击
+                      event.stopPropagation();
+                    }}
+                  />
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-4 shrink-0 text-muted-foreground/60"
+                  />
+                </SettingItemActions>
+              </SettingItem>
+            </Fragment>
           ))
         )}
-      </SettingFrame>
+      </SettingGroup>
 
       {listError ? (
         <p className="mt-2 text-destructive text-xs" role="alert">
@@ -844,7 +863,7 @@ function ProviderWorkbench(props: {
               <div className="flex flex-col" ref={listRef}>
                 {draft.models.map((model) => (
                   <div key={model.id}>
-                    <div className="flex items-center gap-2 rounded-md px-1.5 py-2 hover:bg-muted/40">
+                    <div className="flex items-center gap-2 rounded-md px-1.5 py-2">
                       <ModelLogo
                         className="size-4"
                         model={model.name}

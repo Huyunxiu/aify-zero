@@ -11,8 +11,6 @@ import {
   ItemActions,
   ItemContent,
   ItemDescription,
-  ItemGroup,
-  ItemSeparator,
   ItemTitle,
 } from "@workspace/ui/components/item";
 import { Switch } from "@workspace/ui/components/switch";
@@ -24,7 +22,14 @@ import {
 } from "@workspace/ui/components/tabs";
 import { Textarea } from "@workspace/ui/components/textarea";
 import { Island, IslandGroup } from "@workspace/ui/elements/island";
-import { SettingFrame } from "@workspace/ui/elements/settings/setting-frame";
+import {
+  SettingGroup,
+  SettingItem,
+  SettingItemActions,
+  SettingItemContent,
+  SettingItemTitle,
+  SettingSeparator,
+} from "@workspace/ui/elements/settings/setting-frame";
 import { TitleBar } from "@workspace/ui/elements/title-bar";
 
 import { client } from "../../lib/orpc";
@@ -52,44 +57,42 @@ const AgentPage = () => {
                   <TabsTrigger value="password">技能</TabsTrigger>
                 </TabsList>
                 <TabsContent value="account">
-                  <SettingFrame>
-                    <ItemGroup>
-                      <Item variant="muted">
-                        <ItemContent>
-                          <ItemTitle className="line-clamp-1">头像</ItemTitle>
-                        </ItemContent>
-                        <ItemActions className="flex-none text-center">
-                          <Avatar>
-                            <AvatarImage src={avatar} />
-                          </Avatar>
-                        </ItemActions>
-                      </Item>
-                    </ItemGroup>
-                    <ItemSeparator />
-                    <ItemGroup>
-                      <Item variant="muted">
-                        <ItemContent>
-                          <ItemTitle className="line-clamp-1">名称</ItemTitle>
-                        </ItemContent>
-                        <ItemActions className="flex-none text-center">
-                          <Input placeholder="名称" defaultValue="Untitled" />
-                        </ItemActions>
-                      </Item>
-                    </ItemGroup>
-                    <ItemSeparator />
-                    <ItemGroup>
-                      <Item variant="muted">
-                        <ItemContent>
-                          <ItemTitle className="line-clamp-1">
-                            Description
-                          </ItemTitle>
-                        </ItemContent>
-                        <ItemActions className="flex-none text-center">
-                          <Textarea className="w-[180px]" />
-                        </ItemActions>
-                      </Item>
-                    </ItemGroup>
-                  </SettingFrame>
+                  <SettingGroup>
+                    <SettingItem variant="muted">
+                      <SettingItemContent>
+                        <SettingItemTitle className="line-clamp-1">
+                          头像
+                        </SettingItemTitle>
+                      </SettingItemContent>
+                      <SettingItemActions>
+                        <Avatar>
+                          <AvatarImage src={avatar} />
+                        </Avatar>
+                      </SettingItemActions>
+                    </SettingItem>
+                    <SettingSeparator />
+                    <SettingItem variant="muted">
+                      <SettingItemContent>
+                        <SettingItemTitle className="line-clamp-1">
+                          名称
+                        </SettingItemTitle>
+                      </SettingItemContent>
+                      <SettingItemActions>
+                        <Input placeholder="名称" defaultValue="Untitled" />
+                      </SettingItemActions>
+                    </SettingItem>
+                    <SettingSeparator />
+                    <SettingItem variant="muted">
+                      <SettingItemContent>
+                        <SettingItemTitle className="line-clamp-1">
+                          Description
+                        </SettingItemTitle>
+                      </SettingItemContent>
+                      <SettingItemActions>
+                        <Textarea className="w-[180px]" />
+                      </SettingItemActions>
+                    </SettingItem>
+                  </SettingGroup>
                   <div className="mt-6 mb-6 flex">
                     <h1 className="font-bold text-xl">系统提示词</h1>
                   </div>

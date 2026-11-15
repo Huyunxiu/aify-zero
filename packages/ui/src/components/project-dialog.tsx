@@ -370,7 +370,7 @@ export function ProjectDialog({
                             align="end"
                             alignOffset={-4}
                             sideOffset={8}
-                            className="w-auto min-w-50"
+                            className="w-auto min-w-64"
                           >
                             <DropdownMenuItem
                               disabled={index === 0}

@@ -1,228 +1,158 @@
-# Vite+ Monorepo Starter
+# Aify Zero
 
-English | [简体中文](README.zh.md)
+The workspace holds `apps/desktop` (Electron shell), `apps/server` (API),
+`apps/web` (browser UI), and `packages/` for the UI, agent, server and sandbox
+code.
 
-A starter for creating a Vite+ monorepo.
+## Prerequisites
 
-## Development
-
-- Check everything is ready:
-
-```bash
-vp run ready
-```
-
-- Run the tests:
+Install the Vite+ CLI:
 
 ```bash
-vp test
+curl -fsSL https://vite.plus | bash
 ```
 
-`vp test` runs every suite. `vp run -r test` only runs the packages that
-declare a `test` script, which is `packages/shared` and `apps/desktop`.
+Open a new shell. `vp` installs Node.js from `.node-version` and pnpm from
+`packageManager`, so you install neither yourself.
 
-- Test how the app reacts to a provider: a retryable failure, a slow stream, an
-  error in the middle of a stream. See
-  [docs/testing/fake-provider.md](docs/testing/fake-provider.md).
+If setup looks wrong, run `vp env doctor`.
 
-- Build the monorepo:
+## Install
 
 ```bash
-vp run -r build
+vp install
 ```
 
-- Run the API and the browser UI together in one terminal:
+Run it after you pull changes.
+
+## Start development
+
+| Command              | Starts                                      |
+| -------------------- | ------------------------------------------- |
+| `vp run dev:desktop` | Renderer dev server, Electron shell, API    |
+| `vp run dev`         | API and browser UI (UI on `127.0.0.1:3000`) |
+| `vp run dev:server`  | API on `127.0.0.1:18086`                    |
+| `vp run dev:web`     | Browser UI on `127.0.0.1:3000`              |
+
+- `dev:desktop` uses the server on `127.0.0.1:18086` when one answers. If none
+  answers, it starts its own server on a free port. It runs alone or next to
+  `dev:server`.
+- `dev:web` needs a server. Run `vp run dev`, or run `dev:server` first.
+- `dev:web` and `dev:desktop` both bind `127.0.0.1:3000` and stop on a busy
+  port. Run one at a time.
+- The browser signs in with a link. The server prints it at start:
+  `[auth] sign in: http://…/?token=…`. Open the link once. The session cookie
+  lasts 30 days. The desktop window needs no link: the main process holds the
+  token.
+- The first start has no provider. Add one in Settings → Providers, or point it
+  at the fake provider described in [Debug](#agent-and-provider).
+- Ports come from `AIFY_API_PORT` (default `18086`) and `AIFY_WEB_PORT` (default
+  `3000`). Set `AIFY_API_ORIGIN` to use a server on another origin. See
+  [Desktop shell and API](docs/development/desktop-and-api.md).
+- Each checkout has its own `local.db`. The server applies migrations at start.
+  After a schema change, run `vp run db:generate`, review the SQL, and commit the
+  migration.
+
+### Add a UI component
+
+The UI lives in `packages/ui`. From the repository root:
 
 ```bash
-vp run dev
+vpx shadcn@latest add button -c apps/web
 ```
 
-- Run the development servers separately (each in its own terminal):
-
-```bash
-vp run dev:server   # standalone Hono API on 127.0.0.1:18086 (apps/server)
-vp run dev:web      # browser UI on 127.0.0.1:3000, proxies /api to the API
-vp run dev:desktop  # Electron shell; loads the UI through aify-app://
-```
-
-`dev:web` and `dev:desktop` both bind `127.0.0.1:3000` (strictPort), so run one
-of them at a time. `dev:desktop` does not require `dev:server`: when nothing is
-listening on the API port it starts the bundled server itself (see below).
-Ports can be overridden with `AIFY_API_PORT`, `AIFY_WEB_PORT` and
-`AIFY_API_ORIGIN`.
-
-`dev:api` remains as an alias for `dev:server`.
-
-- Add dependency
-
-```bash
-vp i xxx --filter ./packages/ui
-```
-
-## Desktop shell
-
-The packaged app loads `aify-app://app/`. An Electron `protocol.handle` handler
-serves the built renderer from disk and forwards the `/api` namespace to
-the API server (a real HTTP origin, see below); in development it proxies the
-document requests to Vite so HMR keeps working. `AIFY_APP_PROTOCOL=0` loads the
-Vite URL directly instead (escape hatch for debugging).
-
-### API server modes
-
-The API lives in `apps/server` (`@workspace/server-app`) and is the only
-listener. The desktop chooses one of three modes with `AIFY_SERVER_MODE`:
-
-| Mode             | Behavior                                                                                                                                                                                                                    |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auto` (default) | Use `AIFY_API_ORIGIN` when set; otherwise probe `AIFY_API_HOST:AIFY_API_PORT` (default `127.0.0.1:18086`, retried briefly in development) and attach if a server answers `GET /health`; otherwise start the bundled server. |
-| `owned`          | Always start the bundled server in a `utilityProcess` (`.vite/build/server-entry.js`). `AIFY_API_ORIGIN` is ignored in this mode.                                                                                           |
-| `attach`         | Never start the bundled server; require an external one at `AIFY_API_ORIGIN` or the default origin.                                                                                                                         |
-
-The bundled server uses an OS-assigned port by default, because the renderer
-always goes through the main process. The main process learns the port from the
-ready message the child sends over `process.parentPort`. Set `AIFY_API_PORT` to
-force a fixed port. `AIFY_APP_PROTOCOL=0` needs a fixed `AIFY_API_PORT` (or
-`AIFY_API_ORIGIN`), since the Vite proxy is configured before the server starts.
-
-The renderer window opens while the bundled server is still starting. The
-`aify-app://` handler holds early API requests until the server reports ready
-and answers `503` (with `retry-after`) only when it cannot. An owned server
-that exits after becoming ready is restarted up to three times with backoff;
-transient 503s from that window are retried by the query client for a few
-seconds. The main process also pushes `server-status` to the renderer, which
-shows a small banner while the server is starting or reconnecting.
-
-The browser signs in with a link. At every start the server prints
-`[auth] sign in: http://…/?token=…`. The address is the web app itself: the page
-posts the token to `/api/auth/login`, receives the HttpOnly `aify_session`
-cookie, and strips the token from the address bar. Later requests, `<img src>`
-loads and WebSocket handshakes carry that cookie automatically. The token does
-not expire with time: it stays usable until the server restarts, and works for
-more than one device. Sessions last 30 days and renew on use. Settings → General
-can mint another link; the same call is `POST /api/auth/login-link`.
-
-Machine clients still send `Authorization: Bearer <token>`: the desktop's main
-process injects it while forwarding `aify-app://` requests (the renderer never
-sees the value), and the CLI does the same. The token is read from
-`AIFY_API_TOKEN` when set; otherwise it is read from `~/.aify-zero/api-token`,
-created with mode `0600` on the first server start. The Vite dev proxy only
-forwards now: browsers carry the cookie, not the token.
-
-When the built web app exists (`apps/web/dist` or `AIFY_WEB_ROOT`), the server
-serves it from `/`, so remote access stays same-origin and needs no CORS. Set
-`AIFY_PUBLIC_ORIGIN` for remote deployments: it decides the printed link's
-host and whether the cookie gets `Secure`. Set `AIFY_WEB_ORIGIN` when the page
-is served by a separate dev server. Plain http works on a LAN, but the ticket
-and cookie cross the network unencrypted; use HTTPS beyond a trusted network.
-
-### Sandbox backend
-
-Model tools run in a sandbox: one interface for file access and command execution.
-`AIFY_SANDBOX_ADAPTER` picks the sandbox adapter.
-
-| Value             | Behavior                                                                                                                                                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host` (default)  | No isolation. Commands run as your user, and the agent can write any file you can write. This is the behavior from before the sandbox layer existed.                                                                                                          |
-| `isolated`        | macOS seatbelt or Linux bubblewrap. Commands and file writes can reach only the project directories, the session directory, temp dirs and build caches (`~/.npm`, `~/.cache`, `~/Library/Caches`). Network access stays open.                                 |
-| `apple-container` | macOS only. Commands run in a Linux container from Apple's `container` CLI, and both commands and file tools can reach only the mounted project and session directories. Network access stays open. `AIFY_SANDBOX_IMAGE` picks the image (default `node:22`). |
-
-The isolated and container adapters probe the platform when a session starts. If the
-platform cannot apply the constraint, the session fails with the reason. They never
-fall back to `host` silently. See `packages/sandbox/README.md`, `docs/adr/0008` and
-`docs/adr/0009`.
-
-So the packaged app ships and owns its server by default, while `dev:server` +
-`dev:desktop` share one process. Only one desktop instance runs at a time: a
-second launch focuses the existing window instead of starting another server or
-opening the same database. To move a running desktop off the bundled server,
-call `aifyDesktop.useServer("http://127.0.0.1:18086")` from the renderer or
-DevTools: the main process verifies `/health`, stops the owned child, switches
-the `aify-app://` forwarder, and reloads the page. The runtime switch only
-accepts loopback origins; configure remote servers with `AIFY_API_ORIGIN` and
-`AIFY_API_TOKEN` before launch.
-
-Migration files are the only source of schema, and every server start applies
-them. The packaged app migrates `~/.aify-zero/aify-zero.db` from the migrations
-bundled at `Resources/migrations` (see `packagerConfig.extraResource`);
-`dev:server`, `dev:desktop` and the standalone `apps/server` build migrate the
-checkout's `local.db`, which every worktree owns. A failed migration stops
-startup instead of serving tables that do not match the code.
-
-Schema changes therefore need a migration: run `vp run db#db:generate`, review
-the generated SQL, and commit it. `vp ready` runs `db:check`, which fails when
-the schema has changes without a migration. A database that has tables but no
-migration history cannot start, because it was built before this rule: run
-`vp run db#db:baseline` once to mark its existing schema as applied without
-replaying any SQL, or delete the file and let startup recreate it. The drizzle
-commands (`db:baseline`, `db:migrate`, `db:studio`) act on the checkout
-`local.db` by default; set `DATABASE_URL` to target another database.
-
-Environment variables are loaded by the process entry, not by library modules:
-`apps/server` reads `apps/server/.env` then the repository root `.env`, and the
-desktop passes its own environment to the bundled child. A relative
-`DATABASE_URL` in a `.env` therefore resolves against the process working
-directory — prefer an absolute path or the default.
-
-## Packaging
-
-Both apps ship their own ripgrep binary: the agent's `glob`/`grep` tools execute
-it, and an executable can neither be inlined into a JS bundle nor run from
-inside an asar archive. `scripts/stage-ripgrep.ts` copies the binary that
-`@vscode/ripgrep` provides for the current platform and restores its executable
-bit.
-
-- Desktop: `vp run package:desktop` stages `apps/desktop/resources/bin/rg`
-  before packaging, `packagerConfig.extraResource` carries it into
-  `Resources/resources/bin`, and the main process points `AIFY_RIPGREP_PATH` at
-  it (and prepends the directory to `PATH`) before forking the bundled server.
-- Server: `vp run package:server` builds `apps/server/dist` with Vite, then runs
-  `scripts/stage-server-dist.ts` to add `node_modules/@libsql/` (the native
-  binding), `bin/rg`, and an ESM `package.json`. The result is self-contained;
-  run it with `node apps/server/dist/index.js` (the entry sets
-  `AIFY_RIPGREP_PATH` when `bin/rg` exists).
-
-The agent resolves `AIFY_RIPGREP_PATH` first, then a staged `bin/rg`, and only
-then `rg` from `PATH`, so development keeps working without a packaged binary.
-
-## Adding components
-
-To add components to your app, run the following command at the root of your `web` app:
-
-```bash
-vpx shadcn@latest add button -c apps/electron
-```
-
-This will place the ui components in the `packages/ui/src/components` directory.
-
-## Using components
-
-To use the components in your app, import them from the `ui` package.
-
-```tsx
-import { Button } from "@workspace/ui/components/button";
-```
+The files land in `packages/ui/src/components`. Import them from
+`@workspace/ui/components/button`.
 
 ## Debug
 
-### .vscode/launch.json
+### Renderer
 
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "type": "node",
-      "request": "launch",
-      "name": "Debug Desktop (Electron Main)",
-      "cwd": "${workspaceFolder}/apps/desktop",
-      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron-forge",
-      "runtimeArgs": ["start"],
-      "console": "integratedTerminal",
-      "autoAttachChildProcesses": true,
-      "sourceMaps": true,
-      "outFiles": ["${workspaceFolder}/apps/desktop/.vite/build/**/*.js"],
-      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
-    }
-  ]
-}
+DevTools opens with the window. Set `AIFY_OPEN_DEVTOOLS=0` to keep it closed.
+React DevTools installs on first start.
+
+`dev:web` uses the browser's DevTools.
+
+The window loads `aify-app://app/`. Document requests proxy to Vite, so HMR
+works in the window.
+
+### Main process
+
+In VS Code, run **Debug Desktop (Electron Main)** from the Run and Debug panel.
+The configuration is in [.vscode/launch.json](.vscode/launch.json). It runs
+`electron-forge start` and attaches with source maps, so breakpoints in
+`apps/desktop/src` work. Stop `dev:desktop` first: both bind port 3000.
+
+### Logs
+
+| What                    | Where                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| Vite, API server, agent | The terminal that runs the dev command                                        |
+| Main process            | `~/Library/Logs/Aify Zero/main.log` on macOS, `app.getPath("logs")` elsewhere |
+| Renderer                | The DevTools console and network panel                                        |
+
+The server prints `[api] listening on …`, the sign-in link, and migration
+errors.
+
+### API
+
+`/api` routes and `/health` need the token. The token is in
+`~/.aify-zero/api-token` (mode 0600), or in `AIFY_API_TOKEN` when set.
+
+```bash
+curl -H "authorization: Bearer $(cat ~/.aify-zero/api-token)" \
+  http://127.0.0.1:18086/health
+# {"ok":true,"pid":…,"uptime":…}
 ```
+
+Load the page from Vite, not from the app protocol:
+
+```bash
+AIFY_APP_PROTOCOL=0 AIFY_API_PORT=18086 vp run dev:desktop
+```
+
+Vite configures its proxy before the server starts, so the port must be fixed.
+Use this when the `aify-app://` handler is the suspect.
+
+### Agent and provider
+
+Run a fake provider to control failures, slow streams and mid-stream errors:
+
+```bash
+vp run fake:provider -- --scenario retry-then-succeed
+```
+
+Then add a provider with baseURL `http://127.0.0.1:4030/v1`. The scenarios and
+the expected screen are in
+[docs/testing/fake-provider.md](docs/testing/fake-provider.md).
+
+### Database
+
+```bash
+vp run db:studio   # inspect the checkout database
+vp run db:check    # fail when the schema has no migration
+```
+
+Set `DATABASE_URL` to target another database.
+
+### Checks
+
+| Command              | Checks                                         |
+| -------------------- | ---------------------------------------------- |
+| `vp check`           | Format, lint, type check                       |
+| `vp check --fix`     | The same, and applies fixes                    |
+| `vp test`            | Every test suite                               |
+| `vp test watch`      | Every suite, again on change                   |
+| `vp test run <path>` | The tests that match a path                    |
+| `vp run ready`       | `db:check`, `check`, `test`, then a full build |
+
+## Read more
+
+- [Desktop shell and API](docs/development/desktop-and-api.md): server modes,
+  sign-in, migrations, environment variables.
+- [Packaging](docs/development/packaging.md): the desktop and server artifacts.
+- [Sandbox](packages/sandbox/README.md): where tools run and what they write.
+- [Fake provider](docs/testing/fake-provider.md): provider scenarios and
+  recordings.
+- [ADRs](docs/adr): why the system works this way.
+- [Glossaries](GLOSSARY-MAP.md): the terms each package uses.

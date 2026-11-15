@@ -11,7 +11,8 @@ import {
   SidebarProvider,
 } from "@workspace/ui/components/sidebar";
 import { Island, IslandGroup } from "@workspace/ui/elements/island";
-import { TitleBar } from "@workspace/ui/elements/title-bar";
+import { DesktopTitleBar } from "@workspace/ui/elements/title-bar";
+import { isDesktopShell } from "@workspace/ui/lib/desktop";
 import { ChevronLeft, UserCog, Palette, Package, Plug } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -90,8 +91,11 @@ export const Settings = ({ onClose }: SettingsProps) => {
       </Sidebar>
       <SidebarInset className="h-full bg-transparent">
         <IslandGroup orientation="horizontal">
-          <Island defaultSize="50%">
-            <TitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3" />
+          <Island
+            className={isDesktopShell ? undefined : "pt-4"}
+            defaultSize="50%"
+          >
+            <DesktopTitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3" />
             {activeTab === "appearance" && <AppearanceSettings />}
             {activeTab === "general" && <GeneralSettings />}
             {activeTab === "mcp" && <McpSettings />}

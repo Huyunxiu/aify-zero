@@ -1,12 +1,5 @@
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@workspace/ui/components/item";
 import { useLang } from "@workspace/ui/components/lang-provider";
 import {
   Select,
@@ -20,7 +13,17 @@ import { toastManager } from "@workspace/ui/components/toast";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { SettingFrame } from "./setting-frame";
+import {
+  SettingGroup,
+  SettingGroupHeader,
+  SettingGroupTitle,
+  SettingItem,
+  SettingItemActions,
+  SettingItemContent,
+  SettingItemDescription,
+  SettingItemTitle,
+  SettingSeparator,
+} from "./setting-frame";
 
 /**
  * 给另一台设备签发登录链接。
@@ -75,82 +78,79 @@ export function GeneralSettings() {
 
   return (
     <div className="mx-auto flex w-2xl flex-col">
-      <div className="mb-6 flex">
-        <h1 className="font-bold text-xl">{t("settings.general.title")}</h1>
-      </div>
-      <SettingFrame>
-        <ItemGroup>
-          <Item variant="muted">
-            <ItemContent>
-              <ItemTitle className="line-clamp-1">
-                {t("settings.general.language.title")}
-              </ItemTitle>
-              <ItemDescription>
-                {t("settings.general.language.description")}
-              </ItemDescription>
-            </ItemContent>
-            <ItemContent className="flex-none text-center">
-              <ItemDescription>
-                <Select
-                  items={items}
-                  value={langContext.lang}
-                  onValueChange={(e) => {
-                    if (!e) {
-                      return;
-                    }
+      <SettingGroupHeader>
+        <SettingGroupTitle>{t("settings.general.title")}</SettingGroupTitle>
+      </SettingGroupHeader>
+      <SettingGroup>
+        <SettingItem variant="muted">
+          <SettingItemContent>
+            <SettingItemTitle className="line-clamp-1">
+              {t("settings.general.language.title")}
+            </SettingItemTitle>
+            <SettingItemDescription>
+              {t("settings.general.language.description")}
+            </SettingItemDescription>
+          </SettingItemContent>
+          <SettingItemActions>
+            <Select
+              items={items}
+              value={langContext.lang}
+              onValueChange={(e) => {
+                if (!e) {
+                  return;
+                }
 
-                    langContext.setLang(e);
-                  }}
-                >
-                  <SelectTrigger className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent alignItemWithTrigger>
-                    <SelectGroup>
-                      {langContext.langOptions.map((lang) => (
-                        <SelectItem key={lang.key} value={lang.key}>
-                          {lang.nativeName}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </ItemDescription>
-            </ItemContent>
-          </Item>
-          <Item variant="muted">
-            <ItemContent>
-              <ItemTitle className="line-clamp-1">
-                {t("settings.general.signIn.title")}
-              </ItemTitle>
-              <ItemDescription>
-                {t("settings.general.signIn.description")}
-              </ItemDescription>
-            </ItemContent>
-            <ItemContent className="flex-none text-center">
-              <Button
-                disabled={creating}
-                onClick={() => {
-                  void createLoginLink();
-                }}
-                size="sm"
-                variant="outline"
-              >
-                {creating
-                  ? t("settings.general.signIn.creating")
-                  : t("settings.general.signIn.create")}
-              </Button>
-            </ItemContent>
-          </Item>
-          {link === undefined ? null : (
-            <Item variant="muted">
-              <ItemContent>
-                <Input readOnly value={link} />
-              </ItemContent>
-            </Item>
-          )}
-        </ItemGroup>
-      </SettingFrame>
+                langContext.setLang(e);
+              }}
+            >
+              <SelectTrigger className="w-36 border-none shadow-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger>
+                <SelectGroup>
+                  {langContext.langOptions.map((lang) => (
+                    <SelectItem key={lang.key} value={lang.key}>
+                      {lang.nativeName}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </SettingItemActions>
+        </SettingItem>
+        <SettingSeparator />
+        <SettingItem variant="muted">
+          <SettingItemContent>
+            <SettingItemTitle className="line-clamp-1">
+              {t("settings.general.signIn.title")}
+            </SettingItemTitle>
+            <SettingItemDescription>
+              {t("settings.general.signIn.description")}
+            </SettingItemDescription>
+          </SettingItemContent>
+          <SettingItemActions>
+            <Button
+              disabled={creating}
+              onClick={() => {
+                void createLoginLink();
+              }}
+              size="sm"
+              variant="secondary"
+            >
+              {creating
+                ? t("settings.general.signIn.creating")
+                : t("settings.general.signIn.create")}
+            </Button>
+          </SettingItemActions>
+        </SettingItem>
+        {link === undefined ? null : (
+          <SettingItem variant="muted">
+            <SettingItemContent>
+              <Input readOnly value={link} />
+            </SettingItemContent>
+          </SettingItem>
+        )}
+      </SettingGroup>
     </div>
   );
 }
