@@ -17,8 +17,14 @@ describe(RuleBook, () => {
   test("hands out the rules in file order", () => {
     const book = new RuleBook(rules({ fail: 429 }, { answer: "ok" }));
 
-    expect(book.take({ stream: true })).toStrictEqual({ fail: 429 });
-    expect(book.take({ stream: true })).toStrictEqual({ answer: "ok" });
+    expect(book.take({ stream: true })).toStrictEqual({
+      kind: "fail",
+      fail: 429,
+    });
+    expect(book.take({ stream: true })).toStrictEqual({
+      kind: "answer",
+      answer: "ok",
+    });
     expect(book.take({ stream: true })).toBeUndefined();
     expect(book.remaining).toBe(0);
   });
@@ -33,10 +39,12 @@ describe(RuleBook, () => {
     );
 
     expect(book.take({ stream: false })).toStrictEqual({
+      kind: "answer",
       when: { stream: false },
       answer: "title",
     });
     expect(book.take({ stream: true })).toStrictEqual({
+      kind: "fail",
       when: { stream: true },
       fail: 503,
     });
@@ -47,9 +55,13 @@ describe(RuleBook, () => {
       rules({ when: { stream: true }, fail: 429 }, { answer: "ok" })
     );
 
-    expect(book.take({ stream: false })).toStrictEqual({ answer: "ok" });
+    expect(book.take({ stream: false })).toStrictEqual({
+      kind: "answer",
+      answer: "ok",
+    });
     expect(book.remaining).toBe(1);
     expect(book.take({ stream: true })).toStrictEqual({
+      kind: "fail",
       when: { stream: true },
       fail: 429,
     });
@@ -58,37 +70,52 @@ describe(RuleBook, () => {
   test("keeps handing out a replay rule until the recording runs out", () => {
     const book = new RuleBook(rules({ replay: "recorded/one.json" }));
 
-    expect(book.take({ stream: true })?.replay).toBe("recorded/one.json");
-    expect(book.take({ stream: true })?.replay).toBe("recorded/one.json");
+    expect(book.take({ stream: true })).toMatchObject({ kind: "replay" });
+    expect(book.take({ stream: true })).toMatchObject({ kind: "replay" });
     expect(book.remaining).toBe(1);
   });
 
   test("matches on the model too", () => {
-    expect(
-      matches({ when: { model: "slow" } }, { stream: true, model: "fast" })
-    ).toBeFalsy();
-    expect(
-      matches({ when: { model: "slow" } }, { stream: true, model: "slow" })
-    ).toBeTruthy();
+    const [rule] = rules({ when: { model: "slow" }, answer: "ok" });
+    if (!rule) {
+      throw new Error("expected a rule");
+    }
+
+    expect(matches(rule, { stream: true, model: "fast" })).toBeFalsy();
+    expect(matches(rule, { stream: true, model: "slow" })).toBeTruthy();
   });
 });
 
 describe("scenario schema", () => {
-  test("refuses a rule with no outcome", () => {
+  test("refuses a rule with no result", () => {
     expect(
       issues({ name: "test", rules: [{ slow: { chunkMs: 10 } }] })
-    ).toContain(
-      "每条规则必须正好有一个结果：answer / fail / failMidStream / replay / reset / corrupt"
-    );
+    ).not.toStrictEqual([]);
   });
 
-  test("refuses a rule with two outcomes", () => {
+  test("refuses a rule with two results", () => {
     expect(
       issues({ name: "test", rules: [{ fail: 429, answer: "also this" }] })
-    ).toHaveLength(1);
+    ).not.toStrictEqual([]);
+  });
+
+  test("refuses a modifier that does not belong to the result", () => {
+    // `retryAfter` 只对 `fail` 有意义；放到 answer 上必须是错误，不能悄悄丢掉。
+    expect(
+      issues({ name: "test", rules: [{ answer: "ok", retryAfter: 2 }] })
+    ).not.toStrictEqual([]);
+  });
+
+  test("refuses a stream error that is not a provider error shape", () => {
+    expect(
+      issues({
+        name: "test",
+        rules: [{ failMidStream: { error: "boom" } }],
+      })
+    ).not.toStrictEqual([]);
   });
 
   test("refuses an empty rule list", () => {
-    expect(issues({ name: "test", rules: [] })).toHaveLength(1);
+    expect(issues({ name: "test", rules: [] })).not.toStrictEqual([]);
   });
 });

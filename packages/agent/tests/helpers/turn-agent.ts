@@ -1,6 +1,7 @@
 import { AgentContext } from "../../src/agent-context.js";
 import { AgentSession } from "../../src/agent-session.js";
 import { Agent } from "../../src/agents.js";
+import type { ModelTargetResolver } from "../../src/kernel/model-gateway.js";
 import type { AgentStore } from "../../src/storage/index.js";
 import { asTurns, userTurn } from "../compaction/fixtures.js";
 import { testModel, testResolveModel } from "./model-target.js";
@@ -96,7 +97,11 @@ export const asStore = (store: FakeStore): AgentStore =>
  */
 export const makeAgent = (
   store: FakeStore,
-  options: { session?: AgentSession } = {}
+  options: {
+    session?: AgentSession;
+    /** 换掉模型解析；用假供应商时指到它的 baseURL。 */
+    resolveModel?: ModelTargetResolver;
+  } = {}
 ): { agent: Agent; session: AgentSession } => {
   const session = options.session ?? new AgentSession({ turns: [] });
   const agent = new Agent({
@@ -113,7 +118,7 @@ export const makeAgent = (
       model: testModel(),
     }),
     model: testModel(),
-    resolveModel: testResolveModel,
+    resolveModel: options.resolveModel ?? testResolveModel,
   });
 
   return { agent, session };

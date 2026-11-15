@@ -1,15 +1,14 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import type { ServerResponse } from "node:http";
+import { dirname } from "node:path";
 
+import { copyHeaders, sendError } from "./respond.js";
+import type { FakeProviderRequest } from "./rules.js";
 import { resolveInScenarios } from "./scenario.js";
 
 /** 一条录下来的往返：模型请求，以及供应商的原始响应。 */
 export type RecordedEntry = {
-  request: {
-    method: string;
-    path: string;
-    stream?: boolean;
-    model?: string;
-  };
+  request: FakeProviderRequest;
   response: {
     status: number;
     headers: Record<string, string>;
@@ -49,6 +48,9 @@ export class Recorder {
       return;
     }
     this.#loaded = true;
+
+    // 录制目录默认不在仓库里，第一次写就得自己建出来。
+    await mkdir(dirname(this.#out), { recursive: true });
 
     if (!this.#append) {
       return;
@@ -96,4 +98,54 @@ export class ReplayBook {
     book.cursor += 1;
     return entry;
   }
+}
+
+/**
+ * 代理模式：转发给真供应商，边转发边录。
+ *
+ * 它和录制器改的是同一个理由，所以放在一起；路由那头只决定「这一条要不要代理」。
+ */
+export async function proxyAndRecord(options: {
+  response: ServerResponse;
+  body: string;
+  /** 真供应商的地址，末尾不带斜杠。 */
+  target: string;
+  request: FakeProviderRequest;
+  headers: Readonly<Record<string, string>>;
+  recorder: Recorder;
+}): Promise<void> {
+  const upstream = await fetch(options.target, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...options.headers },
+    body: options.body,
+  });
+
+  options.response.writeHead(upstream.status, copyHeaders(upstream.headers));
+
+  const captured: Buffer[] = [];
+  for await (const piece of upstream.body ?? []) {
+    captured.push(Buffer.from(piece));
+    options.response.write(piece);
+  }
+
+  // 先落盘再关连接：客户端看到响应结束时，录制文件已经在了。反过来会留下一个
+  // 「请求成功了但文件还没写完」的窗口，读录制的人会被它绊到。
+  await options.recorder.add({
+    request: options.request,
+    response: {
+      status: upstream.status,
+      headers: Object.fromEntries(upstream.headers.entries()),
+      body: Buffer.concat(captured).toString("utf-8"),
+    },
+  });
+  options.response.end();
+}
+
+/** 录制失败时给一条能读懂的错误，而不是把连接悄悄断掉。 */
+export function failRecord(response: ServerResponse, error: unknown): void {
+  sendError(
+    response,
+    502,
+    `fake provider: recording failed: ${error instanceof Error ? error.message : String(error)}`
+  );
 }

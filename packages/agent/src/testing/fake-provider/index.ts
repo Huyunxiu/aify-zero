@@ -1,19 +1,15 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import { Recorder, ReplayBook } from "./record.js";
+import { failRecord, proxyAndRecord, Recorder, ReplayBook } from "./record.js";
+import { sendError } from "./respond.js";
+import type { FakeProviderRequest } from "./rules.js";
 import { RuleBook } from "./rules.js";
-import { loadScenario } from "./scenario.js";
-import type { Rule, Scenario } from "./scenario.js";
+import { loadScenario, scenarioSchema } from "./scenario.js";
+import type { Rule, Scenario, ScenarioInput } from "./scenario.js";
 import { writeChatCompletions } from "./writers/chat-completions.js";
 
-/** 一次进来的请求里，场景与断言关心的部分。 */
-export type FakeProviderRequest = {
-  readonly method: string;
-  readonly path: string;
-  readonly stream: boolean;
-  readonly model?: string;
-};
+export type { FakeProviderRequest } from "./rules.js";
 
 export type FakeProvider = {
   /** `http://127.0.0.1:<port>/v1`；直接填进设置里的 baseURL。 */
@@ -26,7 +22,7 @@ export type FakeProvider = {
 export type FakeProviderRecordOptions = {
   /** 真供应商的地址，例如 `https://api.deepseek.com/v1`。 */
   readonly url: string;
-  /** 录制文件写到哪。 */
+  /** 录制文件写到哪；目录不存在会自己建。 */
   readonly out: string;
   /** 追加到已有文件：跨审批暂停续录时用。 */
   readonly append?: boolean;
@@ -35,8 +31,12 @@ export type FakeProviderRecordOptions = {
 };
 
 export type FakeProviderOptions = {
-  /** 场景对象，或包根 `scenarios/` 里的名字 / 一个路径。 */
-  readonly scenario?: Scenario | string;
+  /**
+   * 场景：包根 `scenarios/` 里的名字、一个路径，或者写在代码里的同一份 JSON。
+   *
+   * 代码里写的那份也要过同一遍校验：测试用的场景和仓库里的场景不该有两套规则。
+   */
+  readonly scenario?: ScenarioInput | string;
   /** 开了就是代理模式：转发给真供应商，并把响应录下来。 */
   readonly record?: FakeProviderRecordOptions;
   /** 端口；缺省是 0，由系统挑一个。 */
@@ -53,15 +53,12 @@ export type FakeProviderOptions = {
  * 起一个假供应商。
  *
  * 它只说一种协议：chat completions。场景决定每一次请求得到什么，录制模式把真
- * 供应商的响应原样留下，之后 `replay` 动作按顺序放回来。
+ * 供应商的响应原样留下，之后 `replay` 结果按顺序放回来。
  */
 export async function startFakeProvider(
   options: FakeProviderOptions = {}
 ): Promise<FakeProvider> {
-  const scenario =
-    typeof options.scenario === "string"
-      ? await loadScenario(options.scenario)
-      : options.scenario;
+  const scenario = await resolveScenario(options.scenario);
   const book = scenario ? new RuleBook(scenario.rules) : undefined;
   const replay = new ReplayBook();
   const recorder = options.record
@@ -72,18 +69,10 @@ export async function startFakeProvider(
 
   const server = createServer((request, response) => {
     handle(request, response).catch((error: unknown) => {
-      if (response.headersSent) {
-        response.destroy();
-        return;
-      }
-
-      response.writeHead(500, { "content-type": "application/json" });
-      response.end(
-        JSON.stringify({
-          error: {
-            message: error instanceof Error ? error.message : String(error),
-          },
-        })
+      sendError(
+        response,
+        500,
+        error instanceof Error ? error.message : String(error)
       );
     });
   });
@@ -115,8 +104,7 @@ export async function startFakeProvider(
       request.method !== "POST" ||
       !url.pathname.endsWith("/chat/completions")
     ) {
-      response.writeHead(404, { "content-type": "application/json" });
-      response.end(JSON.stringify({ error: { message: "not found" } }));
+      sendError(response, 404, "not found");
       return;
     }
 
@@ -134,69 +122,29 @@ export async function startFakeProvider(
       `${seen.method} ${seen.path} stream=${seen.stream} model=${seen.model ?? "-"}`
     );
 
-    if (options.record) {
-      await proxy({ request, response, body, seen, url });
+    if (options.record && recorder) {
+      try {
+        await proxyAndRecord({
+          response,
+          body,
+          request: seen,
+          target: `${options.record.url.replace(/\/$/, "")}${url.pathname}${url.search}`,
+          headers: options.record.headers ?? {},
+          recorder,
+        });
+      } catch (error) {
+        failRecord(response, error);
+      }
       return;
     }
 
     const rule = book?.take({ stream: seen.stream, model: seen.model });
-    options.log?.(describeRule(rule));
+    options.log?.(`  ${describeRule(rule)}`);
     await writeChatCompletions({
       response,
       rule,
       model: seen.model ?? fallbackModel,
       replay,
-    });
-  };
-
-  /** 代理模式：转发给真供应商，边转发边把响应录下来。 */
-  const proxy = async (input: {
-    request: IncomingMessage;
-    response: ServerResponse;
-    body: string;
-    seen: FakeProviderRequest;
-    url: URL;
-  }): Promise<void> => {
-    const { record } = options;
-    if (!record) {
-      return;
-    }
-
-    const target = `${record.url.replace(/\/$/, "")}${input.url.pathname}${input.url.search}`;
-    const upstream = await fetch(target, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...record.headers,
-      },
-      body: input.body,
-    });
-
-    input.response.writeHead(
-      upstream.status,
-      Object.fromEntries(upstream.headers.entries())
-    );
-
-    const captured: Buffer[] = [];
-    for await (const piece of upstream.body ?? []) {
-      captured.push(Buffer.from(piece));
-      input.response.write(piece);
-    }
-    input.response.end();
-
-    // 一条一条落盘：录制进程可能在审批暂停里挂很久。
-    await recorder?.add({
-      request: {
-        method: input.seen.method,
-        path: input.seen.path,
-        ...(input.seen.stream ? { stream: true } : {}),
-        ...(input.seen.model ? { model: input.seen.model } : {}),
-      },
-      response: {
-        status: upstream.status,
-        headers: Object.fromEntries(upstream.headers.entries()),
-        body: Buffer.concat(captured).toString("utf-8"),
-      },
     });
   };
 
@@ -219,28 +167,49 @@ export async function startFakeProvider(
   };
 }
 
+/** 名字走加载器，代码里写的那份走同一套 schema。 */
+const resolveScenario = async (
+  scenario: FakeProviderOptions["scenario"]
+): Promise<Scenario | undefined> => {
+  if (scenario === undefined) {
+    return undefined;
+  }
+
+  return typeof scenario === "string"
+    ? await loadScenario(scenario)
+    : scenarioSchema.parse(scenario);
+};
+
 /** 一条规则在终端里怎么念；场景用完时也要说清楚。 */
 const describeRule = (rule: Rule | undefined): string => {
   if (!rule) {
     return "-> no rule left";
   }
-  if (rule.fail !== undefined) {
-    return `-> fail ${rule.fail}`;
-  }
-  if (rule.failMidStream) {
-    return "-> fail mid-stream";
-  }
-  if (rule.replay !== undefined) {
-    return `-> replay ${rule.replay}`;
-  }
-  if (rule.reset) {
-    return "-> reset";
-  }
-  if (rule.corrupt) {
-    return "-> corrupt";
-  }
 
-  return "-> answer";
+  switch (rule.kind) {
+    case "answer": {
+      return "-> answer";
+    }
+    case "fail": {
+      return `-> fail ${rule.fail}`;
+    }
+    case "failMidStream": {
+      return "-> fail mid-stream";
+    }
+    case "replay": {
+      return `-> replay ${rule.replay}`;
+    }
+    case "reset": {
+      return "-> reset";
+    }
+    case "corrupt": {
+      return "-> corrupt";
+    }
+    default: {
+      const unreachable: never = rule;
+      return `-> unsupported ${String(unreachable)}`;
+    }
+  }
 };
 
 const readBody = async (
