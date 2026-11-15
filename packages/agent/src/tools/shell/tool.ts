@@ -72,7 +72,7 @@ const createShellToolSchema = (agentContext: ToolEnvironment) => {
       .string()
       .optional()
       .describe(
-        `The working directory to run the command in. Defaults to ${agentContext.primaryProjectDir}. Use this instead of 'cd' commands.`
+        `The working directory to run the command in. Defaults to ${agentContext.sandbox.describe().cwd}. Use this instead of 'cd' commands.`
       ),
     description: z
       .string()
@@ -120,9 +120,8 @@ export const createShellTool = ({
     ) => {
       const { sandbox } = agentContext;
       const resolvedTimeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
-      const cwd = sandbox.resolvePath(
-        workdir ?? agentContext.primaryProjectDir
-      );
+      // 相对路径与默认目录都交给沙箱解析：工具不该假设宿主目录的形态。
+      const cwd = sandbox.resolvePath(workdir ?? ".");
       await assertWorkingDirectory(sandbox, cwd);
 
       if (run_in_background === true) {

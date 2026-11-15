@@ -169,9 +169,7 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
     inputSchema: GLOB_TOOL_INPUT_SCHEMA,
     execute: async (input, { abortSignal }) => {
       const { sandbox } = agentContext;
-      const normalizedPath = sandbox.resolvePath(
-        input.path ?? agentContext.primaryProjectDir
-      );
+      const normalizedPath = sandbox.resolvePath(input.path ?? ".");
       const effectiveLimit = Math.min(
         Math.max(1, input.limit ?? DEFAULT_LIMIT),
         MAX_LIMIT
@@ -187,7 +185,7 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
       let run;
       try {
         run = await sandbox.exec(command, {
-          cwd: agentContext.primaryProjectDir,
+          cwd: sandbox.resolvePath("."),
           signal: abortSignal,
           onData: (channel, chunk) => {
             if (channel === "stdout") {
