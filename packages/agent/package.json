@@ -5,6 +5,9 @@
     ".": {
       "default": "./src/index.ts"
     },
+    "./testing/fake-provider": {
+      "default": "./src/testing/fake-provider/index.ts"
+    },
     "./*": {
       "default": "./src/*.ts"
     }

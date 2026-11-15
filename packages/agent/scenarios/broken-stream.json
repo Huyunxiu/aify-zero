@@ -1,0 +1,8 @@
+{
+  "name": "broken-stream",
+  "models": ["fake-fast"],
+  "rules": [
+    { "when": { "stream": false }, "answer": "假标题" },
+    { "corrupt": true }
+  ]
+}

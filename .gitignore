@@ -34,3 +34,6 @@ local.db.*
 .delta
 # pnpm local store (created by lockfile-only installs)
 .pnpm-store
+
+# 假供应商的录制，默认只在本地
+packages/agent/scenarios/recorded/
