@@ -7,6 +7,12 @@ export type FakeRequest = {
   readonly model?: string;
 };
 
+/** 一次进来的请求：除了规则看到的两项，还有它落在哪。 */
+export type FakeProviderRequest = FakeRequest & {
+  readonly method: string;
+  readonly path: string;
+};
+
 /**
  * 一份场景的规则书。
  *
@@ -30,7 +36,7 @@ export class RuleBook {
       }
 
       // 回放规则可以反复用：一份录制里有很多条响应，什么时候说完由录制自己决定。
-      if (rule.replay === undefined) {
+      if (rule.kind !== "replay") {
         this.#used.add(index);
       }
 

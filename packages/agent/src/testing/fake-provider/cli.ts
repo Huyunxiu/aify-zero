@@ -27,6 +27,9 @@ const headers = (): Record<string, string> => {
   return collected;
 };
 
+/** 录制默认写到哪：仓库外的东西，默认不进版本库。 */
+const DEFAULT_RECORDING = "packages/agent/scenarios/recorded/recording.json";
+
 const scenario = valueOf("scenario");
 const recordUrl = valueOf("record");
 const out = valueOf("out");
@@ -38,7 +41,7 @@ const provider = await startFakeProvider({
     ? {
         record: {
           url: recordUrl,
-          out: out ?? "packages/agent/scenarios/recorded/recording.json",
+          out: out ?? DEFAULT_RECORDING,
           append: has("append"),
           headers: headers(),
         },

@@ -13,20 +13,20 @@
 
 ## 决策
 
-| 决策         | 结论                                                          |
-| ------------ | ------------------------------------------------------------- |
-| 服务谁       | 手动和自动共用一套场景；场景是唯一来源                        |
-| 位置         | `packages/agent/src/testing/fake-provider/`，显式导出一条入口 |
-| 场景         | `packages/agent/scenarios/*.json`，zod 校验                   |
-| 选择规则     | 顺序为主，可选 `when` 匹配器                                  |
-| 动作         | `fail`、`failMidStream`、`slow`、`reset`、`corrupt`           |
-| 录制回放     | 做。代理模式录真流，按顺序回放                                |
-| 回放匹配     | 按顺序取，不按请求内容匹配                                    |
-| 协议         | 先做 `openai-chat`；`openai-responses` 以后加写手             |
-| 起停         | 每个用例自己 `listen(0)`，结束关闭                            |
-| 逃生口       | 不留 `raw`；扩展的单位是「加一个动作」                        |
-| 产品里的位置 | 不进设置预设。手动测试就是加一个自定义供应商                  |
-| 词表         | 不进 `GLOSSARY.md`；工具自带 README                           |
+| 决策         | 结论                                                            |
+| ------------ | --------------------------------------------------------------- |
+| 服务谁       | 手动和自动共用一套场景；场景是唯一来源                          |
+| 位置         | `packages/agent/src/testing/fake-provider/`，显式导出一条入口   |
+| 场景         | `packages/agent/scenarios/*.json`，zod 校验                     |
+| 选择规则     | 顺序为主，可选 `when` 匹配器                                    |
+| 结果         | `answer`、`fail`、`failMidStream`、`replay`、`reset`、`corrupt` |
+| 录制回放     | 做。代理模式录真流，按顺序回放                                  |
+| 回放匹配     | 按顺序取，不按请求内容匹配                                      |
+| 协议         | 先做 `openai-chat`；`openai-responses` 以后加写手               |
+| 起停         | 每个用例自己 `listen(0)`，结束关闭                              |
+| 逃生口       | 不留 `raw`；扩展的单位是「加一个结果」                          |
+| 产品里的位置 | 不进设置预设。手动测试就是加一个自定义供应商                    |
+| 词表         | 不进 `GLOSSARY.md`；工具自带 README                             |
 
 ## 场景
 
@@ -60,22 +60,30 @@
 它把 `--failures 2` 的第一次失败吃掉了，人只看到一行重试，差点以为是 bug。把它写进
 语言里，坑就只踩一次。
 
-## 动作
+## 结果
 
-| 动作            | 线上发生什么                                                    |
+一条规则正好有一个结果。
+
+| 结果            | 线上发生什么                                                    |
 | --------------- | --------------------------------------------------------------- |
-| `fail`          | 回状态码，带可选的 `Retry-After` / `retry-after-ms` 头          |
-| `failMidStream` | 先发 n 个块，再发 `{"error":{...}}`；SDK 会把它归一成供应商错误 |
-| `slow`          | 首块延迟、块间隔                                                |
+| `fail`          | 回状态码，可带 `Retry-After` / `retry-after-ms` 头              |
+| `failMidStream` | 先发 `text`，再发 `{"error":{...}}`；SDK 会把它归一成供应商错误 |
 | `reset`         | 直接断开连接                                                    |
 | `corrupt`       | 发一段非法 JSON，制造解析失败                                   |
 | `answer`        | 正常流式回答                                                    |
 | `replay`        | 从录制里取下一条响应，原样写出                                  |
 
+修饰不单独出现，只挂在合适的结果上：`slow`（首块延迟、块间隔）只给 `answer` 与
+`failMidStream`，`retryAfter` / `retryAfterMs` 只给 `fail`，`when` 谁都可用。
+放错位置的修饰是解析错误，不会被悄悄丢掉——静默降级会让「测过了」变成假话。
+
+解析之后规则是判别联合（`kind`），写手 `switch (rule.kind)`；加一个结果时 TS 会
+逼着每个写手表态。
+
 `failMidStream` 的形状有依据：`@ai-sdk/openai-compatible` 收到 `data: {"error":{...}}`
 会发一个 `error` 块，`streamText` 再用 `normalizeStreamProviderError` 把它变成
 `StreamProviderError`——`statusCode` 从 `statusCode` / `code` / `status` 取，没有就按
-消息文本猜（`"overloaded"` → 503、可重试），也认显式的 `isRetryable`。所以这个动作
+消息文本猜（`"overloaded"` → 503、可重试），也认显式的 `isRetryable`。所以这个结果
 能精确控制「一条流内错误算不算可重试」。
 
 ## 分层
@@ -84,22 +92,22 @@
 
 ```
 场景 JSON（协议无关）
-   └─ 规则：动作 + 可选 when
+   └─ 规则：结果 + 修饰（when / slow / retryAfter）
         └─ 写手：chat-completions（现在）｜responses（以后）
               fail          → HTTP 状态码 + Retry-After
               failMidStream → 若干块 + {"error":{...}}
-              slow          → 定时器夹在块之间
               reset         → socket.destroy()
               corrupt       → 非法 JSON
 ```
 
-加协议 = 加一个写手，场景一个都不用改。加失败 = 动作表加一项，每个写手加一个分支；
-某个协议表达不了的，就在写手里报「这个动作不支持」。
+加协议 = 加一个写手，场景一个都不用改。加结果 = 联合多一个成员，每个写手的
+`switch` 都会因为类型不完整而报错；某个协议表达不了的，就在自己的 `case` 里报
+「不支持」。
 
 ## 录制与回放
 
 录制开代理模式：假供应商把请求转给真供应商，把响应原样 tee 到文件。之后回放时
-`replay` 动作按顺序取。
+`replay` 结果按顺序取。
 
 三条必须写下来的规矩：
 
@@ -121,7 +129,8 @@ fixtures 默认落在被 gitignore 的目录（`packages/agent/scenarios/recorde
 | `packages/agent/src/testing/fake-provider/index.ts` | 起停：`startFakeProvider(scenario)`                     |
 | `.../scenario.ts`                                   | zod 场景、加载器、按名查找                              |
 | `.../rules.ts`                                      | 规则消费：顺序 + `when` 匹配                            |
-| `.../writers/chat-completions.ts`                   | 动作 → HTTP/SSE                                         |
+| `.../respond.ts`                                    | 错误信封与 hop-by-hop 头，转发和回放共用一份            |
+| `.../writers/chat-completions.ts`                   | 结果 → HTTP/SSE（`switch (rule.kind)`）                 |
 | `.../record.ts`                                     | 代理模式：转发、tee、追加                               |
 | `.../cli.ts`                                        | `--scenario`、`--port`、`--record`、`--out`、`--append` |
 | `packages/agent/scenarios/*.json`                   | 场景文件                                                |
@@ -130,7 +139,7 @@ fixtures 默认落在被 gitignore 的目录（`packages/agent/scenarios/recorde
 
 ## 测试
 
-- 替身自己的契约测试：每个动作在线上产生什么（状态码、头、块的形状）。
+- 替身自己的契约测试：每个结果在线上产生什么（状态码、头、块的形状）。
 - 写手测试：同一份场景，chat completions 写出来的字节符合预期。
 - 内核用法测试（第二个 PR）：用替身跑一次真实的 `streamText`，证明流中途的可重试
   错误确实会触发重试、`Retry-After` 确实决定等待时长。这是这条路线上第一组真测试。
@@ -143,7 +152,7 @@ fixtures 默认落在被 gitignore 的目录（`packages/agent/scenarios/recorde
   `packages/sandbox/GLOSSARY.md`。哪天它变成产品的一部分，再进。
 - 不模拟工具调用与审批的模型侧形状（第二阶段）。那是内核的关注点。
 - 不做 `openai-responses`（以后加写手）。
-- 不留 `raw` 或自定义写手逃生口。扩展的单位是「加一个动作」。
+- 不留 `raw` 或自定义写手逃生口。扩展的单位是「加一个结果」。
 - 不做通用 chunk 脚本。场景可读是它存在的理由。
 
 ## 验收
@@ -154,13 +163,14 @@ fixtures 默认落在被 gitignore 的目录（`packages/agent/scenarios/recorde
 - 手动：`--record` 指向真供应商，产出 fixtures；同一场景用 `replay` 回放，不再请求
   真供应商。
 - 自动：替身契约测试与写手测试通过；`vp check` 0 错误。
-- 审批：录制一条带审批的交互，回放时停在 `wait_review`，批准后继续。
+- 审批：录制一条带审批的交互，回放时停在 `wait_review`，批准后继续。这一步只能
+  手动做：它需要一次真实的工具调用与一次真人点击，没有可入仓的产物。
 
 ## 分步实施
 
 拆两个 PR。
 
-1. **替身本体**：场景与校验、规则消费、chat completions 写手、五个动作、CLI、录制。
+1. **替身本体**：场景与校验、规则消费、chat completions 写手、六个结果、CLI、录制。
    加契约测试与写手测试。不碰内核。
 2. **第一个使用场景**：用替身验 `AIFY0-69` 的两处盲区——流中途的可重试错误、真实
    `Retry-After` 对等待时长的影响。这一步会真的经过 `gateway.ts` 与 SDK，是这条路

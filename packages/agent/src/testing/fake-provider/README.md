@@ -41,7 +41,9 @@ const provider = await startFakeProvider({ scenario: "retry-then-succeed" });
 | `reset`         | 直接断连接                                             |
 | `corrupt`       | 发一段非法 JSON                                        |
 
-修饰：`slow.firstChunkMs`、`slow.chunkMs`、`when.stream`、`when.model`。
+修饰不单独出现，只挂在合适的结果上：`slow.firstChunkMs` / `slow.chunkMs` 只给
+`answer` 与 `failMidStream`，`retryAfter` / `retryAfterMs` 只给 `fail`，`when` 谁都
+可用。放错位置是解析错误，不会被悄悄丢掉。
 
 ## 录制
 
@@ -68,5 +70,5 @@ vp run fake:provider -- \
 
 ## 为什么没有 `raw`
 
-扩展的单位是「加一个动作」。`raw` 看起来省事，实际会把场景变成没人愿意读的协议草图，
+扩展的单位是「加一个结果」。`raw` 看起来省事，实际会把场景变成没人愿意读的协议草图，
 而场景可读是它存在的理由。取舍见 `docs/adr/0011-fake-provider-decouples-scenarios-from-protocols.md`。

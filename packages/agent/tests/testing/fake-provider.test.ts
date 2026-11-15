@@ -17,6 +17,13 @@ const start = async (
   return provider;
 };
 
+/** 解析一个 SSE 数据块；类型写出来，免得测试里到处是 any。 */
+const parseChunk = (
+  line: string
+): {
+  choices: { delta: Record<string, unknown>; finish_reason: string | null }[];
+} => JSON.parse(line) as never;
+
 const post = async (
   baseURL: string,
   body: unknown
@@ -63,6 +70,26 @@ describe("fake provider", () => {
     expect(provider.requests).toStrictEqual([
       { method: "POST", path: "/v1/chat/completions", stream: true },
     ]);
+  });
+
+  test("writes the chunks the protocol promises, one character each", async () => {
+    const provider = await start({
+      scenario: { name: "bytes", rules: [{ answer: "ab" }] },
+    });
+
+    const { text } = await post(provider.baseURL, { stream: true });
+    const data = text
+      .split("\n\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => line.slice("data: ".length));
+    const at = (index: number): string => data[index] ?? "";
+
+    // role、两个字符、finish、[DONE]
+    expect(data).toHaveLength(5);
+    expect(parseChunk(at(1)).choices[0]?.delta).toStrictEqual({ content: "a" });
+    expect(parseChunk(at(2)).choices[0]?.delta).toStrictEqual({ content: "b" });
+    expect(parseChunk(at(3)).choices[0]?.finish_reason).toBe("stop");
+    expect(at(4)).toBe("[DONE]");
   });
 
   test("fails with a status and the Retry-After header it was told", async () => {
@@ -144,6 +171,24 @@ describe("fake provider", () => {
 
     expect(response.status).toBe(500);
     expect(text).toContain("ran out of rules");
+  });
+
+  test("creates the recording directory it was pointed at", async () => {
+    const upstream = await start({
+      scenario: { name: "upstream-dir", rules: [{ answer: "x" }] },
+    });
+    const out = join(
+      mkdtempSync(join(tmpdir(), "fake-provider-")),
+      "nested",
+      "deeper",
+      "one.json"
+    );
+    const recorder = await start({ record: { url: upstream.baseURL, out } });
+
+    const { response } = await post(recorder.baseURL, { stream: true });
+
+    expect(response.status).toBe(200);
+    expect(JSON.parse(readFileSync(out, "utf-8"))).toHaveLength(1);
   });
 
   test("records a real exchange and replays it byte for byte", async () => {
