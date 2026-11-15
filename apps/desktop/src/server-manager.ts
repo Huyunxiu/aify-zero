@@ -2,7 +2,7 @@
  * API server 的生命周期管理。
  *
  * 两种模式共用同一个“origin”概念：
- * - `owned`：在 `utilityProcess` 里启动随包携带的 `server-entry.js`；
+ * - `owned`：在 `utilityProcess` 里启动随包携带的 `server-entry.cjs`；
  * - `attach`：连接一个已经在跑的 server（`apps/server` 或别的机器）。
  *
  * 默认 `auto`：`AIFY_API_ORIGIN` 优先；否则先探测默认端口，已经有 server
@@ -13,10 +13,10 @@ import { existsSync } from "node:fs";
 
 import type { ApiServerStatus } from "@workspace/shared/api-status";
 import { API_TOKEN_ENV } from "@workspace/shared/api-token";
+import { isServerReadyMessage } from "@workspace/shared/server-ready";
 import { utilityProcess } from "electron";
 import type { UtilityProcess } from "electron";
 
-import { parseServerReadyLine } from "./ready-line";
 import {
   defaultServerOrigin,
   isLoopbackOrigin,
@@ -110,6 +110,40 @@ const delay = (milliseconds: number): Promise<void> =>
     const timer = setTimeout(resolve, milliseconds);
     timer.unref();
   });
+
+/**
+ * 按行读一条子进程管道，逐行交给回调。
+ *
+ * @param stream - 子进程的 stdout 或 stderr；没有管道时什么也不做。
+ * @param onLine - 收到一整行时调用；空行不传。
+ * @returns 交出末尾残行的函数，用于子进程退出时补最后一行。
+ */
+const readLines = (
+  stream: NodeJS.ReadableStream | null | undefined,
+  onLine: (line: string) => void
+): (() => void) => {
+  let buffer = "";
+
+  stream?.setEncoding("utf-8");
+  stream?.on("data", (chunk: string) => {
+    buffer += chunk;
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.trim() !== "") {
+        onLine(line);
+      }
+    }
+  });
+
+  return () => {
+    if (buffer.trim() !== "") {
+      onLine(buffer);
+      buffer = "";
+    }
+  };
+};
 
 export class DesktopServer {
   readonly #log: ServerLogger;
@@ -456,8 +490,8 @@ export class DesktopServer {
     };
 
     if (options.port !== undefined) {
-      // 0 = OS-assigned. The ready line reports the real port, which is what the
-      // main process forwards to; no fixed 18086 is needed in the default mode.
+      // 0 = OS-assigned. The ready message reports the real port, which is what
+      // the main process forwards to; the default mode needs no fixed 18086.
       environment.AIFY_API_PORT = String(options.port);
     }
 
@@ -472,7 +506,22 @@ export class DesktopServer {
     const exited = new Promise<void>((resolve) => {
       resolveExited = resolve;
     });
-    let stderrBuffer = "";
+
+    // stderr 也要进主进程日志：oRPC 的 onError、迁移警告都走 stderr，
+    // 只留在内存里的话，服务起好之后用户和排障都看不到这些错误。
+    let diagnostic = "";
+    child.stderr?.on("data", (chunk: string) => {
+      diagnostic = (diagnostic + chunk).slice(-MAX_DIAGNOSTIC_CHARS);
+    });
+    const flushStderr = readLines(child.stderr, (line) => {
+      this.#log(`[stderr] ${line}`);
+    });
+
+    // stdout 只承载人类可读的日志；就绪信号走 parentPort 消息，不混在这条流里。
+    readLines(child.stdout, (line) => {
+      this.#log(line);
+    });
+
     const owned: OwnedChild = {
       exited,
       exitedAlready: false,
@@ -483,11 +532,7 @@ export class DesktopServer {
     child.once("exit", (code) => {
       owned.exitedAlready = true;
       resolveExited();
-
-      if (stderrBuffer.trim() !== "") {
-        this.#log(`[stderr] ${stderrBuffer.trim()}`);
-        stderrBuffer = "";
-      }
+      flushStderr();
 
       if (this.#owned !== owned) {
         return;
@@ -518,27 +563,8 @@ export class DesktopServer {
 
     this.#owned = owned;
 
-    let diagnostic = "";
-    child.stderr?.setEncoding("utf-8");
-    child.stderr?.on("data", (chunk: string) => {
-      diagnostic = (diagnostic + chunk).slice(-MAX_DIAGNOSTIC_CHARS);
-
-      // stderr 也要进主进程日志：oRPC 的 onError、迁移警告都走 stderr，
-      // 只留在内存里的话，服务起好之后用户和排障都看不到这些错误。
-      stderrBuffer += chunk;
-      const lines = stderrBuffer.split("\n");
-      stderrBuffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (line.trim() !== "") {
-          this.#log(`[stderr] ${line}`);
-        }
-      }
-    });
-
     const origin = await new Promise<string>((resolve, reject) => {
       let settled = false;
-      let buffer = "";
       const fail = (error: Error): void => {
         if (settled) {
           return;
@@ -555,30 +581,22 @@ export class DesktopServer {
         fail(
           new Error(
             `Timed out starting the API server after ${String(READY_TIMEOUT_MS)}ms` +
+              " (the child sent no ready message)" +
               (diagnostic === "" ? "" : `\n${diagnostic}`)
           )
         );
       }, READY_TIMEOUT_MS);
 
-      child.stdout?.setEncoding("utf-8");
-      child.stdout?.on("data", (chunk: string) => {
-        buffer += chunk;
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-
-        for (const line of lines) {
-          if (line.trim() !== "") {
-            this.#log(line);
-          }
-
-          const ready = parseServerReadyLine(line);
-
-          if (ready !== undefined && !settled) {
-            settled = true;
-            clearTimeout(timer);
-            resolve(ready.origin);
-          }
+      // 和 `fork()` 同一个 tick 挂上：子进程要先启动、迁移、绑端口才会发这条
+      // 消息，但监听器晚挂一步就会漏掉它。
+      child.on("message", (message: unknown) => {
+        if (settled || !isServerReadyMessage(message)) {
+          return;
         }
+
+        settled = true;
+        clearTimeout(timer);
+        resolve(message.origin);
       });
 
       child.once("error", (type, location) => {
@@ -591,7 +609,7 @@ export class DesktopServer {
       child.once("exit", (code) => {
         fail(
           new Error(
-            `API server exited with code ${String(code)} before it became ready` +
+            `API server exited with code ${String(code)} before sending the ready message` +
               (diagnostic === "" ? "" : `\n${diagnostic}`)
           )
         );

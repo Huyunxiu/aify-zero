@@ -3,8 +3,7 @@
  *
  * `apps/server`（独立进程）和 Electron 的 `server-entry`（`utilityProcess`
  * 子进程）都只调用这里，所以监听地址解析、迁移、就绪信号和优雅退出只有
- * 一份实现。桌面壳不再 `import` 本模块——它只消费 stdout 的就绪行和
- * `GET /health`。
+ * 一份实现。桌面壳不再 `import` 本模块——它只消费就绪消息和 `GET /health`。
  */
 import type { Server } from "node:http";
 
@@ -27,6 +26,7 @@ import {
   DEFAULT_API_PORT,
 } from "@workspace/shared/constants";
 import { logger } from "@workspace/shared/logger";
+import { postServerReadyMessage } from "@workspace/shared/server-ready";
 
 import { createApp } from "./app";
 import { createAuthStore } from "./auth-store";
@@ -236,21 +236,18 @@ export async function startServer(
 }
 
 /**
- * 作为常驻进程运行：启动、向 stdout 写一行就绪 JSON、在信号到来时关闭。
+ * 作为常驻进程运行：启动、把实际监听地址交给父进程、在信号到来时关闭。
  *
- * 就绪行是 Electron 判断“子进程已经可以服务请求”的唯一信号，格式固定为
- * `{"type":"ready","origin":...}`；其余日志都是普通行。
+ * 就绪消息是 Electron 判断“子进程已经可以服务请求”的唯一信号，走
+ * `process.parentPort`，不进 stdout——stdout 是给人读的日志流。独立启动时
+ * 没有这条通道，监听地址只出现在打印的那一行里。
  */
 export async function runServerProcess(): Promise<void> {
   const handle = await startServer();
 
-  process.stdout.write(
-    `${JSON.stringify({
-      origin: handle.origin,
-      pid: process.pid,
-      type: "ready",
-    })}\n`
-  );
+  // 先发消息再打印：主进程拿到 origin 后立刻就能转发请求。
+  postServerReadyMessage(handle.origin);
+  process.stdout.write(`[api] listening on ${handle.origin}\n`);
 
   // 登录链接单独一行，方便从终端里整行复制。生成失败不该阻止服务启动。
   try {

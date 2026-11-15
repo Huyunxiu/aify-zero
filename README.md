@@ -78,11 +78,11 @@ listener. The desktop chooses one of three modes with `AIFY_SERVER_MODE`:
 | `owned`          | Always start the bundled server in a `utilityProcess` (`.vite/build/server-entry.js`). `AIFY_API_ORIGIN` is ignored in this mode.                                                                                           |
 | `attach`         | Never start the bundled server; require an external one at `AIFY_API_ORIGIN` or the default origin.                                                                                                                         |
 
-The bundled server uses an OS-assigned port by default (the ready line reports
-it), because the renderer always goes through the main process. Set
-`AIFY_API_PORT` to force a fixed port. `AIFY_APP_PROTOCOL=0` needs a fixed
-`AIFY_API_PORT` (or `AIFY_API_ORIGIN`), since the Vite proxy is configured
-before the server starts.
+The bundled server uses an OS-assigned port by default, because the renderer
+always goes through the main process. The main process learns the port from the
+ready message the child sends over `process.parentPort`. Set `AIFY_API_PORT` to
+force a fixed port. `AIFY_APP_PROTOCOL=0` needs a fixed `AIFY_API_PORT` (or
+`AIFY_API_ORIGIN`), since the Vite proxy is configured before the server starts.
 
 The renderer window opens while the bundled server is still starting. The
 `aify-app://` handler holds early API requests until the server reports ready

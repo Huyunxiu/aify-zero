@@ -68,7 +68,7 @@ API 位于 `apps/server`（`@workspace/server-app`），是唯一的监听者。
 | `owned`        | 始终在 `utilityProcess` 中启动内置服务器（`.vite/build/server-entry.js`）；该模式下 `AIFY_API_ORIGIN` 会被忽略。                                                                       |
 | `attach`       | 从不启动内置服务器；要求 `AIFY_API_ORIGIN` 或默认源上存在外部服务器。                                                                                                                  |
 
-内置 server 默认使用系统分配的端口（就绪行会报告实际端口），因为渲染端始终经主进程转发；设置 `AIFY_API_PORT` 才会强制固定端口。`AIFY_APP_PROTOCOL=0` 需要固定的 `AIFY_API_PORT`（或 `AIFY_API_ORIGIN`），因为 Vite 代理在 server 启动前就已经配置好。
+内置 server 默认使用系统分配的端口，因为渲染端始终经主进程转发；主进程从子进程经 `process.parentPort` 发来的就绪消息里拿到实际端口。设置 `AIFY_API_PORT` 才会强制固定端口。`AIFY_APP_PROTOCOL=0` 需要固定的 `AIFY_API_PORT`（或 `AIFY_API_ORIGIN`），因为 Vite 代理在 server 启动前就已经配置好。
 
 渲染窗口会在内置 server 还在启动时就显示。`aify-app://` handler 会把这段时间的 API 请求挂起，等 server ready 后再转发；只有在确实不可用时才返回带 `retry-after` 的 `503`。ready 之后意外退出的内置 server 会按退避最多重启 3 次；这段窗口期里的瞬时 503 会被 query client 重试几秒。主进程还会向渲染端推送 `server-status`，启动/重连期间会显示一个小状态条。
 

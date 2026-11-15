@@ -15,6 +15,7 @@
     "ai": "catalog:"
   },
   "devDependencies": {
+    "@types/json-schema": "catalog:",
     "@workspace/config": "workspace:*",
     "typescript": "catalog:"
   }
