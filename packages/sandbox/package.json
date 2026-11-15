@@ -1,0 +1,19 @@
+{
+  "name": "@workspace/sandbox",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@workspace/config": "workspace:*",
+    "typescript": "catalog:"
+  }
+}

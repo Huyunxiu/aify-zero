@@ -7,7 +7,7 @@ import {
   powerShellArgv,
   resolveBashShell,
   resolvePowerShell,
-} from "../../../src/tools/shell/resolve.js";
+} from "../src/host/resolve.js";
 
 describe(resolveBashShell, () => {
   test("should prefer /bin/bash on POSIX", () => {
@@ -118,5 +118,20 @@ describe("shell argv", () => {
     expect(argv).toContain("-NonInteractive");
     expect(argv.at(-1)).toContain("Write-Output hi");
     expect(argv.at(-1)).toContain("OutputEncoding");
+  });
+});
+
+describe("powershell resolution", () => {
+  test("should not resolve outside Windows", () => {
+    expect(resolvePowerShell({}, "linux", () => true)).toBeUndefined();
+  });
+
+  test("should resolve a Windows PowerShell executable", () => {
+    const env = { SystemRoot: "C:\\Windows" };
+    const fallback =
+      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+    expect(resolvePowerShell(env, "win32", (path) => path === fallback)).toBe(
+      fallback
+    );
   });
 });

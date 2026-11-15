@@ -9,6 +9,7 @@ import { Agent } from "../../src/agents.js";
 import type { AgentStore } from "../../src/storage/index.js";
 import { asTurns, userTurn } from "../compaction/fixtures.js";
 import { testModel, testResolveModel } from "../helpers/model-target.js";
+import { testSandbox } from "../helpers/sandbox.js";
 import {
   script,
   stepResult,
@@ -98,6 +99,8 @@ const makeAgent = (store: FakeStore, tools = {}): Agent =>
     store: asStore(store),
     tools,
     context: new AgentContext({
+      sandbox: testSandbox("/tmp", "/tmp/sessions/session-1"),
+
       sessionId: "session-1",
       projectDirs: ["/tmp"],
       sessionDir: "/tmp/sessions/session-1",

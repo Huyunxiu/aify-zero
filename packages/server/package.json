@@ -21,6 +21,7 @@
     "@workspace/agent": "workspace:*",
     "@workspace/agent-client": "workspace:*",
     "@workspace/db": "workspace:*",
+    "@workspace/sandbox": "workspace:*",
     "@workspace/shared": "workspace:*",
     "hono": "catalog:",
     "nanoid": "catalog:",

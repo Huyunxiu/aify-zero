@@ -14,6 +14,7 @@
     "@ai-sdk/mcp": "catalog:",
     "@ai-sdk/openai": "catalog:",
     "@workspace/agent-client": "workspace:*",
+    "@workspace/sandbox": "workspace:*",
     "@workspace/shared": "workspace:*",
     "ai": "catalog:",
     "diff": "catalog:",

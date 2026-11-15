@@ -12,6 +12,7 @@ import type {
   ShellBackgroundMetadata,
   ShellToolOutput,
 } from "../../../src/tools/shell/tool.js";
+import { testSandbox } from "../../helpers/sandbox.js";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -37,6 +38,7 @@ function createTool(
     sessionId: "session-1",
     primaryProjectDir: dir,
     sessionDir: dir,
+    sandbox: testSandbox(dir),
     ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
   } as unknown as AgentContext;
   return { agentContext, tool: createBashTool({ agentContext }) };

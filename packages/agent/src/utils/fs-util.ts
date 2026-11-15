@@ -1,72 +1,24 @@
 /* oxlint-disable */
-import { realpathSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve as pathResolve, posix } from "node:path";
-import { fileURLToPath } from "node:url";
 
+import type { Sandbox } from "@workspace/sandbox";
+import {
+  normalizeInputPath,
+  resolveSandboxPath,
+} from "@workspace/sandbox/paths";
 import { fileTypeFromBuffer } from "file-type";
 
-export function windowsPath(p: string): string {
-  return p
-    .replace(
-      /^\/([a-zA-Z]):(?:[\\/]|$)/,
-      (_, drive) => `${drive.toUpperCase()}:/`
-    )
-    .replace(/^\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-    .replace(
-      /^\/cygdrive\/([a-zA-Z])(?:\/|$)/,
-      (_, drive) => `${drive.toUpperCase()}:/`
-    )
-    .replace(
-      /^\/mnt\/([a-zA-Z])(?:\/|$)/,
-      (_, drive) => `${drive.toUpperCase()}:/`
-    );
-}
-
-export function normalizePath(p: string): string {
-  if (process.platform !== "win32") {
-    return posix.normalize(p);
-  }
-  const resolved = pathResolve(windowsPath(p));
-  try {
-    return realpathSync.native(resolved);
-  } catch {
-    return resolved;
-  }
-}
-
-const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+export { normalizePath, windowsPath } from "@workspace/sandbox/paths";
 
 /**
- * 把模型给出的路径归一化成文件系统能直接使用的形式：
- * - Unicode 空格（不换行空格、全角空格等）换成普通空格
- * - 去掉 CLI 风格的 `@` 前缀
- * - 展开开头的 `~`
- * - 把 `file://` URL 转成本地路径
+ * 把模型给出的路径归一化成文件系统能直接使用的形式。
  *
- * 与 `normalizeForFuzzyMatch` 里的空格处理保持一致，否则同一个路径在
- * “匹配文本”和“定位文件”两条链路上会得到不同结果。
+ * 规则只有一份，住在沙箱包里：本机适配器的 `resolvePath` 用同一份实现，工具和
+ * 框架资源读到的路径因此不会分叉。
  */
 export function normalizeToolInputPath(filepath: string): string {
-  let normalized = filepath.replace(UNICODE_SPACES, " ");
-
-  if (normalized.startsWith("@")) {
-    normalized = normalized.slice(1);
-  }
-
-  if (normalized === "~") {
-    return homedir();
-  }
-  if (normalized.startsWith("~/") || normalized.startsWith("~\\")) {
-    return join(homedir(), normalized.slice(2));
-  }
-
-  if (normalized.startsWith("file://")) {
-    return fileURLToPath(normalized);
-  }
-
-  return normalized;
+  return normalizeInputPath(filepath, homedir());
 }
 
 /**
@@ -81,30 +33,25 @@ export function resolveToolPath(
   filepath: string,
   projectDir: string
 ): { absolute: string } {
-  const input = normalizeToolInputPath(filepath);
-  const absolute = normalizePath(
-    isAbsolute(input) ? input : pathResolve(projectDir, input)
-  );
-
-  return { absolute };
+  return {
+    absolute: resolveSandboxPath(filepath, {
+      cwd: projectDir,
+      home: homedir(),
+    }),
+  };
 }
 
-/**
- * Describes a `path` parameter for tool input schemas.
- *
- * Kept beside {@link resolveToolPath} because the two must agree: this
- * sentence is the only place the model learns how relative paths are treated.
- */
 export function toolPathDescription(target: string): string {
   return `The path to the ${target}. Relative paths are resolved against the working directory; a leading "~", a leading "@", and "file://" URLs are also accepted.`;
 }
 
-const SAMPLE_BYTES = 4096;
+/** 嗅探文件类型时读的字节数。 */
+export const FILE_SAMPLE_BYTES = 4096;
 
 export async function getFileTypeFromBuffer(
   filepath: string,
   fileSize: number,
-  sampleSize: number = SAMPLE_BYTES
+  sampleSize: number = FILE_SAMPLE_BYTES
 ): Promise<[string, string, Buffer]> {
   const chunkSize = Math.min(sampleSize, fileSize);
   const buffer = Buffer.alloc(chunkSize);
@@ -119,6 +66,42 @@ export async function getFileTypeFromBuffer(
   const filetype = await fileTypeFromBuffer(buffer);
 
   return [filetype?.mime ?? "", filetype?.ext ?? "", buffer];
+}
+
+/**
+ * 读文件开头一小段。沙箱有 `readHead` 就用它，没有就退到整份读取再截断——后者
+ * 对大文件不友好，所以 `readHead` 是优先能力。
+ *
+ * @param sandbox - 提供文件的环境。
+ * @param path - 已经解析过的绝对路径。
+ */
+async function readFileHead(
+  sandbox: Sandbox,
+  path: string
+): Promise<Uint8Array> {
+  if (sandbox.readHead !== undefined) {
+    return await sandbox.readHead(path, FILE_SAMPLE_BYTES);
+  }
+
+  const bytes = await sandbox.readFileBuffer(path);
+
+  return bytes.subarray(0, FILE_SAMPLE_BYTES);
+}
+
+/**
+ * 用文件开头的一段字节判断类型，避免把整份文件读进内存。
+ *
+ * @param sandbox - 提供文件的环境。
+ * @param path - 已经解析过的绝对路径。
+ */
+export async function getFileTypeFromSandbox(
+  sandbox: Sandbox,
+  path: string
+): Promise<[string, string, Uint8Array]> {
+  const head = await readFileHead(sandbox, path);
+  const filetype = await fileTypeFromBuffer(head);
+
+  return [filetype?.mime ?? "", filetype?.ext ?? "", head];
 }
 
 const BINARY_FILE_EXTS = new Set([

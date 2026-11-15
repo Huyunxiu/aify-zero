@@ -1,3 +1,4 @@
+import type { Sandbox } from "@workspace/sandbox";
 import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 
@@ -81,6 +82,11 @@ export interface SessionAgentOptions {
   modelContextWindows?: ModelContextWindows;
   jobs?: JobRegistry;
   /**
+   * 工具读写文件和运行命令的环境。必须由宿主决定：这里给默认值等于在装配处
+   * 隐式选择适配器，和「选择必须是显式的」相悖（见 docs/adr/0008）。
+   */
+  sandbox: Sandbox;
+  /**
    * 宿主自己的工具审批函数：按调用入参决定 deny / ask / allow。
    *
    * 返回 undefined 表示没有意见；此时默认工具（write-file、delete-file、
@@ -113,6 +119,7 @@ export async function createSessionAgent(
     compactionOverrides: options.compactionOverrides,
     modelContextWindows: options.modelContextWindows,
     jobs: options.jobs,
+    sandbox: options.sandbox,
   });
 
   const agent = new Agent({

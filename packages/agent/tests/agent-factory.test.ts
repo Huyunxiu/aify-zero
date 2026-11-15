@@ -15,6 +15,7 @@ import type { AgentStore } from "../src/storage/index.js";
 import { evaluateToolApproval } from "../src/tool-approval.js";
 import { catalogEntries } from "../src/tool-catalog/catalog.js";
 import { testModel, testResolveModel } from "./helpers/model-target.js";
+import { testSandbox } from "./helpers/sandbox.js";
 
 const makeAgent = (
   options: Partial<Parameters<typeof createSessionAgent>[0]> = {}
@@ -27,6 +28,7 @@ const makeAgent = (
     resolveModel: testResolveModel,
     projectDirs: ["/tmp"],
     sessionDir: "/tmp/session-1",
+    sandbox: testSandbox("/tmp", "/tmp/session-1"),
     ...options,
   });
 

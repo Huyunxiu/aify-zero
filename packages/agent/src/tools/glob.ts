@@ -1,5 +1,3 @@
-import { spawn } from "node:child_process";
-
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
@@ -8,7 +6,6 @@ import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
 import {
   normalizePath,
-  resolveToolPath,
   shellQuote,
   toolPathDescription,
 } from "../utils/fs-util";
@@ -157,15 +154,22 @@ type CreateGlobToolProps = {
   agentContext: ToolEnvironment;
 };
 
+/** 没有结果时的元数据；失败、取消、没找到都走这一个形状。 */
+const emptyMetadata = (path: string, exitCode: number | null) => ({
+  count: 0,
+  path,
+  truncatedByBytes: false,
+  truncatedByLines: false,
+  exitCode,
+});
+
 const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
   tool<GlobToolInput, GlobToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: GLOB_TOOL_INPUT_SCHEMA,
     execute: async (input, { abortSignal }) => {
-      const { absolute: normalizedPath } = resolveToolPath(
-        input.path ?? agentContext.primaryProjectDir,
-        agentContext.primaryProjectDir
-      );
+      const { sandbox } = agentContext;
+      const normalizedPath = sandbox.resolvePath(input.path ?? ".");
       const effectiveLimit = Math.min(
         Math.max(1, input.limit ?? DEFAULT_LIMIT),
         MAX_LIMIT
@@ -176,157 +180,96 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
         ? buildRipgrepCommand({ normalizedPath, pattern: input.pattern })
         : buildPosixFindCommand({ normalizedPath, pattern: input.pattern });
 
-      return await new Promise<GlobToolOutput>((resolve) => {
-        const proc = spawn(command, {
-          shell: true,
-          cwd: agentContext.primaryProjectDir,
-          env: process.env,
-          stdio: ["ignore", "pipe", "pipe"],
+      let stdout = "";
+      let stderr = "";
+      let run;
+      try {
+        run = await sandbox.exec(command, {
+          cwd: sandbox.resolvePath("."),
+          signal: abortSignal,
+          onData: (channel, chunk) => {
+            if (channel === "stdout") {
+              stdout += chunk.toString();
+            } else {
+              stderr += chunk.toString();
+            }
+          },
         });
-
-        let stdout = "";
-        let stderr = "";
-        let aborted = false;
-
-        proc.stdout?.on("data", (chunk: Buffer) => {
-          stdout += chunk.toString();
-        });
-
-        proc.stderr?.on("data", (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-
-        if (abortSignal?.aborted) {
-          aborted = true;
-          proc.kill();
-        }
-
-        const abortHandler = () => {
-          aborted = true;
-          proc.kill();
+      } catch (error) {
+        return {
+          output: `Glob failed: ${getErrorMessage(error)}`,
+          code: "error",
+          metadata: emptyMetadata(normalizedPath, null),
         };
+      }
 
-        abortSignal?.addEventListener("abort", abortHandler, { once: true });
+      if (run.aborted) {
+        return {
+          output: "Glob search was aborted.",
+          code: "error",
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
+        };
+      }
 
-        proc.on("error", (err) => {
-          abortSignal?.removeEventListener("abort", abortHandler);
-          resolve({
-            output: `Glob failed: ${getErrorMessage(err)}`,
-            code: "error",
-            metadata: {
-              count: 0,
-              path: normalizedPath,
-              truncatedByBytes: false,
-              truncatedByLines: false,
-              exitCode: null,
-            },
-          });
-        });
+      // Exit codes: 0 = matches found, 1 = rg-specific no matches, 2+ = error.
+      if (run.exitCode !== null && run.exitCode > 1) {
+        const trimmedStderr = stderr.trim();
+        const detail =
+          trimmedStderr.length > 0 ? trimmedStderr : "unknown error";
+        return {
+          output: `Glob failed (exit ${run.exitCode}): ${detail}`,
+          code: "error",
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
+        };
+      }
 
-        proc.on("exit", (exitCode) => {
-          abortSignal?.removeEventListener("abort", abortHandler);
+      const paths = stdout
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => normalizePath(line));
 
-          if (aborted) {
-            resolve({
-              output: "Glob search was aborted.",
-              code: "error",
-              metadata: {
-                count: 0,
-                path: normalizedPath,
-                truncatedByBytes: false,
-                truncatedByLines: false,
-                exitCode,
-              },
-            });
-            return;
-          }
+      if (paths.length === 0) {
+        return {
+          output: "No files found.",
+          code: "ok",
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
+        };
+      }
 
-          // Exit codes: 0 = matches found, 1 = rg-specific no matches, 2+ = error.
-          if (exitCode !== null && exitCode > 1) {
-            const trimmedStderr = stderr.trim();
-            const detail =
-              trimmedStderr.length > 0 ? trimmedStderr : "unknown error";
-            resolve({
-              output: `Glob failed (exit ${exitCode}): ${detail}`,
-              code: "error",
-              metadata: {
-                count: 0,
-                path: normalizedPath,
-                truncatedByBytes: false,
-                truncatedByLines: false,
-                exitCode,
-              },
-            });
-            return;
-          }
-
-          const rawLines = stdout.split("\n").filter((line) => line.length > 0);
-
-          // Normalize each path.
-          const paths: string[] = [];
-          for (const line of rawLines) {
-            paths.push(normalizePath(line));
-          }
-
-          if (paths.length === 0) {
-            resolve({
-              output: "No files found.",
-              code: "ok",
-              metadata: {
-                count: 0,
-                path: normalizedPath,
-                truncatedByBytes: false,
-                truncatedByLines: false,
-                exitCode,
-              },
-            });
-            return;
-          }
-
-          const truncated = truncateContent({
-            content: stdout,
-            maxBytes: MAX_BYTES,
-            maxLines: effectiveLimit,
-          });
-
-          const notices: string[] = [];
-          if (truncated.truncatedByLines) {
-            notices.push(
-              `Match limit reached (${effectiveLimit}). Use a larger limit or more specific pattern.`
-            );
-          }
-          if (truncated.truncatedByBytes) {
-            notices.push(
-              "Output truncated due to size. Use a more specific path or pattern."
-            );
-          }
-
-          const content =
-            notices.length > 0
-              ? truncated.lines.join("\n") + `\n\n[${notices.join(" ")}]`
-              : truncated.lines.join("\n");
-
-          resolve({
-            output: content,
-            code: "ok",
-            metadata: {
-              count: truncated.outputLines,
-              path: normalizedPath,
-              truncatedByBytes: truncated.truncatedByBytes,
-              truncatedByLines: truncated.truncatedByLines,
-              exitCode,
-            },
-            // output: truncated.lines.join("\n"),
-            // code: "ok",
-            // metadata: {
-            //   count: boundedPaths.length,
-            //   path: normalizedPath,
-            //   truncated: truncatedByCount || truncated.truncatedByBytes,
-            //   exitCode,
-            // },
-          });
-        });
+      const truncated = truncateContent({
+        content: stdout,
+        maxBytes: MAX_BYTES,
+        maxLines: effectiveLimit,
       });
+
+      const notices: string[] = [];
+      if (truncated.truncatedByLines) {
+        notices.push(
+          `Match limit reached (${effectiveLimit}). Use a larger limit or more specific pattern.`
+        );
+      }
+      if (truncated.truncatedByBytes) {
+        notices.push(
+          "Output truncated due to size. Use a more specific path or pattern."
+        );
+      }
+
+      const content =
+        notices.length > 0
+          ? truncated.lines.join("\n") + `\n\n[${notices.join(" ")}]`
+          : truncated.lines.join("\n");
+
+      return {
+        output: content,
+        code: "ok",
+        metadata: {
+          count: truncated.outputLines,
+          path: normalizedPath,
+          truncatedByBytes: truncated.truncatedByBytes,
+          truncatedByLines: truncated.truncatedByLines,
+          exitCode: run.exitCode,
+        },
+      };
     },
     toModelOutput({ output }) {
       if (output.code === "error") {

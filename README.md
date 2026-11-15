@@ -108,6 +108,20 @@ host and whether the cookie gets `Secure`. Set `AIFY_WEB_ORIGIN` when the page
 is served by a separate dev server. Plain http works on a LAN, but the ticket
 and cookie cross the network unencrypted; use HTTPS beyond a trusted network.
 
+### Sandbox backend
+
+Model tools run in a sandbox: one interface for file access and command execution.
+`AIFY_SANDBOX_ADAPTER` picks the sandbox adapter.
+
+| Value            | Behavior                                                                                                                                                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host` (default) | No isolation. Commands run as your user, and the agent can write any file you can write. This is the behavior from before the sandbox layer existed.                                                                          |
+| `isolated`       | macOS seatbelt or Linux bubblewrap. Commands and file writes can reach only the project directories, the session directory, temp dirs and build caches (`~/.npm`, `~/.cache`, `~/Library/Caches`). Network access stays open. |
+
+The isolated backend probes the platform when a session starts. If the platform cannot
+apply the constraint, the session fails with the reason. It never falls back to `host`
+silently. See `packages/sandbox/README.md` and `docs/adr/0008`.
+
 So the packaged app ships and owns its server by default, while `dev:server` +
 `dev:desktop` share one process. Only one desktop instance runs at a time: a
 second launch focuses the existing window instead of starting another server or

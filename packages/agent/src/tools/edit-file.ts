@@ -1,6 +1,3 @@
-import { constants } from "node:fs";
-import { access, readFile, stat, writeFile } from "node:fs/promises";
-
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
@@ -8,9 +5,8 @@ import { z } from "zod";
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
 import {
+  getFileTypeFromSandbox,
   isBinaryFile,
-  getFileTypeFromBuffer,
-  resolveToolPath,
   toolPathDescription,
 } from "../utils/fs-util";
 import {
@@ -81,11 +77,9 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
     description: DESCRIPTION,
     inputSchema: EDIT_FILE_INPUT_SCHEMA,
     execute: async ({ path: filepath, edits }, { abortSignal }) => {
+      const { sandbox } = agentContext;
       try {
-        const { absolute: absolutePath } = resolveToolPath(
-          filepath,
-          agentContext.primaryProjectDir
-        );
+        const absolutePath = sandbox.resolvePath(filepath);
 
         return await withFileMutationQueue(absolutePath, async () => {
           // 每个 await 之后检查一次中断，而不是监听 abort 事件：
@@ -98,9 +92,11 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
 
           throwIfAborted();
 
-          // 先确认可读可写，让权限问题在真正写入前暴露。
+          // 直接读：文件不存在、读不了都由 `readFile` 报出真实错误码。先问
+          // `exists` 只能得到布尔，猜不出是 ENOENT 还是 EACCES。
+          let rawContent: string;
           try {
-            await access(absolutePath, constants.R_OK | constants.W_OK);
+            rawContent = await sandbox.readFile(absolutePath);
           } catch (error) {
             throwIfAborted();
             const reason =
@@ -113,19 +109,15 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
           }
           throwIfAborted();
 
-          const stats = await stat(absolutePath);
-          const [, ext, sample] = await getFileTypeFromBuffer(
-            absolutePath,
-            stats.size
+          const [, ext, sample] = await getFileTypeFromSandbox(
+            sandbox,
+            absolutePath
           );
           if (isBinaryFile(ext, sample)) {
             throw new Error(
               "Cannot edit binary files. Use the write file tool instead."
             );
           }
-          throwIfAborted();
-
-          const rawContent = await readFile(absolutePath, "utf-8");
           throwIfAborted();
 
           // 匹配前剥掉 BOM、统一成 LF；写回时再还原，避免改动文件原有编码。
@@ -141,7 +133,7 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
 
           const finalContent =
             bom + restoreLineEndings(newContent, originalEnding);
-          await writeFile(absolutePath, finalContent, "utf-8");
+          await sandbox.writeFile(absolutePath, finalContent);
           throwIfAborted();
 
           const { linesAdded, linesRemoved } = countLineChanges(

@@ -1,4 +1,5 @@
 import type { AgentStreamEvent } from "@workspace/agent-client";
+import type { Sandbox } from "@workspace/sandbox";
 
 import { AgentState } from "./agent-state";
 import type { AgentStateOptions } from "./agent-state";
@@ -83,6 +84,11 @@ export type AgentContextOptions = AgentStateOptions & {
    */
   jobs?: JobRegistry;
   controller?: AgentStreamEventController;
+  /**
+   * 工具在其中读写文件和运行命令的环境。工具只认这个面，不认具体实现；
+   * 省略时装配处给一个本机沙箱。
+   */
+  sandbox: Sandbox;
 };
 export class AgentContext extends AgentState {
   projectDirs: readonly string[];
@@ -100,6 +106,8 @@ export class AgentContext extends AgentState {
   abortSignal?: AbortSignal;
   jobs?: JobRegistry;
   controller?: AgentStreamEventController;
+  /** 工具读写文件和运行命令的环境；会话内不变。 */
+  readonly sandbox: Sandbox;
 
   constructor(options: AgentContextOptions) {
     super(options);
@@ -121,6 +129,7 @@ export class AgentContext extends AgentState {
     this.modelContextWindows = options.modelContextWindows;
     this.jobs = options.jobs;
     this.controller = options.controller;
+    this.sandbox = options.sandbox;
   }
   [x: string]: unknown;
 }

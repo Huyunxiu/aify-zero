@@ -86,14 +86,15 @@ export default defineConfig({
     },
   },
   test: {
-    // `.delta` 和 `.agents/worktrees` 里是旧 worktree 的完整副本；测试扫描会
-    // 连它们一起跑，结果是同一份测试在别人的代码上失败（副本没有 node_modules）。
-    // 排除掉这些副本。
+    // `.delta`、`.agents/worktrees` 和 `.pnpm-store` 里都有仓库的完整副本；测试
+    // 扫描会连它们一起跑，结果是同一份测试在别人的代码上跑两遍（副本没有
+    // node_modules，或对着旧代码）。排除掉这些副本。
     exclude: [
       ...configDefaults.exclude,
       "**/.delta/**",
       "**/.claude/worktrees/**",
       "**/.agents/worktrees/**",
+      "**/.pnpm-store/**",
     ],
   },
   run: {

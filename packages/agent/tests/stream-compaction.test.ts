@@ -18,6 +18,7 @@ import {
   userTurn,
 } from "./compaction/fixtures.js";
 import { testModel, testResolveModel } from "./helpers/model-target.js";
+import { testSandbox } from "./helpers/sandbox.js";
 
 const longText = "x".repeat(20_000);
 
@@ -66,6 +67,8 @@ const buildAgent = (
     session: new AgentSession({ turns: [] }),
     store: asStore(store),
     context: new AgentContext({
+      sandbox: testSandbox("/tmp", "/tmp/sessions/session-1"),
+
       sessionId: "session-1",
       projectDirs: ["/tmp"],
       sessionDir: "/tmp/sessions/session-1",

@@ -8,6 +8,7 @@ import type {
 } from "../../src/extensions/types.js";
 import type { CatalogEntry } from "../../src/tool-catalog/catalog.js";
 import type { resolveCatalogCall } from "../../src/tools/call-tool.js";
+import { testSandbox } from "../helpers/sandbox.js";
 
 const entryParser = (name: string, description: string): CatalogEntry => {
   const at = name.indexOf("__");
@@ -44,6 +45,7 @@ function createApi() {
       projectDirs: ["/tmp"],
       primaryProjectDir: "/tmp",
       sessionDir: "/tmp/s1",
+      sandbox: testSandbox("/tmp", "/tmp/s1"),
     },
     tool: (name: string, tool: Tool, options?: { resolveCall?: unknown }) => {
       tools.set(name, tool);

@@ -1,6 +1,5 @@
 import type { ToolEnvironment } from "../extensions/capabilities";
 import { MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES } from "./shell/output";
-import { bashArgv, defaultBashShell } from "./shell/resolve";
 import { createShellTool } from "./shell/tool";
 
 /**
@@ -33,19 +32,8 @@ export const createBashTool = ({
   createShellTool({
     description: DESCRIPTION,
     agentContext,
-    kind: "bash",
-    program: () => {
-      const file = defaultBashShell();
-      if (file === undefined) {
-        throw new Error(
-          "No bash executable found. Install Git Bash (Windows) or bash (POSIX), or use the powershell tool."
-        );
-      }
-      return {
-        argv: (command) => bashArgv(file, command),
-        env: BASH_ENV,
-      };
-    },
+    shell: "bash",
+    env: BASH_ENV,
   });
 
 export type BashToolType = ReturnType<typeof createBashTool>;
