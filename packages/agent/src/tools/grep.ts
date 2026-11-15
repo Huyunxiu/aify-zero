@@ -204,6 +204,19 @@ type CreateGrepToolProps = {
   agentContext: ToolEnvironment;
 };
 
+/**
+ * 没有匹配结果时的元数据。
+ *
+ * 失败、取消、没匹配到都还没有匹配数：四处返回同一个形状，改一处就够。
+ */
+const emptyMetadata = (path: string, exitCode: number | null) => ({
+  matchCount: 0,
+  path,
+  truncatedByBytes: false,
+  truncatedByLines: false,
+  exitCode,
+});
+
 const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
   tool<GrepToolInput, GrepToolOutput, AgentContext>({
     description: DESCRIPTION,
@@ -259,13 +272,7 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
         return {
           output: `Grep failed: ${getErrorMessage(error)}`,
           code: "error",
-          metadata: {
-            matchCount: 0,
-            path: normalizedPath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: null,
-          },
+          metadata: emptyMetadata(normalizedPath, null),
         };
       }
 
@@ -273,13 +280,7 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
         return {
           output: "Grep search was aborted.",
           code: "error",
-          metadata: {
-            matchCount: 0,
-            path: normalizedPath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: run.exitCode,
-          },
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
         };
       }
 
@@ -291,13 +292,7 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
         return {
           output: `Grep failed (exit ${run.exitCode}): ${detail}`,
           code: "error",
-          metadata: {
-            matchCount: 0,
-            path: normalizedPath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: run.exitCode,
-          },
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
         };
       }
 
@@ -305,13 +300,7 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
         return {
           output: "No matches found.",
           code: "ok",
-          metadata: {
-            matchCount: 0,
-            path: normalizedPath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: run.exitCode,
-          },
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
         };
       }
 

@@ -154,6 +154,15 @@ type CreateGlobToolProps = {
   agentContext: ToolEnvironment;
 };
 
+/** 没有结果时的元数据；失败、取消、没找到都走这一个形状。 */
+const emptyMetadata = (path: string, exitCode: number | null) => ({
+  count: 0,
+  path,
+  truncatedByBytes: false,
+  truncatedByLines: false,
+  exitCode,
+});
+
 const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
   tool<GlobToolInput, GlobToolOutput, AgentContext>({
     description: DESCRIPTION,
@@ -192,13 +201,7 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
         return {
           output: `Glob failed: ${getErrorMessage(error)}`,
           code: "error",
-          metadata: {
-            count: 0,
-            path: normalizedPath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: null,
-          },
+          metadata: emptyMetadata(normalizedPath, null),
         };
       }
 
@@ -206,13 +209,7 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
         return {
           output: "Glob search was aborted.",
           code: "error",
-          metadata: {
-            count: 0,
-            path: normalizedPath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: run.exitCode,
-          },
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
         };
       }
 
@@ -224,13 +221,7 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
         return {
           output: `Glob failed (exit ${run.exitCode}): ${detail}`,
           code: "error",
-          metadata: {
-            count: 0,
-            path: normalizedPath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: run.exitCode,
-          },
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
         };
       }
 
@@ -243,13 +234,7 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
         return {
           output: "No files found.",
           code: "ok",
-          metadata: {
-            count: 0,
-            path: normalizedPath,
-            truncatedByBytes: false,
-            truncatedByLines: false,
-            exitCode: run.exitCode,
-          },
+          metadata: emptyMetadata(normalizedPath, run.exitCode),
         };
       }
 

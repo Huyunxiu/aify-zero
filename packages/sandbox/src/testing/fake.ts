@@ -7,7 +7,7 @@
 import { posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { SandboxOperationUnsupportedError } from "../errors.js";
+import { SandboxOperationUnsupportedError } from "../errors";
 import type {
   DirEntry,
   ExecOptions,
@@ -16,7 +16,7 @@ import type {
   Sandbox,
   SandboxAdapter,
   ShellKind,
-} from "../types.js";
+} from "../types";
 
 /** 假适配器的 home 目录。`~` 展开到这里，和真实适配器一样与平台无关。 */
 const HOME = "/home/user";

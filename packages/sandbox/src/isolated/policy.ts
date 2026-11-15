@@ -167,7 +167,7 @@ export function buildBwrapInvocation(
   return { file: "bwrap", args };
 }
 
-/** 按平台选后端；Windows 没有原生手段，返回 `undefined`。 */
+/** 按平台选隔离机制；Windows 没有原生手段，返回 `undefined`。 */
 export function detectBackend(): IsolationBackend | undefined {
   if (process.platform === "darwin") {
     return "seatbelt";

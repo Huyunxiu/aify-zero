@@ -1,26 +1,11 @@
 /**
- * 沙箱层的错误只有两类，其余都是结果字段。区分的理由是调用方要不要换策略：
- * 环境死了要重建，能力不支持要换工具，两者都不该被当成「命令失败」。
+ * 沙箱层只有两类抛错：能力缺失和策略拒绝。其余都是结果字段——命令跑完、超时、
+ * 取消都通过 `ExecResult` 表达。区分的理由是调用方要不要换策略：能力缺失要换
+ * 工具，策略拒绝要换路径，两者都不该被当成「命令失败」。
+ *
+ * 环境死掉（容器被删、远端实例过期）将来也要一类错误。现在没有适配器会检测它，
+ * 所以不加：等第一个真的需要区分「死了」和「没权限」的适配器出现时再加。
  */
-
-/** 适配器那一侧的环境没了：容器被删、远端实例过期。 */
-export class SandboxDiedError extends Error {
-  readonly operation: string;
-  readonly reason: "stopped" | "unreachable";
-
-  constructor(properties: {
-    operation: string;
-    reason: "stopped" | "unreachable";
-    cause?: unknown;
-  }) {
-    super(`Sandbox died during ${properties.operation}: ${properties.reason}`, {
-      cause: properties.cause,
-    });
-    this.name = "SandboxDiedError";
-    this.operation = properties.operation;
-    this.reason = properties.reason;
-  }
-}
 
 /**
  * 写入越界：目标不在沙箱的可写根里。

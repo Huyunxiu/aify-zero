@@ -1,8 +1,9 @@
 /**
  * 沙箱契约的入口。
  *
- * 只导出契约本身与本机适配器；`@workspace/sandbox/paths` 保持可达，供需要
- * 单独归一化路径的调用方使用。
+ * 只导出两样东西：契约本身，和装配时真正要用的那三个工厂（本机、原生隔离、
+ * 假适配器）。隔离策略的构造、进程内核这些是实现细节，测试直接按路径引用，
+ * 不进公开面。
  */
 export type {
   AcquireSandboxInput,
@@ -18,7 +19,6 @@ export type {
   ShellKind,
 } from "./types";
 export {
-  SandboxDiedError,
   SandboxOperationUnsupportedError,
   SandboxWriteDeniedError,
 } from "./errors";
@@ -27,7 +27,6 @@ export {
   createHostSandbox,
   createHostSandboxAdapter,
 } from "./host/adapter";
-export { runShell } from "./exec";
 export {
   ISOLATED_ADAPTER,
   createIsolatedSandboxAdapter,
@@ -37,17 +36,5 @@ export type {
   IsolationProbeResult,
   IsolatedSandboxOptions,
 } from "./isolated/adapter";
-export type { IsolationBackend } from "./isolated/policy";
-export {
-  SEATBELT_BINARY,
-  buildBwrapInvocation,
-  buildSeatbeltInvocation,
-  buildSeatbeltProfile,
-  buildWritePolicy,
-  detectBackend,
-  isWritablePath,
-} from "./isolated/policy";
-export type { WritePolicyInput } from "./isolated/policy";
 export { createFakeSandbox, createFakeSandboxAdapter } from "./testing/fake";
 export type { FakeSandbox, FakeSandboxOptions } from "./testing/fake";
-export type { ShellRunOptions, ShellRunResult } from "./exec";

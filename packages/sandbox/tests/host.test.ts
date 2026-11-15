@@ -12,7 +12,8 @@ import { pathToFileURL } from "node:url";
 
 import { afterEach, describe, expect, test } from "vitest";
 
-import { defaultBashShell } from "../src/host/resolve.js";
+import { defaultBashShell, defaultPowerShell } from "../src/host/resolve.js";
+import { shellProgramArgv } from "../src/host/shell-program.js";
 import { HOST_BACKEND, createHostSandboxAdapter } from "../src/index.js";
 import type { Sandbox } from "../src/index.js";
 import { describeSandboxContract } from "../src/testing/contract.js";
@@ -479,5 +480,44 @@ describe("host sandbox", () => {
       const { sandbox } = await createSandbox();
       return sandbox;
     },
+  });
+});
+
+describe(shellProgramArgv, () => {
+  test("should build a bash argv when bash is available", () => {
+    const invocation = shellProgramArgv("bash", "echo hi");
+
+    expect(invocation.args.slice(0, 1)).toStrictEqual(["-c"]);
+    expect(invocation.args.at(-1)).toBe("echo hi");
+  });
+
+  test("should build a cmd argv on Windows", () => {
+    // Windows 上没有 Git Bash 时，省略方言的内部命令退回 cmd；argv 形状与
+    // Node 的 `spawn({ shell: true })` 一致，否则 grep / glob 会在那条路径上失效。
+    const invocation = shellProgramArgv("cmd", "rg --files");
+
+    expect(invocation.file.toLowerCase()).toContain("cmd.exe");
+    expect(invocation.args).toStrictEqual(["/d", "/s", "/c", "rg --files"]);
+  });
+
+  test("should report a missing executable instead of an empty argv", () => {
+    // 这台机器没有 PowerShell 时报错；有则 argv 结尾带完整命令。
+    const outcome =
+      defaultPowerShell() === undefined
+        ? (() => {
+            try {
+              shellProgramArgv("powershell", "Get-Date");
+              return "resolved";
+            } catch (error) {
+              return error instanceof Error ? error.message : String(error);
+            }
+          })()
+        : (shellProgramArgv("powershell", "Get-Date").args.at(-1) ?? "");
+
+    expect(outcome).toContain(
+      defaultPowerShell() === undefined
+        ? "No PowerShell executable found."
+        : "Get-Date"
+    );
   });
 });

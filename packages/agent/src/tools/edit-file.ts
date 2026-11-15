@@ -92,26 +92,19 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
 
           throwIfAborted();
 
-          // 先确认可读可写，让权限问题在真正写入前暴露。
-          //
-          // `exists` 不区分「不存在」和「没权限」，所以真失败时再用 `stat`
-          // 取回原始错误码：模型看到的仍是 ENOENT 这种可查的线索。
-          const writable = await sandbox.exists(absolutePath, {
-            readable: true,
-            writable: true,
-          });
-          if (!writable) {
+          // 直接读：文件不存在、读不了都由 `readFile` 报出真实错误码。先问
+          // `exists` 只能得到布尔，猜不出是 ENOENT 还是 EACCES。
+          let rawContent: string;
+          try {
+            rawContent = await sandbox.readFile(absolutePath);
+          } catch (error) {
             throwIfAborted();
-            const cause = await sandbox.stat(absolutePath).then(
-              () => Object.assign(new Error("EACCES"), { code: "EACCES" }),
-              (error: unknown) => error
-            );
             const reason =
-              cause instanceof Error && "code" in cause
-                ? `Error code: ${String(cause.code)}`
-                : String(cause);
+              error instanceof Error && "code" in error
+                ? `Error code: ${String(error.code)}`
+                : String(error);
             throw new Error(`Could not edit file: ${filepath}. ${reason}.`, {
-              cause,
+              cause: error,
             });
           }
           throwIfAborted();
@@ -125,9 +118,6 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
               "Cannot edit binary files. Use the write file tool instead."
             );
           }
-          throwIfAborted();
-
-          const rawContent = await sandbox.readFile(absolutePath);
           throwIfAborted();
 
           // 匹配前剥掉 BOM、统一成 LF；写回时再还原，避免改动文件原有编码。

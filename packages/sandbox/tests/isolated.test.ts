@@ -5,16 +5,18 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import {
+  createIsolatedSandboxAdapter,
+  probeNativeIsolation,
+} from "../src/index";
+import {
   SEATBELT_BINARY,
   buildBwrapInvocation,
   buildSeatbeltInvocation,
   buildSeatbeltProfile,
   buildWritePolicy,
-  createIsolatedSandboxAdapter,
-  isWritablePath,
   detectBackend,
-  probeNativeIsolation,
-} from "../src/index";
+  isWritablePath,
+} from "../src/isolated/policy";
 import { describeSandboxContract } from "../src/testing/contract";
 
 const tempDirs: string[] = [];
@@ -173,7 +175,7 @@ if (!probe.available) {
 
 describe(probeNativeIsolation, () => {
   test("should report a backend or a reason", () => {
-    // 可用时给后端名，不可用时给原因；两者总要有一个。
+    // 可用时给机制名，不可用时给原因；两者总要有一个。
     const detail = probe.available ? probe.backend : probe.reason;
 
     expect((detail ?? "").length).toBeGreaterThan(0);

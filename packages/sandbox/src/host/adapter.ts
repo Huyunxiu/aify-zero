@@ -36,12 +36,8 @@ import type {
   SandboxHandle,
   ShellKind,
 } from "../types";
-import {
-  bashArgv,
-  defaultBashShell,
-  defaultPowerShell,
-  powerShellArgv,
-} from "./resolve";
+import { defaultBashShell, defaultPowerShell } from "./resolve";
+import { defaultShellProgram, shellProgramArgv } from "./shell-program";
 
 /** 适配器名字，同时写进 `describe().backend`。 */
 export const HOST_BACKEND = "host";
@@ -59,6 +55,10 @@ function detectShells(): ShellKind[] {
   }
   if (defaultPowerShell() !== undefined) {
     shells.push("powershell");
+  }
+  // `cmd` 只在 Windows 上存在，且没有对应工具；它让省略方言的内部命令有路可走。
+  if (process.platform === "win32") {
+    shells.push("cmd");
   }
   return shells;
 }
@@ -111,30 +111,15 @@ class HostSandbox implements Sandbox {
   }
 
   async exec(command: string, options: ExecOptions = {}): Promise<ExecResult> {
-    const shell = options.shell ?? "bash";
-    const executable =
-      shell === "bash" ? defaultBashShell() : defaultPowerShell();
-    if (executable === undefined) {
-      throw new Error(
-        shell === "bash"
-          ? "No bash executable found. Install Git Bash (Windows) or bash (POSIX)."
-          : "No PowerShell executable found."
-      );
-    }
-
-    const argv =
-      shell === "bash"
-        ? bashArgv(executable, command)
-        : powerShellArgv(executable, command);
-    const [file, ...args] = argv;
-    if (file === undefined) {
-      throw new Error("The shell program resolved to an empty argv.");
-    }
+    const { file, args } = shellProgramArgv(
+      options.shell ?? defaultShellProgram(),
+      command
+    );
 
     // 本机适配器直接沿用进程环境；按白名单裁剪是后续适配器的事。
     return await runShell({
       file,
-      args,
+      args: [...args],
       cwd:
         options.cwd === undefined ? this.#cwd : this.resolvePath(options.cwd),
       env: { ...process.env, ...options.env },

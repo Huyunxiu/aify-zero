@@ -3,8 +3,13 @@
  * 远端机器；工具只认这一个面，看不出区别。
  */
 
-/** 沙箱能跑的 shell 方言。缺哪一种，对应的工具就不注册。 */
-export type ShellKind = "bash" | "powershell";
+/**
+ * 沙箱能跑的 shell 方言。
+ *
+ * `cmd` 只在 Windows 上出现，没有对应工具：它是 `exec` 省略方言时的兜底。
+ * 一个方言缺哪种，对应的工具就不注册。
+ */
+export type ShellKind = "bash" | "powershell" | "cmd";
 
 /** 沙箱对模型的自我描述。`Environment` 提示从它取值，不写死宿主路径。 */
 export interface SandboxDescription {
@@ -14,7 +19,10 @@ export interface SandboxDescription {
   readonly cwd: string;
   /** 沙箱能碰到的根目录，`cwd` 通常在第一项。 */
   readonly roots: readonly string[];
-  /** 这个沙箱能跑的 shell 方言。空数组表示只能读写文件。 */
+  /**
+   * 这个沙箱能跑的 shell 方言。空数组表示只能读写文件。没有对应工具的方言
+   * （Windows 的 `cmd`）也在里面：它描述能力，不描述模型的工具箱。
+   */
   readonly shells: readonly ShellKind[];
   /**
    * 给模型看的一句话，说明这个环境的约束。省略时不渲染——本机直跑没有值得
@@ -32,7 +40,7 @@ export interface ExecOptions {
   timeoutMs?: number;
   /** 调用方取消。结果里 `aborted` 为 true，不抛——工具读这个字段。 */
   signal?: AbortSignal;
-  /** 方言，省略用适配器的默认。 */
+  /** 方言，省略用适配器的默认（本机适配器：能跑 bash 用 bash，Windows 退回 cmd）。 */
   shell?: ShellKind;
   /** 输出增量。不传就只关心结局（退出码、超时、取消），输出不会进结果。 */
   onData?: (channel: "stdout" | "stderr", chunk: Buffer) => void;

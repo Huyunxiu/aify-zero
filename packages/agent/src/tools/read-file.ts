@@ -383,6 +383,13 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
         );
       }
 
+      // 既不是文件也不是目录：坏符号链接、socket、设备节点。旧实现靠 `stat`
+      // 抛 ENOENT 走进 miss()，现在 `stat` 对坏链接会如实回报链接本身，所以要
+      // 在这里显式挡一次，否则会继续去读一个读不出来的目标。
+      if (!stats.isFile) {
+        return await miss(sandbox, filepath);
+      }
+
       // 只读开头一段做类型嗅探：整份读进来对二进制大文件是不可接受的。
       const [mime, ext, sample] = await getFileTypeFromSandbox(
         sandbox,

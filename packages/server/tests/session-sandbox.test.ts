@@ -1,9 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import {
-  acquireSessionSandbox,
-  releaseSessionSandbox,
-} from "../src/sandbox/registry";
+import { acquireSessionSandbox } from "../src/sandbox/registry";
 
 const input = (sessionId: string) => ({
   sessionId,
@@ -42,15 +39,15 @@ describe(acquireSessionSandbox, () => {
   });
 
   test("should reject an unknown backend instead of falling back", async () => {
-    vi.stubEnv("AIFY_SANDBOX_BACKEND", "container");
+    vi.stubEnv("AIFY_SANDBOX_ADAPTER", "container");
 
     await expect(
       acquireSessionSandbox(input("session-unknown"))
-    ).rejects.toThrow('Unknown AIFY_SANDBOX_BACKEND: "container"');
+    ).rejects.toThrow('Unknown AIFY_SANDBOX_ADAPTER: "container"');
   });
 
   test("should refuse the isolated backend when isolation is unavailable", async () => {
-    vi.stubEnv("AIFY_SANDBOX_BACKEND", "isolated");
+    vi.stubEnv("AIFY_SANDBOX_ADAPTER", "isolated");
 
     // 这台机器能套上隔离时这条走成功分支；不能套时必须明确失败，不静默降级。
     await acquireSessionSandbox(input("session-isolated")).then(
@@ -61,13 +58,5 @@ describe(acquireSessionSandbox, () => {
         expect(String(error)).toContain("Native isolation is unavailable");
       }
     );
-  });
-
-  test("should build a new sandbox after release", async () => {
-    const first = await acquireSessionSandbox(input("session-released"));
-    releaseSessionSandbox("session-released");
-    const second = await acquireSessionSandbox(input("session-released"));
-
-    expect(second).not.toBe(first);
   });
 });

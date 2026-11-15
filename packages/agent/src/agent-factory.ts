@@ -1,5 +1,4 @@
 import type { Sandbox } from "@workspace/sandbox";
-import { createHostSandboxAdapter } from "@workspace/sandbox";
 import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 
@@ -83,10 +82,10 @@ export interface SessionAgentOptions {
   modelContextWindows?: ModelContextWindows;
   jobs?: JobRegistry;
   /**
-   * 工具读写文件和运行命令的环境。宿主要复用沙箱（远端实例、容器）就必须
-   * 自己传；省略时这里建一个本机沙箱，行为与引入沙箱之前一致。
+   * 工具读写文件和运行命令的环境。必须由宿主决定：这里给默认值等于在装配处
+   * 隐式选择适配器，和「选择必须是显式的」相悖（见 docs/adr/0008）。
    */
-  sandbox?: Sandbox;
+  sandbox: Sandbox;
   /**
    * 宿主自己的工具审批函数：按调用入参决定 deny / ask / allow。
    *
@@ -110,8 +109,6 @@ export interface SessionAgentOptions {
 export async function createSessionAgent(
   options: SessionAgentOptions
 ): Promise<Agent> {
-  const sandbox = options.sandbox ?? (await createDefaultSandbox(options));
-
   const context = new AgentContext({
     sessionId: options.sessionId,
     projectDirs: options.projectDirs,
@@ -122,7 +119,7 @@ export async function createSessionAgent(
     compactionOverrides: options.compactionOverrides,
     modelContextWindows: options.modelContextWindows,
     jobs: options.jobs,
-    sandbox,
+    sandbox: options.sandbox,
   });
 
   const agent = new Agent({
@@ -178,22 +175,4 @@ export async function createSessionAgent(
   agent.instructions = appendSubagentPrompt(options.instructions ?? "");
 
   return agent;
-}
-
-/**
- * 宿主没有指定沙箱时建一个本机沙箱。
- *
- * 它不持有资源，所以每次装配都可以新建；要复用远端环境的宿主必须自己传
- * `sandbox`，在这里建只会把远端实例丢在身后。
- */
-async function createDefaultSandbox(
-  options: SessionAgentOptions
-): Promise<Sandbox> {
-  const handle = await createHostSandboxAdapter().acquire({
-    id: options.sessionId,
-    projectDirs: options.projectDirs,
-    sessionDir: options.sessionDir,
-  });
-
-  return handle.sandbox;
 }

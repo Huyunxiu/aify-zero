@@ -13,12 +13,7 @@ import { basename, dirname, join } from "node:path";
 import { SandboxWriteDeniedError } from "../errors";
 import { runShell } from "../exec";
 import { createHostSandbox } from "../host/adapter";
-import {
-  bashArgv,
-  defaultBashShell,
-  defaultPowerShell,
-  powerShellArgv,
-} from "../host/resolve";
+import { defaultShellProgram, shellProgramArgv } from "../host/shell-program";
 import { resolveSandboxPath } from "../paths";
 import type {
   AcquireSandboxInput,
@@ -31,7 +26,6 @@ import type {
   SandboxAdapter,
   SandboxDescription,
   SandboxHandle,
-  ShellKind,
 } from "../types";
 import {
   buildBwrapInvocation,
@@ -152,7 +146,7 @@ export function createIsolatedSandboxAdapter(
   };
 }
 
-/** 包一层：命令走隔离后端，其余动词委托给本机适配器。 */
+/** 包一层：命令走平台隔离，其余动词委托给本机适配器。 */
 class IsolatedSandbox implements Sandbox {
   readonly #host: Sandbox;
   readonly #backend: IsolationBackend;
@@ -180,12 +174,15 @@ class IsolatedSandbox implements Sandbox {
   }
 
   async exec(command: string, options: ExecOptions = {}): Promise<ExecResult> {
-    const shell = options.shell ?? "bash";
     const cwd =
       options.cwd === undefined
         ? this.#host.describe().cwd
         : this.resolvePath(options.cwd);
-    const shellArgv = this.#shellArgv(shell, command);
+    const program = shellProgramArgv(
+      options.shell ?? defaultShellProgram(),
+      command
+    );
+    const shellArgv = [program.file, ...program.args];
     const invocation =
       this.#backend === "seatbelt"
         ? buildSeatbeltInvocation(this.#roots, shellArgv)
@@ -285,23 +282,6 @@ class IsolatedSandbox implements Sandbox {
       });
     }
     return absolute;
-  }
-
-  /** shell 可执行文件与 argv；解析不到时报与命令起不来一致的错。 */
-  #shellArgv(shell: ShellKind, command: string): string[] {
-    const executable =
-      shell === "bash" ? defaultBashShell() : defaultPowerShell();
-    if (executable === undefined) {
-      throw new Error(
-        shell === "bash"
-          ? "No bash executable found. Install Git Bash (Windows) or bash (POSIX)."
-          : "No PowerShell executable found."
-      );
-    }
-
-    return shell === "bash"
-      ? bashArgv(executable, command)
-      : powerShellArgv(executable, command);
   }
 }
 

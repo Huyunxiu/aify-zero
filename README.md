@@ -111,7 +111,7 @@ and cookie cross the network unencrypted; use HTTPS beyond a trusted network.
 ### Sandbox backend
 
 Model tools run in a sandbox: one interface for file access and command execution.
-`AIFY_SANDBOX_BACKEND` picks the adapter.
+`AIFY_SANDBOX_ADAPTER` picks the sandbox adapter.
 
 | Value            | Behavior                                                                                                                                                                                                                      |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

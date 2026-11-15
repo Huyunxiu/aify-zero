@@ -8,14 +8,14 @@ import { isAbsolute } from "node:path";
 
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { SandboxOperationUnsupportedError } from "../errors.js";
-import type { Sandbox } from "../types.js";
+import { SandboxOperationUnsupportedError } from "../errors";
+import type { Sandbox } from "../types";
 
 /**
  * 契约里定义的 shell 方言。`describe().shells` 只能列出这些值，空数组表示
  * 这个沙箱只能读写文件。
  */
-const SHELL_KINDS = ["bash", "powershell"];
+const SHELL_KINDS = ["bash", "powershell", "cmd"];
 
 /**
  * 给一个沙箱节点挂上契约测试。
@@ -135,6 +135,24 @@ export function describeSandboxContract(node: {
       await sandbox.rm(tree, { recursive: true });
       await expect(sandbox.exists(tree)).resolves.toBe(false);
       await expect(sandbox.exists(leaf)).resolves.toBe(false);
+    });
+
+    test("should answer exists with and without access requirements", async () => {
+      const target = sandbox.resolvePath("exists.txt");
+      const missing = sandbox.resolvePath("missing.txt");
+
+      expect(await sandbox.exists(target)).toBe(false);
+      await sandbox.writeFile(target, "here");
+
+      expect(await sandbox.exists(target)).toBe(true);
+      expect(await sandbox.exists(missing)).toBe(false);
+      // 可读可写的检查只回答布尔，不抛：写不出去时调用方靠 `stat` 找原因。
+      await expect(
+        sandbox.exists(target, { readable: true, writable: true })
+      ).resolves.toBe(true);
+      await expect(
+        sandbox.exists(missing, { readable: true, writable: true })
+      ).resolves.toBe(false);
     });
 
     test("should resolve a relative path to an absolute path under cwd", () => {
