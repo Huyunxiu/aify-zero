@@ -9,12 +9,12 @@
     "name": "HuYunXiu",
     "email": "huyunxiu01@gmail.com"
   },
-  "main": ".vite/build/main.js",
+  "main": ".vite/build/main.cjs",
   "scripts": {
     "dev": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "publish": "electron-forge publish",
+    "release": "electron-forge release",
     "test": "vp test"
   },
   "dependencies": {
@@ -45,7 +45,7 @@
     "@electron-forge/plugin-auto-unpack-natives": "catalog:",
     "@electron-forge/plugin-fuses": "catalog:",
     "@electron-forge/plugin-vite": "catalog:",
-    "@electron-forge/shared-types": "^7.11.1",
+    "@electron-forge/shared-types": "^8.0.1",
     "@electron/fuses": "catalog:",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/router-plugin": "catalog:",

@@ -219,7 +219,7 @@ const buildWindow = (): BrowserWindow => {
       contextIsolation: true,
       devTools: inDevelopment,
       nodeIntegration: false,
-      preload: path.join(dirname, "preload.js"),
+      preload: path.join(dirname, "preload.cjs"),
     },
     width: 1400,
   });
@@ -614,7 +614,7 @@ const onElectronReady = async () => {
       ? app.getPath("userData")
       : path.resolve(app.getAppPath(), "../.."),
     // oxlint-disable-next-line unicorn/prefer-module
-    entry: path.join(__dirname, "server-entry.js"),
+    entry: path.join(__dirname, "server-entry.cjs"),
     env: serverEnvironment(),
     port: ownedPort,
   });

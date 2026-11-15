@@ -30,6 +30,7 @@
   },
   "devDependencies": {
     "@ai-sdk/devtools": "catalog:",
+    "@types/json-schema": "catalog:",
     "@types/turndown": "catalog:",
     "@workspace/config": "workspace:*",
     "gray-matter": "catalog:",

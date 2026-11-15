@@ -2,7 +2,7 @@
  * API server 的生命周期管理。
  *
  * 两种模式共用同一个“origin”概念：
- * - `owned`：在 `utilityProcess` 里启动随包携带的 `server-entry.js`；
+ * - `owned`：在 `utilityProcess` 里启动随包携带的 `server-entry.cjs`；
  * - `attach`：连接一个已经在跑的 server（`apps/server` 或别的机器）。
  *
  * 默认 `auto`：`AIFY_API_ORIGIN` 优先；否则先探测默认端口，已经有 server

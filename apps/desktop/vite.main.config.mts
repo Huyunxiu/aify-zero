@@ -5,7 +5,7 @@ import { defineConfig } from "vite";
 
 // https://vitejs.dev/config
 export default defineConfig(({ command }) => ({
-  // Forge 的 plugin-vite 默认不生成 sourcemap，主进程 bundle（.vite/build/main.js）
+  // Forge 的 plugin-vite 默认不生成 sourcemap，主进程 bundle（.vite/build/main.cjs）
   // 里就找不到 packages/server、packages/agent 等源码的位置，断点会变成 unbound。
   // 这个 configEnv 由 Forge 注入：start 时是 'serve'，package/make 时是 'build'，
   // 所以只在 dev 打开，生产保持关闭，避免源码被内联进包。
