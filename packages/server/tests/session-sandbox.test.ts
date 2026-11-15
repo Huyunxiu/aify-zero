@@ -38,12 +38,12 @@ describe(acquireSessionSandbox, () => {
     expect(sandbox.describe().cwd).toBe("/tmp");
   });
 
-  test("should reject an unknown backend instead of falling back", async () => {
-    vi.stubEnv("AIFY_SANDBOX_ADAPTER", "container");
+  test("should reject an unknown adapter instead of falling back", async () => {
+    vi.stubEnv("AIFY_SANDBOX_ADAPTER", "docker");
 
     await expect(
       acquireSessionSandbox(input("session-unknown"))
-    ).rejects.toThrow('Unknown AIFY_SANDBOX_ADAPTER: "container"');
+    ).rejects.toThrow('Unknown AIFY_SANDBOX_ADAPTER: "docker"');
   });
 
   test("should refuse the isolated backend when isolation is unavailable", async () => {

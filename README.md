@@ -113,14 +113,16 @@ and cookie cross the network unencrypted; use HTTPS beyond a trusted network.
 Model tools run in a sandbox: one interface for file access and command execution.
 `AIFY_SANDBOX_ADAPTER` picks the sandbox adapter.
 
-| Value            | Behavior                                                                                                                                                                                                                      |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `host` (default) | No isolation. Commands run as your user, and the agent can write any file you can write. This is the behavior from before the sandbox layer existed.                                                                          |
-| `isolated`       | macOS seatbelt or Linux bubblewrap. Commands and file writes can reach only the project directories, the session directory, temp dirs and build caches (`~/.npm`, `~/.cache`, `~/Library/Caches`). Network access stays open. |
+| Value             | Behavior                                                                                                                                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host` (default)  | No isolation. Commands run as your user, and the agent can write any file you can write. This is the behavior from before the sandbox layer existed.                                                                                                          |
+| `isolated`        | macOS seatbelt or Linux bubblewrap. Commands and file writes can reach only the project directories, the session directory, temp dirs and build caches (`~/.npm`, `~/.cache`, `~/Library/Caches`). Network access stays open.                                 |
+| `apple-container` | macOS only. Commands run in a Linux container from Apple's `container` CLI, and both commands and file tools can reach only the mounted project and session directories. Network access stays open. `AIFY_SANDBOX_IMAGE` picks the image (default `node:22`). |
 
-The isolated backend probes the platform when a session starts. If the platform cannot
-apply the constraint, the session fails with the reason. It never falls back to `host`
-silently. See `packages/sandbox/README.md` and `docs/adr/0008`.
+The isolated and container adapters probe the platform when a session starts. If the
+platform cannot apply the constraint, the session fails with the reason. They never
+fall back to `host` silently. See `packages/sandbox/README.md`, `docs/adr/0008` and
+`docs/adr/0009`.
 
 So the packaged app ships and owns its server by default, while `dev:server` +
 `dev:desktop` share one process. Only one desktop instance runs at a time: a

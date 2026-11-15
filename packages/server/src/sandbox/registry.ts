@@ -1,8 +1,14 @@
 import {
+  APPLE_CONTAINER_ADAPTER,
+  createAppleContainerSandboxAdapter,
   createHostSandboxAdapter,
   createIsolatedSandboxAdapter,
 } from "@workspace/sandbox";
-import type { Sandbox, SandboxAdapter } from "@workspace/sandbox";
+import type {
+  Sandbox,
+  SandboxAdapter,
+  SandboxHandle,
+} from "@workspace/sandbox";
 
 /**
  * 进程级的会话沙箱注册表。
@@ -16,19 +22,22 @@ import type { Sandbox, SandboxAdapter } from "@workspace/sandbox";
  */
 const ADAPTER_ENV = "AIFY_SANDBOX_ADAPTER";
 
+/** Apple 容器适配器的镜像；只有它读这个变量。 */
+const IMAGE_ENV = "AIFY_SANDBOX_IMAGE";
+
 const DEFAULT_ADAPTER = "host";
 
 /** 当前选中的沙箱适配器；env 变了就换一个，便于同一进程内切换与测试。 */
 let selected: { name: string; adapter: SandboxAdapter } | undefined;
 
 /**
- * 会话 id → 沙箱。
+ * 会话 id → 沙箱句柄。
  *
- * 没有淘汰：条目会在进程存活期间跟着跑过回合的会话数增长，但一个条目就是几个
- * 字段（本机适配器不持有资源）。等会话删除的流程出现时再接淘汰，现在提前加一个
- * 没人调用的清理函数只会变成死代码。
+ * 存句柄而不是沙箱：容器这类适配器要留下东西，换适配器时得能释放。没有淘汰：
+ * 条目会在进程存活期间跟着跑过回合的会话数增长，但一个条目就是几个字段。等
+ * 会话删除的流程出现时再接淘汰。
  */
-const sandboxes = new Map<string, Promise<Sandbox>>();
+const sandboxes = new Map<string, Promise<SandboxHandle>>();
 
 export interface AcquireSessionSandboxInput {
   sessionId: string;
@@ -45,10 +54,34 @@ function createAdapter(name: string): SandboxAdapter {
     case "isolated": {
       return createIsolatedSandboxAdapter();
     }
+    case APPLE_CONTAINER_ADAPTER: {
+      const image = process.env[IMAGE_ENV]?.trim();
+      return createAppleContainerSandboxAdapter(
+        image === undefined || image.length === 0 ? {} : { image }
+      );
+    }
     default: {
       throw new Error(
-        `Unknown ${ADAPTER_ENV}: "${name}". Use "host" or "isolated".`
+        `Unknown ${ADAPTER_ENV}: "${name}". Use "host", "isolated" or "${APPLE_CONTAINER_ADAPTER}".`
       );
+    }
+  }
+}
+
+/**
+ * 释放所有缓存的句柄。
+ *
+ * 同步清表再逐个释放：清表必须立刻生效，否则下一次装配还会拿到旧适配器的实例。
+ */
+async function disposeAll(): Promise<void> {
+  const entries = [...sandboxes.values()];
+  sandboxes.clear();
+  for (const entry of entries) {
+    try {
+      const handle = await entry;
+      await handle.dispose?.();
+    } catch {
+      // 建失败的沙箱没有可释放的东西。
     }
   }
 }
@@ -62,9 +95,9 @@ function getAdapter(): SandboxAdapter {
 
   const adapter = createAdapter(name);
   selected = { name, adapter };
-  // 换了适配器，旧适配器建出来的沙箱不能再给会话用：清掉，让下一次装配按新
-  // 适配器重取。不清等于同一进程里两个适配器的实例混在一起。
-  sandboxes.clear();
+  // 换了适配器，旧适配器建出来的沙箱不能再给会话用：清掉并释放，让下一次装配
+  // 按新适配器重取。不清等于同一进程里两个适配器的实例混在一起，容器还会漏。
+  void disposeAll();
   return adapter;
 }
 
@@ -81,21 +114,21 @@ export async function acquireSessionSandbox(
   const adapter = getAdapter();
   const existing = sandboxes.get(input.sessionId);
   if (existing !== undefined) {
-    return await existing;
+    const handle = await existing;
+    return handle.sandbox;
   }
 
-  const pending = adapter
-    .acquire({
-      id: input.sessionId,
-      projectDirs: input.projectDirs,
-      sessionDir: input.sessionDir,
-    })
-    .then((handle) => handle.sandbox);
+  const pending = adapter.acquire({
+    id: input.sessionId,
+    projectDirs: input.projectDirs,
+    sessionDir: input.sessionDir,
+  });
 
   sandboxes.set(input.sessionId, pending);
   pending.catch(() => {
     sandboxes.delete(input.sessionId);
   });
 
-  return await pending;
+  const handle = await pending;
+  return handle.sandbox;
 }
