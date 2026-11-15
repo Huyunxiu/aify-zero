@@ -291,6 +291,8 @@ export async function createSubagent(
     // 子 agent 继承父会话的工具集，工具闭包里绑定的是父上下文，所以后台
     // 任务同样归父会话所有。
     jobs: parent.context.jobs,
+    // 沙箱同理：子 agent 在父会话的那个环境里跑，不另开一个。
+    sandbox: parent.context.sandbox,
   });
 
   let { instructions } = definition;

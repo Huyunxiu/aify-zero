@@ -17,6 +17,7 @@ import type { HooksMap } from "../src/hooks-manager.js";
 import type { ContextSource, SkillSource } from "../src/resources/types.js";
 import type { SkillInfo } from "../src/skill/skill-types.js";
 import type { AgentToolSet, ToolExposure } from "../src/types.js";
+import { testSandbox } from "./helpers/sandbox.js";
 
 const makeTool = (description: string): Tool =>
   ({ description }) as unknown as Tool;
@@ -80,6 +81,7 @@ const makeDeps = () => {
       projectDirs: ["/repo"],
       primaryProjectDir: "/repo",
       sessionDir: "/sessions/session-1",
+      sandbox: testSandbox("/repo", "/sessions/session-1"),
     },
     tools,
     registerTool: (name, tool, value) => {

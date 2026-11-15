@@ -1,6 +1,5 @@
 import type { ToolEnvironment } from "../extensions/capabilities";
 import { MAX_OUTPUT_BYTES, MAX_OUTPUT_LINES } from "./shell/output";
-import { defaultPowerShell, powerShellArgv } from "./shell/resolve";
 import { createShellTool } from "./shell/tool";
 
 /**
@@ -34,19 +33,8 @@ export const createPowerShellTool = ({
   createShellTool({
     description: DESCRIPTION,
     agentContext,
-    kind: "powershell",
-    program: () => {
-      const file = defaultPowerShell();
-      if (file === undefined) {
-        throw new Error(
-          "No PowerShell executable found. Install PowerShell 7 (pwsh) or use the bash tool."
-        );
-      }
-      return {
-        argv: (command) => powerShellArgv(file, command),
-        env: POWERSHELL_ENV,
-      };
-    },
+    shell: "powershell",
+    env: POWERSHELL_ENV,
   });
 
 export type PowerShellToolType = ReturnType<typeof createPowerShellTool>;

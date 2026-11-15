@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import type { AgentContext } from "../../src/agent-context.js";
 import { createEditFileTool } from "../../src/tools/edit-file.js";
+import { testSandbox } from "../helpers/sandbox.js";
 
 type Edit = { oldText: string; newText: string };
 
@@ -50,7 +51,10 @@ function runEdit(
 describe("edit-file tool", () => {
   beforeEach(async () => {
     projectDir = await createTempDir();
-    agentContext = { primaryProjectDir: projectDir } as AgentContext;
+    agentContext = {
+      primaryProjectDir: projectDir,
+      sandbox: testSandbox(projectDir),
+    } as AgentContext;
     editTool = createEditFileTool({ agentContext });
   });
 

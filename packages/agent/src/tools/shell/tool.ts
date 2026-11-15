@@ -1,5 +1,4 @@
-import { stat } from "node:fs/promises";
-
+import type { Sandbox, ShellKind } from "@workspace/sandbox";
 import { tool } from "ai";
 import type { Tool } from "ai";
 import { z } from "zod";
@@ -7,31 +6,21 @@ import { z } from "zod";
 import type { AgentContext } from "../../agent-context";
 import type { ToolEnvironment } from "../../extensions/capabilities";
 import type { JobOutcome } from "../../jobs/types";
-import { resolveToolPath } from "../../utils/fs-util";
 import type { ToolOutput } from "../types";
 import { createShellStreamBuffer } from "./background";
-import { runShell } from "./exec";
-import type { ShellRunResult } from "./exec";
 import type { ShellOutputSnapshot } from "./output";
 import { ShellOutputCollector } from "./output";
 
 /** Default foreground timeout, matching the previous bash tool. */
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1000;
 
-export interface ShellProgram {
-  /** Complete argv, with the executable first. */
-  argv: (command: string) => string[];
-  /** Environment overrides for this dialect (terminal noise, pagers, …). */
-  env: NodeJS.ProcessEnv;
-}
-
 export interface ShellToolOptions {
   description: string;
   agentContext: ToolEnvironment;
-  /** 生产方种类，也是后台任务 id 的前缀（`bash`、`powershell`）。 */
-  kind: string;
-  /** Resolved lazily so a missing executable reports on the call, not on load. */
-  program: () => ShellProgram;
+  /** 方言，也是后台任务 id 的前缀（`bash`、`powershell`）。 */
+  shell: ShellKind;
+  /** 这个方言要加的变量覆盖（终端噪音、分页器之类）。 */
+  env: NodeJS.ProcessEnv;
 }
 
 /** 一次前台调用的结局，状态行和 UI 的行摘要都从这里读。 */
@@ -119,8 +108,8 @@ const createShellToolSchema = (agentContext: ToolEnvironment) => {
 export const createShellTool = ({
   description,
   agentContext,
-  kind,
-  program,
+  shell,
+  env,
 }: ShellToolOptions): Tool<ShellToolInput, ShellToolOutput, AgentContext> =>
   tool<ShellToolInput, ShellToolOutput, AgentContext>({
     description,
@@ -129,29 +118,21 @@ export const createShellTool = ({
       { command, timeout, workdir, run_in_background },
       { abortSignal }
     ) => {
+      const { sandbox } = agentContext;
       const resolvedTimeoutMs = timeout ?? DEFAULT_TIMEOUT_MS;
-      const cwd = resolveToolPath(
-        workdir ?? agentContext.primaryProjectDir,
-        agentContext.primaryProjectDir
-      ).absolute;
-      await assertWorkingDirectory(cwd);
-
-      const resolved = program();
-      const [file, ...args] = resolved.argv(command);
-      if (file === undefined) {
-        throw new Error("The shell program resolved to an empty argv.");
-      }
+      const cwd = sandbox.resolvePath(
+        workdir ?? agentContext.primaryProjectDir
+      );
+      await assertWorkingDirectory(sandbox, cwd);
 
       if (run_in_background === true) {
         // 先解析再登记：命令跑起来之后，这个调用就不再等它了。
         return startBackgroundCommand({
           agentContext,
-          kind,
+          shell,
+          env,
           command,
           cwd,
-          file,
-          args,
-          env: { ...process.env, ...resolved.env },
         });
       }
 
@@ -160,13 +141,12 @@ export const createShellTool = ({
       });
 
       try {
-        const run = await runShell({
-          file,
-          args,
+        const run = await sandbox.exec(command, {
           cwd,
-          env: { ...process.env, ...resolved.env },
+          env,
           timeoutMs: resolvedTimeoutMs,
           signal: abortSignal,
+          shell,
           onData: (channel, chunk) => {
             collector.push(channel, chunk);
           },
@@ -212,12 +192,10 @@ export const createShellTool = ({
 
 type BackgroundCommandProps = {
   agentContext: ToolEnvironment;
-  kind: string;
+  shell: ShellKind;
+  env: NodeJS.ProcessEnv;
   command: string;
   cwd: string;
-  file: string;
-  args: string[];
-  env: NodeJS.ProcessEnv;
 };
 
 /**
@@ -230,12 +208,10 @@ type BackgroundCommandProps = {
  */
 function startBackgroundCommand({
   agentContext,
-  kind,
+  shell,
+  env,
   command,
   cwd,
-  file,
-  args,
-  env,
 }: BackgroundCommandProps): ShellToolOutput {
   const { jobs, sessionId } = agentContext;
   if (jobs === undefined) {
@@ -246,7 +222,7 @@ function startBackgroundCommand({
   const buffer = createShellStreamBuffer();
   const controller = new AbortController();
   const jobId = jobs.start({
-    kind,
+    kind: shell,
     label: command,
     owner: sessionId,
     output: buffer.sources,
@@ -254,7 +230,15 @@ function startBackgroundCommand({
       cancel: () => {
         controller.abort();
       },
-      done: runBackgroundCommand({ buffer, controller, file, args, cwd, env }),
+      done: runBackgroundCommand({
+        buffer,
+        controller,
+        sandbox: agentContext.sandbox,
+        shell,
+        env,
+        command,
+        cwd,
+      }),
     }),
   });
   return {
@@ -267,10 +251,11 @@ function startBackgroundCommand({
 type BackgroundRunProps = {
   buffer: ReturnType<typeof createShellStreamBuffer>;
   controller: AbortController;
-  file: string;
-  args: string[];
-  cwd: string;
+  sandbox: Sandbox;
+  shell: ShellKind;
   env: NodeJS.ProcessEnv;
+  command: string;
+  cwd: string;
 };
 
 /**
@@ -280,49 +265,57 @@ type BackgroundRunProps = {
 function runBackgroundCommand({
   buffer,
   controller,
-  file,
-  args,
-  cwd,
+  sandbox,
+  shell,
   env,
+  command,
+  cwd,
 }: BackgroundRunProps): Promise<JobOutcome> {
-  return runShell({
-    file,
-    args,
-    cwd,
-    env,
-    signal: controller.signal,
-    onData: (channel, chunk) => {
-      buffer.push(channel, chunk);
-    },
-  }).then(
-    (run) => {
-      buffer.close();
-      return backgroundOutcome(run);
-    },
-    (error: unknown): JobOutcome => {
-      buffer.close();
-      return { status: "failed", detail: String(error) };
-    }
-  );
+  return sandbox
+    .exec(command, {
+      cwd,
+      env,
+      signal: controller.signal,
+      shell,
+      onData: (channel, chunk) => {
+        buffer.push(channel, chunk);
+      },
+    })
+    .then(
+      (run) => {
+        buffer.close();
+        return backgroundOutcome(run);
+      },
+      (error: unknown): JobOutcome => {
+        buffer.close();
+        return { status: "failed", detail: String(error) };
+      }
+    );
 }
 
 /**
  * A cancelled command settles `killed`; everything else is `completed` with the
  * exit code, exactly like the foreground rendering reports a non-zero exit as
  * an ordinary result rather than a failure.
- * @param run - 子进程的结算结果。
+ * @param run - 命令的结算结果。
  */
-function backgroundOutcome(run: ShellRunResult): JobOutcome {
+function backgroundOutcome(run: {
+  exitCode: number | null;
+  aborted: boolean;
+}): JobOutcome {
   return run.aborted
     ? { status: "killed", detail: "cancelled" }
     : { status: "completed", detail: `exit code: ${run.exitCode ?? 0}` };
 }
 
 /** Fail before spawning when the requested directory is unusable. */
-async function assertWorkingDirectory(cwd: string): Promise<void> {
+async function assertWorkingDirectory(
+  sandbox: Sandbox,
+  cwd: string
+): Promise<void> {
   try {
-    const info = await stat(cwd);
-    if (!info.isDirectory()) {
+    const info = await sandbox.stat(cwd);
+    if (!info.isDirectory) {
       throw new Error(`Working directory is not a directory: ${cwd}`);
     }
   } catch (error) {

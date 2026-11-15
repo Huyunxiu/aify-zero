@@ -21,6 +21,7 @@ import type { SubagentDefinition } from "../src/subagent/definitions.js";
 import type { CallTargetResolver } from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
 import { testModel, testResolveModel } from "./helpers/model-target.js";
+import { testSandbox } from "./helpers/sandbox.js";
 
 /** 一个什么都不解析的转调入口；用来验证它有没有跟着工具集走。 */
 const passthroughRoute: CallTargetResolver = (toolCall) => ({
@@ -272,6 +273,8 @@ describe("subagent 的 abort scope", () => {
       session: new AgentSession({ turns: [] }),
       store: asStore(new FakeStore()),
       context: new AgentContext({
+        sandbox: testSandbox("/tmp", "/tmp/sessions/parent-session"),
+
         sessionId: "parent-session",
         projectDirs: ["/tmp"],
         sessionDir: "/tmp/sessions/parent-session",
@@ -339,6 +342,8 @@ describe("subagent 继承审批函数", () => {
     const { agent: child } = await createSubagent(
       {
         context: new AgentContext({
+          sandbox: testSandbox("/tmp", "/tmp/sessions/parent-session"),
+
           sessionId: "parent-session",
           projectDirs: ["/tmp"],
           sessionDir: "/tmp/sessions/parent-session",
@@ -371,6 +376,8 @@ describe("subagent 继承转调入口", () => {
     const { agent: child } = await createSubagent(
       {
         context: new AgentContext({
+          sandbox: testSandbox("/tmp", "/tmp/sessions/parent-session"),
+
           sessionId: "parent-session",
           projectDirs: ["/tmp"],
           sessionDir: "/tmp/sessions/parent-session",
@@ -413,6 +420,8 @@ describe("subagent 继承项目说明", () => {
       session: new AgentSession({ turns: [] }),
       store: asStore(new FakeStore()),
       context: new AgentContext({
+        sandbox: testSandbox("/tmp", "/tmp/sessions/parent-session"),
+
         sessionId: "parent-session",
         projectDirs: ["/tmp"],
         sessionDir: "/tmp/sessions/parent-session",

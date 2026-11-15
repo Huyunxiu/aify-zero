@@ -1,17 +1,14 @@
-import { createReadStream } from "node:fs";
-import { stat, readdir, readFile } from "node:fs/promises";
-import { join, dirname, basename } from "node:path";
-import { createInterface } from "node:readline";
+import { basename, dirname, join } from "node:path";
 
+import type { Sandbox } from "@workspace/sandbox";
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
 import {
-  getFileTypeFromBuffer,
+  getFileTypeFromSandbox,
   isBinaryFile,
-  resolveToolPath,
   toolPathDescription,
 } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
@@ -45,14 +42,18 @@ Usage:
 - This tool can read image files and PDFs and return them as file attachments.
 `;
 
-async function miss(filepath: string): Promise<ReadFileToolOutput> {
+async function miss(
+  sandbox: Sandbox,
+  filepath: string
+): Promise<ReadFileToolOutput> {
   const dir = dirname(filepath);
   const base = basename(filepath);
   let items: string[] = [];
 
   try {
-    const entries = await readdir(dir);
+    const entries = await sandbox.readdir(dir);
     items = entries
+      .map((entry) => entry.name)
       .filter(
         (item) =>
           item.toLowerCase().includes(base.toLowerCase()) ||
@@ -86,28 +87,15 @@ async function miss(filepath: string): Promise<ReadFileToolOutput> {
 }
 
 async function readDirectory(
+  sandbox: Sandbox,
   filepath: string,
   offset: number,
   limit: number
 ): Promise<ReadFileToolOutput> {
-  const dirents = await readdir(filepath, { withFileTypes: true });
-  const entries = await Promise.all(
-    dirents.map(async (dirent) => {
-      if (dirent.isDirectory()) {
-        return `${dirent.name}/`;
-      }
-
-      if (dirent.isSymbolicLink()) {
-        const target = await stat(join(filepath, dirent.name)).catch(
-          () => null
-        );
-        if (target?.isDirectory()) {
-          return `${dirent.name}/`;
-        }
-      }
-
-      return dirent.name;
-    })
+  const dirents = await sandbox.readdir(filepath);
+  // 符号链接指向目录时也带斜杠：`DirEntry` 已经把链接目标的类型算好了。
+  const entries = dirents.map((dirent) =>
+    dirent.isDirectory ? `${dirent.name}/` : dirent.name
   );
 
   entries.sort((a, b) => a.localeCompare(b));
@@ -143,10 +131,11 @@ async function readDirectory(
 }
 
 async function readAttachments(
+  sandbox: Sandbox,
   filepath: string,
   mime: string
 ): Promise<ReadFileToolOutput> {
-  const bytes = await readFile(filepath);
+  const bytes = await sandbox.readFileBuffer(filepath);
   const output = `File read successfully, mime.types: ${mime}`;
   return {
     output,
@@ -180,17 +169,43 @@ function readBinaryFile(filepath: string, mime: string): ReadFileToolOutput {
   };
 }
 
+/**
+ * 按行切分一段文本，和 `readline` 的 `crlfDelay: Infinity` 一致：`\n`、`\r\n`
+ * 和单独的 `\r` 都算行尾，结尾的换行不产生空行。
+ *
+ * @param text - 整份文件内容。
+ * @yields 每一行的文本，不含行尾。
+ */
+function* splitLines(text: string): Generator<string> {
+  let start = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char !== "\n" && char !== "\r") {
+      continue;
+    }
+    yield text.slice(start, index);
+    if (char === "\r" && text[index + 1] === "\n") {
+      index += 1;
+    }
+    start = index + 1;
+  }
+  if (start < text.length) {
+    yield text.slice(start);
+  }
+}
+
 async function readTextFile(
+  sandbox: Sandbox,
   filepath: string,
   mime: string,
   offset: number,
   limit: number
 ): Promise<ReadFileToolOutput> {
-  const stream = createReadStream(filepath, { encoding: "utf-8" });
-  const rl = createInterface({
-    crlfDelay: Number.POSITIVE_INFINITY,
-    input: stream,
-  });
+  // 有流式能力就用它，避免大文件整份进内存；没有就退到整份读取再切行。
+  const source: AsyncIterable<string> | Iterable<string> =
+    sandbox.readTextStream === undefined
+      ? splitLines(await sandbox.readFile(filepath))
+      : sandbox.readTextStream(filepath);
 
   const start = offset - 1;
   const lines: string[] = [];
@@ -199,37 +214,31 @@ async function readTextFile(
   let truncatedByBytes = false;
   let hasMoreLines = false;
 
-  try {
-    for await (const rawText of rl) {
-      totalLines += 1;
-      if (totalLines <= start) {
-        continue;
-      }
-
-      if (lines.length >= limit) {
-        hasMoreLines = true;
-        continue;
-      }
-
-      const line =
-        rawText.length > MAX_LINE_LENGTH
-          ? `${rawText.slice(0, MAX_LINE_LENGTH)}${MAX_LINE_SUFFIX}`
-          : rawText;
-      const size =
-        Buffer.byteLength(line, "utf-8") + (lines.length > 0 ? 1 : 0);
-
-      if (bytes + size > MAX_BYTES) {
-        truncatedByBytes = true;
-        hasMoreLines = true;
-        break;
-      }
-
-      lines.push(line);
-      bytes += size;
+  for await (const rawText of source) {
+    totalLines += 1;
+    if (totalLines <= start) {
+      continue;
     }
-  } finally {
-    rl.close();
-    stream.destroy();
+
+    if (lines.length >= limit) {
+      hasMoreLines = true;
+      continue;
+    }
+
+    const line =
+      rawText.length > MAX_LINE_LENGTH
+        ? `${rawText.slice(0, MAX_LINE_LENGTH)}${MAX_LINE_SUFFIX}`
+        : rawText;
+    const size = Buffer.byteLength(line, "utf-8") + (lines.length > 0 ? 1 : 0);
+
+    if (bytes + size > MAX_BYTES) {
+      truncatedByBytes = true;
+      hasMoreLines = true;
+      break;
+    }
+
+    lines.push(line);
+    bytes += size;
   }
 
   if (totalLines < offset && !(totalLines === 0 && offset === 1)) {
@@ -352,39 +361,44 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
     inputSchema: READ_TOOL_INPUT_SCHEMA,
     execute: async (input) => {
       const { offset, limit } = input;
-      const { absolute: filepath } = resolveToolPath(
-        input.path,
-        agentContext.primaryProjectDir
-      );
+      const { sandbox } = agentContext;
+      const filepath = sandbox.resolvePath(input.path);
 
       const normalizedOffset = offset ?? 1;
       const normalizedLimit = limit ?? DEFAULT_READ_LIMIT;
 
       let stats;
       try {
-        stats = await stat(filepath);
+        stats = await sandbox.stat(filepath);
       } catch {
-        return await miss(filepath);
+        return await miss(sandbox, filepath);
       }
 
-      if (stats.isDirectory()) {
-        return await readDirectory(filepath, normalizedOffset, normalizedLimit);
+      if (stats.isDirectory) {
+        return await readDirectory(
+          sandbox,
+          filepath,
+          normalizedOffset,
+          normalizedLimit
+        );
       }
 
-      const [mime, ext, sample] = await getFileTypeFromBuffer(
-        filepath,
-        stats.size
+      // 只读开头一段做类型嗅探：整份读进来对二进制大文件是不可接受的。
+      const [mime, ext, sample] = await getFileTypeFromSandbox(
+        sandbox,
+        filepath
       );
 
-      if (stats.isFile() && mime && SUPPORTED_ATTACHMENT_MIMES.has(mime)) {
-        return await readAttachments(filepath, mime);
+      if (stats.isFile && mime && SUPPORTED_ATTACHMENT_MIMES.has(mime)) {
+        return await readAttachments(sandbox, filepath, mime);
       }
 
-      if (stats.isFile() && ext && isBinaryFile(ext, sample)) {
+      if (stats.isFile && ext && isBinaryFile(ext, sample)) {
         return readBinaryFile(filepath, mime);
       }
 
       return await readTextFile(
+        sandbox,
         filepath,
         mime,
         normalizedOffset,

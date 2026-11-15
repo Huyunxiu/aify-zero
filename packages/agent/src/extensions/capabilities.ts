@@ -3,6 +3,7 @@ import type {
   AgentTurn,
   AgentTurnStatus,
 } from "@workspace/agent-client";
+import type { Sandbox } from "@workspace/sandbox";
 
 import type { HooksManager } from "../hooks-manager";
 import type { JobRegistry } from "../jobs/registry";
@@ -15,8 +16,8 @@ import type { AgentToolSet } from "../types";
 /**
  * 工具构造时需要知道的环境。
  *
- * 它只描述“在哪里工作”：路径、会话身份和后台任务注册表。它不包含会话历史、
- * 存储和 provider。扩展拿到的是这份视图，拿不到完整的 `AgentContext`。
+ * 它只描述“在哪里工作”：路径、会话身份、后台任务注册表和沙箱。它不包含会话
+ * 历史、存储和 provider。扩展拿到的是这份视图，拿不到完整的 `AgentContext`。
  */
 export interface ToolEnvironment {
   readonly sessionId: string;
@@ -28,6 +29,8 @@ export interface ToolEnvironment {
   readonly projectId?: string;
   /** 后台任务注册表；省略时后台执行和任务控制工具都不可用。 */
   readonly jobs?: JobRegistry;
+  /** 工具读写文件和运行命令的环境。 */
+  readonly sandbox: Sandbox;
 }
 
 /** 只读的会话 transcript。工具读它来找到自己的调用和结果。 */

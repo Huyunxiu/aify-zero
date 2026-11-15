@@ -19,6 +19,7 @@ import { getMcpManager } from "../mcp/registry";
 import { getProjectDirs } from "../routers/project/project.service";
 import type { ConfiguredModel } from "../routers/settings/settings.schema";
 import { getUserSettings } from "../routers/settings/settings.service";
+import { acquireSessionSandbox } from "../sandbox/registry";
 import type { SQLiteStore } from "../storage/sqlite-store";
 import {
   createModelTargetResolver,
@@ -56,6 +57,13 @@ export async function buildSessionAgent({
   // 目录来自 project 表：会话指定了项目就用那个项目，否则用默认项目。
   const projectDirs = await getProjectDirs(projectId);
 
+  // 沙箱按会话缓存：它要比一次请求活得久，远端实例尤其不能被每回合重建。
+  const sandbox = await acquireSessionSandbox({
+    sessionId,
+    projectDirs,
+    sessionDir,
+  });
+
   const settings = await getUserSettings();
 
   // 默认扩展和工具装配由 agent 包的组合根决定；这里只提供宿主才能知道的
@@ -76,6 +84,7 @@ export async function buildSessionAgent({
     compactionOverrides: settings.compaction,
     modelContextWindows: modelContextWindows(settings),
     jobs: JOB_REGISTRY,
+    sandbox,
     // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。
     toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),
     extensions: [

@@ -20,6 +20,7 @@ import {
   stripToolExecution,
 } from "../../src/tools/execution.js";
 import type { AgentToolSet } from "../../src/types.js";
+import { testSandbox } from "../helpers/sandbox.js";
 
 const turnId = "turn-1";
 const stepId = "step-1";
@@ -27,7 +28,10 @@ const sessionId = "session-1";
 
 // The executor only reads `primaryProjectDir` off the context; the class it is
 // cast from is built by the host, not by the loop under test.
-const context = { primaryProjectDir: "/tmp" } as unknown as AgentContext;
+const context = {
+  primaryProjectDir: "/tmp",
+  sandbox: testSandbox("/tmp"),
+} as unknown as AgentContext;
 
 const sleep = (ms: number) =>
   new Promise((resolve) => {

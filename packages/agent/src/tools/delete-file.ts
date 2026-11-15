@@ -1,12 +1,10 @@
-import { stat, unlink, rm } from "node:fs/promises";
-
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
-import { resolveToolPath, toolPathDescription } from "../utils/fs-util";
+import { toolPathDescription } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
 const DESCRIPTION = `
@@ -45,17 +43,15 @@ const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>
     description: DESCRIPTION,
     inputSchema: DELETE_FILE_TOOL_INPUT_SCHEMA,
     execute: async ({ path: filepath, recursive }) => {
+      const { sandbox } = agentContext;
       try {
-        const { absolute: absolutePath } = resolveToolPath(
-          filepath,
-          agentContext.primaryProjectDir
-        );
+        const absolutePath = sandbox.resolvePath(filepath);
 
-        const stats = await stat(absolutePath);
-        if (stats.isDirectory()) {
-          await rm(absolutePath, { recursive, force: recursive });
+        const stats = await sandbox.stat(absolutePath);
+        if (stats.isDirectory) {
+          await sandbox.rm(absolutePath, { recursive, force: recursive });
         } else {
-          await unlink(absolutePath);
+          await sandbox.rm(absolutePath);
         }
 
         return {
@@ -63,7 +59,7 @@ const createDeleteFileTool = ({ agentContext }: CreateDeleteFileToolProps) =>
           code: "ok",
           metadata: {
             filepath: absolutePath,
-            kind: stats.isDirectory() ? "directory" : "file",
+            kind: stats.isDirectory ? "directory" : "file",
           },
         };
       } catch (error) {

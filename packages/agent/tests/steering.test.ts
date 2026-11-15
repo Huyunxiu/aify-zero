@@ -18,6 +18,7 @@ import type * as ExecutionModule from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
 import { asTurns, userTurn } from "./compaction/fixtures.js";
 import { testModel, testResolveModel } from "./helpers/model-target.js";
+import { testSandbox } from "./helpers/sandbox.js";
 import {
   script,
   stepResult,
@@ -156,6 +157,8 @@ const makeAgent = (inbox: FakeInbox) => {
   const store = new FakeStore();
   const session = new AgentSession({ turns: [] });
   const context = new AgentContext({
+    sandbox: testSandbox("/tmp", "/tmp/session-1"),
+
     sessionId: "session-1",
     model: testModel(),
     projectDirs: ["/tmp"],

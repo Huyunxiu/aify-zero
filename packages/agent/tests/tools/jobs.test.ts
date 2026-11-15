@@ -4,6 +4,7 @@ import type { AgentContext } from "../../src/agent-context.js";
 import { JobRegistry } from "../../src/jobs/registry.js";
 import type { JobHandle, JobOutcome } from "../../src/jobs/types.js";
 import { createJobTools } from "../../src/tools/jobs.js";
+import { testSandbox } from "../helpers/sandbox.js";
 
 const SESSION = "session-1";
 
@@ -228,6 +229,7 @@ describe(createJobTools, () => {
       sessionId: SESSION,
       primaryProjectDir: "/tmp",
       sessionDir: "/tmp/sessions/session-1",
+      sandbox: testSandbox("/tmp"),
     } as unknown as AgentContext;
 
     expect(() => createJobTools({ agentContext: context })).toThrow(

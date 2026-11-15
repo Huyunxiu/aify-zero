@@ -1,25 +1,14 @@
-import { access, mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-
+import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
-import { resolveToolPath, toolPathDescription } from "../utils/fs-util";
+import { toolPathDescription } from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
 const DESCRIPTION = `Write full content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.
 - Existing file content will be replaced completely.`;
-
-const fileExists = async (filepath: string): Promise<boolean> => {
-  try {
-    await access(filepath);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 const WRITE_FILE_TOOL_INPUT_SCHEMA = z.object({
   content: z
@@ -48,16 +37,12 @@ const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>
     description: DESCRIPTION,
     inputSchema: WRITE_FILE_TOOL_INPUT_SCHEMA,
     execute: async ({ content, path: filepath }) => {
+      const { sandbox } = agentContext;
       try {
-        const { absolute } = resolveToolPath(
-          filepath,
-          agentContext.primaryProjectDir
-        );
-        const existed = await fileExists(absolute);
-        if (!existed) {
-          await mkdir(dirname(absolute), { recursive: true });
-        }
-        await writeFile(absolute, content, "utf-8");
+        const absolute = sandbox.resolvePath(filepath);
+        const existed = await sandbox.exists(absolute);
+        // 沙箱负责建父目录：这是写文件的保证，工具不再自己 mkdir。
+        await sandbox.writeFile(absolute, content);
 
         return {
           output: "Wrote file successfully.",
@@ -69,9 +54,10 @@ const createWriteFileTool = ({ agentContext }: CreateWriteFileToolProps) =>
             lines: content.length > 0 ? content.split("\n").length : 0,
           },
         };
-      } catch {
+      } catch (error) {
+        // 失败原因必须让模型看见：策略拒绝和磁盘满都靠这句话区分。
         return {
-          output: "Write failed.",
+          output: `Write failed. ${getErrorMessage(error)}`,
           code: "error",
         };
       }

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import type { AgentContext } from "../../src/agent-context.js";
 import { createEditFileTool } from "../../src/tools/edit-file.js";
 import { withFileMutationQueue } from "../../src/tools/file-mutation-queue.js";
+import { testSandbox } from "../helpers/sandbox.js";
 
 const tempDirs: string[] = [];
 
@@ -186,7 +187,10 @@ describe(withFileMutationQueue, () => {
     const filePath = join(dir, "parallel.txt");
     await writeFile(filePath, "alpha\nbeta\n", "utf-8");
 
-    const agentContext = { primaryProjectDir: dir } as AgentContext;
+    const agentContext = {
+      primaryProjectDir: dir,
+      sandbox: testSandbox(dir),
+    } as AgentContext;
     const editTool = createEditFileTool({ agentContext });
     const runEdit = (oldText: string, newText: string) =>
       editTool.execute(

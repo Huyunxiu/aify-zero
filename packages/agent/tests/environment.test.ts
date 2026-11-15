@@ -9,6 +9,7 @@ import { ExtensionManager } from "../src/extensions/manager.js";
 import type { ExtensionAPI } from "../src/extensions/types.js";
 import { Extension } from "../src/extensions/types.js";
 import { HooksManager } from "../src/hooks-manager.js";
+import { testSandbox } from "./helpers/sandbox.js";
 
 const projectDir = "/repo";
 const sessionDir = "/home/user/.aify-zero/sessions/session-1";
@@ -28,6 +29,7 @@ const makeManager = (): ExtensionManager => {
       projectDirs: [projectDir],
       primaryProjectDir: projectDir,
       sessionDir,
+      sandbox: testSandbox(projectDir, sessionDir),
     },
     tools,
     registerTool: (name, tool) => {
@@ -96,13 +98,22 @@ describe(EnvironmentExtension, () => {
   });
 
   test("lists every project directory and marks the primary one", () => {
-    const rendered = renderEnvironment(["/repo", "/other"], sessionDir, {
-      operatingSystem: "darwin 27.0.0",
-      architecture: "arm64",
-      shell: "/bin/zsh",
-      nodeVersion: "v22.0.0",
-      date: "2026-10-21",
-    });
+    const rendered = renderEnvironment(
+      {
+        backend: "host",
+        cwd: "/repo",
+        roots: ["/repo", "/other", sessionDir],
+        shells: ["bash"],
+      },
+      sessionDir,
+      {
+        operatingSystem: "darwin 27.0.0",
+        architecture: "arm64",
+        shell: "/bin/zsh",
+        nodeVersion: "v22.0.0",
+        date: "2026-10-21",
+      }
+    );
 
     expect(rendered).toContain(
       [
@@ -111,6 +122,44 @@ describe(EnvironmentExtension, () => {
         "  - /other",
       ].join("\n")
     );
+  });
+
+  test("renders the sandbox note only when the sandbox has one", () => {
+    const info = {
+      operatingSystem: "linux 6.8",
+      architecture: "x64",
+      shell: "/bin/zsh",
+      nodeVersion: "v22.0.0",
+      date: "2026-10-21",
+    };
+
+    const confined = renderEnvironment(
+      {
+        backend: "seatbelt",
+        cwd: "/repo",
+        roots: ["/repo", sessionDir],
+        shells: ["bash"],
+        note: "Writes are limited to the project directories.",
+      },
+      sessionDir,
+      info
+    );
+    expect(confined).toContain(
+      "- Sandbox: Writes are limited to the project directories."
+    );
+
+    // 本机直跑没有约束可讲，系统提示一个字都不变。
+    const open = renderEnvironment(
+      {
+        backend: "host",
+        cwd: "/repo",
+        roots: ["/repo", sessionDir],
+        shells: ["bash"],
+      },
+      sessionDir,
+      info
+    );
+    expect(open).not.toContain("- Sandbox:");
   });
 
   test("renders before sections with a higher priority number", async () => {

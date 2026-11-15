@@ -1,11 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 
-import type { ShellRunOptions } from "../../../src/tools/shell/exec.js";
-import { runShell } from "../../../src/tools/shell/exec.js";
-import {
-  bashArgv,
-  resolveBashShell,
-} from "../../../src/tools/shell/resolve.js";
+import type { ShellRunOptions } from "../src/exec.js";
+import { runShell } from "../src/exec.js";
+import { bashArgv, resolveBashShell } from "../src/host/resolve.js";
 
 const IS_WINDOWS = process.platform === "win32";
 const shellFile = resolveBashShell() ?? "/bin/bash";

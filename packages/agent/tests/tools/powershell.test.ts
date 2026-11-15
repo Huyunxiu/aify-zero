@@ -6,11 +6,11 @@ import { afterEach, describe, expect, test } from "vitest";
 
 import type { AgentContext } from "../../src/agent-context.js";
 import { createPowerShellTool } from "../../src/tools/powershell.js";
-import { resolvePowerShell } from "../../src/tools/shell/resolve.js";
 import type {
   ShellForegroundMetadata,
   ShellToolOutput,
 } from "../../src/tools/shell/tool.js";
+import { testSandbox } from "../helpers/sandbox.js";
 
 const IS_WINDOWS = process.platform === "win32";
 
@@ -37,21 +37,6 @@ async function call(
   } as never)) as ShellToolOutput;
 }
 
-describe("powershell resolution", () => {
-  test("should not resolve outside Windows", () => {
-    expect(resolvePowerShell({}, "linux", () => true)).toBeUndefined();
-  });
-
-  test("should resolve a Windows PowerShell executable", () => {
-    const env = { SystemRoot: "C:\\Windows" };
-    const fallback =
-      "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
-    expect(resolvePowerShell(env, "win32", (path) => path === fallback)).toBe(
-      fallback
-    );
-  });
-});
-
 /** 前台结果的元数据；这些用例都不会产生后台结果。 */
 const metadataOf = (output: ShellToolOutput): ShellForegroundMetadata => {
   if (output.metadata?.kind !== "foreground") {
@@ -72,6 +57,7 @@ describe("powershell tool", () => {
     const agentContext = {
       primaryProjectDir: dir,
       sessionDir: dir,
+      sandbox: testSandbox(dir),
     } as unknown as AgentContext;
     const shellTool = createPowerShellTool({ agentContext });
 

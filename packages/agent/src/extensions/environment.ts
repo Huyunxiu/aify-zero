@@ -1,5 +1,7 @@
 import { arch, platform, release } from "node:os";
 
+import type { SandboxDescription } from "@workspace/sandbox";
+
 import type { ExtensionAPI, ExtensionOptions } from "./types";
 import { Extension } from "./types";
 
@@ -47,18 +49,19 @@ function detectEnvironment(now: Date): EnvironmentInfo {
  * 路径的基准，其余目录只能通过绝对路径访问；会话目录是它可以随便写临时
  * 文件、artifact 的地方。系统信息用来让模型选对命令（比如 shell 语法和
  * 平台差异）。
+ *
+ * 路径来自沙箱的自我描述，不写死宿主目录：换一个适配器，模型看到的就是那个
+ * 环境里真实存在的路径。
  */
 export function renderEnvironment(
-  projectDirs: readonly string[],
+  description: SandboxDescription,
   sessionDir: string,
   info: EnvironmentInfo
 ): string {
-  const [primary, ...additional] = projectDirs;
-  if (!primary) {
-    throw new Error(
-      "renderEnvironment requires at least one project directory"
-    );
-  }
+  const primary = description.cwd;
+  const additional = description.roots.filter(
+    (dir) => dir !== primary && dir !== sessionDir
+  );
 
   // 单目录时用单数形式，避免提示词里出现一个只有一项的列表。
   const projectLines =
@@ -75,6 +78,10 @@ export function renderEnvironment(
     "",
     ...projectLines,
     `- Session directory: ${sessionDir} (session-scoped scratch space for temporary files and artifacts)`,
+    // 只有沙箱自己说了限制才渲染这一行：本机直跑没有要提前告诉模型的边界。
+    ...(description.note === undefined
+      ? []
+      : [`- Sandbox: ${description.note}`]),
     `- Operating system: ${info.operatingSystem}`,
     `- Architecture: ${info.architecture}`,
     `- Shell: ${info.shell}`,
@@ -102,7 +109,7 @@ export class EnvironmentExtension extends Extension {
 
   init(api: ExtensionAPI): void {
     const rendered = renderEnvironment(
-      api.agent.projectDirs,
+      api.environment.sandbox.describe(),
       api.agent.sessionDir,
       this.#info
     );

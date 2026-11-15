@@ -1,6 +1,3 @@
-import { constants } from "node:fs";
-import { access, readFile, stat, writeFile } from "node:fs/promises";
-
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
@@ -8,9 +5,8 @@ import { z } from "zod";
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
 import {
+  getFileTypeFromSandbox,
   isBinaryFile,
-  getFileTypeFromBuffer,
-  resolveToolPath,
   toolPathDescription,
 } from "../utils/fs-util";
 import {
@@ -81,11 +77,9 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
     description: DESCRIPTION,
     inputSchema: EDIT_FILE_INPUT_SCHEMA,
     execute: async ({ path: filepath, edits }, { abortSignal }) => {
+      const { sandbox } = agentContext;
       try {
-        const { absolute: absolutePath } = resolveToolPath(
-          filepath,
-          agentContext.primaryProjectDir
-        );
+        const absolutePath = sandbox.resolvePath(filepath);
 
         return await withFileMutationQueue(absolutePath, async () => {
           // 每个 await 之后检查一次中断，而不是监听 abort 事件：
@@ -99,24 +93,32 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
           throwIfAborted();
 
           // 先确认可读可写，让权限问题在真正写入前暴露。
-          try {
-            await access(absolutePath, constants.R_OK | constants.W_OK);
-          } catch (error) {
+          //
+          // `exists` 不区分「不存在」和「没权限」，所以真失败时再用 `stat`
+          // 取回原始错误码：模型看到的仍是 ENOENT 这种可查的线索。
+          const writable = await sandbox.exists(absolutePath, {
+            readable: true,
+            writable: true,
+          });
+          if (!writable) {
             throwIfAborted();
+            const cause = await sandbox.stat(absolutePath).then(
+              () => Object.assign(new Error("EACCES"), { code: "EACCES" }),
+              (error: unknown) => error
+            );
             const reason =
-              error instanceof Error && "code" in error
-                ? `Error code: ${String(error.code)}`
-                : String(error);
+              cause instanceof Error && "code" in cause
+                ? `Error code: ${String(cause.code)}`
+                : String(cause);
             throw new Error(`Could not edit file: ${filepath}. ${reason}.`, {
-              cause: error,
+              cause,
             });
           }
           throwIfAborted();
 
-          const stats = await stat(absolutePath);
-          const [, ext, sample] = await getFileTypeFromBuffer(
-            absolutePath,
-            stats.size
+          const [, ext, sample] = await getFileTypeFromSandbox(
+            sandbox,
+            absolutePath
           );
           if (isBinaryFile(ext, sample)) {
             throw new Error(
@@ -125,7 +127,7 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
           }
           throwIfAborted();
 
-          const rawContent = await readFile(absolutePath, "utf-8");
+          const rawContent = await sandbox.readFile(absolutePath);
           throwIfAborted();
 
           // 匹配前剥掉 BOM、统一成 LF；写回时再还原，避免改动文件原有编码。
@@ -141,7 +143,7 @@ const createEditFileTool = ({ agentContext }: CreateEditFileToolProps) =>
 
           const finalContent =
             bom + restoreLineEndings(newContent, originalEnding);
-          await writeFile(absolutePath, finalContent, "utf-8");
+          await sandbox.writeFile(absolutePath, finalContent);
           throwIfAborted();
 
           const { linesAdded, linesRemoved } = countLineChanges(

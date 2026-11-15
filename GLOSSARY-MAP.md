@@ -14,6 +14,7 @@
 
 - **packages/ui ↔ packages/server**：服务端计算改动与基线，用的是同一套词；词表只写在
   `packages/ui/GLOSSARY.md`，服务端不另立说法。
+  （注意：这里的「基线」指改动对比的基线，和 `packages/db` 里数据库的「基线」不是一回事。）
 - **packages/agent → packages/ui**：工具和 MCP 工具的名字出现在会话面板里，面板用同一套
   说法显示它们，不另起词。
 - **packages/agent ↔ packages/server**：MCP 的「授权令牌」属于第三方服务器；本机 API

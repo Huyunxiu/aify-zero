@@ -1,16 +1,10 @@
-import { spawn } from "node:child_process";
-
 import { getErrorMessage } from "@workspace/shared/errors";
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
-import {
-  resolveToolPath,
-  shellQuote,
-  toolPathDescription,
-} from "../utils/fs-util";
+import { shellQuote, toolPathDescription } from "../utils/fs-util";
 import { getRipgrepAvailable, getRipgrepPath } from "../utils/ripgrep";
 import { truncateContent } from "../utils/truncate";
 import type { ToolOutput } from "./types";
@@ -215,9 +209,9 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
     description: DESCRIPTION,
     inputSchema: GREP_TOOL_INPUT_SCHEMA,
     execute: async (input, { abortSignal }) => {
-      const { absolute: normalizedPath } = resolveToolPath(
-        input.path ?? agentContext.primaryProjectDir,
-        agentContext.primaryProjectDir
+      const { sandbox } = agentContext;
+      const normalizedPath = sandbox.resolvePath(
+        input.path ?? agentContext.primaryProjectDir
       );
       const effectiveLimit = Math.min(
         Math.max(1, input.limit ?? DEFAULT_LIMIT),
@@ -246,144 +240,117 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
             pattern: input.pattern,
           });
 
-      return await new Promise<GrepToolOutput>((resolve) => {
-        const proc = spawn(command, {
-          shell: true,
+      let stdout = "";
+      let stderr = "";
+      let run;
+      try {
+        run = await sandbox.exec(command, {
           cwd: agentContext.primaryProjectDir,
-          env: process.env,
-          stdio: ["ignore", "pipe", "pipe"],
+          signal: abortSignal,
+          onData: (channel, chunk) => {
+            if (channel === "stdout") {
+              stdout += chunk.toString();
+            } else {
+              stderr += chunk.toString();
+            }
+          },
         });
-
-        let stdout = "";
-        let stderr = "";
-        let aborted = false;
-
-        proc.stdout?.on("data", (chunk: Buffer) => {
-          stdout += chunk.toString();
-        });
-
-        proc.stderr?.on("data", (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-
-        // Handle pre-aborted signal.
-        if (abortSignal?.aborted) {
-          aborted = true;
-          proc.kill();
-        }
-
-        const abortHandler = () => {
-          aborted = true;
-          proc.kill();
+      } catch (error) {
+        return {
+          output: `Grep failed: ${getErrorMessage(error)}`,
+          code: "error",
+          metadata: {
+            matchCount: 0,
+            path: normalizedPath,
+            truncatedByBytes: false,
+            truncatedByLines: false,
+            exitCode: null,
+          },
         };
+      }
 
-        abortSignal?.addEventListener("abort", abortHandler, { once: true });
+      if (run.aborted) {
+        return {
+          output: "Grep search was aborted.",
+          code: "error",
+          metadata: {
+            matchCount: 0,
+            path: normalizedPath,
+            truncatedByBytes: false,
+            truncatedByLines: false,
+            exitCode: run.exitCode,
+          },
+        };
+      }
 
-        proc.on("error", (err) => {
-          abortSignal?.removeEventListener("abort", abortHandler);
-          resolve({
-            output: `Grep failed: ${getErrorMessage(err)}`,
-            code: "error",
-            metadata: {
-              matchCount: 0,
-              path: normalizedPath,
-              truncatedByBytes: false,
-              truncatedByLines: false,
-              exitCode: null,
-            },
-          });
-        });
+      // Exit codes: 0 = matches found, 1 = no matches, 2+ = error.
+      if (run.exitCode !== null && run.exitCode > 1) {
+        const trimmedStderr = stderr.trim();
+        const detail =
+          trimmedStderr.length > 0 ? trimmedStderr : "unknown error";
+        return {
+          output: `Grep failed (exit ${run.exitCode}): ${detail}`,
+          code: "error",
+          metadata: {
+            matchCount: 0,
+            path: normalizedPath,
+            truncatedByBytes: false,
+            truncatedByLines: false,
+            exitCode: run.exitCode,
+          },
+        };
+      }
 
-        proc.on("exit", (exitCode) => {
-          abortSignal?.removeEventListener("abort", abortHandler);
+      if (stdout.trim().length === 0) {
+        return {
+          output: "No matches found.",
+          code: "ok",
+          metadata: {
+            matchCount: 0,
+            path: normalizedPath,
+            truncatedByBytes: false,
+            truncatedByLines: false,
+            exitCode: run.exitCode,
+          },
+        };
+      }
 
-          if (aborted) {
-            resolve({
-              output: "Grep search was aborted.",
-              code: "error",
-              metadata: {
-                matchCount: 0,
-                path: normalizedPath,
-                truncatedByBytes: false,
-                truncatedByLines: false,
-                exitCode,
-              },
-            });
-            return;
-          }
-
-          // Exit codes: 0 = matches found, 1 = no matches, 2+ = error.
-          if (exitCode !== null && exitCode > 1) {
-            const trimmedStderr = stderr.trim();
-            const detail =
-              trimmedStderr.length > 0 ? trimmedStderr : "unknown error";
-            resolve({
-              output: `Grep failed (exit ${exitCode}): ${detail}`,
-              code: "error",
-              metadata: {
-                matchCount: 0,
-                path: normalizedPath,
-                truncatedByBytes: false,
-                truncatedByLines: false,
-                exitCode,
-              },
-            });
-            return;
-          }
-
-          if (stdout.trim().length === 0) {
-            resolve({
-              output: "No matches found.",
-              code: "ok",
-              metadata: {
-                matchCount: 0,
-                path: normalizedPath,
-                truncatedByBytes: false,
-                truncatedByLines: false,
-                exitCode,
-              },
-            });
-            return;
-          }
-
-          const truncated = truncateContent({
-            content: stdout,
-            maxBytes: MAX_BYTES,
-            maxLines: effectiveLimit,
-            maxLineLength: MAX_LINE_LENGTH,
-            lineTruncationSuffix: LINE_TRUNCATION_SUFFIX,
-          });
-
-          const notices: string[] = [];
-          if (truncated.truncatedByLines) {
-            notices.push(
-              `Match limit reached (${effectiveLimit}). Use a larger limit or more specific pattern.`
-            );
-          }
-          if (truncated.truncatedByBytes) {
-            notices.push(
-              "Output truncated due to size. Use a more specific path or pattern."
-            );
-          }
-
-          const content =
-            notices.length > 0
-              ? truncated.lines.join("\n") + `\n\n[${notices.join(" ")}]`
-              : truncated.lines.join("\n");
-
-          resolve({
-            output: content,
-            code: "ok",
-            metadata: {
-              matchCount: truncated.outputLines,
-              path: normalizedPath,
-              truncatedByBytes: truncated.truncatedByBytes,
-              truncatedByLines: truncated.truncatedByLines,
-              exitCode,
-            },
-          });
-        });
+      const truncated = truncateContent({
+        content: stdout,
+        maxBytes: MAX_BYTES,
+        maxLines: effectiveLimit,
+        maxLineLength: MAX_LINE_LENGTH,
+        lineTruncationSuffix: LINE_TRUNCATION_SUFFIX,
       });
+
+      const notices: string[] = [];
+      if (truncated.truncatedByLines) {
+        notices.push(
+          `Match limit reached (${effectiveLimit}). Use a larger limit or more specific pattern.`
+        );
+      }
+      if (truncated.truncatedByBytes) {
+        notices.push(
+          "Output truncated due to size. Use a more specific path or pattern."
+        );
+      }
+
+      const content =
+        notices.length > 0
+          ? truncated.lines.join("\n") + `\n\n[${notices.join(" ")}]`
+          : truncated.lines.join("\n");
+
+      return {
+        output: content,
+        code: "ok",
+        metadata: {
+          matchCount: truncated.outputLines,
+          path: normalizedPath,
+          truncatedByBytes: truncated.truncatedByBytes,
+          truncatedByLines: truncated.truncatedByLines,
+          exitCode: run.exitCode,
+        },
+      };
     },
     toModelOutput({ output }) {
       if (output.code === "error") {
