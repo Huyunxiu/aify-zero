@@ -29,7 +29,11 @@ export class RuleBook {
         continue;
       }
 
-      this.#used.add(index);
+      // 回放规则可以反复用：一份录制里有很多条响应，什么时候说完由录制自己决定。
+      if (rule.replay === undefined) {
+        this.#used.add(index);
+      }
+
       return rule;
     }
 

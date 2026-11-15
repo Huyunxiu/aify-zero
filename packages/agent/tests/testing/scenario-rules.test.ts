@@ -55,6 +55,14 @@ describe(RuleBook, () => {
     });
   });
 
+  test("keeps handing out a replay rule until the recording runs out", () => {
+    const book = new RuleBook(rules({ replay: "recorded/one.json" }));
+
+    expect(book.take({ stream: true })?.replay).toBe("recorded/one.json");
+    expect(book.take({ stream: true })?.replay).toBe("recorded/one.json");
+    expect(book.remaining).toBe(1);
+  });
+
   test("matches on the model too", () => {
     expect(
       matches({ when: { model: "slow" } }, { stream: true, model: "fast" })

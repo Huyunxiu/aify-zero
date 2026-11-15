@@ -28,14 +28,14 @@ const provider = await startFakeProvider({ scenario: "retry-then-succeed" });
 
 规则按文件顺序消费；条件对不上的不消费，留着等下一次请求。
 
-| 结果            | 线上发生什么                                 |
-| --------------- | -------------------------------------------- |
-| `answer`        | 正常流式回答，按字符分块                     |
-| `fail`          | 回状态码，可带 `retryAfter` / `retryAfterMs` |
-| `failMidStream` | 先发 `text`，再发 `{"error":{...}}`          |
-| `replay`        | 从录制里取下一条响应，原样写出               |
-| `reset`         | 直接断连接                                   |
-| `corrupt`       | 发一段非法 JSON                              |
+| 结果            | 线上发生什么                                           |
+| --------------- | ------------------------------------------------------ |
+| `answer`        | 正常流式回答，按字符分块                               |
+| `fail`          | 回状态码，可带 `retryAfter` / `retryAfterMs`           |
+| `failMidStream` | 先发 `text`，再发 `{"error":{...}}`                    |
+| `replay`        | 从录制里取下一条响应，原样写出；可反复用，直到录制用完 |
+| `reset`         | 直接断连接                                             |
+| `corrupt`       | 发一段非法 JSON                                        |
 
 修饰：`slow.firstChunkMs`、`slow.chunkMs`、`when.stream`、`when.model`。
 
