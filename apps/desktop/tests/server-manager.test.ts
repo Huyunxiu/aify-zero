@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 
 import type { ApiServerStatus } from "@workspace/shared/api-status";
+import { createServerReadyMessage } from "@workspace/shared/server-ready";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DesktopServer } from "../src/server-manager";
@@ -11,6 +12,7 @@ import { DesktopServer } from "../src/server-manager";
 class FakeChild extends EventEmitter {
   readonly pid = 1234;
   readonly stderr = new PassThrough();
+  /** server 的 stdout 只承载人类日志；测试往里写，验证它被转发进主进程日志。 */
   readonly stdout = new PassThrough();
   killed = false;
 
@@ -21,7 +23,7 @@ class FakeChild extends EventEmitter {
   }
 
   sendReady(origin: string): void {
-    this.stdout.write(`${JSON.stringify({ origin, type: "ready" })}\n`);
+    this.emit("message", createServerReadyMessage(origin));
   }
 
   crash(code = 1): void {
@@ -41,9 +43,12 @@ const servers: DesktopServer[] = [];
 const originalMode = process.env.AIFY_SERVER_MODE;
 const originalOrigin = process.env.AIFY_API_ORIGIN;
 
-const createServer = (statuses: ApiServerStatus[]): DesktopServer => {
+const createServer = (
+  statuses: ApiServerStatus[],
+  log: (message: string) => void = () => {}
+): DesktopServer => {
   const server = new DesktopServer({
-    log: () => {},
+    log,
     onStatus: (status) => statuses.push(status),
     token: () => "test-token",
   });
@@ -171,5 +176,81 @@ describe("DesktopServer lifecycle", () => {
       state: "ready",
     });
     expect(fork).not.toHaveBeenCalled();
+  });
+
+  it("forwards child stdout lines to the main process log", async () => {
+    const logs: string[] = [];
+    const server = createServer([], (message) => logs.push(message));
+    const started = server.start(spawnOptions);
+
+    await vi.waitFor(() => {
+      expect(fork).toHaveBeenCalledOnce();
+    });
+
+    children[0].stdout.write("[api] listening on http://127.0.0.1:12345\n");
+
+    await vi.waitFor(() => {
+      expect(logs).toContain("[api] listening on http://127.0.0.1:12345");
+    });
+
+    children[0].sendReady("http://127.0.0.1:12345");
+    await started;
+  });
+
+  it("ignores messages that are not the ready message", async () => {
+    const server = createServer([]);
+    const started = server.start(spawnOptions);
+
+    await vi.waitFor(() => {
+      expect(fork).toHaveBeenCalledOnce();
+    });
+
+    children[0].emit("message", { text: "starting", type: "log" });
+    children[0].sendReady("http://127.0.0.1:12345");
+
+    await expect(started).resolves.toBe("http://127.0.0.1:12345");
+  });
+
+  it("reports an exit that happens before the ready message", async () => {
+    const server = createServer([]);
+    const started = server.start(spawnOptions);
+
+    await vi.waitFor(() => {
+      expect(fork).toHaveBeenCalledOnce();
+    });
+
+    const failure = started.then(
+      () => "resolved",
+      (error: unknown) =>
+        error instanceof Error ? error.message : String(error)
+    );
+
+    children[0].crash(1);
+
+    await expect(failure).resolves.toMatch(/before sending the ready message/);
+  });
+
+  it("reports a timeout when the child sends no ready message", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    try {
+      const server = createServer([]);
+      const started = server.start(spawnOptions);
+
+      await vi.waitFor(() => {
+        expect(fork).toHaveBeenCalledOnce();
+      });
+
+      const failure = started.then(
+        () => "resolved",
+        (error: unknown) =>
+          error instanceof Error ? error.message : String(error)
+      );
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(failure).resolves.toMatch(/the child sent no ready message/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
