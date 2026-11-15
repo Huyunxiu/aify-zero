@@ -15,8 +15,15 @@ vp run ready
 - Run the tests:
 
 ```bash
-vp run -r test
+vp test
 ```
+
+`vp test` runs every suite. `vp run -r test` only runs the packages that
+declare a `test` script, which is `packages/shared` and `apps/desktop`.
+
+- Test how the app reacts to a provider: a retryable failure, a slow stream, an
+  error in the middle of a stream. See
+  [docs/testing/fake-provider.md](docs/testing/fake-provider.md).
 
 - Build the monorepo:
 

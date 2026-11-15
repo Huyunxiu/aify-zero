@@ -3,6 +3,10 @@
 按 chat completions 协议应答的本地服务。手动能点着看，测试能起它跑，两边读同一份
 场景。它替的是供应商，不是内核。
 
+**怎么用它测**——手动流程、六个场景的预期、录制回放、诊断——见
+[docs/testing/fake-provider.md](../../../../../docs/testing/fake-provider.md)。
+这一页只讲场景格式、动作表和参数。
+
 ```bash
 # 手动：起服务，然后在设置里加一个自定义供应商，baseURL 指向打印出来的地址
 vp run fake:provider -- --scenario retry-then-succeed

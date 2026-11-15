@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "ready": "vp run db#db:check && vp check && vp run -r test && vp run -r build",
+    "ready": "vp run db#db:check && vp check && vp test && vp run -r build",
     "dev": "vp run --filter @workspace/server-app --filter web --parallel dev",
     "dev:server": "vp run @workspace/server-app#dev",
     "dev:api": "vp run @workspace/server-app#dev",

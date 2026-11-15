@@ -15,8 +15,14 @@ vp run ready
 - 运行测试：
 
 ```bash
-vp run -r test
+vp test
 ```
+
+`vp test` 跑全部测试。`vp run -r test` 只跑声明了 `test` 脚本的包，也就是
+`packages/shared` 和 `apps/desktop`。
+
+- 验应用对供应商行为的反应——可重试的失败、慢流、流中途报错——见
+  [docs/testing/fake-provider.md](docs/testing/fake-provider.md)。
 
 - 构建整个 monorepo：
 
