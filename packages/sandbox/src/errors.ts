@@ -8,12 +8,15 @@
  */
 
 /**
- * 写入越界：目标不在沙箱的可写根里。
+ * 路径越界：目标不在沙箱的根目录里。
  *
  * 这不是命令失败，也不是能力缺失，而是策略拒绝。调用方要把它原样交给模型看，
  * 否则模型会反复重试同一条路径。
+ *
+ * 读和写共用一类：对容器适配器来说，挂载集之外既不可写也不可读，一个「越界」
+ * 概念就够了；`operation` 说明是哪一次调用被拒绝。
  */
-export class SandboxWriteDeniedError extends Error {
+export class SandboxPathDeniedError extends Error {
   readonly operation: string;
   readonly path: string;
   readonly roots: readonly string[];
@@ -24,9 +27,9 @@ export class SandboxWriteDeniedError extends Error {
     roots: readonly string[];
   }) {
     super(
-      `${properties.operation} is not allowed: ${properties.path} is outside the sandbox's writable roots (${properties.roots.join(", ")})`
+      `${properties.operation} is not allowed: ${properties.path} is outside the sandbox roots (${properties.roots.join(", ")})`
     );
-    this.name = "SandboxWriteDeniedError";
+    this.name = "SandboxPathDeniedError";
     this.operation = properties.operation;
     this.path = properties.path;
     this.roots = properties.roots;
