@@ -1,12 +1,13 @@
 import { streamToEventIterator, type } from "@orpc/server";
 import {
-  InboxItemNotFoundError,
+  AgentInbox,
   NothingToCompactError,
   STREAM_REGISTRY,
 } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import type {
   AgentTurn,
+  AgentUserTurn,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { ModelEffort } from "@workspace/shared/constants";
@@ -19,7 +20,9 @@ import {
   createSessionLifecycle,
   SessionLifecycleError,
 } from "../../session/lifecycle";
-import { acceptedEffort, unsupportedInputIn } from "../../session/model-rules";
+import { acceptedEffort, unsupportedInput } from "../../session/model-rules";
+import { sessionRunner } from "../../session/runner";
+import { SQLiteStore } from "../../storage/sqlite-store";
 import { modelRefSchema } from "../settings/settings.schema";
 import { findConfiguredModel } from "../settings/settings.service";
 import {
@@ -93,6 +96,30 @@ function toApiError(error: unknown): never {
   throw error;
 }
 
+const START_TIMEOUT_MS = 5000;
+
+/** 等一次运行真的开始；返回它的 stream id，超时返回 null。 */
+const waitForStream = (
+  sessionId: string,
+  timeoutMs: number
+): Promise<string | null> =>
+  new Promise<string | null>((resolve) => {
+    const deadline = Date.now() + timeoutMs;
+    const check = (): void => {
+      const entry = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
+      if (entry && !entry.isDone()) {
+        resolve(entry.streamId);
+        return;
+      }
+      if (Date.now() >= deadline) {
+        resolve(null);
+        return;
+      }
+      setTimeout(check, 25);
+    };
+    check();
+  });
+
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
   .errors({
@@ -129,13 +156,6 @@ const createSession = publicProcedure
       throw new ApiError("MODEL_NOT_FOUND", { data: model });
     }
 
-    const unsupported = unsupportedInputIn(configured, turns);
-    if (unsupported) {
-      throw new ApiError("MODEL_UNSUPPORTED_INPUT", {
-        data: { kind: unsupported },
-      });
-    }
-
     const effort = acceptedEffort(
       configured,
       Object.values(ModelEffort).includes(modelEffort as ModelEffort)
@@ -143,24 +163,72 @@ const createSession = publicProcedure
         : undefined
     );
 
-    try {
-      return await createSessionLifecycle().create({
-        sessionId,
-        turns,
-        approvals,
-        configured,
-        effort,
-        projectId,
-        inboxId,
-      });
-    } catch (error) {
-      if (error instanceof InboxItemNotFoundError) {
-        throw new ApiError("INBOX_ITEM_NOT_FOUND", {
-          data: { sessionId, messageId: error.id },
+    const runner = sessionRunner();
+
+    // 审批恢复先写回答复；它不起新的 user 回合，所以不走收件箱。
+    if (approvals?.length) {
+      try {
+        return await runner.resume({
+          sessionId,
+          approvals,
+          configured,
+          ...(effort === undefined ? {} : { effort }),
         });
+      } catch (error) {
+        toApiError(error);
       }
-      toApiError(error);
     }
+
+    const lastTurn = turns.at(-1);
+    if (!lastTurn) {
+      throw new Error("no message.");
+    }
+
+    const unsupported = unsupportedInput(configured, lastTurn as AgentUserTurn);
+    if (unsupported) {
+      throw new ApiError("MODEL_UNSUPPORTED_INPUT", {
+        data: { kind: unsupported },
+      });
+    }
+
+    // 会话行先落库：收件箱按会话归属，运行器也要靠这一行看项目和状态。
+    const store = new SQLiteStore();
+    const existing = await store.getSessionById(sessionId);
+    if (!existing) {
+      await store.saveSession({
+        id: sessionId,
+        title: "",
+        metadata: {},
+        ...(projectId === undefined ? {} : { projectId }),
+      });
+    }
+
+    // 已经入队的那条（客户端先入队再发）不再重复写一行。
+    if (!inboxId) {
+      await new AgentInbox(store).enqueue({
+        sessionId,
+        kind: "user-message",
+        // 同一条消息重试时 server 认得出它：user 回合的 id 是客户端生成的。
+        dedupeKey: lastTurn.id,
+        deliverAt: "run-boundary",
+        content: lastTurn as AgentUserTurn,
+        payload: {
+          model,
+          ...(modelEffort === undefined ? {} : { modelEffort }),
+          ...(projectId === undefined ? {} : { projectId }),
+        },
+      });
+    }
+
+    runner.wake(sessionId);
+    const activeStreamId = await waitForStream(sessionId, START_TIMEOUT_MS);
+    if (!activeStreamId) {
+      // 消息已经落库，这一轮起不来（会话在跑、等审批、或已经暂停）不等于失败：
+      // 客户端拿到的 null 就是「还没开始」。
+      return { activeStreamId: null, awaitingToolApprovals: 0 };
+    }
+
+    return { activeStreamId, awaitingToolApprovals: 0 };
   });
 
 /**

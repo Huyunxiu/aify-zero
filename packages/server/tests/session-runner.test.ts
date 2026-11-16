@@ -201,6 +201,8 @@ const makeRunner = (input: {
     store: input.store,
     registry: input.registry ?? new FakeRegistry(),
     startRun: input.start.startRun,
+    resumeRun: () =>
+      Promise.reject(new Error("resumeRun is not used in these tests")),
     ...(input.maxConcurrent === undefined
       ? {}
       : { maxConcurrent: input.maxConcurrent }),
@@ -256,7 +258,7 @@ describe(SessionRunner, () => {
     await flush();
     expect(start.calls).toHaveLength(1);
 
-    runner.resume("s1");
+    runner.wakeAfterPause("s1");
     await flush();
     expect(start.calls).toHaveLength(2);
     expect(runner.pauseReason("s1")).toBeUndefined();

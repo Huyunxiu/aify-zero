@@ -161,6 +161,27 @@ export class SessionLifecycle {
   }
 
   /**
+   * 审批恢复：把答复写回它指名的 step，再从这条 branch 起一次运行。
+   *
+   * 它和普通发送只差一件事：没有新的 user 回合。答复之后还有待答的调用时，
+   * 只返回数量，不起跑。
+   */
+  async resume(input: {
+    sessionId: string;
+    approvals: TextStreamToolApprovalResponseEvent[];
+    configured: ConfiguredModel;
+    effort?: ModelEffort;
+  }): Promise<CreateSessionResult> {
+    return await this.create({
+      sessionId: input.sessionId,
+      turns: [],
+      approvals: input.approvals,
+      configured: input.configured,
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
+    });
+  }
+
+  /**
    * 从收件箱领一条待办项，开一次运行。
    *
    * 领取和写 turn 在同一个事务里完成（`inboxId` 一路传给 store）：领不到这条

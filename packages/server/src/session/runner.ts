@@ -1,9 +1,18 @@
-import type { InboxItem } from "@workspace/agent-client";
+import { STREAM_REGISTRY } from "@workspace/agent";
+import type {
+  InboxItem,
+  TextStreamToolApprovalResponseEvent,
+} from "@workspace/agent-client";
 import type {
   AgentStore,
   SessionEndStatus,
 } from "@workspace/agent/storage/index";
+import type { ModelEffort } from "@workspace/shared/constants";
 import { logger } from "@workspace/shared/logger";
+
+import type { ConfiguredModel } from "../routers/settings/settings.schema";
+import { SQLiteStore } from "../storage/sqlite-store";
+import { createSessionLifecycle } from "./lifecycle";
 
 /** 从 store 里读到的、运行器需要的那几件事。 */
 export type RunnerStore = Pick<
@@ -27,11 +36,24 @@ export type StartRun = (input: {
 /** 暂停的原因：结束状态里除了 `done` 的那两个。 */
 export type PauseReason = Exclude<SessionEndStatus, "done">;
 
+export type ResumeInput = {
+  sessionId: string;
+  approvals: TextStreamToolApprovalResponseEvent[];
+  configured: ConfiguredModel;
+  effort?: ModelEffort;
+};
+
+export type ResumeRun = (
+  input: ResumeInput
+) => Promise<{ activeStreamId: string | null; awaitingToolApprovals: number }>;
+
 export type SessionRunnerOptions = {
   store: RunnerStore;
   registry: RunnerRegistry;
-  /** 真正起跑的那一步；接线之前由调用方注入，测试里换成替身。 */
+  /** 从一条待办项起跑。 */
   startRun: StartRun;
+  /** 审批恢复：写回答复之后再起一次运行。 */
+  resumeRun: ResumeRun;
   /** 同时最多几条运行；省略时 4。 */
   maxConcurrent?: number;
   /** 内部告警的落点；测试可以换成收集器。 */
@@ -52,6 +74,7 @@ export class SessionRunner {
   readonly #store: RunnerStore;
   readonly #registry: RunnerRegistry;
   readonly #startRun: StartRun;
+  readonly #resumeRun: ResumeRun;
   readonly #maxConcurrent: number;
   readonly #warn: (message: string, error?: unknown) => void;
 
@@ -67,6 +90,7 @@ export class SessionRunner {
     this.#store = options.store;
     this.#registry = options.registry;
     this.#startRun = options.startRun;
+    this.#resumeRun = options.resumeRun;
     this.#maxConcurrent = options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
     this.#warn =
       options.warn ?? ((message, error) => logger.warn(message, error));
@@ -78,10 +102,24 @@ export class SessionRunner {
     this.#schedule();
   }
 
-  /** 解除暂停并立刻看一眼收件箱：用户投递或审批恢复时用它。 */
-  resume(sessionId: string): void {
+  /** 解除暂停并立刻看一眼收件箱：用户投递时用它。 */
+  wakeAfterPause(sessionId: string): void {
     this.#paused.delete(sessionId);
     this.wake(sessionId);
+  }
+
+  /**
+   * 审批恢复。
+   *
+   * 它不是从收件箱领一条，而是把答复写回对应的 step 再起一次运行；同样经过
+   * 这里，主会话的模型回合才只有运行器一个起点。
+   */
+  async resume(input: ResumeInput): Promise<{
+    activeStreamId: string | null;
+    awaitingToolApprovals: number;
+  }> {
+    this.#paused.delete(input.sessionId);
+    return await this.#resumeRun(input);
   }
 
   /** 这个会话为什么停下；没有停下时为 undefined。 */
@@ -223,6 +261,38 @@ export class SessionRunner {
       return undefined;
     }
   }
+}
+
+/**
+ * 默认依赖：真实的 store、注册表和会话生命周期；测试可以逐个覆盖。
+ */
+export function createSessionRunner(
+  overrides: Partial<Omit<SessionRunnerOptions, "store">> & {
+    store?: SQLiteStore;
+  } = {}
+): SessionRunner {
+  const store = overrides.store ?? new SQLiteStore();
+  const lifecycle = createSessionLifecycle({ store });
+
+  return new SessionRunner({
+    store,
+    registry: overrides.registry ?? STREAM_REGISTRY,
+    startRun:
+      overrides.startRun ?? ((input) => lifecycle.startFromInbox(input)),
+    resumeRun: overrides.resumeRun ?? ((input) => lifecycle.resume(input)),
+    ...(overrides.maxConcurrent === undefined
+      ? {}
+      : { maxConcurrent: overrides.maxConcurrent }),
+    ...(overrides.warn === undefined ? {} : { warn: overrides.warn }),
+  });
+}
+
+let singleton: SessionRunner | undefined;
+
+/** 进程里唯一的那一个运行器；第一次用到时才建。 */
+export function sessionRunner(): SessionRunner {
+  singleton ??= createSessionRunner();
+  return singleton;
 }
 
 /**
