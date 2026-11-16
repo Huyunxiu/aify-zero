@@ -52,11 +52,6 @@ export type SessionCursor = {
   seq: number;
 };
 
-/** 游标的传输形式，`<epoch>:<seq>`。 */
-export function formatSessionCursor({ epoch, seq }: SessionCursor): string {
-  return `${epoch}:${seq}`;
-}
-
 /**
  * 解析游标。认不出的写法当作没有游标：重连的人会多读一遍，而不是少读一段。
  */

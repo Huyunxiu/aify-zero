@@ -91,7 +91,7 @@ const createInbox = (seed: InboxItem[] = []) => {
         input.mode === "steering" ? "step-boundary" : "run-boundary"
       );
       messages = [...messages, message];
-      return Promise.resolve({ message });
+      return Promise.resolve({ item: message });
     }),
     cancel: vi.fn<InboxApi["cancel"]>((input) => {
       messages = messages.filter((message) => message.id !== input.itemId);

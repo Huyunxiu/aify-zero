@@ -47,14 +47,15 @@ class SessionEventChannel<TOOLS extends ToolSet> {
 
   readonly #subscribers = new Set<Subscriber<TOOLS>>();
 
-  /** 有人正在听，通道就不能被丢掉。 */
-  get isEmpty(): boolean {
-    return this.#subscribers.size === 0;
-  }
+  /**
+   * 这条通道已经收不了尾：没人听，也没有在跑的运行。
+   *
+   * 之外的任何组合都还可能要交代一次运行，不能丢。
+   */
+  get isFinished(): boolean {
+    const idle = this.#run === undefined || this.#run.done;
 
-  /** 没有运行的记录就没人需要它。 */
-  get isIdle(): boolean {
-    return this.#run === undefined || this.#run.done;
+    return idle && this.#subscribers.size === 0;
   }
 
   startRun(streamId: string, turnId?: string): void {
@@ -76,12 +77,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
       streamId,
       ...(turnId === undefined ? {} : { turnId }),
     };
-    this.#broadcast({
-      seq,
-      streamId,
-      type: "run.start",
-      ...(turnId === undefined ? {} : { turnId }),
-    });
+    this.#broadcast(this.#runStart({ ...this.#run }));
   }
 
   publish(streamId: string, event: AgentStreamEvent<TOOLS>): void {
@@ -137,29 +133,28 @@ class SessionEventChannel<TOOLS extends ToolSet> {
         }
       },
       start: (controller) => {
-        controller.enqueue({
-          epoch: this.epoch,
-          seq: this.#seq,
-          type: "ready",
-        });
+        const live = this.#run?.done === false ? this.#run : undefined;
 
-        const run = this.#run;
-        if (run && !run.done) {
-          controller.enqueue({
-            seq: run.startSeq,
-            streamId: run.streamId,
-            type: "run.start",
-            ...(run.turnId === undefined ? {} : { turnId: run.turnId }),
-          });
+        // 重放从哪一条之后开始。`ready` 报的就是这个下界，此后送出的每条事件
+        // 序号都比它大——把它当游标的读者既不会重复，也不会漏。
+        const after =
+          since?.epoch === this.epoch
+            ? since.seq
+            : live === undefined
+              ? this.#seq
+              : live.startSeq - 1;
 
-          // 游标属于这条通道才从它后面接着发；否则从运行开头重放。
-          const after = since?.epoch === this.epoch ? since.seq : -1;
-          for (const buffered of run.events) {
+        controller.enqueue({ epoch: this.epoch, seq: after, type: "ready" });
+
+        if (live) {
+          controller.enqueue(this.#runStart(live));
+
+          for (const buffered of live.events) {
             if (buffered.seq > after) {
               controller.enqueue({
                 event: buffered.event,
                 seq: buffered.seq,
-                streamId: run.streamId,
+                streamId: live.streamId,
                 type: "run.event",
               });
             }
@@ -188,6 +183,21 @@ class SessionEventChannel<TOOLS extends ToolSet> {
         this.#subscribers.add(self);
       },
     });
+  }
+
+  /**
+   * 一次运行的开始信封。
+   *
+   * 同一条运行说两遍：开跑时广播一次，重放时再补一次。两处的字段必须一致，
+   * 所以只在这里造。
+   */
+  #runStart(run: RunRecord<TOOLS>): SessionStreamEvent<TOOLS> {
+    return {
+      seq: run.startSeq,
+      streamId: run.streamId,
+      type: "run.start",
+      ...(run.turnId === undefined ? {} : { turnId: run.turnId }),
+    };
   }
 
   #next(): number {
@@ -233,7 +243,7 @@ export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
 
     // 没人听、也没有在跑的运行：这条通道之后只会从下一次运行重新开始，留着
     // 它就是给每个见过的会话留一份记录。
-    if (channel.isEmpty && channel.isIdle) {
+    if (channel.isFinished) {
       this.#channels.delete(sessionId);
     }
   }

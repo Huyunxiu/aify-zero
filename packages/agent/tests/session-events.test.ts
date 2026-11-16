@@ -72,6 +72,8 @@ describe(SessionEventRegistry, () => {
     const stream = events.subscribe("session-1");
     const received = await readEvents(stream, 4);
 
+    // `ready` 报的是重放的下界：之后每条事件的序号都比它大。
+    expect(received[0]).toMatchObject({ seq: 0 });
     expect(received[1]).toStrictEqual({
       seq: 1,
       streamId: "run-1",
@@ -130,6 +132,7 @@ describe(SessionEventRegistry, () => {
       "run.start",
       "run.event",
     ]);
+    expect(received[0]).toMatchObject({ seq: 2 });
     expect(received[2]).toMatchObject({
       seq: 3,
       type: "run.event",

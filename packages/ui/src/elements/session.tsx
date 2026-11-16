@@ -572,7 +572,7 @@ export function Session({
         const result = await client.session.listInboxItems({
           sessionId: id,
         });
-        return result.messages;
+        return result.items;
       },
       enqueue: async (input) => await client.session.enqueueInboxItem(input),
       cancel: async ({ sessionId: id, itemId }) =>
@@ -764,8 +764,8 @@ export function Session({
       return;
     }
 
-    // The marker is in the branch now; refresh the row and the cached branch so
-    // a remount sees the same thing the transcript will show.
+    // 标记已经进了 branch：刷新会话行和缓存的 branch，重新挂载时看到的就是
+    // 记录里那一条。
     void queryClient.invalidateQueries({
       queryKey: ["listSessionTurns", sessionId],
     });

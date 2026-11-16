@@ -100,7 +100,6 @@ const createSession = publicProcedure
     MODEL_UNSUPPORTED_INPUT: ErrorMap.MODEL_UNSUPPORTED_INPUT,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
-    INBOX_ITEM_NOT_FOUND: ErrorMap.INBOX_ITEM_NOT_FOUND,
   })
   .input(
     type<{

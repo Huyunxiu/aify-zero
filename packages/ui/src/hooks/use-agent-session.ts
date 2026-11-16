@@ -35,7 +35,7 @@ export type InboxApi = {
     model: ModelRef;
     modelEffort?: string;
     projectId?: string;
-  }) => Promise<{ message: InboxItem }>;
+  }) => Promise<{ item: InboxItem }>;
   cancel: (input: { sessionId: string; itemId: string }) => Promise<unknown>;
   clear: (input: { sessionId: string }) => Promise<unknown>;
 };
@@ -81,7 +81,7 @@ export type UseAgentSessionOptions = {
    * Stops the turn the session is running on the server. Located by
    * `sessionId`, not by a stream id — the client holds only the session's.
    *
-   * Read when the store is created, like the other API callbacks.
+   * 和其他回调一样，只在 store 建立时读一次。
    */
   apiStop?: (options: { sessionId: string }) => Promise<unknown>;
   /**
@@ -90,8 +90,7 @@ export type UseAgentSessionOptions = {
    */
   apiInbox?: InboxApi;
   /**
-   * Whether this page may send at all. A read-only subagent page lists nothing
-   * and sends nothing.
+   * 这个页面能不能发消息。只读的子会话页面既不列队列，也不发送。
    */
   allowSend?: boolean;
   /**
@@ -101,12 +100,10 @@ export type UseAgentSessionOptions = {
    * transcript re-renders once per token; the intermediate frames are collapsed
    * and only the latest state is painted. `0` publishes every event.
    *
-   * Only the turn snapshots are throttled. `status` and `error` changes and
-   * `onEvent` are not, and the last snapshot of a request is always published
-   * immediately.
+   * 只有回合快照受抑制：`status`、`error` 的变化和 `onEvent` 不受，一次运行
+   * 的最后一份快照也总是立刻发出。
    *
-   * Like `api`, this is read when the store is created, so a new value takes
-   * effect when the session id changes.
+   * 和 `api` 一样，只在 store 建立时读，所以新值要等会话 id 变化才生效。
    */
   throttleMs?: number;
   turns: AgentTurn<AgentToolSet>[];
@@ -452,23 +449,23 @@ export function createAgentSessionStore({
     }
   };
 
-  const addInboxItem = (message: InboxItem): void => {
+  const addInboxItem = (item: InboxItem): void => {
     // 入队响应回来之前，它可能已经被领走：以 user 回合的身份进了记录（运行已经
     // 开始），或者被引导进当前回合——两种都不该再出现在队列里。
-    const adopted = currentTurns.some((turn) => turn.id === message.content.id);
+    const adopted = currentTurns.some((turn) => turn.id === item.content.id);
     const steered = currentTurns.some(
       (turn) =>
         turn.type === "assistant" &&
         turn.content.some(
-          (step) => step.type === "steering" && step.id === message.id
+          (step) => step.type === "steering" && step.id === item.id
         )
     );
-    if (adopted || steered || inbox.some((item) => item.id === message.id)) {
+    if (adopted || steered || inbox.some((entry) => entry.id === item.id)) {
       return;
     }
 
     bumpInbox();
-    inbox = [...inbox, message].toSorted((left, right) => left.seq - right.seq);
+    inbox = [...inbox, item].toSorted((left, right) => left.seq - right.seq);
     notify();
   };
 
@@ -787,7 +784,7 @@ export function createAgentSessionStore({
     const busy = isBusy();
     const effectiveMode: SubmitMode = busy ? (mode ?? "followup") : "followup";
 
-    let message: InboxItem;
+    let item: InboxItem;
     try {
       const result = await apiInbox.enqueue({
         sessionId: id,
@@ -804,7 +801,7 @@ export function createAgentSessionStore({
             ? payload.projectId
             : undefined,
       });
-      ({ message } = result);
+      ({ item } = result);
     } catch (error) {
       pendingTurns.delete(turn.id);
       // 本地有 transcript 但服务端行已经不在：退回直接发送，让服务端重建。
@@ -815,7 +812,7 @@ export function createAgentSessionStore({
       throw error;
     }
 
-    addInboxItem(message);
+    addInboxItem(item);
   };
 
   const sendPending = async (): Promise<void> => {

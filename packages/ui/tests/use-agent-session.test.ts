@@ -58,7 +58,7 @@ const heldPart = (
 };
 
 /**
- * 会话事件流的测试替身：测试按运行发事件，和服端发的一样。
+ * 会话事件流的测试替身：测试按运行发事件，和服务端发的一样。
  */
 const sessionEvents = () => {
   let controller!: ReadableStreamDefaultController<unknown>;

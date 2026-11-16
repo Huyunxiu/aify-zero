@@ -293,9 +293,9 @@
     }
   },
   "inbox": {
-    "title": "{{count}} 条待发送",
+    "title": "{{count}} 条待办",
     "steering": "引导中",
-    "queued": "排队中",
+    "queued": "等待中",
     "sendNow": "立即发送",
     "remove": "移除",
     "clear": "全部清除",

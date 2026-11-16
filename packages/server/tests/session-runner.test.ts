@@ -127,10 +127,8 @@ class FakeRegistry implements RunnerRegistry {
 
   getStreamEntryBySession(
     sessionId: string
-  ): { isDone(): boolean; whenFinished(): Promise<void> } | undefined {
-    return this.live.has(sessionId)
-      ? { isDone: () => false, whenFinished: () => Promise.resolve() }
-      : undefined;
+  ): { isDone(): boolean } | undefined {
+    return this.live.has(sessionId) ? { isDone: () => false } : undefined;
   }
 }
 

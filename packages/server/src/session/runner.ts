@@ -156,7 +156,7 @@ export class SessionRunner {
     // 跑——那正是它该停的时候。
     if (result.status === "running") {
       void result.settled.then((status) => {
-        if (this.#decide(sessionId, status)) {
+        if (this.#mayTakeNext(sessionId, status)) {
           this.wake(sessionId);
         }
       });
@@ -237,20 +237,20 @@ export class SessionRunner {
         return;
       }
 
-      if (!this.#decide(sessionId, await started.settled)) {
+      if (!this.#mayTakeNext(sessionId, await started.settled)) {
         return;
       }
     }
   }
 
   /**
-   * 一次运行落定之后怎么走，返回「循环可以接着取下一条」。
+   * 一次运行落定之后能不能接着取下一条。
    *
    * `wait_review` 是结构性的等待：历史里有一条没有结果的调用，推进它没有意义，
    * 也不需要记成暂停。`error` / `canceled` 记住原因并停下，免得同一条坏消息
    * 反复触发同一个错误。审批恢复的那次运行和队列里的运行走同一套判断。
    */
-  #decide(sessionId: string, status: SessionEndStatus): boolean {
+  #mayTakeNext(sessionId: string, status: SessionEndStatus): boolean {
     if (status === "wait_review") {
       return false;
     }

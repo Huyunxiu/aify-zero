@@ -21,7 +21,7 @@ export const listInboxItems = publicProcedure
   .input(z.object({ sessionId: z.string() }))
   .handler(async ({ input }) => {
     const inbox = new AgentInbox(new SQLiteStore());
-    return { messages: await inbox.list(input.sessionId) };
+    return { items: await inbox.list(input.sessionId) };
   });
 
 /**
@@ -62,7 +62,7 @@ export const enqueueInboxItem = publicProcedure
     });
 
     const inbox = new AgentInbox(store);
-    const message = await inbox.enqueue({
+    const item = await inbox.enqueue({
       sessionId: input.sessionId,
       kind: "user-message",
       dedupeKey: input.dedupeKey,
@@ -79,7 +79,7 @@ export const enqueueInboxItem = publicProcedure
     // 影响这一条。
     sessionRunner().wakeAfterPause(input.sessionId);
 
-    return { message };
+    return { item };
   });
 
 /** 移除一条待办项。 */
