@@ -228,6 +228,46 @@ describe("createAgentSessionStore queue", () => {
     events.close();
   });
 
+  test("a dropped stream reconnects with the cursor and keeps the run", async () => {
+    const cursors: (string | undefined)[] = [];
+    const first = sessionEvents();
+    const second = sessionEvents();
+
+    const store = createAgentSessionStore({
+      id: "session-1",
+      apiEvents: (options) => {
+        cursors.push(options.since);
+        return Promise.resolve(
+          cursors.length === 1 ? first.stream : second.stream
+        );
+      },
+      throttleMs: 0,
+      turns: [],
+      emit: () => {},
+    });
+
+    await flush();
+
+    first.send({ type: "ready", epoch: "epoch-1", seq: 0 });
+    first.runStart("run-1", 1);
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
+    // 连接断了：不落定，带着读到的游标再接一次。
+    first.close();
+
+    await vi.waitFor(() => expect(cursors).toHaveLength(2));
+    expect(cursors[0]).toBeUndefined();
+    expect(cursors[1]).toBe("epoch-1:1");
+    expect(store.getStatus()).toBe("streaming");
+
+    // 同一次运行的续读：重放的 `run.start` 不再新建装配器。
+    second.runStart("run-1", 1);
+    second.runEnd("run-1", 2);
+    await vi.waitFor(() => expect(store.getStatus()).toBe("ready"));
+
+    second.close();
+  });
+
   test("a turn.steer event removes the matching pending message", async () => {
     const events = sessionEvents();
     const inbox = createInbox();
