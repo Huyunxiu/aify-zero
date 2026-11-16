@@ -7,7 +7,7 @@ import { z } from "zod";
 /** 场景目录：包根的 `scenarios/`，与 `tests/` 并排。 */
 const SCENARIOS_DIR = new URL("../../../scenarios/", import.meta.url);
 
-/** 规则的六个结果。每条规则正好有一个。 */
+/** 规则的七个结果。每条规则正好有一个。 */
 export const OUTCOMES = [
   "answer",
   "fail",
@@ -15,6 +15,7 @@ export const OUTCOMES = [
   "replay",
   "reset",
   "corrupt",
+  "toolCall",
 ] as const;
 
 const whenSchema = z.object({
@@ -57,6 +58,23 @@ export const ruleSchema = z
     replay: z.string().optional(),
     reset: z.boolean().optional(),
     corrupt: z.boolean().optional(),
+    /**
+     * 这一次请求不回答，改为要一个工具。
+     *
+     * 只在流式请求上表达：非流式请求拿到的仍然是 SSE 块，而工具调用要靠
+     * `tool_calls` 的增量分块被客户端拼起来。工具的结果会作为下一次请求的一部
+     * 分发回来，那一条规则接着往下走。
+     */
+    toolCall: z
+      .object({
+        /** 调用 id；不写就固定为 `call_fake_1`。 */
+        id: z.string().optional(),
+        /** 工具名，例如 `edit-file`。 */
+        name: z.string().min(1),
+        /** 入参对象，会被序列化成 `arguments` 字符串再分块发出。 */
+        args: z.record(z.string(), z.unknown()).optional(),
+      })
+      .optional(),
   })
   .refine(
     (rule) =>

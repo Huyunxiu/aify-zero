@@ -11,6 +11,7 @@
     "dev:web": "vp run web#dev",
     "dev:desktop": "vp run desktop#dev",
     "fake:provider": "tsx packages/agent/src/testing/fake-provider/cli.ts",
+    "e2e": "playwright test --config e2e/playwright.config.ts",
     "db:baseline": "vp run db#db:baseline",
     "db:check": "vp run db#db:check",
     "db:studio": "vp run db#db:studio",
@@ -24,6 +25,8 @@
     "dotenv": "catalog:"
   },
   "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@workspace/agent": "workspace:*",
     "@workspace/config": "workspace:*",
     "ultracite": "catalog:",
     "vite-plus": "catalog:",

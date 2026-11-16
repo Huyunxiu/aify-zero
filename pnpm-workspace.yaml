@@ -47,6 +47,7 @@ catalog:
   "@orpc/zod": ^1.14.3
   "@pierre/diffs": ^1.6.4
   "@pierre/trees": 1.0.0-beta.6
+  "@playwright/test": ^1.65.1
   "@radix-ui/react-use-controllable-state": ^1.2.3
   "@shadcn/react": ^0.3.1
   "@streamdown/cjk": ^1.0.3

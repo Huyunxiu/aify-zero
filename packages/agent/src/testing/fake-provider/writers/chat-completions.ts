@@ -164,6 +164,36 @@ export async function writeChatCompletions(options: {
   }
 
   response.write(chunk(model, { role: "assistant" }));
+
+  if (rule.toolCall) {
+    // 名字和 id 走第一块，之后每块只带 `arguments` 的一段前缀；客户端按 index
+    // 把它们拼回一个 JSON 字符串。分块长度固定，测试才能既看到拼接、又不被块数淹掉。
+    const arguments_ = JSON.stringify(rule.toolCall.args ?? {});
+    response.write(
+      chunk(model, {
+        tool_calls: [
+          {
+            index: 0,
+            id: rule.toolCall.id ?? "call_fake_1",
+            type: "function",
+            function: { name: rule.toolCall.name, arguments: "" },
+          },
+        ],
+      })
+    );
+    for (const piece of arguments_.match(/[\S\s]{1,8}/gu) ?? []) {
+      await wait(rule.slow?.chunkMs);
+      response.write(
+        chunk(model, {
+          tool_calls: [{ index: 0, function: { arguments: piece } }],
+        })
+      );
+    }
+    response.write(chunk(model, {}, "tool_calls"));
+    response.end("data: [DONE]\n\n");
+    return;
+  }
+
   for (const piece of rule.answer ?? "") {
     await wait(rule.slow?.chunkMs);
     response.write(chunk(model, { content: piece }));

@@ -3,7 +3,7 @@
 按 chat completions 协议应答的本地服务。手动能点着看，测试能起它跑，两边读同一份
 场景。它替的是供应商，不是内核。
 
-**怎么用它测**——手动流程、六个场景的预期、录制回放、诊断——见
+**怎么用它测**——手动流程、七个场景的预期、录制回放、诊断——见
 [docs/testing/fake-provider.md](../../../../../docs/testing/fake-provider.md)。
 这一页只讲场景格式、动作表和参数。
 
@@ -40,6 +40,10 @@ const provider = await startFakeProvider({ scenario: "retry-then-succeed" });
 | `replay`        | 从录制里取下一条响应，原样写出；可反复用，直到录制用完 |
 | `reset`         | 直接断连接                                             |
 | `corrupt`       | 发一段非法 JSON                                        |
+| `toolCall`      | 不回答，改要一个工具：`{name, args?, id?}`             |
+
+`toolCall` 只在流式请求上有意义：`arguments` 会按 8 个字符一段发出去，客户端拼回
+JSON。工具的结果作为下一次请求的一部分回来，下一条规则接着走。
 
 修饰：`slow.firstChunkMs`、`slow.chunkMs`、`when.stream`、`when.model`。
 
