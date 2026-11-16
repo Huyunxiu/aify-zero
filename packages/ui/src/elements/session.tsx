@@ -569,11 +569,10 @@ export function Session({
       if (accepted.awaitingToolApprovals > 0) {
         return;
       }
-      // The desktop client reaches the server over oRPC's RPC link, which
-      // always answers 200 — the 201 the REST route sends is not visible here,
-      // so the accepted `streamId` is what says the turn was taken.
+      // 没有 stream id 不是失败：服务端已经收下这条，只是还没轮到它（会话在跑、
+      // 等审批，或上一次失败后暂停）。返回 undefined 让调用方把它留在队列里。
       if (!accepted?.activeStreamId) {
-        throw new Error("The chat did not accept the message.");
+        return;
       }
       // 这次流的读者就是本页：先登记 id，查询稍后返回同一个 id 时不要重挂。
       attachedStreamRef.current = accepted.activeStreamId;

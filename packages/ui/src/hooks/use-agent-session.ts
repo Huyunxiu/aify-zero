@@ -168,6 +168,8 @@ type SendTurnsOptions = {
   inboxId?: string;
   /** 请求已被服务端接受（流已拿到）时调用。 */
   onAccepted?: () => void;
+  /** 服务端收下了这条，但这一轮还没轮到它。 */
+  onQueued?: () => void;
   /** 流拿到之前失败时调用，参数是原始错误。 */
   onRejected?: (error: unknown) => void;
 };
@@ -618,6 +620,7 @@ export function createAgentSessionStore({
     payload,
     inboxId,
     onAccepted,
+    onQueued,
     onRejected,
   }: SendTurnsOptions): Promise<void> => {
     // One request at a time: a newer call takes over and cancels the older one.
@@ -669,6 +672,9 @@ export function createAgentSessionStore({
         }
         if (stream) {
           onAccepted?.();
+        } else {
+          // 服务端收下了但还没起跑：不算失败，也不算开始。
+          onQueued?.();
         }
       } else if (api) {
         const response = await fetch(api, {
@@ -769,6 +775,8 @@ export function createAgentSessionStore({
     sendingId = next.id;
     notify();
 
+    let queued = false;
+
     try {
       await new Promise<void>((resolve, reject) => {
         void sendTurns({
@@ -777,9 +785,20 @@ export function createAgentSessionStore({
           abortSignal: new AbortController().signal,
           inboxId: next.id,
           onAccepted: resolve,
+          onQueued: () => {
+            queued = true;
+            resolve();
+          },
           onRejected: reject,
         });
       });
+
+      if (queued) {
+        // 服务端收下了，只是还没轮到它。留在队列里，等下一次唤醒再说。
+        drainPaused = true;
+        return;
+      }
+
       removeInboxItem(next.id);
     } catch (error) {
       if (isInboxItemNotFound(error)) {
