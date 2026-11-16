@@ -1,11 +1,16 @@
 import type {
   AgentCompactionTurn,
   CompactionRecord,
+  InboxItem,
 } from "@workspace/agent-client";
 import type { TurnRecord, TurnWrite } from "@workspace/agent/storage/index";
-import type { SessionRecord } from "@workspace/agent/storage/types";
+import type {
+  SessionEndStatus,
+  SessionRecord,
+} from "@workspace/agent/storage/types";
 import { describe, expect, test } from "vitest";
 
+import type { ConfiguredModel } from "../src/routers/settings/settings.schema";
 import { SessionLifecycle } from "../src/session/lifecycle";
 import type { SQLiteStore } from "../src/storage/sqlite-store";
 import {
@@ -26,6 +31,8 @@ const makeLifecycle = (store: Partial<SQLiteStore>): SessionLifecycle =>
     } as never,
     buildAgent: () =>
       Promise.reject(new Error("buildAgent must not run in this test")),
+    resolveModel: () =>
+      Promise.reject(new Error("resolveModel must not run in this test")),
   });
 
 const sessionRow = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
@@ -174,5 +181,134 @@ describe(SessionLifecycle, () => {
       assistantStepId: "s1",
       retainedFromTurnId: "u1",
     });
+  });
+});
+
+const configuredModel = (): ConfiguredModel => ({
+  ref: { providerId: "test", modelId: "test-model" },
+  provider: {
+    id: "test",
+    name: "Test",
+    protocol: "openai-chat",
+    baseURL: "https://example.test/v1",
+    apiKey: "",
+    active: true,
+    models: [],
+  },
+  model: {
+    id: "test-model",
+    name: "Test",
+    active: true,
+    modalities: { input: ["text"], output: ["text"] },
+    limit: { context: 128_000 },
+  },
+});
+
+const inboxItem = (sessionId: string): InboxItem => ({
+  seq: 0,
+  id: "item-1",
+  sessionId,
+  kind: "user-message",
+  dedupeKey: "dedupe-1",
+  deliverAt: "run-boundary",
+  content: userTurn("turn-new", "again"),
+  payload: { model: { providerId: "test", modelId: "test-model" } },
+  createdAt: 1,
+});
+
+type StreamOptions = {
+  inboxId?: string;
+  turns: { id: string }[];
+  onFinish: (status: SessionEndStatus) => Promise<void>;
+};
+
+/** 只会记录被怎么调用的 agent 替身。 */
+const fakeAgent = () => {
+  const seen: StreamOptions[] = [];
+
+  return {
+    seen,
+    agent: {
+      stream: (options: StreamOptions) => {
+        seen.push(options);
+        return Promise.resolve(new ReadableStream());
+      },
+      dispose: () => Promise.resolve(),
+    },
+  };
+};
+
+describe("SessionLifecycle.startFromInbox", () => {
+  const make = (input: {
+    agent: unknown;
+    branch?: unknown[];
+    /** `null` 表示这个模型引用解析不出来。 */
+    model?: ConfiguredModel | null;
+  }) =>
+    new SessionLifecycle({
+      store: asStore({
+        getSessionById: () => Promise.resolve(sessionRow()),
+        getBranchTurns: () =>
+          Promise.resolve(
+            (input.branch ?? []).map((content) => ({ content })) as never
+          ),
+        setActiveStream: () => Promise.resolve(1),
+        clearActiveStream: () => Promise.resolve(1),
+      }),
+      inbox: { promoteStale: () => Promise.resolve(0) } as never,
+      registry: {
+        getStreamEntryBySession: () => null,
+        registerStream: () => {},
+        unregisterStream: () => Promise.resolve(true),
+      } as never,
+      buildAgent: () => Promise.resolve(input.agent as never),
+      resolveModel: () =>
+        Promise.resolve(
+          input.model === null ? undefined : (input.model ?? configuredModel())
+        ),
+    });
+
+  test("认领这条待办项，并把它的回合接在 branch 后面", async () => {
+    const { agent, seen } = fakeAgent();
+    const lifecycle = make({
+      agent,
+      branch: [userTurn("turn-1", "hi"), assistantTurn("turn-2", [])],
+    });
+
+    await lifecycle.startFromInbox({
+      sessionId: "s1",
+      item: inboxItem("s1"),
+    });
+
+    expect({
+      inboxId: seen[0]?.inboxId,
+      turnIds: seen[0]?.turns.map((turn) => turn.id),
+    }).toStrictEqual({
+      inboxId: "item-1",
+      turnIds: ["turn-1", "turn-2", "turn-new"],
+    });
+  });
+
+  test("模型找不到时拒绝起跑", async () => {
+    const { agent } = fakeAgent();
+    const lifecycle = make({ agent, model: null });
+
+    await expect(
+      lifecycle.startFromInbox({ sessionId: "s1", item: inboxItem("s1") })
+    ).rejects.toMatchObject({ code: "MODEL_NOT_FOUND" });
+  });
+
+  test("settled 兑现运行落定的状态", async () => {
+    const { agent, seen } = fakeAgent();
+    const lifecycle = make({ agent });
+
+    const { settled } = await lifecycle.startFromInbox({
+      sessionId: "s1",
+      item: inboxItem("s1"),
+    });
+
+    await seen[0]?.onFinish("wait_review");
+
+    await expect(settled).resolves.toBe("wait_review");
   });
 });

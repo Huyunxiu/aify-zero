@@ -7,23 +7,31 @@ import {
 } from "@workspace/agent-client";
 import type {
   AgentTurn,
+  InboxItem,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { AgentSession } from "@workspace/agent/agent-session";
-import type { TurnWrite } from "@workspace/agent/storage/index";
+import type {
+  SessionEndStatus,
+  TurnWrite,
+} from "@workspace/agent/storage/index";
 import { generateSessionId } from "@workspace/agent/utils/id-util";
 import type { ModelEffort } from "@workspace/shared/constants";
 import { logger } from "@workspace/shared/logger";
+import type { ModelRef } from "@workspace/shared/model";
 
 import type { ConfiguredModel } from "../routers/settings/settings.schema";
+import { findConfiguredModel } from "../routers/settings/settings.service";
 import { SQLiteStore } from "../storage/sqlite-store";
 import { buildSessionAgent } from "./agent";
 import type { BuildSessionAgentInput } from "./agent";
+import { acceptedEffort } from "./model-rules";
 
 export type SessionLifecycleErrorCode =
   | "SESSION_NOT_FOUND"
   | "SESSION_BUSY"
   | "MESSAGE_NOT_FOUND"
+  | "MODEL_NOT_FOUND"
   | "NOTHING_TO_FORK";
 
 /** 会话生命周期里的业务错误；路由负责把它翻译成传输层错误。 */
@@ -69,6 +77,8 @@ export interface SessionLifecycleDeps {
   inbox: AgentInbox;
   registry: typeof STREAM_REGISTRY;
   buildAgent: (input: BuildSessionAgentInput) => Promise<Agent>;
+  /** 把待办项里的模型引用解析成可用的配置；找不到就拒绝起跑。 */
+  resolveModel: (ref: ModelRef) => Promise<ConfiguredModel | undefined>;
 }
 
 /**
@@ -92,7 +102,7 @@ export class SessionLifecycle {
    */
   async create(input: CreateSessionInput): Promise<CreateSessionResult> {
     const { sessionId, turns, approvals, configured, effort, inboxId } = input;
-    const { store, inbox, registry, buildAgent } = this.#deps;
+    const { store } = this.#deps;
 
     const mostRecentTurn = turns.at(-1);
     if (!mostRecentTurn && !approvals?.length) {
@@ -106,16 +116,7 @@ export class SessionLifecycle {
       ? (previousSession.projectId ?? undefined)
       : input.projectId;
 
-    // 一条流没跑完之前不能再开一条：手工压缩也注册成流，在准备段结束后继续
-    // 跑，所以占用要以注册表为准。已经结束但还没从注册表摘掉的条目（审批
-    // 恢复时常见）不算占用。
-    const running = registry.getStreamEntryBySession(sessionId);
-    if (running && !running.isDone()) {
-      throw new SessionLifecycleError("SESSION_BUSY", {
-        sessionId,
-        reason: "running",
-      });
-    }
+    this.#assertIdle(sessionId);
 
     const previousMessages = await store.getBranchTurns(sessionId, {
       activeStreamId: previousSession?.activeStreamId ?? undefined,
@@ -142,38 +143,139 @@ export class SessionLifecycle {
       }
     }
 
+    const { activeStreamId } = await this.#startRun({
+      sessionId,
+      turns: originalTurns,
+      configured,
+      ...(effort === undefined ? {} : { effort }),
+      ...(sessionProjectId === undefined
+        ? {}
+        : { projectId: sessionProjectId }),
+      ...(inboxId === undefined ? {} : { inboxId }),
+    });
+
+    return {
+      activeStreamId,
+      awaitingToolApprovals: 0,
+    };
+  }
+
+  /**
+   * 从收件箱领一条待办项，开一次运行。
+   *
+   * 领取和写 turn 在同一个事务里完成（`inboxId` 一路传给 store）：领不到这条
+   * 就抛 `InboxItemNotFoundError`，调用方据此知道它已经被别人领走了。
+   */
+  async startFromInbox({
+    sessionId,
+    item,
+  }: {
+    sessionId: string;
+    item: InboxItem;
+  }): Promise<{ activeStreamId: string; settled: Promise<SessionEndStatus> }> {
+    const { store } = this.#deps;
+
+    const session = await store.getSessionById(sessionId);
+    if (!session) {
+      throw new SessionLifecycleError("SESSION_NOT_FOUND", { sessionId });
+    }
+    if (session.kind !== "main") {
+      // 子会话的运行归创建它的工具调用，收件箱不是它的入口。
+      throw new SessionLifecycleError("SESSION_BUSY", {
+        sessionId,
+        reason: "running",
+      });
+    }
+
+    this.#assertIdle(sessionId);
+
+    const configured = await this.#deps.resolveModel(item.payload.model);
+    if (!configured) {
+      throw new SessionLifecycleError("MODEL_NOT_FOUND", {
+        sessionId,
+        providerId: item.payload.model.providerId,
+        modelId: item.payload.model.modelId,
+      });
+    }
+
+    const branch = await store.getBranchTurns(sessionId, {
+      activeStreamId: session.activeStreamId ?? undefined,
+    });
+
+    const effort = acceptedEffort(
+      configured,
+      item.payload.modelEffort as ModelEffort | undefined
+    );
+    const projectId = item.payload.projectId ?? session.projectId ?? undefined;
+
+    return await this.#startRun({
+      sessionId,
+      turns: [...AgentSession.toAgentTurns(branch), item.content],
+      configured,
+      ...(effort === undefined ? {} : { effort }),
+      ...(projectId === undefined ? {} : { projectId }),
+      inboxId: item.id,
+    });
+  }
+
+  /**
+   * 起跑一次运行，并给出它落定时的状态。
+   *
+   * `settled` 由 `onFinish` 直接兑现：调用方（运行器）不用回读会话行就知道这
+   * 一次跑成了什么。`onFinish` 里抛错也要兑现，否则等它的人会一直等。
+   */
+  async #startRun(input: {
+    sessionId: string;
+    turns: AgentTurn<AgentToolSet>[];
+    configured: ConfiguredModel;
+    effort?: ModelEffort;
+    projectId?: string;
+    inboxId?: string;
+  }): Promise<{ activeStreamId: string; settled: Promise<SessionEndStatus> }> {
+    const { sessionId, turns, configured, effort, projectId, inboxId } = input;
+    const { store, inbox, registry, buildAgent } = this.#deps;
+
     const agent = await buildAgent({
       sessionId,
       configured,
-      effort,
-      projectId: sessionProjectId,
-      session,
+      ...(effort === undefined ? {} : { effort }),
+      ...(projectId === undefined ? {} : { projectId }),
+      session: new AgentSession({ turns }),
       store,
     });
 
     const activeStreamId = generateSessionId();
 
+    let settleRun!: (status: SessionEndStatus) => void;
+    const settled = new Promise<SessionEndStatus>((resolve) => {
+      settleRun = resolve;
+    });
+
     let stream: Awaited<ReturnType<Agent["stream"]>>;
     try {
       stream = await agent.stream({
-        turns: originalTurns,
+        turns,
         model: configured.ref,
         streamId: activeStreamId,
         signal: { type: "turn" },
-        inboxId,
+        ...(inboxId === undefined ? {} : { inboxId }),
         onFinish: async (status) => {
-          // 回合结束前没被领走的 next-step 消息不能留在“下一步”上：把它们
-          // 变成下一回合的排队消息，否则它们永远不会被发送。
           try {
-            await inbox.promoteStale(sessionId);
-          } catch (error) {
-            logger.warn(
-              "[session] failed to promote pending steering messages",
-              error
-            );
+            // 回合结束前没被领走的 step-boundary 项不能留在“下一个步”上：改成
+            // 等下一次运行，否则它们永远不会被发送。
+            try {
+              await inbox.promoteStale(sessionId);
+            } catch (error) {
+              logger.warn(
+                "[session] failed to settle the pending inbox items",
+                error
+              );
+            }
+            await registry.unregisterStream(activeStreamId);
+            await store.clearActiveStream(sessionId, activeStreamId, status);
+          } finally {
+            settleRun(status);
           }
-          await registry.unregisterStream(activeStreamId);
-          await store.clearActiveStream(sessionId, activeStreamId, status);
         },
       });
     } catch (error) {
@@ -184,10 +286,18 @@ export class SessionLifecycle {
     registry.registerStream(activeStreamId, agent, stream);
     await store.setActiveStream(sessionId, activeStreamId);
 
-    return {
-      activeStreamId,
-      awaitingToolApprovals: 0,
-    };
+    return { activeStreamId, settled };
+  }
+
+  /** 这个会话上已经有一条流在跑（压缩也算）就拒绝。 */
+  #assertIdle(sessionId: string): void {
+    const running = this.#deps.registry.getStreamEntryBySession(sessionId);
+    if (running && !running.isDone()) {
+      throw new SessionLifecycleError("SESSION_BUSY", {
+        sessionId,
+        reason: "running",
+      });
+    }
   }
 
   /**
@@ -398,5 +508,6 @@ export function createSessionLifecycle(
     inbox: overrides.inbox ?? new AgentInbox(store),
     registry: overrides.registry ?? STREAM_REGISTRY,
     buildAgent: overrides.buildAgent ?? buildSessionAgent,
+    resolveModel: overrides.resolveModel ?? findConfiguredModel,
   });
 }

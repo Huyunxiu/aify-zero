@@ -69,6 +69,14 @@ function toApiError(error: unknown): never {
           },
         });
       }
+      case "MODEL_NOT_FOUND": {
+        throw new ApiError("MODEL_NOT_FOUND", {
+          data: {
+            providerId: error.data?.providerId ?? "",
+            modelId: error.data?.modelId ?? "",
+          },
+        });
+      }
       case "NOTHING_TO_FORK": {
         throw new ApiError("NOTHING_TO_FORK");
       }
