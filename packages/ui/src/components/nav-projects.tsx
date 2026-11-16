@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { generateSessionId } from "@workspace/agent/utils/id-util";
+import { generateSessionId } from "@workspace/agent-client";
 import { Button } from "@workspace/ui/components/button";
 import {
   SidebarGroup,

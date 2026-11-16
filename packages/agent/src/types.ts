@@ -1,4 +1,4 @@
-import type { CallToolToolType } from "@workspace/agent/tools/call-tool";
+import type { CallToolToolType } from "./tools/call-tool";
 import type {
   BashToolType,
   DeleteFileToolType,
@@ -14,9 +14,9 @@ import type {
   TaskToolType,
   WebFetchToolType,
   WriteFileToolType,
-} from "@workspace/agent/tools/index";
-import type { LoadSkillToolType } from "@workspace/agent/tools/load-skill";
-import type { SearchToolsToolType } from "@workspace/agent/tools/search-tools";
+} from "./tools/index";
+import type { LoadSkillToolType } from "./tools/load-skill";
+import type { SearchToolsToolType } from "./tools/search-tools";
 
 export type AgentToolSet = {
   "delete-file": DeleteFileToolType;

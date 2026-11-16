@@ -1,0 +1,433 @@
+import type {
+  InboxItem,
+  SessionCursor,
+  SessionStreamEvent,
+} from "@workspace/agent-client";
+import type { ModelEffort } from "@workspace/shared/constants";
+import { getErrorMessage } from "@workspace/shared/errors";
+import type { ModelRef } from "@workspace/shared/model";
+
+import type { Agent } from "../agents";
+import { resolveDeliverAt } from "../inbox/delivery";
+import { InboxItemNotFoundError } from "../inbox/errors";
+import type { JobRegistry } from "../jobs/registry";
+import { SessionEventRegistry } from "../session-events";
+import type { SessionEndStatus } from "../storage";
+import { recoverInterruptedRuns } from "../storage/recovery";
+import type { RecoveryOutcome } from "../storage/recovery";
+import { StreamEventRegistry } from "../stream-registry";
+import type { AgentToolSet } from "../types";
+import { AgentRunnerError } from "./errors";
+import { SessionLifecycle } from "./sessions";
+import type {
+  AgentRunnerLogger,
+  AgentRunnerStore,
+  BuildAgentInput,
+  CreateSessionInput,
+  EnqueueInput,
+  PauseReason,
+  ResumeInput,
+  RunnerStartReport,
+  RunnerState,
+  RunStart,
+} from "./types";
+
+export type AgentRunnerOptions = {
+  store: AgentRunnerStore;
+  /** 宿主组合：解析设置、建沙箱、装 MCP/skill/context 扩展。 */
+  buildAgent: (input: BuildAgentInput) => Promise<Agent>;
+  jobs?: JobRegistry;
+  logger?: AgentRunnerLogger;
+};
+
+/** 起跑一条待办项的结果。 */
+export type StartOutcome = StartedRun | "claimed" | "busy" | "failed";
+
+type StartedRun = { settled: Promise<SessionEndStatus> };
+
+/**
+ * 会话的常驻运行器。
+ *
+ * 它拥有三件事：会话的推进（从收件箱取一条、起跑、落定后取下一件）、运行的
+ * 锁（一个会话同时只有一条运行），以及可重连的会话事件通道。主会话的运行只
+ * 由它开始；子会话的运行由创建它的工具调用负责，不走这里。
+ *
+ * 它是实例，不是进程单例：每个实例有自己的流注册表和事件通道。宿主必须保证
+ * 同一个会话只被一个实例处理。
+ */
+export class AgentRunner {
+  readonly #store: AgentRunnerStore;
+  readonly #buildAgent: (input: BuildAgentInput) => Promise<Agent>;
+  readonly #logger: AgentRunnerLogger;
+  readonly #sessionEvents: SessionEventRegistry<AgentToolSet>;
+  readonly #streams: StreamEventRegistry<AgentToolSet>;
+  readonly #sessions: SessionLifecycle;
+
+  /** 等一次微任务批量处理的会话；不是队列本身，收件箱才是。 */
+  readonly #wakeups = new Set<string>();
+  /** 正在推进的会话；有值表示这条会话的循环在跑，不是“有一条运行在跑”。 */
+  readonly #runs = new Map<string, Promise<void>>();
+  /** 不再自动推进的会话，以及原因。不落库。 */
+  readonly #paused = new Map<string, PauseReason>();
+  #scheduled = false;
+  /** 关停中：不再取新件，正在跑的让它跑完。 */
+  #stopped = false;
+
+  constructor(options: AgentRunnerOptions) {
+    this.#store = options.store;
+    this.#buildAgent = options.buildAgent;
+    this.#logger = options.logger ?? {
+      warn: (message, error) => {
+        console.warn(message, error);
+      },
+    };
+
+    this.#sessionEvents = new SessionEventRegistry<AgentToolSet>();
+    this.#streams = new StreamEventRegistry(this.#sessionEvents);
+    this.#sessions = new SessionLifecycle({
+      store: this.#store,
+      registry: this.#streams,
+      buildAgent: this.#buildAgent,
+      ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
+    });
+  }
+
+  /**
+   * 恢复上一个进程留下的运行，并唤醒还有待办项的会话。
+   *
+   * 恢复失败不阻塞启动：报告里带着原因，下一次启动会再试。
+   */
+  async start(): Promise<RunnerStartReport> {
+    this.#stopped = false;
+    const failures: RunnerStartReport["failures"] = [];
+
+    let recovered: RecoveryOutcome[] = [];
+    try {
+      recovered = await recoverInterruptedRuns(this.#store);
+    } catch (error) {
+      failures.push({ error: getErrorMessage(error) ?? "unknown error" });
+    }
+
+    let pending: string[] = [];
+    try {
+      pending = await this.#store.listPendingInboxSessionIds();
+    } catch (error) {
+      failures.push({ error: getErrorMessage(error) ?? "unknown error" });
+    }
+
+    for (const sessionId of pending) {
+      this.#paused.delete(sessionId);
+      this.wake(sessionId);
+    }
+
+    return { recovered, woken: pending, failures };
+  }
+
+  /** 建会话行；已存在时幂等。 */
+  async createSession(input: CreateSessionInput): Promise<void> {
+    const existing = await this.#store.getSessionById(input.sessionId);
+    if (existing) {
+      return;
+    }
+
+    await this.#store.saveSession({
+      id: input.sessionId,
+      title: input.title ?? "",
+      metadata: input.metadata ?? {},
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+    });
+  }
+
+  /** 写一条待办项并唤醒；交付边界由当前流决定。 */
+  async enqueue(input: EnqueueInput): Promise<InboxItem> {
+    const session = await this.#store.getSessionById(input.sessionId);
+    if (!session) {
+      throw new AgentRunnerError("SESSION_NOT_FOUND", {
+        sessionId: input.sessionId,
+      });
+    }
+
+    const running = this.#streams.getStreamEntryBySession(input.sessionId);
+    const deliverAt = resolveDeliverAt({
+      mode: input.mode ?? "followup",
+      running: running !== undefined && !running.isDone(),
+      streamKind: running?.agent.streamKind,
+    });
+
+    const item = await this.#store.insertInboxItem({
+      sessionId: input.sessionId,
+      kind: "user-message",
+      dedupeKey: input.dedupeKey ?? input.turn.id,
+      deliverAt,
+      content: input.turn,
+      payload: {
+        model: input.model,
+        ...(input.effort === undefined ? {} : { modelEffort: input.effort }),
+        ...(input.projectId === undefined
+          ? {}
+          : { projectId: input.projectId }),
+      },
+    });
+
+    this.wake(input.sessionId);
+
+    return item;
+  }
+
+  /** 审批恢复：答复写回 step，再起一次运行。 */
+  async resume(input: ResumeInput): Promise<RunStart> {
+    this.#paused.delete(input.sessionId);
+
+    const result = await this.#sessions.resume({
+      sessionId: input.sessionId,
+      approvals: input.approvals,
+      model: input.model,
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
+    });
+
+    // 审批恢复的那次运行也要回到循环里，并且按普通运行的规矩收尾：跑完接着
+    // 取下一件，失败就暂停。
+    if (result.status === "running") {
+      void result.settled.then((status) => {
+        if (this.#mayTakeNext(input.sessionId, status)) {
+          this.wake(input.sessionId);
+        }
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * 登记一次唤醒；不阻塞调用方，也不保证马上有运行开始。
+   *
+   * 它同时清掉暂停：一条新的事件到了，说明用户或外部系统想让它继续。
+   */
+  wake(sessionId: string): void {
+    if (this.#stopped) {
+      return;
+    }
+
+    this.#paused.delete(sessionId);
+    this.#wakeups.add(sessionId);
+    this.#schedule();
+  }
+
+  /** 一条会话的长连接；跨运行，读到 `run.end` 不关闭。 */
+  subscribe(
+    sessionId: string,
+    cursor?: SessionCursor
+  ): ReadableStream<SessionStreamEvent<AgentToolSet>> {
+    return this.#sessionEvents.subscribe(sessionId, cursor);
+  }
+
+  /** 只读状态：正在推进的会话、等待中的唤醒、暂停原因。 */
+  state(): RunnerState {
+    return {
+      running: [...this.#runs.keys()],
+      waiting: [...this.#wakeups],
+      paused: [...this.#paused].map(([sessionId, reason]) => ({
+        sessionId,
+        reason,
+      })),
+    };
+  }
+
+  /** 停掉会话正在跑的回合；没有运行时也清理残留标记。 */
+  async stop(sessionId: string): Promise<{ aborted: boolean }> {
+    return await this.#sessions.stop(sessionId);
+  }
+
+  /** 空闲会话按需压缩；落定后唤醒队列。 */
+  async compact(
+    sessionId: string,
+    input: { model: ModelRef; effort?: ModelEffort }
+  ): Promise<{ activeStreamId: string }> {
+    return await this.#sessions.compact({
+      sessionId,
+      model: input.model,
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
+      onSettled: () => {
+        this.wake(sessionId);
+      },
+    });
+  }
+
+  /** 从一条 branch 复制出一个自包含的新会话。 */
+  async fork(
+    sessionId: string,
+    messageId?: string
+  ): Promise<{ sessionId: string }> {
+    return await this.#sessions.fork({
+      sessionId,
+      ...(messageId === undefined ? {} : { messageId }),
+    });
+  }
+
+  /**
+   * 停止取件，正在跑的运行继续跑完。
+   *
+   * 关停用它：半途掐断一条运行会把 turn 留成 streaming，重启后由恢复收尾。
+   */
+  async shutdown(): Promise<void> {
+    this.#stopped = true;
+    this.#wakeups.clear();
+    await Promise.allSettled(this.#runs.values());
+    this.#runs.clear();
+  }
+
+  #schedule(): void {
+    if (this.#scheduled) {
+      return;
+    }
+    this.#scheduled = true;
+    queueMicrotask(() => {
+      this.#scheduled = false;
+      this.#pump();
+    });
+  }
+
+  /**
+   * 把等待中的会话各推进一格。
+   *
+   * 不设并发上限：每条会话同时只有一条运行，而会话数是人开出来的。真正的
+   * 资源边界在沙箱和供应商那里。
+   */
+  #pump(): void {
+    if (this.#stopped) {
+      return;
+    }
+
+    for (const sessionId of this.#wakeups) {
+      this.#wakeups.delete(sessionId);
+
+      if (this.#runs.has(sessionId) || this.#paused.has(sessionId)) {
+        continue;
+      }
+
+      const run = this.#runSession(sessionId).finally(() => {
+        this.#runs.delete(sessionId);
+        if (this.#wakeups.size > 0) {
+          this.#schedule();
+        }
+      });
+      this.#runs.set(sessionId, run);
+    }
+  }
+
+  /**
+   * 一条会话的循环：取一条、跑完、再看一眼。
+   *
+   * 只有 `done` 会继续；`error` 和 `canceled` 停下来并记住原因，`wait_review`
+   * 直接停——历史里有一条工具调用没有结果，结构上不该推进。
+   */
+  async #runSession(sessionId: string): Promise<void> {
+    for (;;) {
+      if (this.#stopped || !(await this.#ready(sessionId))) {
+        return;
+      }
+
+      // 运行起点不看交付边界：残留的 step-boundary 项也在这一次领走。
+      const [item] = await this.#store.listInboxItems(sessionId);
+      if (!item) {
+        return;
+      }
+
+      const started = await this.#start(sessionId, item);
+      if (started === "claimed") {
+        continue;
+      }
+      if (started === "busy") {
+        return;
+      }
+      if (started === "failed") {
+        return;
+      }
+
+      if (!this.#mayTakeNext(sessionId, await started.settled)) {
+        return;
+      }
+    }
+  }
+
+  /**
+   * 一次运行落定之后能不能接着取下一条。
+   */
+  #mayTakeNext(sessionId: string, status: SessionEndStatus): boolean {
+    if (status === "wait_review") {
+      return false;
+    }
+
+    if (status !== "done") {
+      this.#paused.set(sessionId, status);
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * 这个会话现在能不能起跑。
+   */
+  async #ready(sessionId: string): Promise<boolean> {
+    if (this.#paused.has(sessionId)) {
+      return false;
+    }
+
+    const session = await this.#store.getSessionById(sessionId);
+    if (!session || session.kind === "subagent") {
+      return false;
+    }
+    if (session.status === "wait_review") {
+      return false;
+    }
+
+    const entry = this.#streams.getStreamEntryBySession(sessionId);
+    return entry === undefined || entry.isDone();
+  }
+
+  /**
+   * 起跑一条待办项。
+   *
+   * 起不来时停下这一轮的循环——待办项还在收件箱里，用户看得见，可以取消或
+   * 重发。继续转只会用同一个错误反复敲库。
+   */
+  async #start(sessionId: string, item: InboxItem): Promise<StartOutcome> {
+    try {
+      const started = await this.#sessions.startFromInbox({ sessionId, item });
+      return { settled: started.settled };
+    } catch (error) {
+      if (isClaimedElsewhere(error)) {
+        return "claimed";
+      }
+      if (isBusy(error)) {
+        // 压缩在两步之间抢到了锁。待办项还在队列里，等它结束时的唤醒。
+        return "busy";
+      }
+
+      this.#logger.warn("[runner] failed to start a run", error);
+      // 起不来的会话要留下原因，否则 state() 里它既没在跑也没暂停。
+      this.#paused.set(sessionId, "error");
+      return "failed";
+    }
+  }
+}
+
+export function createAgentRunner(options: AgentRunnerOptions): AgentRunner {
+  return new AgentRunner(options);
+}
+
+/** 会话上已经有一条运行占着锁。 */
+function isBusy(error: unknown): boolean {
+  return error instanceof AgentRunnerError && error.code === "SESSION_BUSY";
+}
+
+/** 这条待办项已经被另一个调用者领走。 */
+function isClaimedElsewhere(error: unknown): boolean {
+  return (
+    error instanceof InboxItemNotFoundError ||
+    (typeof error === "object" &&
+      error !== null &&
+      (error as { name?: unknown }).name === "InboxItemNotFoundError")
+  );
+}

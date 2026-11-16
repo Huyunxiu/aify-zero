@@ -544,9 +544,6 @@ importers:
       turndown:
         specifier: 'catalog:'
         version: 7.2.4
-      uuid:
-        specifier: 'catalog:'
-        version: 14.0.1
       zod:
         specifier: 'catalog:'
         version: 4.5.4
@@ -578,6 +575,12 @@ importers:
       ai:
         specifier: 'catalog:'
         version: 7.0.138(zod@4.5.4)
+      nanoid:
+        specifier: 'catalog:'
+        version: 5.1.16
+      uuid:
+        specifier: 'catalog:'
+        version: 14.0.1
     devDependencies:
       '@types/json-schema':
         specifier: 'catalog:'
@@ -1291,7 +1294,7 @@ packages:
 
   '@esbuild-kit/core-utils@3.3.2':
     resolution: {integrity: sha512-sPRAnw9CdSsRmEtnsl2WXWdyquogVpB3yZ3dgwJfe8zrOzTsV7cJvmwrKVa+0ma5BoiGJ+BoqkMvawbayKUsqQ==}
-    deprecated: 'Merged into tsx: https://tsx.hirok.io'
+    deprecated: 'Merged into tsx: https://tsx.is'
 
   '@esbuild-kit/esm-loader@2.6.5':
     resolution: {integrity: sha512-FxEMIkJKnodyA1OaCUoEvbYRkoZlLZ4d/eXFu9Fh8CbBBgP5EmZxrfTRyN0qpXZ4vOvqnE5YdRdcrmUUXuU+dA==}
@@ -4866,7 +4869,7 @@ packages:
 
   glob@7.2.0:
     resolution: {integrity: sha512-lmLf6gtyrPq8tTjSmrO94wBeQbFR3HbLHbuyD69wuyQkImp2hWqMGB47OX65FBkPffO641IP9jWa1z4ivqG26Q==}
-    deprecated: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+    deprecated: Glob versions prior to v9 are no longer supported
 
   globals@17.8.0:
     resolution: {integrity: sha512-Zz/LMDZScFmkakeL2cTHzf+PbWKdpU3uclqkZT7TjDG58j5WPt0PpA+n9uPI24fZtlw07q0OtEi84K+umsRzqQ==}
@@ -5768,11 +5771,6 @@ packages:
     peerDependencies:
       react: '*'
       react-dom: '*'
-
-  nanoid@3.3.16:
-    resolution: {integrity: sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==}
-    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
-    hasBin: true
 
   nanoid@3.3.20:
     resolution: {integrity: sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ==}
@@ -11943,8 +11941,6 @@ snapshots:
       stacktrace-js: 2.0.2
       stylis: 4.4.0
 
-  nanoid@3.3.16: {}
-
   nanoid@3.3.20: {}
 
   nanoid@5.1.16: {}
@@ -12262,7 +12258,7 @@ snapshots:
 
   postcss@8.5.25:
     dependencies:
-      nanoid: 3.3.16
+      nanoid: 3.3.20
       picocolors: 1.1.1
       source-map-js: 1.2.1
 

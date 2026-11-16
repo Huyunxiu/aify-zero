@@ -5,11 +5,26 @@
     ".": {
       "default": "./src/index.ts"
     },
-    "./testing/fake-provider": {
+    "./store": {
+      "default": "./src/store.ts"
+    },
+    "./mcp": {
+      "default": "./src/mcp/index.ts"
+    },
+    "./mcp-config": {
+      "default": "./src/mcp/config.ts"
+    },
+    "./skill": {
+      "default": "./src/skill/index.ts"
+    },
+    "./providers": {
+      "default": "./src/providers.ts"
+    },
+    "./testing": {
       "default": "./src/testing/fake-provider/index.ts"
     },
-    "./*": {
-      "default": "./src/*.ts"
+    "./testing/fake-provider": {
+      "default": "./src/testing/fake-provider/index.ts"
     }
   },
   "scripts": {},
@@ -25,7 +40,6 @@
     "glob": "catalog:",
     "nanoid": "catalog:",
     "turndown": "catalog:",
-    "uuid": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {

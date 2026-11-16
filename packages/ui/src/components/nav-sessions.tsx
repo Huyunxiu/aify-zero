@@ -7,7 +7,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@workspace/ui/components/sidebar"
-import { generateSessionId } from "@workspace/agent/utils/id-util"
+import { generateSessionId } from "@workspace/agent-client"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router";
 import { ChevronDownIcon, PencilIcon, PlusIcon } from "lucide-react";

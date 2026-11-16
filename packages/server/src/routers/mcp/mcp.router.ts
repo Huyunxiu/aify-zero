@@ -1,5 +1,5 @@
 import type { McpServerConfig } from "@workspace/agent";
-import { mcpServerSchema } from "@workspace/agent/mcp/config";
+import { mcpServerSchema } from "@workspace/agent/mcp";
 import { z } from "zod";
 
 import { ApiError } from "../../errors";

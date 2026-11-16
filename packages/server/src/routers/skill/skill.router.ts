@@ -1,4 +1,4 @@
-import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill/index";
+import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill";
 
 import { publicProcedure } from "../../index";
 import { getPrimaryProjectDir } from "../project/project.service";

@@ -2,7 +2,12 @@ import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import type { AgentToolSet } from "@workspace/agent";
-import { isAgentTextPart } from "@workspace/agent-client";
+import {
+  generateSessionId,
+  generateStepId,
+  generateTurnId,
+  isAgentTextPart,
+} from "@workspace/agent-client";
 import type {
   AgentAssistantTurn,
   AgentStreamEvent,
@@ -10,11 +15,6 @@ import type {
   AgentUserPart,
   AgentUserTurn,
 } from "@workspace/agent-client";
-import {
-  generateSessionId,
-  generateStepId,
-  generateTurnId,
-} from "@workspace/agent/utils/id-util";
 import type { ForkSessionType } from "@workspace/server/routers/session/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";

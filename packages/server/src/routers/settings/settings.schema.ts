@@ -1,4 +1,4 @@
-import { mcpServerSchema } from "@workspace/agent/mcp/config";
+import { mcpServerSchema } from "@workspace/agent/mcp";
 import { MODEL_PROTOCOLS } from "@workspace/shared/model";
 import z from "zod";
 

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-import { generateSessionId } from "@workspace/agent/utils/id-util";
+import { generateSessionId } from "@workspace/agent-client";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "./button";
 

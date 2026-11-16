@@ -1,6 +1,6 @@
 import { type } from "@orpc/server";
 import { FileSystemContextSource, loadContextFiles } from "@workspace/agent";
-import { SkillManager, SKILL_DIRS } from "@workspace/agent/skill/index";
+import { SkillManager, SKILL_DIRS } from "@workspace/agent/skill";
 import z from "zod";
 
 import { ApiError } from "../../errors";

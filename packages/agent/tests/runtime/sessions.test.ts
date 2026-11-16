@@ -3,26 +3,20 @@ import type {
   CompactionRecord,
   InboxItem,
 } from "@workspace/agent-client";
-import type { TurnRecord, TurnWrite } from "@workspace/agent/storage/index";
-import type {
-  SessionEndStatus,
-  SessionRecord,
-} from "@workspace/agent/storage/types";
 import { describe, expect, test } from "vitest";
 
-import type { ConfiguredModel } from "../src/routers/settings/settings.schema";
-import { SessionLifecycle } from "../src/session/lifecycle";
-import type { SQLiteStore } from "../src/storage/sqlite-store";
+import { SessionLifecycle } from "../../src/runtime/sessions";
+import type { AgentStore, TurnRecord, TurnWrite } from "../../src/storage";
+import type { SessionEndStatus, SessionRecord } from "../../src/storage/types";
 import {
   assistantStep,
   assistantTurn,
   userTurn,
 } from "./helpers/compaction-fixtures";
 
-const asStore = (store: Partial<SQLiteStore>): SQLiteStore =>
-  store as SQLiteStore;
+const asStore = (store: Partial<AgentStore>): AgentStore => store as AgentStore;
 
-const makeLifecycle = (store: Partial<SQLiteStore>): SessionLifecycle =>
+const makeLifecycle = (store: Partial<AgentStore>): SessionLifecycle =>
   new SessionLifecycle({
     store: asStore(store),
     registry: {
@@ -30,8 +24,6 @@ const makeLifecycle = (store: Partial<SQLiteStore>): SessionLifecycle =>
     } as never,
     buildAgent: () =>
       Promise.reject(new Error("buildAgent must not run in this test")),
-    resolveModel: () =>
-      Promise.reject(new Error("resolveModel must not run in this test")),
   });
 
 const sessionRow = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
@@ -183,26 +175,6 @@ describe(SessionLifecycle, () => {
   });
 });
 
-const configuredModel = (): ConfiguredModel => ({
-  ref: { providerId: "test", modelId: "test-model" },
-  provider: {
-    id: "test",
-    name: "Test",
-    protocol: "openai-chat",
-    baseURL: "https://example.test/v1",
-    apiKey: "",
-    active: true,
-    models: [],
-  },
-  model: {
-    id: "test-model",
-    name: "Test",
-    active: true,
-    modalities: { input: ["text"], output: ["text"] },
-    limit: { context: 128_000 },
-  },
-});
-
 const inboxItem = (sessionId: string): InboxItem => ({
   seq: 0,
   id: "item-1",
@@ -238,12 +210,7 @@ const fakeAgent = () => {
 };
 
 describe("SessionLifecycle.startFromInbox", () => {
-  const make = (input: {
-    agent: unknown;
-    branch?: unknown[];
-    /** `null` 表示这个模型引用解析不出来。 */
-    model?: ConfiguredModel | null;
-  }) =>
+  const make = (input: { agent: unknown; branch?: unknown[] }) =>
     new SessionLifecycle({
       store: asStore({
         getSessionById: () => Promise.resolve(sessionRow()),
@@ -260,10 +227,6 @@ describe("SessionLifecycle.startFromInbox", () => {
         unregisterStream: () => Promise.resolve(true),
       } as never,
       buildAgent: () => Promise.resolve(input.agent as never),
-      resolveModel: () =>
-        Promise.resolve(
-          input.model === null ? undefined : (input.model ?? configuredModel())
-        ),
     });
 
   test("认领这条待办项，并把它的回合接在 branch 后面", async () => {
@@ -285,15 +248,6 @@ describe("SessionLifecycle.startFromInbox", () => {
       inboxId: "item-1",
       turnIds: ["turn-1", "turn-2", "turn-new"],
     });
-  });
-
-  test("模型找不到时拒绝起跑", async () => {
-    const { agent } = fakeAgent();
-    const lifecycle = make({ agent, model: null });
-
-    await expect(
-      lifecycle.startFromInbox({ sessionId: "s1", item: inboxItem("s1") })
-    ).rejects.toMatchObject({ code: "MODEL_NOT_FOUND" });
   });
 
   test("settled 兑现运行落定的状态", async () => {

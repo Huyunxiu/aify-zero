@@ -8,13 +8,17 @@ import type {
   SubagentRun,
 } from "../extensions/capabilities";
 import type { AgentStore } from "../storage";
+import type { StreamEventRegistry } from "../stream-registry";
 import { STREAM_REGISTRY } from "../stream-registry";
+import type { AgentToolSet } from "../types";
 import { createSubagent, readSubagentResult } from "./create";
 import type { SubagentParent } from "./create";
 
 export interface SubagentFactoryOptions {
   agent: Agent;
   store: AgentStore;
+  /** 运行器的注册表；省略时用进程级单例（测试和旧调用方）。 */
+  registry?: StreamEventRegistry<AgentToolSet>;
 }
 
 /**
@@ -26,15 +30,17 @@ export interface SubagentFactoryOptions {
 export function createSubagentFactory({
   agent,
   store,
+  registry = STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>,
 }: SubagentFactoryOptions): SubagentFactory {
   return {
-    start: (request) => startSubagent(agent, store, request),
+    start: (request) => startSubagent(agent, store, registry, request),
   };
 }
 
 async function startSubagent(
   agent: Agent,
   store: AgentStore,
+  registry: StreamEventRegistry<AgentToolSet>,
   request: SubagentRequest
 ): Promise<SubagentRun> {
   // 父的审批函数在 start 时读：组合根在构造之后才注册，构造工厂时可能还没注册完。
@@ -74,7 +80,7 @@ async function startSubagent(
       streamId: activeStreamId,
       signal: { type: "turn" },
       onFinish: async (status) => {
-        await STREAM_REGISTRY.unregisterStream(activeStreamId);
+        await registry.unregisterStream(activeStreamId);
         await store.clearActiveStream(
           subagent.sessionId,
           activeStreamId,
@@ -83,11 +89,7 @@ async function startSubagent(
       },
     });
 
-    const entry = STREAM_REGISTRY.registerStream(
-      activeStreamId,
-      subagent,
-      stream
-    );
+    const entry = registry.registerStream(activeStreamId, subagent, stream);
     const { sessionId } = subagent;
 
     return {

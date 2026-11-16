@@ -1,5 +1,5 @@
 import type { McpServerConfig } from "@workspace/agent";
-import { findMcpServerProblems } from "@workspace/agent/mcp/config";
+import { findMcpServerProblems } from "@workspace/agent/mcp";
 
 import { ApiError } from "../errors";
 

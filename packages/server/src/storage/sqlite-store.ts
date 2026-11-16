@@ -7,23 +7,21 @@ import type {
   InboxItem,
   InboxPayload,
 } from "@workspace/agent-client";
-import { InboxItemNotFoundError } from "@workspace/agent/inbox/errors";
-import type {
-  AgentStore,
-  SessionEndStatus,
-  StepWrite,
-} from "@workspace/agent/storage/index";
 import {
   hydrateTurn,
+  InboxItemNotFoundError,
   toStepRows,
   toTurnRow,
   turnDetailOf,
-} from "@workspace/agent/storage/turn-record";
+} from "@workspace/agent/store";
 import type {
+  AgentStore,
+  SessionEndStatus,
+  StepRow,
+  StepWrite,
   TurnRecord,
   TurnWrite,
-} from "@workspace/agent/storage/turn-record";
-import type { StepRow } from "@workspace/agent/storage/types";
+} from "@workspace/agent/store";
 import {
   inbox_item_table,
   session_table,
