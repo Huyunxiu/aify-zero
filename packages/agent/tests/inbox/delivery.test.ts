@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveDeliverAt } from "../src/routers/session/session.schema";
+import { resolveDeliverAt } from "../../src/inbox/delivery";
 
 describe(resolveDeliverAt, () => {
   test("sends steering to the next step while a turn is running", () => {

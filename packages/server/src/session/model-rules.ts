@@ -1,6 +1,6 @@
 import type { AgentToolSet } from "@workspace/agent";
 import type { AgentTurn, AgentUserTurn } from "@workspace/agent-client";
-import type { ModelEffort } from "@workspace/shared/constants";
+import { ModelEffort } from "@workspace/shared/constants";
 
 import type { ConfiguredModel } from "../routers/settings/settings.schema";
 
@@ -61,4 +61,13 @@ export function acceptedEffort(
   effort: ModelEffort | undefined
 ): ModelEffort | undefined {
   return configured.model.reasoning === false ? undefined : effort;
+}
+
+/** 客户端传来的档位字符串只在它是已知档位时才采用；其余按未指定处理。 */
+export function requestedEffort(
+  value: string | undefined
+): ModelEffort | undefined {
+  return Object.values(ModelEffort).includes(value as ModelEffort)
+    ? (value as ModelEffort)
+    : undefined;
 }

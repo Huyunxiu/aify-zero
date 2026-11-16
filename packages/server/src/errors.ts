@@ -97,6 +97,14 @@ export const ErrorMap = {
       reason: z.enum(["running", "wait_review", "compacting"]).optional(),
     }),
   },
+  SESSION_NOT_RUNNABLE: {
+    status: 409,
+    message: "This chat cannot be advanced by the runner.",
+    data: z.object({
+      sessionId: z.string(),
+      kind: z.enum(["main", "subagent"]),
+    }),
+  },
   NOTHING_TO_COMPACT: {
     status: 400,
     message: "There is not enough history to compact yet.",

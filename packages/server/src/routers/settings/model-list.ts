@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { withOpencodeHeaders } from "@workspace/agent/model/opencode";
+import { withOpencodeHeaders } from "@workspace/agent/providers";
 
 import type { ModalityName } from "./settings.schema";
 

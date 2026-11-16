@@ -1,24 +1,22 @@
 import { type } from "@orpc/server";
-import { AgentInbox, NothingToCompactError } from "@workspace/agent";
+import { AgentRunnerError, NothingToCompactError } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import type {
   AgentTurn,
   AgentUserTurn,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
-import { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
+import { agentRunner } from "../../runtime";
 import {
-  createSessionLifecycle,
-  SessionLifecycleError,
-} from "../../session/lifecycle";
-import { acceptedEffort, unsupportedInput } from "../../session/model-rules";
-import { sessionRunner } from "../../session/runner";
-import { SQLiteStore } from "../../storage/sqlite-store";
+  acceptedEffort,
+  requestedEffort,
+  unsupportedInput,
+} from "../../session/model-rules";
 import { modelRefSchema } from "../settings/settings.schema";
 import { findConfiguredModel } from "../settings/settings.service";
 import { streamSessionEvents } from "./session.events";
@@ -40,7 +38,7 @@ import { forkSessionSchema } from "./session.schema";
 
 /** 把生命周期错误翻译成传输层错误；其他错误原样抛出。 */
 function toApiError(error: unknown): never {
-  if (error instanceof SessionLifecycleError) {
+  if (error instanceof AgentRunnerError) {
     switch (error.code) {
       case "SESSION_NOT_FOUND": {
         throw new ApiError("SESSION_NOT_FOUND", {
@@ -59,6 +57,14 @@ function toApiError(error: unknown): never {
           },
         });
       }
+      case "SESSION_NOT_RUNNABLE": {
+        throw new ApiError("SESSION_NOT_RUNNABLE", {
+          data: {
+            sessionId: error.data?.sessionId ?? "",
+            kind: error.data?.kind === "subagent" ? "subagent" : "main",
+          },
+        });
+      }
       case "MESSAGE_NOT_FOUND": {
         throw new ApiError("MESSAGE_NOT_FOUND", {
           data: {
@@ -66,14 +72,6 @@ function toApiError(error: unknown): never {
             ...(error.data?.messageId
               ? { messageId: error.data.messageId }
               : {}),
-          },
-        });
-      }
-      case "MODEL_NOT_FOUND": {
-        throw new ApiError("MODEL_NOT_FOUND", {
-          data: {
-            providerId: error.data?.providerId ?? "",
-            modelId: error.data?.modelId ?? "",
           },
         });
       }
@@ -128,22 +126,15 @@ const createSession = publicProcedure
       throw new ApiError("MODEL_NOT_FOUND", { data: model });
     }
 
-    const effort = acceptedEffort(
-      configured,
-      Object.values(ModelEffort).includes(modelEffort as ModelEffort)
-        ? (modelEffort as ModelEffort)
-        : undefined
-    );
-
-    const runner = sessionRunner();
+    const effort = acceptedEffort(configured, requestedEffort(modelEffort));
 
     // 审批恢复先写回答复；它不起新的 user 回合，所以不走收件箱。
     if (approvals?.length) {
       try {
-        await runner.resume({
+        await agentRunner.resume({
           sessionId,
           approvals,
-          configured,
+          model,
           ...(effort === undefined ? {} : { effort }),
         });
       } catch (error) {
@@ -166,38 +157,27 @@ const createSession = publicProcedure
     }
 
     // 会话行先落库：收件箱按会话归属，运行器也要靠这一行看项目和状态。
-    const store = new SQLiteStore();
-    const existing = await store.getSessionById(sessionId);
-    if (!existing) {
-      await store.saveSession({
-        id: sessionId,
-        title: "",
-        metadata: {},
-        ...(projectId === undefined ? {} : { projectId }),
-      });
-    }
+    await agentRunner.createSession({
+      sessionId,
+      ...(projectId === undefined ? {} : { projectId }),
+    });
 
     // 已经入队的那条（客户端先入队再发）不再重复写一行。
     if (!inboxId) {
-      await new AgentInbox(store).enqueue({
+      await agentRunner.enqueue({
         sessionId,
-        kind: "user-message",
         // 同一条消息重试时 server 认得出它：user 回合的 id 是客户端生成的。
         dedupeKey: lastTurn.id,
-        deliverAt: "run-boundary",
-        content: lastTurn as AgentUserTurn,
-        payload: {
-          model,
-          ...(modelEffort === undefined ? {} : { modelEffort }),
-          ...(projectId === undefined ? {} : { projectId }),
-        },
+        turn: lastTurn as AgentUserTurn,
+        model,
+        ...(effort === undefined ? {} : { effort }),
+        ...(projectId === undefined ? {} : { projectId }),
+        mode: "followup",
       });
+    } else {
+      // 这一条已经由收件箱写入了；只需要清掉暂停、叫醒队列。
+      agentRunner.wakeAfterPause(sessionId);
     }
-
-    // 消息已经落库，也把运行器叫起来了：这一次运行什么时候开始，由运行器决定，
-    // 客户端从会话事件流上看到 `run.start` 就知道。这里不等，因为等的结果只有
-    // 「现在有几条流在跑」，而那不是这个请求要回答的问题。
-    runner.wakeAfterPause(sessionId);
 
     return { accepted: true };
   });
@@ -213,7 +193,7 @@ export const resumeSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/resume" })
   .input(z.object({ sessionId: z.string() }))
   .handler(({ input }) => {
-    sessionRunner().wakeAfterPause(input.sessionId);
+    agentRunner.wakeAfterPause(input.sessionId);
 
     return { accepted: true };
   });
@@ -244,7 +224,7 @@ export const resumeSession = publicProcedure
 export const stopSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/stop" })
   .input(z.object({ sessionId: z.string() }))
-  .handler(({ input }) => createSessionLifecycle().stop(input.sessionId));
+  .handler(({ input }) => agentRunner.stop(input.sessionId));
 
 export const forkSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/fork" })
@@ -256,7 +236,7 @@ export const forkSession = publicProcedure
   .input(forkSessionSchema)
   .handler(async ({ input }) => {
     try {
-      return await createSessionLifecycle().fork(input);
+      return await agentRunner.fork(input.sessionId, input.messageId);
     } catch (error) {
       toApiError(error);
     }
@@ -290,14 +270,7 @@ export const compactSession = publicProcedure
     }
 
     try {
-      return await createSessionLifecycle().compact({
-        sessionId,
-        configured,
-        onSettled: () => {
-          // 压缩期间队列起不了跑；它结束时唤醒一次，队列才接着走。
-          sessionRunner().wake(sessionId);
-        },
-      });
+      return await agentRunner.compact(sessionId, { model });
     } catch (error) {
       toApiError(error);
     }

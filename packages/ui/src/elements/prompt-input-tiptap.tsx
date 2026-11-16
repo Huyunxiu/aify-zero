@@ -13,7 +13,7 @@ import type {
   SuggestionKeyDownProps,
   SuggestionProps,
 } from "@tiptap/suggestion";
-import type { SkillInfo } from "@workspace/agent/skill/index";
+import type { SkillInfo } from "@workspace/agent-client";
 import {
   forwardRef,
   useCallback,

@@ -23,10 +23,13 @@ import type { Extension } from "./extensions/types";
 import type { JobRegistry } from "./jobs/registry";
 import type { ModelTargetResolver } from "./kernel/model-gateway";
 import type { AgentStore } from "./storage";
+import type { StreamEventRegistry } from "./stream-registry";
+import { STREAM_REGISTRY } from "./stream-registry";
 import { appendSubagentPrompt } from "./subagent/definitions";
 import { createSubagentFactory } from "./subagent/factory";
 import type { ToolApprovalPattern } from "./tool-approval";
 import { catalogEntries } from "./tool-catalog/catalog";
+import type { AgentToolSet } from "./types";
 
 /** 默认在调用前询问用户的工具。 */
 const DEFAULT_TOOL_APPROVAL_TOOLS = new Set([
@@ -68,6 +71,8 @@ export interface SessionAgentOptions {
   name?: string;
   store: AgentStore;
   session: AgentSession;
+  /** 运行器实例的注册表；省略时子会话用进程级单例。 */
+  streamRegistry?: StreamEventRegistry<AgentToolSet>;
   model: SessionModel;
   /** 把模型引用解析成供应商的接入信息。 */
   resolveModel: ModelTargetResolver;
@@ -132,7 +137,13 @@ export async function createSessionAgent(
     modelEffort: options.model.effort,
     resolveModel: options.resolveModel,
     subagentFactory: (owner) =>
-      createSubagentFactory({ agent: owner, store: options.store }),
+      createSubagentFactory({
+        agent: owner,
+        store: options.store,
+        registry:
+          options.streamRegistry ??
+          (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
+      }),
   });
 
   try {

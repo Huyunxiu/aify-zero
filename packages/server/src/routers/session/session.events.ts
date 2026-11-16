@@ -1,9 +1,9 @@
 import { streamToEventIterator } from "@orpc/server";
-import { SESSION_EVENTS } from "@workspace/agent";
 import { parseSessionCursor } from "@workspace/agent-client";
 import z from "zod";
 
 import { publicProcedure } from "../../index";
+import { agentRunner } from "../../runtime";
 
 /**
  * 读一个会话接下来发生的事。
@@ -26,7 +26,5 @@ export const streamSessionEvents = publicProcedure
   .handler(({ input }) => {
     const since = input.since ? parseSessionCursor(input.since) : undefined;
 
-    return streamToEventIterator(
-      SESSION_EVENTS.subscribe(input.sessionId, since)
-    );
+    return streamToEventIterator(agentRunner.subscribe(input.sessionId, since));
   });

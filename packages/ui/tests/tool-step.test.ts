@@ -1,5 +1,8 @@
-import type { AgentToolSet } from "@workspace/agent";
-import type { AgentAssistantStep, AgentPart } from "@workspace/agent-client";
+import type {
+  AgentAssistantStep,
+  AgentPart,
+  AgentToolSet,
+} from "@workspace/agent-client";
 import { createElement, Fragment } from "react";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";

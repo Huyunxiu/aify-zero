@@ -12,7 +12,10 @@
   "scripts": {},
   "dependencies": {
     "@workspace/shared": "workspace:*",
-    "ai": "catalog:"
+    "ai": "catalog:",
+    "nanoid": "catalog:",
+    "uuid": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/json-schema": "catalog:",

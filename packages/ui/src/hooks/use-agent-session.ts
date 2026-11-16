@@ -1,10 +1,10 @@
-import type { AgentToolSet } from "@workspace/agent";
 import {
   AgentTurnAssembler,
   formatSessionCursor,
   isAgentToolPart,
 } from "@workspace/agent-client";
 import type {
+  AgentToolSet,
   AgentStreamEvent,
   AgentTurn,
   AgentUserTurn,

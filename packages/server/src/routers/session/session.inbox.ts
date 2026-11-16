@@ -1,15 +1,16 @@
 import { type } from "@orpc/server";
-import { AgentInbox, STREAM_REGISTRY } from "@workspace/agent";
+import type { InboxMode } from "@workspace/agent";
 import type { AgentUserTurn } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
-import { sessionRunner } from "../../session/runner";
+import { agentRunner } from "../../runtime";
+import { acceptedEffort, requestedEffort } from "../../session/model-rules";
 import { SQLiteStore } from "../../storage/sqlite-store";
-import { inboxItemIdSchema, resolveDeliverAt } from "./session.schema";
-import type { InboxMode } from "./session.schema";
+import { findConfiguredModel } from "../settings/settings.service";
+import { inboxItemIdSchema } from "./session.schema";
 
 /**
  * 列出会话的待办项。
@@ -20,8 +21,8 @@ export const listInboxItems = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/inbox" })
   .input(z.object({ sessionId: z.string() }))
   .handler(async ({ input }) => {
-    const inbox = new AgentInbox(new SQLiteStore());
-    return { items: await inbox.list(input.sessionId) };
+    const store = new SQLiteStore();
+    return { items: await store.listInboxItems(input.sessionId) };
   });
 
 /**
@@ -33,7 +34,10 @@ export const listInboxItems = publicProcedure
  */
 export const enqueueInboxItem = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/inbox" })
-  .errors({ SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND })
+  .errors({
+    SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND,
+    MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+  })
   .input(
     type<{
       sessionId: string;
@@ -54,30 +58,27 @@ export const enqueueInboxItem = publicProcedure
       });
     }
 
-    const running = STREAM_REGISTRY.getStreamEntryBySession(input.sessionId);
-    const deliverAt = resolveDeliverAt({
-      mode: input.mode,
-      running: running !== undefined && !running.isDone(),
-      streamKind: running?.agent.streamKind,
-    });
+    const configured = await findConfiguredModel(input.model);
+    if (!configured) {
+      throw new ApiError("MODEL_NOT_FOUND", { data: input.model });
+    }
 
-    const inbox = new AgentInbox(store);
-    const item = await inbox.enqueue({
+    const effort = acceptedEffort(
+      configured,
+      requestedEffort(input.modelEffort)
+    );
+    const projectId = session.projectId ?? input.projectId ?? undefined;
+
+    // 入队就算投递成功：运行器会在空闲时自己开始。页面随后关掉也不影响这一条。
+    const item = await agentRunner.enqueue({
       sessionId: input.sessionId,
-      kind: "user-message",
       dedupeKey: input.dedupeKey,
-      deliverAt,
-      content: input.turn,
-      payload: {
-        model: input.model,
-        modelEffort: input.modelEffort,
-        projectId: session.projectId ?? input.projectId ?? undefined,
-      },
+      turn: input.turn,
+      model: input.model,
+      ...(effort === undefined ? {} : { effort }),
+      mode: input.mode,
+      ...(projectId === undefined ? {} : { projectId }),
     });
-
-    // 入队就算投递成功：唤醒运行器，让它在空闲时自己开始。页面随后关掉也不
-    // 影响这一条。
-    sessionRunner().wakeAfterPause(input.sessionId);
 
     return { item };
   });
@@ -90,8 +91,10 @@ export const cancelInboxItem = publicProcedure
   })
   .input(inboxItemIdSchema)
   .handler(async ({ input }) => {
-    const inbox = new AgentInbox(new SQLiteStore());
-    return { removed: await inbox.cancel(input.sessionId, input.itemId) };
+    const store = new SQLiteStore();
+    return {
+      removed: await store.deleteInboxItems(input.sessionId, [input.itemId]),
+    };
   });
 
 /** 清空会话的待办项。 */
@@ -99,6 +102,6 @@ export const clearInboxItems = publicProcedure
   .route({ method: "DELETE", path: "/sessions/{sessionId}/inbox" })
   .input(z.object({ sessionId: z.string() }))
   .handler(async ({ input }) => {
-    const inbox = new AgentInbox(new SQLiteStore());
-    return { removed: await inbox.clear(input.sessionId) };
+    const store = new SQLiteStore();
+    return { removed: await store.deleteInboxItems(input.sessionId) };
   });

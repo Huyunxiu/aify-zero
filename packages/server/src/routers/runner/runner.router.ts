@@ -1,5 +1,5 @@
 import { publicProcedure } from "../../index";
-import { sessionRunner } from "../../session/runner";
+import { agentRunner } from "../../runtime";
 
 /**
  * 运行器的只读状态。
@@ -9,6 +9,6 @@ import { sessionRunner } from "../../session/runner";
  */
 export const getRunnerState = publicProcedure
   .route({ method: "GET", path: "/runner/state" })
-  .handler(() => sessionRunner().state());
+  .handler(() => agentRunner.state());
 
 export const runner = { getRunnerState };

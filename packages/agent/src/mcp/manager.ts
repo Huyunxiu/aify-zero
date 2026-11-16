@@ -1,5 +1,6 @@
 import { AuthorizationServerMismatchError } from "@ai-sdk/mcp";
 import type { CallToolResult } from "@ai-sdk/mcp";
+import type { McpServerStatus } from "@workspace/agent-client";
 import { getErrorMessage } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
 
@@ -13,14 +14,6 @@ const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** 建连失败后暂时不再重试的窗口，避免每回合都去撞一个坏命令。 */
 const DEFAULT_FAILURE_RETRY_MS = 60 * 1000;
-
-export type McpServerStatus =
-  | "idle"
-  | "connecting"
-  | "ready"
-  | "failed"
-  /** 等用户去设置页授权；和 `failed` 分开，因为它等的是人，不是重试。 */
-  | "needs-auth";
 
 /** 一行状态，给设置页看。 */
 export type McpServerState = {

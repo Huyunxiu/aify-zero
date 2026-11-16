@@ -1,11 +1,11 @@
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { McpServerStatus } from "@workspace/agent-client";
 import {
   isValidMcpServerName,
   mcpAuthType,
   mcpExposureType,
-} from "@workspace/agent/mcp/config";
-import type { McpServerStatus } from "@workspace/agent/mcp/manager";
+} from "@workspace/agent-client";
 import {
   AlertDialog,
   AlertDialogAction,

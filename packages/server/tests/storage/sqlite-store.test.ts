@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { EnqueueInboxInput } from "@workspace/agent-client";
-import { InboxItemNotFoundError } from "@workspace/agent/inbox/errors";
-import type { AgentStore, TurnWrite } from "@workspace/agent/storage/index";
+import { InboxItemNotFoundError } from "@workspace/agent/store";
+import type { AgentStore, TurnWrite } from "@workspace/agent/store";
 import { beforeAll, describe, expect, test } from "vitest";
 
 import {

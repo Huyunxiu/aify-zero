@@ -1,6 +1,6 @@
-import type { AgentToolSet } from "@workspace/agent";
 import { getToolName, isAgentToolPart } from "@workspace/agent-client";
 import type {
+  AgentToolSet,
   AgentAssistantTurn,
   AgentToolPart,
 } from "@workspace/agent-client";

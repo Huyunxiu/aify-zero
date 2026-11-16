@@ -9,8 +9,7 @@ import {
   McpExtension,
   SkillExtension,
 } from "@workspace/agent";
-import type { Agent } from "@workspace/agent";
-import type { AgentSession } from "@workspace/agent/agent-session";
+import type { Agent, BuildAgentInput, JobRegistry } from "@workspace/agent";
 import type { ModelEffort } from "@workspace/shared/constants";
 
 import { getSessionDir } from "../config";
@@ -31,8 +30,11 @@ export interface BuildSessionAgentInput {
   configured: ConfiguredModel;
   effort?: ModelEffort;
   projectId?: string;
-  session: AgentSession;
+  session: BuildAgentInput["session"];
   store: SQLiteStore;
+  /** 运行器实例的注册表；子会话必须复用它。 */
+  streams: BuildAgentInput["streams"];
+  jobs?: JobRegistry;
 }
 
 /**
@@ -48,6 +50,8 @@ export async function buildSessionAgent({
   projectId,
   session,
   store,
+  streams,
+  jobs,
 }: BuildSessionAgentInput): Promise<Agent> {
   // 会话目录先建出来：Environment 提示会把路径告诉模型，模型可能直接往里
   // 写文件，不该让它先自己 mkdir。
@@ -76,6 +80,7 @@ export async function buildSessionAgent({
     sessionId,
     store,
     session,
+    streamRegistry: streams,
     model: { ref: configured.ref, effort },
     resolveModel: createModelTargetResolver(settings),
     projectDirs,
@@ -83,7 +88,7 @@ export async function buildSessionAgent({
     projectId,
     compactionOverrides: settings.compaction,
     modelContextWindows: modelContextWindows(settings),
-    jobs: JOB_REGISTRY,
+    jobs: jobs ?? JOB_REGISTRY,
     sandbox,
     // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。
     toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),
