@@ -125,8 +125,10 @@ class FakeRegistry implements RunnerRegistry {
 
   getStreamEntryBySession(
     sessionId: string
-  ): { isDone(): boolean } | undefined {
-    return this.live.has(sessionId) ? { isDone: () => false } : undefined;
+  ): { isDone(): boolean; whenFinished(): Promise<void> } | undefined {
+    return this.live.has(sessionId)
+      ? { isDone: () => false, whenFinished: () => Promise.resolve() }
+      : undefined;
   }
 }
 
@@ -145,6 +147,11 @@ const makeStart = (
   store: FakeStore,
   options: {
     claimElsewhere?: (call: { sessionId: string; item: InboxItem }) => boolean;
+    /** 起跑时抛一个错误：`busy` 模拟压缩抢到了锁，`fail` 模拟配置坏了。 */
+    reject?: (call: {
+      sessionId: string;
+      item: InboxItem;
+    }) => "busy" | "fail" | undefined;
   } = {}
 ) => {
   const calls: { sessionId: string; item: InboxItem }[] = [];
@@ -157,6 +164,16 @@ const makeStart = (
     if (options.claimElsewhere?.(call)) {
       store.claim(call.sessionId, call.item.id);
       return Promise.reject(new InboxItemNotFoundError(call.item.id));
+    }
+
+    const rejection = options.reject?.(call);
+    if (rejection === "busy") {
+      const busy = new Error("SESSION_BUSY");
+      Object.assign(busy, { code: "SESSION_BUSY" });
+      return Promise.reject(busy);
+    }
+    if (rejection === "fail") {
+      return Promise.reject(new Error("model not found"));
     }
 
     store.claim(call.sessionId, call.item.id);
@@ -181,6 +198,13 @@ const makeStart = (
 
   return { startRun, calls, started };
 };
+
+/** 这个会话停下来的原因；没有停下时为 undefined。 */
+const pausedReason = (
+  runner: SessionRunner,
+  sessionId: string
+): string | undefined =>
+  runner.state().paused.find((entry) => entry.sessionId === sessionId)?.reason;
 
 /** 让所有排队的微任务和计时器都跑完。 */
 const flush = async (): Promise<void> => {
@@ -220,7 +244,7 @@ describe(SessionRunner, () => {
     await flush();
 
     expect(start.calls.map((call) => call.item.seq)).toStrictEqual([0]);
-    expect(runner.runningSessions()).toStrictEqual(["s1"]);
+    expect(runner.state().running).toStrictEqual(["s1"]);
 
     start.started[0]?.settle("done");
     await flush();
@@ -234,7 +258,7 @@ describe(SessionRunner, () => {
     await flush();
     expect({
       calls: start.calls.map((call) => call.item.seq),
-      running: runner.runningSessions(),
+      running: runner.state().running,
       pending: store.pending("s1"),
     }).toStrictEqual({ calls: [0, 1, 2], running: [], pending: [] });
   });
@@ -250,7 +274,7 @@ describe(SessionRunner, () => {
     start.started[0]?.settle("error");
     await flush();
 
-    expect(runner.pauseReason("s1")).toBe("error");
+    expect(pausedReason(runner, "s1")).toBe("error");
     expect(store.pending("s1")).toHaveLength(1);
 
     // 暂停期间再来一次唤醒也不会自动往下跑。
@@ -261,7 +285,7 @@ describe(SessionRunner, () => {
     runner.wakeAfterPause("s1");
     await flush();
     expect(start.calls).toHaveLength(2);
-    expect(runner.pauseReason("s1")).toBeUndefined();
+    expect(pausedReason(runner, "s1")).toBeUndefined();
   });
 
   test("用户停掉之后不再自动发下一条", async () => {
@@ -275,7 +299,7 @@ describe(SessionRunner, () => {
     start.started[0]?.settle("canceled");
     await flush();
 
-    expect(runner.pauseReason("s1")).toBe("canceled");
+    expect(pausedReason(runner, "s1")).toBe("canceled");
     expect(start.calls).toHaveLength(1);
   });
 
@@ -290,7 +314,7 @@ describe(SessionRunner, () => {
     start.started[0]?.settle("wait_review");
     await flush();
 
-    expect(runner.pauseReason("s1")).toBeUndefined();
+    expect(pausedReason(runner, "s1")).toBeUndefined();
     runner.wake("s1");
     await flush();
     expect(start.calls).toHaveLength(1);
@@ -314,7 +338,7 @@ describe(SessionRunner, () => {
     await flush();
 
     expect(start.calls.map((call) => call.item.seq)).toStrictEqual([1]);
-    expect(runner.pauseReason("s1")).toBeUndefined();
+    expect(pausedReason(runner, "s1")).toBeUndefined();
   });
 
   test("运行起点也领残留的 step-boundary 项", async () => {
@@ -331,6 +355,41 @@ describe(SessionRunner, () => {
     await flush();
 
     expect(start.calls.map((call) => call.item.seq)).toStrictEqual([0]);
+  });
+
+  test("压缩抢到锁时不当失败：不算暂停，等下一次唤醒再来", async () => {
+    const store = new FakeStore([sessionRow("s1")]);
+    store.add("s1", 1);
+    let busy = true;
+    const start = makeStart(store, {
+      reject: () => (busy ? "busy" : undefined),
+    });
+    const runner = makeRunner({ store, start });
+
+    runner.wake("s1");
+    await flush();
+
+    expect(runner.state().paused).toStrictEqual([]);
+    expect(start.calls).toHaveLength(0);
+
+    busy = false;
+    runner.wake("s1");
+    await flush();
+
+    expect(start.calls).toHaveLength(1);
+  });
+
+  test("起不来时留下暂停原因，不再空转", async () => {
+    const store = new FakeStore([sessionRow("s1")]);
+    store.add("s1", 1);
+    const start = makeStart(store, { reject: () => "fail" });
+    const runner = makeRunner({ store, start });
+
+    runner.wake("s1");
+    await flush();
+
+    expect(pausedReason(runner, "s1")).toBe("error");
+    expect(start.calls).toHaveLength(0);
   });
 
   test("子会话不跑", async () => {
@@ -379,7 +438,7 @@ describe(SessionRunner, () => {
 
     expect({
       calls: start.calls.length,
-      running: runner.runningSessions(),
+      running: runner.state().running,
     }).toStrictEqual({ calls: 1, running: [] });
   });
 
@@ -422,7 +481,7 @@ describe(SessionRunner, () => {
     }
     await flush();
 
-    expect(runner.runningSessions()).toHaveLength(2);
+    expect(runner.state().running).toHaveLength(2);
     expect(start.calls).toHaveLength(2);
 
     start.started[0]?.settle("done");

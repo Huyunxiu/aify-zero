@@ -98,16 +98,22 @@ function toApiError(error: unknown): never {
 
 const START_TIMEOUT_MS = 5000;
 
-/** 等一次运行真的开始；返回它的 stream id，超时返回 null。 */
+/**
+ * 等这一次唤醒带来的运行真的开始。
+ *
+ * `previousStreamId` 是唤醒之前已经存在的那条：它还在跑的话不能当成这次的结果，
+ * 否则发送方会挂到别人的流上。
+ */
 const waitForStream = (
   sessionId: string,
-  timeoutMs: number
+  timeoutMs: number,
+  previousStreamId: string | undefined
 ): Promise<string | null> =>
   new Promise<string | null>((resolve) => {
     const deadline = Date.now() + timeoutMs;
     const check = (): void => {
       const entry = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
-      if (entry && !entry.isDone()) {
+      if (entry && !entry.isDone() && entry.streamId !== previousStreamId) {
         resolve(entry.streamId);
         return;
       }
@@ -220,8 +226,13 @@ const createSession = publicProcedure
       });
     }
 
-    runner.wake(sessionId);
-    const activeStreamId = await waitForStream(sessionId, START_TIMEOUT_MS);
+    const previous = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
+    runner.wakeAfterPause(sessionId);
+    const activeStreamId = await waitForStream(
+      sessionId,
+      START_TIMEOUT_MS,
+      previous?.streamId
+    );
     if (!activeStreamId) {
       // 消息已经落库，这一轮起不来（会话在跑、等审批、或已经暂停）不等于失败：
       // 客户端拿到的 null 就是「还没开始」。
@@ -330,7 +341,14 @@ export const compactSession = publicProcedure
     }
 
     try {
-      return await createSessionLifecycle().compact({ sessionId, configured });
+      return await createSessionLifecycle().compact({
+        sessionId,
+        configured,
+        onSettled: () => {
+          // 压缩期间队列起不了跑；它结束时唤醒一次，队列才接着走。
+          sessionRunner().wake(sessionId);
+        },
+      });
     } catch (error) {
       toApiError(error);
     }

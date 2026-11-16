@@ -22,7 +22,9 @@ export type RunnerStore = Pick<
 
 /** 注册表里运行器需要的那一面：这个会话有没有一条流在跑。 */
 export type RunnerRegistry = {
-  getStreamEntryBySession(sessionId: string): { isDone(): boolean } | undefined;
+  getStreamEntryBySession(
+    sessionId: string
+  ): { isDone(): boolean; whenFinished(): Promise<void> } | undefined;
 };
 
 /** 起跑一次运行；`settled` 在运行落定时给出结束状态。 */
@@ -150,23 +152,20 @@ export class SessionRunner {
     activeStreamId: string | null;
     awaitingToolApprovals: number;
   }> {
-    this.#paused.delete(input.sessionId);
-    return await this.#resumeRun(input);
-  }
+    const { sessionId } = input;
+    this.#paused.delete(sessionId);
 
-  /** 这个会话为什么停下；没有停下时为 undefined。 */
-  pauseReason(sessionId: string): PauseReason | undefined {
-    return this.#paused.get(sessionId);
-  }
+    const result = await this.#resumeRun(input);
 
-  /** 正在推进的会话，按开始顺序。 */
-  runningSessions(): string[] {
-    return [...this.#runs.keys()];
-  }
+    // 审批恢复的那次运行也要回到循环里：它结束之后，排在其后的待办项要接着跑。
+    const entry = this.#registry.getStreamEntryBySession(sessionId);
+    if (entry && !entry.isDone()) {
+      void entry.whenFinished().then(() => {
+        this.wake(sessionId);
+      });
+    }
 
-  /** 还没被处理的唤醒。 */
-  waitingSessions(): string[] {
-    return [...this.#wakeups];
+    return result;
   }
 
   #schedule(): void {
@@ -236,7 +235,11 @@ export class SessionRunner {
         // 这一条已经被别的调用者领走，循环接着取下一条。
         continue;
       }
-      if (!started) {
+      if (started === "busy") {
+        // 别的运行占着锁：停下这一轮，等它结束后再唤醒。
+        return;
+      }
+      if (started === "failed") {
         return;
       }
 
@@ -284,16 +287,22 @@ export class SessionRunner {
   async #start(
     sessionId: string,
     item: InboxItem
-  ): Promise<StartedRun | "claimed" | undefined> {
+  ): Promise<StartedRun | "claimed" | "busy" | "failed"> {
     try {
       return await this.#startRun({ sessionId, item });
     } catch (error) {
       if (isClaimedElsewhere(error)) {
         return "claimed";
       }
+      if (isBusy(error)) {
+        // 压缩在两步之间抢到了锁。待办项还在队列里，等它结束时的唤醒。
+        return "busy";
+      }
 
       this.#warn("[runner] failed to start a run", error);
-      return undefined;
+      // 起不来的会话要留下原因，否则 state() 里它既没在跑也没暂停。
+      this.#paused.set(sessionId, "error");
+      return "failed";
     }
   }
 }
@@ -328,6 +337,15 @@ let singleton: SessionRunner | undefined;
 export function sessionRunner(): SessionRunner {
   singleton ??= createSessionRunner();
   return singleton;
+}
+
+/** 会话上已经有一条运行占着锁。 */
+function isBusy(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "SESSION_BUSY"
+  );
 }
 
 /**

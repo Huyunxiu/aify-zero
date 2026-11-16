@@ -64,6 +64,12 @@ export type CreateSessionResult = {
 export type CompactSessionInput = {
   sessionId: string;
   configured: ConfiguredModel;
+  /**
+   * 压缩这条流落定之后调一次。
+   *
+   * 压缩占着会话的锁，期间排队项起不了跑；它结束时通知一声，队列才能接着走。
+   */
+  onSettled?: () => void;
 };
 
 export type ForkSessionInput = {
@@ -350,7 +356,7 @@ export class SessionLifecycle {
   async compact(
     input: CompactSessionInput
   ): Promise<{ activeStreamId: string }> {
-    const { sessionId, configured } = input;
+    const { sessionId, configured, onSettled } = input;
     const { store, registry, buildAgent } = this.#deps;
 
     const session = await store.getSessionById(sessionId);
@@ -410,6 +416,7 @@ export class SessionLifecycle {
             activeStreamId,
             previousStatus
           );
+          onSettled?.();
         },
       });
     } catch (error) {
