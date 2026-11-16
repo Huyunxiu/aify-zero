@@ -375,6 +375,8 @@ export function createAgentSessionStore({
   let cursor: SessionCursor | undefined;
   /** 页面已经走了：不再重连。 */
   let disposed = false;
+  /** 等下一次重连的计时器；卸载时要清掉。 */
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** 正在读的那一次运行；同时说明屏幕上有一条还在流。 */
   let runStreamId: string | undefined;
   /** 这一次运行的装配器；每次运行换一个。 */
@@ -652,6 +654,23 @@ export function createAgentSessionStore({
    * 所以排队中的消息被服务端领走时，页面已经在读了——不需要谁去追那条新出现
    * 的流。
    */
+  /**
+   * 重连的等待时间。
+   *
+   * 真实的断线（代理超时、合盖休眠）会持续几秒，立即重试必然撞在断口上。
+   * 几次之后放弃：再久就是「服务端不在」，该由人刷新。
+   */
+  const RECONNECT_DELAYS_MS = [1000, 2000, 4000];
+
+  /** 等一会儿再重连；页面走了就让这个 Promise 永远不兑现。 */
+  const waitBeforeRetry = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        resolve();
+      }, ms);
+    });
+
   const connect = async (attempt = 0): Promise<void> => {
     if (!apiEvents || connection || disposed) {
       return;
@@ -687,21 +706,31 @@ export function createAgentSessionStore({
       return;
     }
 
-    // 断线重连一次。运行还挂在装配器上，带游标接上就不会重画；通道换了实例
-    // 时 `ready` 会把这次运行按丢失收尾。
-    if (attempt === 0) {
-      await connect(1);
+    // 断线重连。运行还挂在装配器上，带游标接上就不会重画；通道换了实例时
+    // `ready` 会把这次运行按丢失收尾。等几次还不行就落定，不在这里空转。
+    const delay = RECONNECT_DELAYS_MS[attempt];
+    if (delay !== undefined) {
+      await waitBeforeRetry(delay);
+
+      if (!disposed) {
+        await connect(attempt + 1);
+      }
       return;
     }
 
     settleRun(failure);
   };
 
-  /** 页面走了：停掉重连，别让它在这里空转。 */
+  /** 页面走了：停掉连接和还在等的那次重连。 */
   const destroy = (): void => {
     disposed = true;
     connection?.abort();
     connection = null;
+
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+    }
   };
 
   /**

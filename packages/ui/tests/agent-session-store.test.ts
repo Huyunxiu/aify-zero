@@ -255,7 +255,8 @@ describe("createAgentSessionStore queue", () => {
     // 连接断了：不落定，带着读到的游标再接一次。
     first.close();
 
-    await vi.waitFor(() => expect(cursors).toHaveLength(2));
+    // 第一次重连前会等一会儿：给它比默认窗口更长的余地。
+    await vi.waitFor(() => expect(cursors).toHaveLength(2), { timeout: 5000 });
     expect(cursors[0]).toBeUndefined();
     expect(cursors[1]).toBe("epoch-1:1");
     expect(store.getStatus()).toBe("streaming");
