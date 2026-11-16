@@ -1,39 +1,27 @@
+/**
+ * `toolCall` 这条结果在 chat completions 上长什么样。
+ *
+ * 场景取自 `scenarios/edit-then-answer.json`——端到端用例读的也是它，两边不各写
+ * 一份。这里只能证明「假供应商的分块能被客户端解析回同一个工具调用」；它不能证
+ * 明假供应商与真供应商同形，那种漂移要靠录制回放才发现。
+ */
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { streamText, tool } from "ai";
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { z } from "zod";
 
-import { startFakeProvider } from "../../src/testing/fake-provider/index.js";
-import type { FakeProvider } from "../../src/testing/fake-provider/index.js";
+import {
+  postChatCompletions,
+  startProvider,
+  useStartedProviders,
+} from "./helpers.js";
 
-/** 一条「先要工具、再回答」的场景；两条协议测试共用。 */
-const SCENARIO = {
-  name: "tool-call",
-  models: ["fake-fast"],
-  rules: [
-    { when: { stream: false }, answer: "标题" },
-    {
-      when: { stream: true },
-      toolCall: {
-        name: "edit-file",
-        args: {
-          path: "notes.md",
-          edits: [{ oldText: "第二行", newText: "第二行已改" }],
-        },
-      },
-    },
-    { when: { stream: true }, answer: "改好了。" },
-  ],
-};
+const SCENARIO = "edit-then-answer";
 
-const running: FakeProvider[] = [];
-
-const start = async (
-  ...arguments_: Parameters<typeof startFakeProvider>
-): Promise<FakeProvider> => {
-  const provider = await startFakeProvider(...arguments_);
-  running.push(provider);
-  return provider;
+/** 场景里那次工具调用要改的东西；断言直接从这条事实出发。 */
+const EXPECTED_ARGS = {
+  path: "notes.md",
+  edits: [{ oldText: "第二行", newText: "第二行已改" }],
 };
 
 /** 一条 SSE 数据块拆成对象；`[DONE]` 与空行丢掉。 */
@@ -59,19 +47,14 @@ const deltaOf = (block: Record<string, unknown>): Delta => {
 };
 
 describe("tool call outcome", () => {
-  afterEach(async () => {
-    await Promise.all(running.splice(0).map((provider) => provider.close()));
-  });
+  useStartedProviders();
 
   test("writes the call as incremental tool_calls chunks", async () => {
-    const provider = await start({ scenario: SCENARIO });
+    const provider = await startProvider({ scenario: SCENARIO });
 
-    const response = await fetch(`${provider.baseURL}/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ stream: true }),
+    const { text } = await postChatCompletions(provider.baseURL, {
+      stream: true,
     });
-    const text = await response.text();
     const blocks = blocksOf(text);
     const calls = blocks.flatMap((block) => deltaOf(block).tool_calls ?? []);
 
@@ -91,11 +74,9 @@ describe("tool call outcome", () => {
     const assembled = calls
       .map((call) => call.function?.arguments ?? "")
       .join("");
-    expect(JSON.parse(assembled)).toStrictEqual(
-      (SCENARIO.rules[1] as { toolCall: { args: unknown } }).toolCall.args
-    );
+    expect(JSON.parse(assembled)).toStrictEqual(EXPECTED_ARGS);
 
-    // 收尾说清楚这一轮为什么结束：不是 stop，是 tool_calls。
+    // 收尾说清楚这一次为什么结束：不是 stop，是 tool_calls。
     const finishReasons = blocks
       .map(
         (block) =>
@@ -106,7 +87,7 @@ describe("tool call outcome", () => {
   });
 
   test("the AI SDK parses it back into the same tool call", async () => {
-    const provider = await start({ scenario: SCENARIO });
+    const provider = await startProvider({ scenario: SCENARIO });
     const model = createOpenAICompatible({
       name: "fake",
       baseURL: provider.baseURL,
@@ -133,9 +114,20 @@ describe("tool call outcome", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.toolName).toBe("edit-file");
-    expect(calls[0]?.input).toStrictEqual({
-      path: "notes.md",
-      edits: [{ oldText: "第二行", newText: "第二行已改" }],
+    expect(calls[0]?.input).toStrictEqual(EXPECTED_ARGS);
+  });
+
+  test("refuses a tool call on a non-streaming request", async () => {
+    // 写手要报「不支持」，不能把 SSE 块塞进一个非流式响应里（ADR-0011）。
+    const provider = await startProvider({
+      scenario: { name: "non-stream", rules: [{ toolCall: { name: "x" } }] },
     });
+
+    const { response, text } = await postChatCompletions(provider.baseURL, {
+      stream: false,
+    });
+
+    expect(response.status).toBe(500);
+    expect(text).toContain("toolCall rule needs a streaming request");
   });
 });

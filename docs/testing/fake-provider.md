@@ -73,7 +73,7 @@ vp dev
 | `title-does-not-eat-a-failure` | answer → fail 503 → answer            | `Retry 1/5`，然后答案                                                                   |
 | `slow-stream`                  | answer                                | 空白约 1.5 秒才出第一个字                                                               |
 | `broken-stream`                | answer → corrupt                      | `Failed`，没有重试；畸形块不是供应商错误，本来就不该重试                                |
-| `edit-then-answer`             | answer → toolCall → answer            | 先出现一行 `Edit notes.md` 与 `+1 −1`，再出答案；改动面板能列出这个文件                 |
+| `edit-then-answer`             | answer → toolCall → answer            | 先出现一行 `Edit notes.md` 与 `+1 −1`，再出答案；改动视图能列出这个文件                 |
 
 规则按顺序消费，所以重启替身就从头再走一遍。
 

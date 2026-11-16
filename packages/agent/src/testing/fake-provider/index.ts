@@ -146,6 +146,7 @@ export async function startFakeProvider(
       rule,
       model: seen.model ?? fallbackModel,
       replay,
+      stream: seen.stream,
     });
   };
 

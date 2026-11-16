@@ -13,10 +13,6 @@
         }
       }
     },
-    {
-      "when": { "stream": true },
-      "answer": "已把第二行改好。",
-      "slow": { "firstChunkMs": 1500, "chunkMs": 40 }
-    }
+    { "when": { "stream": true }, "answer": "已把第二行改好。" }
   ]
 }

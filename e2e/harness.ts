@@ -17,11 +17,7 @@ import type { FakeProvider } from "@workspace/agent/testing";
 /** 仓库根：本文件在 `e2e/` 下。 */
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
-/**
- * Vite 属于 `apps/web`，根目录的 `.bin` 里没有它，`vite` 的 `exports` 也不给
- * 深引 `bin/vite.js`。所以借 `vp dev`——`apps/web` 的 `dev` 脚本就是它。
- */
-const WEB_DIR = join(REPO_ROOT, "apps", "web");
+/** `vp` 统一管运行：脚本从它走，不直接拼 `node_modules/.bin`。 */
 const VP_BIN = join(REPO_ROOT, "node_modules", ".bin", "vp");
 
 /** 供应商设置里的那条记录用的模型 id；场景对外也声明这个名字。 */
@@ -34,13 +30,10 @@ export const PROJECT_NAME = "E2E project";
 const NOTES = "# Notes\n\n第一行\n第二行\n";
 
 export type Stack = {
-  readonly apiUrl: string;
   readonly fake: FakeProvider;
   /** server 启动时打印的那条登录链接，带 `?token=`。 */
   readonly loginUrl: string;
   readonly projectDir: string;
-  readonly runDir: string;
-  readonly webUrl: string;
   /** 拆现场。`keep` 为真时留下目录当证据。 */
   stop(options?: { readonly keep?: boolean }): Promise<void>;
 };
@@ -57,15 +50,15 @@ const freePort = async (): Promise<number> =>
     });
   });
 
-/** 轮询一个可能还没准备好的值。 */
+/** 轮询一个可能还没准备好的值；`read` 可以是异步的。 */
 const waitFor = async <T>(
-  read: () => T | undefined,
+  read: () => Promise<T | undefined> | T | undefined,
   what: string,
   timeoutMs = 60_000
 ): Promise<T> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const value = read();
+    const value = await read();
     if (value !== undefined) {
       return value;
     }
@@ -76,42 +69,20 @@ const waitFor = async <T>(
   throw new Error(`timed out waiting for ${what}`);
 };
 
-/** 轮询一个还开不了的地址。 */
-const waitForHttp = async (url: string, timeoutMs = 60_000): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    let response: Response | undefined;
-    try {
-      response = await fetch(url);
-    } catch {
-      response = undefined;
-    }
-    if (response?.ok === true) {
-      return;
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, 200);
-    });
-  }
-  throw new Error(`timed out waiting for ${url}`);
-};
-
 /** 一个子进程和它的 stdout，写进日志文件的同时也留在内存里等启动信号。 */
 type Child = {
   readonly output: () => string;
-  readonly process: ChildProcess;
   readonly stop: () => Promise<void>;
 };
 
 const startChild = (input: {
-  readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
   readonly env: NodeJS.ProcessEnv;
   readonly logPath: string;
 }): Child => {
   const log: string[] = [];
-  const child = spawn(input.command, [...input.args], {
+  const child: ChildProcess = spawn(VP_BIN, [...input.args], {
     cwd: input.cwd,
     env: input.env,
     // 单独一个进程组：拆的时候把 vite 拉起的子进程一起收掉。
@@ -130,7 +101,6 @@ const startChild = (input: {
 
   return {
     output: () => log.join(""),
-    process: child,
     stop: async () => {
       const { pid } = child;
       if (pid === undefined || child.exitCode !== null) {
@@ -171,7 +141,7 @@ const startChild = (input: {
   };
 };
 
-/** 起一个临时 Git 仓库：一次提交、一个 `notes.md`，改动面板才有基线可比。 */
+/** 起一个临时 Git 仓库：一次提交、一个 `notes.md`，改动视图才有基线可比。 */
 const createProjectRepository = (projectDir: string): void => {
   mkdirSync(projectDir, { recursive: true });
   writeFileSync(join(projectDir, "notes.md"), NOTES);
@@ -240,7 +210,9 @@ export async function startStack(): Promise<Stack> {
 
   const [apiPort, webPort] = await Promise.all([freePort(), freePort()]);
   const token = "e2e-token";
-  const env: NodeJS.ProcessEnv = {
+  const apiUrl = `http://127.0.0.1:${apiPort}`;
+  const webUrl = `http://127.0.0.1:${webPort}`;
+  const baseEnv: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: join(runDir, "home"),
     AIFY_API_HOST: "127.0.0.1",
@@ -249,12 +221,12 @@ export async function startStack(): Promise<Stack> {
     AIFY_API_TOKEN: token,
     AIFY_SANDBOX_ADAPTER: "host",
     DATABASE_URL: `file:${join(runDir, "db", "app.db")}`,
+    // 空串按「没有设置」处理：开发机上导出过的 API 源不能盖掉这次挑的端口，
+    // 否则 Vite 会把请求代理到另一个 API，而断言还在看测试进程里的假供应商。
+    AIFY_API_ORIGIN: "",
   };
-
-  const apiUrl = `http://127.0.0.1:${apiPort}`;
-  const webUrl = `http://127.0.0.1:${webPort}`;
   const apiEnv: NodeJS.ProcessEnv = {
-    ...env,
+    ...baseEnv,
     // 显式给出页面的源：server 就不必在启动时探测 Vite 在不在，登录链接也不会
     // 因为「探测超时」而指回 API 自己。
     AIFY_WEB_ORIGIN: webUrl,
@@ -263,10 +235,9 @@ export async function startStack(): Promise<Stack> {
   const fake = await startFakeProvider({ scenario: "edit-then-answer" });
   // 先起页面，等它真能服务请求，再起 API：链接里的源是确定的，页面也早就绪。
   const web = startChild({
-    command: VP_BIN,
-    args: ["dev"],
-    cwd: WEB_DIR,
-    env,
+    args: ["run", "web#dev"],
+    cwd: REPO_ROOT,
+    env: baseEnv,
     logPath: join(logsDir, "web.log"),
   });
 
@@ -281,11 +252,18 @@ export async function startStack(): Promise<Stack> {
   };
 
   try {
-    await waitForHttp(webUrl);
+    await waitFor(async () => {
+      let response: Response | undefined;
+      try {
+        response = await fetch(webUrl);
+      } catch {
+        response = undefined;
+      }
+      return response?.ok === true ? true : undefined;
+    }, "the web dev server");
 
     const apiChild = startChild({
-      command: join(REPO_ROOT, "node_modules", ".bin", "tsx"),
-      args: ["apps/server/src/index.ts"],
+      args: ["exec", "tsx", "apps/server/src/index.ts"],
       cwd: REPO_ROOT,
       env: apiEnv,
       logPath: join(logsDir, "api.log"),
@@ -300,7 +278,7 @@ export async function startStack(): Promise<Stack> {
 
     await seedProvider({ apiUrl, baseURL: fake.baseURL, token });
 
-    return { apiUrl, fake, loginUrl, projectDir, runDir, webUrl, stop };
+    return { fake, loginUrl, projectDir, stop };
   } catch (error) {
     await stop({ keep: true });
     throw new Error(`the stack did not come up; logs are in ${runDir}`, {

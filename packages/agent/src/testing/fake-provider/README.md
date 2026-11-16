@@ -42,8 +42,9 @@ const provider = await startFakeProvider({ scenario: "retry-then-succeed" });
 | `corrupt`       | 发一段非法 JSON                                        |
 | `toolCall`      | 不回答，改要一个工具：`{name, args?, id?}`             |
 
-`toolCall` 只在流式请求上有意义：`arguments` 会按 8 个字符一段发出去，客户端拼回
-JSON。工具的结果作为下一次请求的一部分回来，下一条规则接着走。
+`toolCall` 只在流式请求上表达得出来：`arguments` 会按 8 个字符一段发出去，客户端
+拼回 JSON。把这条规则留给非流式请求时，写手回 500 说明不支持，不做静默降级。工具
+的结果作为下一次请求的一部分回来，下一条规则接着走。
 
 修饰：`slow.firstChunkMs`、`slow.chunkMs`、`when.stream`、`when.model`。
 
