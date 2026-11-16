@@ -281,6 +281,27 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
+  test("canDeliverNotice 只在会话有模型配置时为真", async () => {
+    const store = new FakeStore([session("s1")]);
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    expect(runner.canDeliverNotice("s1")).toBeFalsy();
+
+    await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
+    expect(runner.canDeliverNotice("s1")).toBeTruthy();
+
+    await vi.waitFor(() => {
+      expect(builder.calls).toHaveLength(1);
+      expect(runner.state().running).toHaveLength(0);
+    });
+    await runner.shutdown();
+  });
+
   test("enqueueNotice 在没有模型配置时只记日志", async () => {
     const store = new FakeStore([session("s1")]);
     const runner = createAgentRunner({

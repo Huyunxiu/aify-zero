@@ -12,7 +12,7 @@ const view = (overrides: Partial<JobView> = {}): JobView => ({
   detail: "exit code: 0",
   startedAt: 1,
   finishedAt: 2,
-  output: { total: 4, earliest: 0 },
+  output: { total: 4, earliest: 0, unreadBytes: 4 },
   ...overrides,
 });
 
@@ -57,7 +57,10 @@ describe(createJobNoticeAdapter, () => {
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
       registry: { read } as never,
-      runner: { enqueueNotice } as never,
+      runner: {
+        enqueueNotice,
+        canDeliverNotice: () => true,
+      } as never,
       store: { deleteInboxItems },
     });
 
@@ -78,7 +81,10 @@ describe(createJobNoticeAdapter, () => {
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
       registry: { read } as never,
-      runner: { enqueueNotice } as never,
+      runner: {
+        enqueueNotice,
+        canDeliverNotice: () => true,
+      } as never,
       store: { deleteInboxItems },
     });
 
@@ -101,7 +107,10 @@ describe(createJobNoticeAdapter, () => {
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
       registry: { read } as never,
-      runner: { enqueueNotice } as never,
+      runner: {
+        enqueueNotice,
+        canDeliverNotice: () => true,
+      } as never,
       store: { deleteInboxItems },
     });
 
@@ -114,11 +123,34 @@ describe(createJobNoticeAdapter, () => {
     );
   });
 
+  test("skips a session that cannot receive a notice, before reading output", () => {
+    const enqueueNotice = vi.fn<EnqueueNotice>();
+    const readJob = vi.fn<(id: string, caller?: string) => JobRead>(() =>
+      read()
+    );
+    const adapter = createJobNoticeAdapter({
+      registry: { read: readJob } as never,
+      runner: {
+        enqueueNotice,
+        canDeliverNotice: () => false,
+      } as never,
+      store: { deleteInboxItems: vi.fn<DeleteItems>() },
+    });
+
+    adapter.deliver(view());
+
+    expect(readJob).not.toHaveBeenCalled();
+    expect(enqueueNotice).not.toHaveBeenCalled();
+  });
+
   test("does nothing for an unowned job", () => {
     const enqueueNotice = vi.fn<EnqueueNotice>();
     const adapter = createJobNoticeAdapter({
       registry: { read } as never,
-      runner: { enqueueNotice } as never,
+      runner: {
+        enqueueNotice,
+        canDeliverNotice: () => true,
+      } as never,
       store: { deleteInboxItems: vi.fn<DeleteItems>() },
     });
 

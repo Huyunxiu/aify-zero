@@ -50,6 +50,11 @@ export const createJobNoticeAdapter = ({
         // 无主任务没有会话可送达。
         return;
       }
+      // 先确认这条通知投得出去，再去消费任务的未读输出：消费之后再失败，
+      // 模型就再也拿不到它了。
+      if (!runner.canDeliverNotice(sessionId)) {
+        return;
+      }
 
       let text: string;
       try {

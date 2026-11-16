@@ -162,6 +162,8 @@ export type JobOutputState = {
   total: number;
   /** 仍然保留着的最早字节偏移；没有保留内容时等于 `total`。 */
   earliest: number;
+  /** 模型游标之后还没读走的字节数；完成通知靠它决定是否内联。 */
+  unreadBytes: number;
   /** 各拉取源当前保留的完整流文件。 */
   spillPaths?: readonly string[];
 };
@@ -180,6 +182,8 @@ export type JobView = {
   detail?: string;
   /** 生产方声明的模型侧结果上限；省略时由工具层兜底。 */
   outputLimitBytes?: number;
+  /** `result` 的 UTF-8 字节数；投递通知时用来判断内联是否放得下。 */
+  resultBytes?: number;
   startedAt: number;
   finishedAt?: number;
   output: JobOutputState;

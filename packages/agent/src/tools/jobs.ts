@@ -115,7 +115,7 @@ const JOB_OUTPUT_INPUT = z.object({
     .positive()
     .optional()
     .describe(
-      "Max wait in milliseconds with wait: true. Defaults to 30 seconds and is capped at 10 minutes."
+      "Max wait in milliseconds with wait: true. Defaults to and is capped by the task tool configuration."
     ),
 });
 

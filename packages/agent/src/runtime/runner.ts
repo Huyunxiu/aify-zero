@@ -207,6 +207,15 @@ export class AgentRunner {
   }
 
   /**
+   * 这个会话现在能不能收完成通知：有模型配置，且运行器没有在关停。
+   * 投递方先用它判断，再决定是否消费任务的未读输出。
+   * @param sessionId - 会话 id。
+   */
+  canDeliverNotice(sessionId: string): boolean {
+    return !this.#stopped && this.#lastPayload.has(sessionId);
+  }
+
+  /**
    * 投一条完成通知。空闲会话被唤醒，忙的会话排到下一个步边界。
    *
    * 通知不是用户输入：它不重置唤醒预算，也不触发插话信号。连续唤醒超过

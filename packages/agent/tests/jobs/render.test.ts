@@ -14,7 +14,7 @@ const view = (overrides: Partial<JobView> = {}): JobView => ({
   label: "sleep 60",
   status: "running",
   startedAt: 1,
-  output: { total: 0, earliest: 0 },
+  output: { total: 0, earliest: 0, unreadBytes: 0 },
   ...overrides,
 });
 

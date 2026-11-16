@@ -61,10 +61,16 @@ export const composeJobNotice = ({
     job.outputLimitBytes ?? Number.POSITIVE_INFINITY
   );
   const head = noticeHead(job);
-  // 留出行头与状态行的余量：只有整段输出明显放得下才消费游标。
+  const { unreadBytes } = job.output;
+  const resultBytes = job.resultBytes ?? 0;
+  if (unreadBytes + resultBytes === 0) {
+    // 输出已经读空、也没有待交付的结果：给摘要即可，不再消费游标。
+    return { text: `${head}. No new output.`, inline: false };
+  }
+  // 留出行头与状态行的余量：只有未读字节与结果明显放得下才消费游标。
   if (
     readOutput === undefined ||
-    job.output.total > limitBytes - utf8Bytes(head) - 64
+    unreadBytes + resultBytes > limitBytes - utf8Bytes(head) - 64
   ) {
     return { text: pointerNotice(job, limitBytes), inline: false };
   }

@@ -4,6 +4,7 @@ import { logger } from "@workspace/shared/logger";
 
 import { JobError } from "./error";
 import { JobEventHub } from "./events";
+import { utf8Bytes } from "./limit";
 import { startPump } from "./pump";
 import type { PumpHandle } from "./pump";
 import { OutputRing } from "./ring";
@@ -460,6 +461,9 @@ export class JobRegistry {
       ...(job.outputLimitBytes === undefined
         ? {}
         : { outputLimitBytes: job.outputLimitBytes }),
+      ...(job.result === undefined
+        ? {}
+        : { resultBytes: utf8Bytes(job.result) }),
       ...(job.owner === undefined ? {} : { owner: job.owner }),
       status: job.status,
       ...(job.state.progress === undefined
@@ -471,6 +475,7 @@ export class JobRegistry {
       output: {
         total: job.ring.total,
         earliest: job.ring.earliest,
+        unreadBytes: Math.max(0, job.ring.total - job.modelCursor),
         ...(spillPaths.length === 0 ? {} : { spillPaths }),
       },
     };

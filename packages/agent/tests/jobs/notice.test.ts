@@ -11,7 +11,7 @@ const view = (overrides: Partial<JobView> = {}): JobView => ({
   detail: "exit code: 0",
   startedAt: 1,
   finishedAt: 2,
-  output: { total: 6, earliest: 0 },
+  output: { total: 6, earliest: 0, unreadBytes: 6 },
   ...overrides,
 });
 
@@ -34,10 +34,47 @@ describe(composeJobNotice, () => {
     expect(notice.text).toContain("3 packages built");
   });
 
+  test("inlines only the bytes the model has not read yet", () => {
+    // 任务总共产出过 100 字节，但模型已经读过 94 字节：剩下的 6 字节放得下。
+    const notice = composeJobNotice({
+      job: view({
+        output: { total: 100, earliest: 0, unreadBytes: 6 },
+      }),
+      readOutput: read,
+    });
+
+    expect(notice.inline).toBeTruthy();
+  });
+
+  test("inlines a pending result even when no output is left", () => {
+    const notice = composeJobNotice({
+      job: view({
+        output: { total: 0, earliest: 0, unreadBytes: 0 },
+        resultBytes: 16,
+      }),
+      readOutput: read,
+    });
+
+    expect(notice.inline).toBeTruthy();
+    expect(notice.text).toContain("3 packages built");
+  });
+
+  test("says there is no new output when nothing is pending", () => {
+    const notice = composeJobNotice({
+      job: view({ output: { total: 0, earliest: 0, unreadBytes: 0 } }),
+      readOutput: read,
+    });
+
+    expect(notice.inline).toBeFalsy();
+    expect(notice.text).toContain("No new output.");
+  });
+
   test("points at job-output without consuming output that cannot fit", () => {
     let readCalls = 0;
     const notice = composeJobNotice({
-      job: view({ output: { total: 50_000, earliest: 0 } }),
+      job: view({
+        output: { total: 50_000, earliest: 0, unreadBytes: 50_000 },
+      }),
       readOutput: () => {
         readCalls += 1;
         return read();
