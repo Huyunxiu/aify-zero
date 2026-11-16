@@ -1,8 +1,14 @@
 import { createJobTools } from "../../tools/jobs";
+import type { JobToolOptions } from "../../tools/jobs";
 import type { ExtensionAPI, ExtensionOptions } from "../types";
 import { Extension } from "../types";
 
-const DEFAULT_OPTIONS: ExtensionOptions = { id: "jobs-tools" };
+/** 任务工具的等待上限由组合根决定；省略时用工具里的默认值。 */
+export type JobsToolsExtensionOptions = ExtensionOptions & {
+  toolOptions?: JobToolOptions;
+};
+
+const DEFAULT_OPTIONS: JobsToolsExtensionOptions = { id: "jobs-tools" };
 
 /** 后台任务的使用说明；只在有注册表时出现。 */
 const JOBS_GUIDANCE = `Track every background job id you start. A completion notice arrives when a job finishes — do not poll or sleep on one; keep working on independent steps and do not duplicate a running job's work. Before a final answer, collect every still-relevant job with job-output (set wait: true only when you are blocked on it), and job-kill jobs that no longer matter.`;
@@ -14,8 +20,11 @@ const JOBS_GUIDANCE = `Track every background job id you start. A completion not
  * 一个永远失败的工具。有注册表时再补一段提示，告诉模型任务结束后会收到通知。
  */
 export class JobsToolsExtension extends Extension {
-  constructor(options: ExtensionOptions = DEFAULT_OPTIONS) {
+  readonly #toolOptions: JobToolOptions | undefined;
+
+  constructor(options: JobsToolsExtensionOptions = DEFAULT_OPTIONS) {
     super(options);
+    this.#toolOptions = options.toolOptions;
   }
 
   init(api: ExtensionAPI): void {
@@ -23,7 +32,12 @@ export class JobsToolsExtension extends Extension {
       return;
     }
 
-    const tools = createJobTools({ agentContext: api.environment });
+    const tools = createJobTools({
+      agentContext: api.environment,
+      ...(this.#toolOptions === undefined
+        ? {}
+        : { options: this.#toolOptions }),
+    });
     for (const [name, tool] of Object.entries(tools)) {
       api.tool(name, tool);
     }

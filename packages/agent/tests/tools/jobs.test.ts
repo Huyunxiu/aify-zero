@@ -310,6 +310,17 @@ describe("job-kill", () => {
 });
 
 describe(createJobTools, () => {
+  test("rejects wait bounds that cannot bound anything", () => {
+    const jobs = createRegistry();
+
+    expect(() =>
+      createJobTools({
+        agentContext: createContext(jobs),
+        options: { waitTimeoutMs: 5000, maxWaitTimeoutMs: 1000 },
+      })
+    ).toThrow("exceeds");
+  });
+
   test("refuses to build without a registry", () => {
     const context = {
       sessionId: SESSION,
