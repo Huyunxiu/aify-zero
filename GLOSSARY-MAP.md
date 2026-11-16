@@ -19,6 +19,9 @@
   说法显示它们，不另起词。
 - **packages/agent ↔ packages/server**：MCP 的「授权令牌」属于第三方服务器；本机 API
   的「访问令牌」和浏览器的「登录态」是另一回事，不要混用这两个说法。
+- **packages/server ↔ packages/agent**：运行器启动运行，运行在会话里跑；「运行」「收件箱」
+  「待办项」只按 `packages/agent/GLOSSARY.md` 的说法用，「运行器」「暂停」按
+  `packages/server/GLOSSARY.md` 的说法用。收件箱是入站的那一侧，不要和发件箱混用。
 - **packages/db ← packages/server**：server 启动时应用迁移，失败就不提供服务；「迁移」
   「迁移历史」只按 `packages/db/GLOSSARY.md` 的说法用，「基线」在数据库语境下也按它、
   在改动对比语境下按 `packages/ui/GLOSSARY.md` 的说法用。
