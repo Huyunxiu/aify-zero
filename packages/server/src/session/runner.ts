@@ -16,10 +16,7 @@ import { createSessionLifecycle } from "./lifecycle";
 import type { CreateSessionResult } from "./lifecycle";
 
 /** 从 store 里读到的、运行器需要的那几件事。 */
-export type RunnerStore = Pick<
-  AgentStore,
-  "getSessionById" | "listInboxMessages"
->;
+export type RunnerStore = Pick<AgentStore, "getSessionById" | "listInboxItems">;
 
 /** 注册表里运行器需要的那一面：这个会话有没有一条流在跑。 */
 export type RunnerRegistry = {
@@ -28,6 +25,15 @@ export type RunnerRegistry = {
 
 /** 起跑一次运行；`settled` 在运行落定时给出结束状态。 */
 export type StartedRun = { settled: Promise<SessionEndStatus> };
+
+/**
+ * 尝试起跑一条待办项的结果。
+ *
+ * `claimed` 和 `busy` 都不是失败，循环对它们的处理不同：前者说明这一条已经
+ * 归别人了，接着取下一条；后者说明别的东西（压缩）占着锁，停下等它结束。
+ * 用一个名字说出区别，比在调用点认三个裸字符串稳。
+ */
+export type StartOutcome = StartedRun | "claimed" | "busy" | "failed";
 
 export type StartRun = (input: {
   sessionId: string;
@@ -222,7 +228,7 @@ export class SessionRunner {
       }
 
       // 运行起点不看交付边界：残留的 step-boundary 项也在这一次领走。
-      const [item] = await this.#store.listInboxMessages(sessionId);
+      const [item] = await this.#store.listInboxItems(sessionId);
       if (!item) {
         return;
       }
@@ -237,6 +243,7 @@ export class SessionRunner {
         return;
       }
       if (started === "failed") {
+        // 起不来：待办项还在队列里，用户看得见，可以取消或重发。
         return;
       }
 
@@ -296,10 +303,7 @@ export class SessionRunner {
    * （`undefined`）。起不来时停下这一轮的循环——待办项还在收件箱里，用户
    * 看得见，可以取消或重发。继续转只会用同一个错误反复敲库。
    */
-  async #start(
-    sessionId: string,
-    item: InboxItem
-  ): Promise<StartedRun | "claimed" | "busy" | "failed"> {
+  async #start(sessionId: string, item: InboxItem): Promise<StartOutcome> {
     try {
       return await this.#startRun({ sessionId, item });
     } catch (error) {

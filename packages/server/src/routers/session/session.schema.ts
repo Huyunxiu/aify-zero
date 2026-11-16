@@ -14,7 +14,7 @@ export type ForkSessionType = z.infer<typeof forkSessionSchema>;
 
 export const inboxItemIdSchema = z.object({
   sessionId: z.string(),
-  messageId: z.string(),
+  itemId: z.string(),
 });
 
 export type InboxMode = "steering" | "followup";

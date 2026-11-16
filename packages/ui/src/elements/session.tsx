@@ -569,16 +569,16 @@ export function Session({
     },
     apiInbox: {
       list: async ({ sessionId: id }) => {
-        const result = await client.session.listInboxMessages({
+        const result = await client.session.listInboxItems({
           sessionId: id,
         });
         return result.messages;
       },
-      enqueue: async (input) => await client.session.enqueueInboxMessage(input),
-      cancel: async ({ sessionId: id, messageId }) =>
-        await client.session.cancelInboxMessage({ sessionId: id, messageId }),
+      enqueue: async (input) => await client.session.enqueueInboxItem(input),
+      cancel: async ({ sessionId: id, itemId }) =>
+        await client.session.cancelInboxItem({ sessionId: id, itemId }),
       clear: async ({ sessionId: id }) =>
-        await client.session.clearInboxMessages({ sessionId: id }),
+        await client.session.clearInboxItems({ sessionId: id }),
     },
     // 只读的子会话没有 composer：不渲染队列，也不发送。
     allowSend: !readOnly,
@@ -876,8 +876,8 @@ export function Session({
     void sendPending().catch(reportQueueError);
   };
 
-  const handleQueueCancel = (messageId: string) => {
-    void cancelPending(messageId).catch(reportQueueError);
+  const handleQueueCancel = (itemId: string) => {
+    void cancelPending(itemId).catch(reportQueueError);
   };
 
   const handleQueueClear = () => {

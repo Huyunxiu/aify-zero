@@ -94,7 +94,7 @@ const createInbox = (seed: InboxItem[] = []) => {
       return Promise.resolve({ message });
     }),
     cancel: vi.fn<InboxApi["cancel"]>((input) => {
-      messages = messages.filter((message) => message.id !== input.messageId);
+      messages = messages.filter((message) => message.id !== input.itemId);
       return Promise.resolve({ removed: 1 });
     }),
     clear: vi.fn<InboxApi["clear"]>(() => {

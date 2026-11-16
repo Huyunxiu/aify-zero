@@ -107,7 +107,7 @@ class FakeStore implements RunnerStore {
     return Promise.resolve(this.sessions.get(sessionId) ?? null);
   }
 
-  listInboxMessages(
+  listInboxItems(
     sessionId: string,
     options?: { deliverAt?: InboxItem["deliverAt"] }
   ): Promise<InboxItem[]> {

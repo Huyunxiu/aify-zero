@@ -29,26 +29,26 @@ export class AgentInbox {
   }
 
   enqueue(input: EnqueueInboxInput): Promise<InboxItem> {
-    return this.#store.insertInboxMessage(input);
+    return this.#store.insertInboxItem(input);
   }
 
   list(sessionId: string): Promise<InboxItem[]> {
-    return this.#store.listInboxMessages(sessionId);
+    return this.#store.listInboxItems(sessionId);
   }
 
   /** 只取能在下一个步边界交进去的待办项。 */
   listSteering(sessionId: string): Promise<InboxItem[]> {
-    return this.#store.listInboxMessages(sessionId, {
+    return this.#store.listInboxItems(sessionId, {
       deliverAt: "step-boundary",
     });
   }
 
   cancel(sessionId: string, id: string): Promise<number> {
-    return this.#store.deleteInboxMessages(sessionId, [id]);
+    return this.#store.deleteInboxItems(sessionId, [id]);
   }
 
   clear(sessionId: string): Promise<number> {
-    return this.#store.deleteInboxMessages(sessionId);
+    return this.#store.deleteInboxItems(sessionId);
   }
 
   /**

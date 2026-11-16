@@ -23,10 +23,10 @@ import { modelRefSchema } from "../settings/settings.schema";
 import { findConfiguredModel } from "../settings/settings.service";
 import { streamSessionEvents } from "./session.events";
 import {
-  cancelInboxMessage,
-  clearInboxMessages,
-  enqueueInboxMessage,
-  listInboxMessages,
+  cancelInboxItem,
+  clearInboxItems,
+  enqueueInboxItem,
+  listInboxItems,
 } from "./session.inbox";
 import {
   getSession,
@@ -317,8 +317,8 @@ export const session = {
   streamSessionEvents,
   resumeSession,
   stopSession,
-  listInboxMessages,
-  enqueueInboxMessage,
-  cancelInboxMessage,
-  clearInboxMessages,
+  listInboxItems,
+  enqueueInboxItem,
+  cancelInboxItem,
+  clearInboxItems,
 };

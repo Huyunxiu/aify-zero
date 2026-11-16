@@ -169,7 +169,7 @@ export interface AgentStore {
    *
    * 领取成功时行会被删除，所以这里只返回仍然待领取的内容。
    */
-  listInboxMessages(
+  listInboxItems(
     sessionId: string,
     options?: { deliverAt?: DeliverAt }
   ): Promise<InboxItem[]>;
@@ -179,7 +179,7 @@ export interface AgentStore {
    *
    * `(sessionId, dedupeKey)` 冲突时返回已有行，客户端重试不会产生两条。
    */
-  insertInboxMessage(input: EnqueueInboxInput): Promise<InboxItem>;
+  insertInboxItem(input: EnqueueInboxInput): Promise<InboxItem>;
 
   /**
    * 列出收件箱里还有待办项的会话。
@@ -189,10 +189,7 @@ export interface AgentStore {
   listPendingInboxSessionIds(): Promise<string[]>;
 
   /** 删除会话的待办项；`ids` 省略时清空。返回删除的行数。 */
-  deleteInboxMessages(
-    sessionId: string,
-    ids?: readonly string[]
-  ): Promise<number>;
+  deleteInboxItems(sessionId: string, ids?: readonly string[]): Promise<number>;
 
   /**
    * 原子领取 step-boundary 的待办项，并把它们写进指定 assistant turn 的 step 表。

@@ -182,35 +182,33 @@ describe("SQLiteStore", () => {
 
     test("入队按 (sessionId, dedupeKey) 幂等", async () => {
       const input = inboxInput("req-1", "hello");
-      const first = await store.insertInboxMessage(input);
-      const second = await store.insertInboxMessage(input);
+      const first = await store.insertInboxItem(input);
+      const second = await store.insertInboxItem(input);
 
       expect(second.id).toBe(first.id);
 
-      const listed = await store.listInboxMessages(sessionId);
+      const listed = await store.listInboxItems(sessionId);
       expect(listed.map((message) => message.id)).toStrictEqual([first.id]);
     });
 
     test("按 id 删除，空集合不删；省略 ids 时清空", async () => {
-      await store.deleteInboxMessages(sessionId);
-      const kept = await store.insertInboxMessage(inboxInput("req-2", "keep"));
-      const removed = await store.insertInboxMessage(
-        inboxInput("req-3", "drop")
-      );
+      await store.deleteInboxItems(sessionId);
+      const kept = await store.insertInboxItem(inboxInput("req-2", "keep"));
+      const removed = await store.insertInboxItem(inboxInput("req-3", "drop"));
 
-      await expect(store.deleteInboxMessages(sessionId, [])).resolves.toBe(0);
+      await expect(store.deleteInboxItems(sessionId, [])).resolves.toBe(0);
       await expect(
-        store.deleteInboxMessages(sessionId, [removed.id])
+        store.deleteInboxItems(sessionId, [removed.id])
       ).resolves.toBe(1);
-      const remaining = await store.listInboxMessages(sessionId);
+      const remaining = await store.listInboxItems(sessionId);
       expect(remaining.map((message) => message.id)).toStrictEqual([kept.id]);
 
-      await expect(store.deleteInboxMessages(sessionId)).resolves.toBe(1);
-      await expect(store.listInboxMessages(sessionId)).resolves.toHaveLength(0);
+      await expect(store.deleteInboxItems(sessionId)).resolves.toBe(1);
+      await expect(store.listInboxItems(sessionId)).resolves.toHaveLength(0);
     });
 
     test("saveTurn 带 inboxId 时认领消息；重复领取抛错", async () => {
-      const message = await store.insertInboxMessage(
+      const message = await store.insertInboxItem(
         inboxInput("req-4", "claim me")
       );
       const turn: TurnWrite = {
@@ -225,7 +223,7 @@ describe("SQLiteStore", () => {
       await expect(store.saveTurn(turn, { inboxId: message.id })).resolves.toBe(
         1
       );
-      await expect(store.listInboxMessages(sessionId)).resolves.toHaveLength(0);
+      await expect(store.listInboxItems(sessionId)).resolves.toHaveLength(0);
 
       await expect(
         store.saveTurn(turn, { inboxId: message.id })

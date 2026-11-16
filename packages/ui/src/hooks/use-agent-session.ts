@@ -36,7 +36,7 @@ export type InboxApi = {
     modelEffort?: string;
     projectId?: string;
   }) => Promise<{ message: InboxItem }>;
-  cancel: (input: { sessionId: string; messageId: string }) => Promise<unknown>;
+  cancel: (input: { sessionId: string; itemId: string }) => Promise<unknown>;
   clear: (input: { sessionId: string }) => Promise<unknown>;
 };
 
@@ -142,7 +142,7 @@ export type UseAgentSessionResponse = {
    * 服务端的运行器做。
    */
   sendPending: () => Promise<void>;
-  cancelPending: (messageId: string) => Promise<void>;
+  cancelPending: (itemId: string) => Promise<void>;
   clearPending: () => Promise<void>;
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
   /**
@@ -236,7 +236,7 @@ type AgentSessionStore = {
   getInbox: () => InboxItem[];
   submit: (options: SubmitOptions) => Promise<void>;
   sendPending: () => Promise<void>;
-  cancelPending: (messageId: string) => Promise<void>;
+  cancelPending: (itemId: string) => Promise<void>;
   clearPending: () => Promise<void>;
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
   addToolApprovalResponse: (
@@ -472,13 +472,13 @@ export function createAgentSessionStore({
     notify();
   };
 
-  const removeInboxItem = (messageId: string): void => {
-    if (!inbox.some((item) => item.id === messageId)) {
+  const removeInboxItem = (itemId: string): void => {
+    if (!inbox.some((item) => item.id === itemId)) {
       return;
     }
 
     bumpInbox();
-    inbox = inbox.filter((item) => item.id !== messageId);
+    inbox = inbox.filter((item) => item.id !== itemId);
     notify();
   };
 
@@ -829,21 +829,21 @@ export function createAgentSessionStore({
   };
 
   /** 队列里这一条被取消了，它的 user 回合也不会再开始。 */
-  const forgetPending = (messageId: string): void => {
-    const item = inbox.find((entry) => entry.id === messageId);
+  const forgetPending = (itemId: string): void => {
+    const item = inbox.find((entry) => entry.id === itemId);
     if (item) {
       pendingTurns.delete(item.content.id);
     }
   };
 
-  const cancelPending = async (messageId: string): Promise<void> => {
+  const cancelPending = async (itemId: string): Promise<void> => {
     if (!apiInbox) {
       return;
     }
 
-    await apiInbox.cancel({ sessionId: id, messageId });
-    forgetPending(messageId);
-    removeInboxItem(messageId);
+    await apiInbox.cancel({ sessionId: id, itemId });
+    forgetPending(itemId);
+    removeInboxItem(itemId);
   };
 
   const clearPending = async (): Promise<void> => {

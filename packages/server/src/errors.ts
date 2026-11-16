@@ -86,7 +86,7 @@ export const ErrorMap = {
   INBOX_ITEM_NOT_FOUND: {
     status: 409,
     message: "This queued item was already claimed or removed.",
-    data: z.object({ sessionId: z.string(), messageId: z.string() }),
+    data: z.object({ sessionId: z.string(), itemId: z.string() }),
   },
   SESSION_BUSY: {
     status: 409,

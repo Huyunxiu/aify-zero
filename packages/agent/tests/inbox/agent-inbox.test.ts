@@ -50,7 +50,7 @@ class FakeStore {
   #nextSeq = 0;
   #nextId = 0;
 
-  insertInboxMessage(input: EnqueueInboxInput): Promise<InboxItem> {
+  insertInboxItem(input: EnqueueInboxInput): Promise<InboxItem> {
     const existing = this.messages.find(
       (message) =>
         message.sessionId === input.sessionId &&
@@ -78,7 +78,7 @@ class FakeStore {
     return Promise.resolve(message);
   }
 
-  listInboxMessages(
+  listInboxItems(
     sessionId: string,
     options?: { deliverAt?: DeliverAt }
   ): Promise<InboxItem[]> {
@@ -94,7 +94,7 @@ class FakeStore {
     );
   }
 
-  deleteInboxMessages(
+  deleteInboxItems(
     sessionId: string,
     ids?: readonly string[]
   ): Promise<number> {

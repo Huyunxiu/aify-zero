@@ -11,7 +11,7 @@ export type InboxDockProps = {
   /** 回合运行中：不能开始下一条，但仍可移除队列项。 */
   busy: boolean;
   onSend: () => void;
-  onCancel: (messageId: string) => void;
+  onCancel: (itemId: string) => void;
   onClear: () => void;
 };
 

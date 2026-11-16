@@ -16,7 +16,7 @@ import type { InboxMode } from "./session.schema";
  *
  * 已领取的行会被删除，所以这里只返回仍然排队的项；客户端刷新后据此恢复队列条。
  */
-export const listInboxMessages = publicProcedure
+export const listInboxItems = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/inbox" })
   .input(z.object({ sessionId: z.string() }))
   .handler(async ({ input }) => {
@@ -31,7 +31,7 @@ export const listInboxMessages = publicProcedure
  * 空闲、等待审批、手工压缩都排到下一次运行。同 (sessionId, dedupeKey) 的重试
  * 返回已有行，不会重复入队。
  */
-export const enqueueInboxMessage = publicProcedure
+export const enqueueInboxItem = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/inbox" })
   .errors({ SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND })
   .input(
@@ -83,19 +83,19 @@ export const enqueueInboxMessage = publicProcedure
   });
 
 /** 移除一条待办项。 */
-export const cancelInboxMessage = publicProcedure
+export const cancelInboxItem = publicProcedure
   .route({
     method: "DELETE",
-    path: "/sessions/{sessionId}/inbox/{messageId}",
+    path: "/sessions/{sessionId}/inbox/{itemId}",
   })
   .input(inboxItemIdSchema)
   .handler(async ({ input }) => {
     const inbox = new AgentInbox(new SQLiteStore());
-    return { removed: await inbox.cancel(input.sessionId, input.messageId) };
+    return { removed: await inbox.cancel(input.sessionId, input.itemId) };
   });
 
 /** 清空会话的待办项。 */
-export const clearInboxMessages = publicProcedure
+export const clearInboxItems = publicProcedure
   .route({ method: "DELETE", path: "/sessions/{sessionId}/inbox" })
   .input(z.object({ sessionId: z.string() }))
   .handler(async ({ input }) => {

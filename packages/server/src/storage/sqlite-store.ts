@@ -435,7 +435,7 @@ export class SQLiteStore implements AgentStore {
     return result.rowsAffected;
   }
 
-  async listInboxMessages(
+  async listInboxItems(
     sessionId: string,
     options?: { deliverAt?: DeliverAt }
   ): Promise<InboxItem[]> {
@@ -454,7 +454,7 @@ export class SQLiteStore implements AgentStore {
     return rows.map(toInboxItem);
   }
 
-  async insertInboxMessage(input: EnqueueInboxInput): Promise<InboxItem> {
+  async insertInboxItem(input: EnqueueInboxInput): Promise<InboxItem> {
     // 冲突时把原值写回同一行再 RETURNING：一次往返就能拿到已有行，客户端
     // 重试和并发提交都只会留下一条。
     const [row] = await db
@@ -489,7 +489,7 @@ export class SQLiteStore implements AgentStore {
   }
 
   /** 删除会话的待办项；`ids` 省略时清空。返回删除的行数。 */
-  async deleteInboxMessages(
+  async deleteInboxItems(
     sessionId: string,
     ids?: readonly string[]
   ): Promise<number> {
