@@ -29,6 +29,7 @@
   "NOTHING_TO_FORK": "There is nothing to fork in this chat yet.",
   "MESSAGE_NOT_FOUND": "The requested message was not found in this chat.",
   "INBOX_ITEM_NOT_FOUND": "This queued item was already claimed or removed.",
+  "SESSION_NOT_RUNNABLE": "This chat is not advanced by the runner and cannot start from the inbox.",
   "SESSION_BUSY": "This chat is busy. Wait for the current turn to finish and try again.",
   "NOTHING_TO_COMPACT": "There is not enough history to compact yet.",
   "COMPACTION_FAILED": "The context could not be compacted. The history is unchanged.",

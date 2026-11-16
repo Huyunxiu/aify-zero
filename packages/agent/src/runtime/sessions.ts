@@ -19,7 +19,7 @@ import type { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
 import { generateSessionId } from "../utils/id-util";
 import { AgentRunnerError } from "./errors";
-import type { BuildAgentInput, RunStart } from "./types";
+import type { BuildAgentInput, RunStart, StartedRun } from "./types";
 
 export type CreateInput = {
   sessionId: string;
@@ -31,10 +31,7 @@ export type CreateInput = {
   inboxId?: string;
 };
 
-export type StartFromInboxResult = {
-  activeStreamId: string;
-  settled: Promise<SessionEndStatus>;
-};
+export type StartFromInboxResult = StartedRun;
 
 export type CompactInput = {
   sessionId: string;
@@ -160,7 +157,7 @@ export class SessionLifecycle {
   }: {
     sessionId: string;
     item: InboxItem;
-  }): Promise<StartFromInboxResult> {
+  }): Promise<StartedRun> {
     const { store } = this.#deps;
 
     const session = await store.getSessionById(sessionId);
@@ -169,9 +166,9 @@ export class SessionLifecycle {
     }
     if (session.kind !== "main") {
       // 子会话的运行归创建它的工具调用，收件箱不是它的入口。
-      throw new AgentRunnerError("SESSION_BUSY", {
+      throw new AgentRunnerError("SESSION_NOT_RUNNABLE", {
         sessionId,
-        reason: "running",
+        kind: session.kind,
       });
     }
 
@@ -212,7 +209,7 @@ export class SessionLifecycle {
     projectId?: string;
     inboxId?: string;
     turnId?: string;
-  }): Promise<StartFromInboxResult> {
+  }): Promise<StartedRun> {
     const { sessionId, turns, model, effort, projectId, inboxId, turnId } =
       input;
     const { store, registry, buildAgent } = this.#deps;
@@ -266,7 +263,7 @@ export class SessionLifecycle {
     );
     await store.setActiveStream(sessionId, activeStreamId);
 
-    return { activeStreamId, settled };
+    return { status: "running", activeStreamId, settled };
   }
 
   /** 这个会话上已经有一条流在跑（压缩也算）就拒绝。 */
@@ -281,7 +278,7 @@ export class SessionLifecycle {
   }
 
   /**
-   * 停掉会话正在跑的回合。
+   * 停掉会话正在跑的运行。
    *
    * 没有运行中的流时也清理残留的 `activeStreamId` 和子会话行，返回
    * `aborted: false`。

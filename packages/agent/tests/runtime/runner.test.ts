@@ -333,3 +333,92 @@ describe("AgentRunner", () => {
     await runnerB.shutdown();
   });
 });
+
+describe("AgentRunner pause semantics", () => {
+  test("wake 不清暂停，wakeAfterPause 才清", async () => {
+    const store = new FakeStore([session("s1")]);
+    store.claimOnRead = false;
+    let attempts = 0;
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: () => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(new Error("model is not configured"))
+          : Promise.resolve(fakeAgent());
+      },
+      logger: { warn: () => {} },
+    });
+
+    await runner.enqueue({
+      sessionId: "s1",
+      turn: userTurn("turn-1"),
+      model,
+    });
+
+    await vi.waitFor(() => {
+      expect(runner.state().paused).toStrictEqual([
+        { sessionId: "s1", reason: "error" },
+      ]);
+    });
+
+    runner.wake("s1");
+    await vi.waitFor(() => {
+      expect(runner.state().paused).toHaveLength(1);
+    });
+    expect(attempts).toBe(1);
+
+    store.claimOnRead = true;
+    runner.wakeAfterPause("s1");
+    await vi.waitFor(() => {
+      expect(attempts).toBe(2);
+      expect(runner.state().paused).toStrictEqual([]);
+    });
+
+    await runner.shutdown();
+  });
+
+  test("stop 清掉残留的 activeStreamId", async () => {
+    const store = new FakeStore([session("s1")]);
+    store.sessions.get("s1")!.activeStreamId = "old-stream";
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: () => Promise.reject(new Error("must not build")),
+    });
+
+    await expect(runner.stop("s1")).resolves.toStrictEqual({ aborted: false });
+    expect(store.cleared).toStrictEqual([
+      { sessionId: "s1", streamId: "old-stream", status: "canceled" },
+    ]);
+  });
+});
+
+describe("AgentRunner wait_review", () => {
+  test("等待审批时不暂停，也不继续取件", async () => {
+    const store = new FakeStore([session("s1")]);
+    store.claimOnRead = false;
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: () =>
+        Promise.resolve(
+          fakeAgent((options) => {
+            void options.onFinish("wait_review");
+          })
+        ),
+    });
+
+    await runner.enqueue({
+      sessionId: "s1",
+      turn: userTurn("turn-1"),
+      model,
+    });
+
+    await vi.waitFor(() => {
+      expect(runner.state().running).toHaveLength(0);
+    });
+    expect(runner.state().paused).toStrictEqual([]);
+    expect(store.items).toHaveLength(1);
+
+    await runner.shutdown();
+  });
+});

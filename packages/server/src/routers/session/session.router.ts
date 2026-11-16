@@ -6,14 +6,17 @@ import type {
   AgentUserTurn,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
-import { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
 import { agentRunner } from "../../runtime";
-import { acceptedEffort, unsupportedInput } from "../../session/model-rules";
+import {
+  acceptedEffort,
+  requestedEffort,
+  unsupportedInput,
+} from "../../session/model-rules";
 import { modelRefSchema } from "../settings/settings.schema";
 import { findConfiguredModel } from "../settings/settings.service";
 import { streamSessionEvents } from "./session.events";
@@ -51,6 +54,14 @@ function toApiError(error: unknown): never {
               | "wait_review"
               | "compacting"
               | undefined,
+          },
+        });
+      }
+      case "SESSION_NOT_RUNNABLE": {
+        throw new ApiError("SESSION_NOT_RUNNABLE", {
+          data: {
+            sessionId: error.data?.sessionId ?? "",
+            kind: error.data?.kind === "subagent" ? "subagent" : "main",
           },
         });
       }
@@ -115,12 +126,7 @@ const createSession = publicProcedure
       throw new ApiError("MODEL_NOT_FOUND", { data: model });
     }
 
-    const effort = acceptedEffort(
-      configured,
-      Object.values(ModelEffort).includes(modelEffort as ModelEffort)
-        ? (modelEffort as ModelEffort)
-        : undefined
-    );
+    const effort = acceptedEffort(configured, requestedEffort(modelEffort));
 
     // 审批恢复先写回答复；它不起新的 user 回合，所以不走收件箱。
     if (approvals?.length) {
@@ -170,7 +176,7 @@ const createSession = publicProcedure
       });
     } else {
       // 这一条已经由收件箱写入了；只需要清掉暂停、叫醒队列。
-      agentRunner.wake(sessionId);
+      agentRunner.wakeAfterPause(sessionId);
     }
 
     return { accepted: true };
@@ -187,7 +193,7 @@ export const resumeSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/resume" })
   .input(z.object({ sessionId: z.string() }))
   .handler(({ input }) => {
-    agentRunner.wake(input.sessionId);
+    agentRunner.wakeAfterPause(input.sessionId);
 
     return { accepted: true };
   });

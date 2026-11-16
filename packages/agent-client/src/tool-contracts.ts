@@ -2,6 +2,9 @@ import type { Tool } from "ai";
 
 import type { QuestionnaireAnswers } from "./questionnaire";
 
+/** 一个工具怎么让模型看见。 */
+export type ToolExposure = "direct" | "deferred";
+
 /**
  * 工具结果的公共信封。
  *
@@ -275,7 +278,7 @@ export type CallToolInput = {
  * 会话里所有工具的名字与它们的入参/出参形状。
  *
  * 这是协议类型：界面渲染工具 part 时读它，运行时不依赖它。新增工具时，这里
- * 和工具实现要一起改；`tests/tool-contracts.test.ts` 只检查名字集合。
+ * 和工具实现要一起改。
  */
 export type AgentToolSet = {
   "delete-file": Tool<DeleteFileInput, DeleteFileOutput>;

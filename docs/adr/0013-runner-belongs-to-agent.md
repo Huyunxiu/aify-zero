@@ -33,10 +33,12 @@ server 又反过来深引用 agent 的内部（`AgentSession`、`STREAM_REGISTRY
 - 启动恢复从 `serve.ts` 移到 `AgentRunner.start()`。它永不 reject：恢复失败进报告和
   日志，下一次启动再试；这和原来的启动行为一致。
 - 测试从 server 搬到 agent。server 只保留 HTTP、store 适配器和传输层测试；agent 用
-  假 store 和假 `buildAgent` 验证 enqueue → 起跑 → 落定。
+  假 store 和假 `buildAgent` 验证 enqueue → 起跑 → 落定。原来覆盖 resume / stop /
+  shutdown / busy / claimed 的 14 个用例没有逐条搬过来；公开 API 测试覆盖主路径，
+  其余路径待补。
 - `运行器`、`暂停` 的词条从 `packages/server/GLOSSARY.md` 迁到
-  `packages/agent/GLOSSARY.md`；`运行器` 不再 Avoid `worker` 之外的 `运行时`，
-  因为 `AgentRunner` 不是 `AgentRuntime`。
+  `packages/agent/GLOSSARY.md`；`运行器` 仍然 Avoid `运行时`，因为 `AgentRunner`
+  不是 `AgentRuntime`，不引入第二个词。
 - 运行器仍是单进程。收件箱、暂停和唤醒都在内存里；跨进程互斥不在这个决定的范围。
 - `fork` 不是运行，但归运行器管。这是选“一个对象”的代价：`运行器` 的词义比
   `SessionRunner` 宽，换来一个入口。

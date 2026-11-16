@@ -9,7 +9,6 @@ import type {
 } from "../extensions/capabilities";
 import type { AgentStore } from "../storage";
 import type { StreamEventRegistry } from "../stream-registry";
-import { STREAM_REGISTRY } from "../stream-registry";
 import type { AgentToolSet } from "../types";
 import { createSubagent, readSubagentResult } from "./create";
 import type { SubagentParent } from "./create";
@@ -17,8 +16,8 @@ import type { SubagentParent } from "./create";
 export interface SubagentFactoryOptions {
   agent: Agent;
   store: AgentStore;
-  /** 运行器的注册表；省略时用进程级单例（测试和旧调用方）。 */
-  registry?: StreamEventRegistry<AgentToolSet>;
+  /** 运行器的注册表；子会话必须复用它。 */
+  registry: StreamEventRegistry<AgentToolSet>;
 }
 
 /**
@@ -30,7 +29,7 @@ export interface SubagentFactoryOptions {
 export function createSubagentFactory({
   agent,
   store,
-  registry = STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>,
+  registry,
 }: SubagentFactoryOptions): SubagentFactory {
   return {
     start: (request) => startSubagent(agent, store, registry, request),

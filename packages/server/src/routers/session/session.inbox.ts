@@ -1,14 +1,15 @@
 import { type } from "@orpc/server";
 import type { InboxMode } from "@workspace/agent";
 import type { AgentUserTurn } from "@workspace/agent-client";
-import { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
 import { agentRunner } from "../../runtime";
+import { acceptedEffort, requestedEffort } from "../../session/model-rules";
 import { SQLiteStore } from "../../storage/sqlite-store";
+import { findConfiguredModel } from "../settings/settings.service";
 import { inboxItemIdSchema } from "./session.schema";
 
 /**
@@ -33,7 +34,10 @@ export const listInboxItems = publicProcedure
  */
 export const enqueueInboxItem = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/inbox" })
-  .errors({ SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND })
+  .errors({
+    SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND,
+    MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+  })
   .input(
     type<{
       sessionId: string;
@@ -54,11 +58,15 @@ export const enqueueInboxItem = publicProcedure
       });
     }
 
-    const effort = Object.values(ModelEffort).includes(
-      input.modelEffort as ModelEffort
-    )
-      ? (input.modelEffort as ModelEffort)
-      : undefined;
+    const configured = await findConfiguredModel(input.model);
+    if (!configured) {
+      throw new ApiError("MODEL_NOT_FOUND", { data: input.model });
+    }
+
+    const effort = acceptedEffort(
+      configured,
+      requestedEffort(input.modelEffort)
+    );
     const projectId = session.projectId ?? input.projectId ?? undefined;
 
     // 入队就算投递成功：运行器会在空闲时自己开始。页面随后关掉也不影响这一条。

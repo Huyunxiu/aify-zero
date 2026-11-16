@@ -14,7 +14,8 @@
     "@workspace/shared": "workspace:*",
     "ai": "catalog:",
     "nanoid": "catalog:",
-    "uuid": "catalog:"
+    "uuid": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/json-schema": "catalog:",

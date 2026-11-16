@@ -39,7 +39,6 @@
     "@tiptap/starter-kit": "catalog:",
     "@tiptap/static-renderer": "catalog:",
     "@tiptap/suggestion": "catalog:",
-    "@workspace/agent": "workspace:*",
     "@workspace/agent-client": "workspace:*",
     "@workspace/server": "workspace:*",
     "@workspace/shared": "workspace:*",

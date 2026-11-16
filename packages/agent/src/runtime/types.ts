@@ -37,8 +37,11 @@ export type RunnerStartReport = {
   failures: { sessionId?: string; error: string }[];
 };
 
-/** 暂停的原因：结束状态里除了 `done` 的那两个。 */
-export type PauseReason = Exclude<SessionEndStatus, "done">;
+/** 运行器会停下来的两个终态。 */
+export type PauseReason = "error" | "canceled";
+
+/** 一次已经开始的运行。`RunStart` 的 running 分支是它的来源。 */
+export type StartedRun = Extract<RunStart, { status: "running" }>;
 
 export type RunnerState = {
   running: string[];

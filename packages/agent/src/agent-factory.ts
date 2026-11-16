@@ -24,6 +24,7 @@ import type { JobRegistry } from "./jobs/registry";
 import type { ModelTargetResolver } from "./kernel/model-gateway";
 import type { AgentStore } from "./storage";
 import type { StreamEventRegistry } from "./stream-registry";
+import { STREAM_REGISTRY } from "./stream-registry";
 import { appendSubagentPrompt } from "./subagent/definitions";
 import { createSubagentFactory } from "./subagent/factory";
 import type { ToolApprovalPattern } from "./tool-approval";
@@ -139,9 +140,9 @@ export async function createSessionAgent(
       createSubagentFactory({
         agent: owner,
         store: options.store,
-        ...(options.streamRegistry === undefined
-          ? {}
-          : { registry: options.streamRegistry }),
+        registry:
+          options.streamRegistry ??
+          (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
       }),
   });
 

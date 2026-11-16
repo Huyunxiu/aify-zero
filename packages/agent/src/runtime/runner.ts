@@ -27,6 +27,7 @@ import type {
   EnqueueInput,
   PauseReason,
   ResumeInput,
+  StartedRun,
   RunnerStartReport,
   RunnerState,
   RunStart,
@@ -42,8 +43,6 @@ export type AgentRunnerOptions = {
 
 /** 起跑一条待办项的结果。 */
 export type StartOutcome = StartedRun | "claimed" | "busy" | "failed";
-
-type StartedRun = { settled: Promise<SessionEndStatus> };
 
 /**
  * 会话的常驻运行器。
@@ -105,14 +104,14 @@ export class AgentRunner {
     try {
       recovered = await recoverInterruptedRuns(this.#store);
     } catch (error) {
-      failures.push({ error: getErrorMessage(error) ?? "unknown error" });
+      failures.push(failureOf(error));
     }
 
     let pending: string[] = [];
     try {
       pending = await this.#store.listPendingInboxSessionIds();
     } catch (error) {
-      failures.push({ error: getErrorMessage(error) ?? "unknown error" });
+      failures.push(failureOf(error));
     }
 
     for (const sessionId of pending) {
@@ -169,6 +168,7 @@ export class AgentRunner {
       },
     });
 
+    this.#paused.delete(input.sessionId);
     this.wake(input.sessionId);
 
     return item;
@@ -201,16 +201,22 @@ export class AgentRunner {
   /**
    * 登记一次唤醒；不阻塞调用方，也不保证马上有运行开始。
    *
-   * 它同时清掉暂停：一条新的事件到了，说明用户或外部系统想让它继续。
+   * 它不清暂停：暂停是对自动推进的刹车，只有新消息或用户明确“继续”才解除。
+   * 压缩结束、定时器到点这类推进不能替用户做这个决定。
    */
   wake(sessionId: string): void {
     if (this.#stopped) {
       return;
     }
 
-    this.#paused.delete(sessionId);
     this.#wakeups.add(sessionId);
     this.#schedule();
+  }
+
+  /** 清掉暂停并唤醒；用户明确要求继续时用它。 */
+  wakeAfterPause(sessionId: string): void {
+    this.#paused.delete(sessionId);
+    this.wake(sessionId);
   }
 
   /** 一条会话的长连接；跨运行，读到 `run.end` 不关闭。 */
@@ -233,7 +239,7 @@ export class AgentRunner {
     };
   }
 
-  /** 停掉会话正在跑的回合；没有运行时也清理残留标记。 */
+  /** 停掉会话正在跑的运行；没有运行时也清理残留标记。 */
   async stop(sessionId: string): Promise<{ aborted: boolean }> {
     return await this.#sessions.stop(sessionId);
   }
@@ -358,12 +364,12 @@ export class AgentRunner {
       return false;
     }
 
-    if (status !== "done") {
-      this.#paused.set(sessionId, status);
-      return false;
+    if (status === "done") {
+      return true;
     }
 
-    return true;
+    this.#paused.set(sessionId, status === "canceled" ? "canceled" : "error");
+    return false;
   }
 
   /**
@@ -394,8 +400,7 @@ export class AgentRunner {
    */
   async #start(sessionId: string, item: InboxItem): Promise<StartOutcome> {
     try {
-      const started = await this.#sessions.startFromInbox({ sessionId, item });
-      return { settled: started.settled };
+      return await this.#sessions.startFromInbox({ sessionId, item });
     } catch (error) {
       if (isClaimedElsewhere(error)) {
         return "claimed";
@@ -417,6 +422,10 @@ export function createAgentRunner(options: AgentRunnerOptions): AgentRunner {
   return new AgentRunner(options);
 }
 
+function failureOf(error: unknown): { error: string } {
+  return { error: getErrorMessage(error) ?? "unknown error" };
+}
+
 /** 会话上已经有一条运行占着锁。 */
 function isBusy(error: unknown): boolean {
   return error instanceof AgentRunnerError && error.code === "SESSION_BUSY";
@@ -424,10 +433,5 @@ function isBusy(error: unknown): boolean {
 
 /** 这条待办项已经被另一个调用者领走。 */
 function isClaimedElsewhere(error: unknown): boolean {
-  return (
-    error instanceof InboxItemNotFoundError ||
-    (typeof error === "object" &&
-      error !== null &&
-      (error as { name?: unknown }).name === "InboxItemNotFoundError")
-  );
+  return error instanceof InboxItemNotFoundError;
 }

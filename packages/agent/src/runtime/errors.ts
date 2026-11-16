@@ -2,6 +2,7 @@
 export type AgentRunnerErrorCode =
   | "SESSION_NOT_FOUND"
   | "SESSION_BUSY"
+  | "SESSION_NOT_RUNNABLE"
   | "MESSAGE_NOT_FOUND"
   | "NOTHING_TO_FORK";
 

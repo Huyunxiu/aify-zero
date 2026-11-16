@@ -264,3 +264,24 @@ describe("SessionLifecycle.startFromInbox", () => {
     await expect(settled).resolves.toBe("wait_review");
   });
 });
+
+describe("SessionLifecycle startFromInbox guards", () => {
+  test("子会话不能从收件箱起跑", async () => {
+    const lifecycle = new SessionLifecycle({
+      store: asStore({
+        getSessionById: () => Promise.resolve(sessionRow({ kind: "subagent" })),
+      }),
+      registry: {
+        getStreamEntryBySession: () => {},
+      } as never,
+      buildAgent: () => Promise.reject(new Error("must not build")),
+    });
+
+    await expect(
+      lifecycle.startFromInbox({ sessionId: "s1", item: inboxItem("s1") })
+    ).rejects.toMatchObject({
+      name: "AgentRunnerError",
+      code: "SESSION_NOT_RUNNABLE",
+    });
+  });
+});

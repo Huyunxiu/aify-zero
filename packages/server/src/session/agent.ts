@@ -9,13 +9,7 @@ import {
   McpExtension,
   SkillExtension,
 } from "@workspace/agent";
-import type {
-  Agent,
-  AgentSession,
-  AgentToolSet,
-  JobRegistry,
-  StreamEventRegistry,
-} from "@workspace/agent";
+import type { Agent, BuildAgentInput, JobRegistry } from "@workspace/agent";
 import type { ModelEffort } from "@workspace/shared/constants";
 
 import { getSessionDir } from "../config";
@@ -36,10 +30,10 @@ export interface BuildSessionAgentInput {
   configured: ConfiguredModel;
   effort?: ModelEffort;
   projectId?: string;
-  session: AgentSession;
+  session: BuildAgentInput["session"];
   store: SQLiteStore;
   /** 运行器实例的注册表；子会话必须复用它。 */
-  streams: StreamEventRegistry<AgentToolSet>;
+  streams: BuildAgentInput["streams"];
   jobs?: JobRegistry;
 }
 
