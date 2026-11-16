@@ -405,4 +405,38 @@ describe("createAgentSessionStore queue", () => {
 
     events.close();
   });
+
+  test("reads the session again after the page came back", async () => {
+    const opened: ReturnType<typeof sessionEvents>[] = [];
+    const store = storeOf({
+      apiInbox: createInbox().api,
+      apiEvents: () => {
+        const events = sessionEvents();
+        opened.push(events);
+
+        return Promise.resolve(events.stream);
+      },
+      apiSend: () => Promise.resolve(),
+    });
+
+    await vi.waitFor(() => expect(opened).toHaveLength(1));
+
+    // 页面卸载：连接停掉。开发期的 StrictMode 挂载时就会先走这一步。
+    store.destroy();
+    // 页面回来：必须再开一条，否则发送之后没有任何事件到达。
+    store.start();
+    await vi.waitFor(() => expect(opened).toHaveLength(2));
+
+    opened[1]!.runStart("run-1", 1);
+    opened[1]!.runEvent("run-1", 2, {
+      type: "turn.start",
+      turnId: "turn-1",
+      turnType: "assistant",
+      createdAt: 1,
+    });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
+    opened[1]!.close();
+  });
 });
