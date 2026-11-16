@@ -3,8 +3,9 @@ import type {
   AgentAssistantTurn,
   AgentStaticToolPart,
   AgentTurn,
+  SessionStreamEvent,
 } from "@workspace/agent-client";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { createAgentSessionStore } from "../src/hooks/use-agent-session";
 
@@ -47,15 +48,6 @@ const heldTurns = (): AgentTurn<AgentToolSet>[] =>
     },
   ] as unknown as AgentTurn<AgentToolSet>[];
 
-/** A stream with nothing on it, so a send settles as a request that produced
- * no events rather than one that never got a stream. */
-const emptyStream = (): ReadableStream =>
-  new ReadableStream({
-    start(controller) {
-      controller.close();
-    },
-  });
-
 /** The one held call the fixture put in the transcript, read back so a case can
  * see what the answer did to it. */
 const heldPart = (
@@ -65,15 +57,34 @@ const heldPart = (
   return turn.content[0]!.content[0] as AgentStaticToolPart<AgentToolSet>;
 };
 
+/**
+ * 会话事件流的测试替身：测试按运行发事件，和服务端发的一样。
+ */
+const sessionEvents = () => {
+  let controller!: ReadableStreamDefaultController<unknown>;
+  const stream = new ReadableStream({
+    start(controllerArg) {
+      controller = controllerArg;
+    },
+  });
+
+  return {
+    close: () => controller.close(),
+    send: (event: SessionStreamEvent<AgentToolSet>) =>
+      controller.enqueue(event),
+    stream,
+  };
+};
+
 describe("addToolApprovalResponse", () => {
   test("answers the part on screen and sends the same answer", async () => {
     const calls: Record<string, unknown>[] = [];
 
     const store = createAgentSessionStore({
       id: "session-1",
-      apiStream: (options) => {
+      apiSend: (options) => {
         calls.push(options);
-        return Promise.resolve(emptyStream());
+        return Promise.resolve();
       },
       throttleMs: 0,
       turns: heldTurns(),
@@ -122,9 +133,9 @@ describe("addToolApprovalResponse", () => {
 
     const store = createAgentSessionStore({
       id: "session-1",
-      apiStream: (options) => {
+      apiSend: (options) => {
         calls.push(options);
-        return Promise.resolve(emptyStream());
+        return Promise.resolve();
       },
       throttleMs: 0,
       turns: heldTurns(),
@@ -143,84 +154,133 @@ describe("addToolApprovalResponse", () => {
   });
 });
 
-/**
- * A stream that emits one `turn.start` and then hangs until it is aborted — the
- * shape of a turn still being produced when the user stops it.
- */
-const pendingTurnStream = (abortSignal: AbortSignal): ReadableStream =>
-  new ReadableStream({
-    start(controller) {
-      controller.enqueue({
-        type: "turn.start",
-        turnId: "turn-1",
-        turnType: "assistant",
-        createdAt: Date.now(),
-      });
-      abortSignal.addEventListener("abort", () => {
-        controller.error(new DOMException("Aborted", "AbortError"));
-      });
-    },
-  });
+describe("session events", () => {
+  test("reads a run as one stretch of the session", async () => {
+    const events = sessionEvents();
 
-describe("isReading", () => {
-  test("is true only while a stream is being read", async () => {
     const store = createAgentSessionStore({
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => Promise.resolve(),
       id: "session-1",
-      apiStream: ({ abortSignal }) =>
-        Promise.resolve(pendingTurnStream(abortSignal)),
-      apiStop: () => Promise.resolve(),
       throttleMs: 0,
       turns: [],
       emit: () => {},
     });
 
-    expect(store.isReading()).toBeFalsy();
+    await flush();
 
-    const send = store.sendTurns({
+    events.send({ type: "ready", epoch: "epoch-1", seq: 0 });
+    events.send({ seq: 1, streamId: "run-1", type: "run.start" });
+    events.send({
+      event: {
+        type: "turn.start",
+        turnId: "turn-1",
+        turnType: "assistant",
+        createdAt: 1,
+      },
+      seq: 2,
+      streamId: "run-1",
+      type: "run.event",
+    });
+    events.send({
+      event: {
+        type: "text.start",
+        id: "part-1",
+        turnId: "turn-1",
+        stepId: "step-1",
+        createdAt: 1,
+      },
+      seq: 3,
+      streamId: "run-1",
+      type: "run.event",
+    });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+    expect(store.getTurns()).toHaveLength(1);
+
+    events.send({ seq: 4, streamId: "run-1", type: "run.end" });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("ready"));
+    expect(store.getTurns()[0]?.status).not.toBe("streaming");
+
+    events.close();
+  });
+
+  test("a run that fails leaves the session in the error state", async () => {
+    const events = sessionEvents();
+
+    const store = createAgentSessionStore({
+      apiEvents: () => Promise.resolve(events.stream),
+      id: "session-1",
+      throttleMs: 0,
       turns: [],
-      abortSignal: new AbortController().signal,
+      emit: () => {},
     });
 
     await flush();
-    expect(store.isReading()).toBeTruthy();
 
-    await store.stop();
-    await send;
-    expect(store.isReading()).toBeFalsy();
+    events.send({ seq: 1, streamId: "run-1", type: "run.start" });
+    events.send({
+      failure: "model exploded",
+      seq: 2,
+      streamId: "run-1",
+      type: "run.end",
+    });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("error"));
+    expect(store.getError()?.message).toBe("model exploded");
+
+    events.close();
   });
 });
 
 describe("stop", () => {
-  test("aborts the local read, tells the server, and settles the turn", async () => {
+  test("settles the run and tells the server, and keeps reading the session", async () => {
     const stops: { sessionId: string }[] = [];
+    const events = sessionEvents();
 
     const store = createAgentSessionStore({
-      id: "session-1",
-      apiStream: ({ abortSignal }) =>
-        Promise.resolve(pendingTurnStream(abortSignal)),
+      apiEvents: () => Promise.resolve(events.stream),
       apiStop: (options) => {
         stops.push(options);
         return Promise.resolve();
       },
+      id: "session-1",
       throttleMs: 0,
       turns: [],
       emit: () => {},
     });
 
-    const send = store.sendTurns({
-      turns: [],
-      abortSignal: new AbortController().signal,
+    await flush();
+
+    events.send({ seq: 1, streamId: "run-1", type: "run.start" });
+    events.send({
+      event: {
+        type: "turn.start",
+        turnId: "turn-1",
+        turnType: "assistant",
+        createdAt: 1,
+      },
+      seq: 2,
+      streamId: "run-1",
+      type: "run.event",
     });
 
-    await flush();
-    expect(store.getStatus()).toBe("streaming");
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
 
     await store.stop();
-    await send;
 
+    // 屏幕先落定，不等服务端确认。
     expect(stops).toStrictEqual([{ sessionId: "session-1" }]);
-    expect(store.getTurns().at(-1)?.status).toBe("aborted");
     expect(store.getStatus()).toBe("ready");
+    expect(store.getTurns().at(-1)?.status).toBe("aborted");
+
+    // 停下一次运行不等于不再看这个会话：下一次运行照样读得到。
+    events.send({ seq: 3, streamId: "run-2", type: "run.start" });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
+    events.close();
   });
 
   // The server no-ops a stop for a turn that is not running, and a stop that
@@ -229,11 +289,11 @@ describe("stop", () => {
     const stops: { sessionId: string }[] = [];
 
     const store = createAgentSessionStore({
-      id: "session-1",
       apiStop: (options) => {
         stops.push(options);
         return Promise.reject(new Error("no reply is running"));
       },
+      id: "session-1",
       throttleMs: 0,
       turns: [],
       emit: () => {},

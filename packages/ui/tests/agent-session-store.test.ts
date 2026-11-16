@@ -1,7 +1,8 @@
 import type {
   AgentStreamEvent,
   AgentUserTurn,
-  InboxMessage,
+  InboxItem,
+  SessionStreamEvent,
 } from "@workspace/agent-client";
 import { describe, expect, test, vi } from "vitest";
 
@@ -31,53 +32,69 @@ const inboxMessage = (
   id: string,
   seq: number,
   content: AgentUserTurn,
-  placement: "next-step" | "next-turn" = "next-turn"
-): InboxMessage => ({
+  deliverAt: "step-boundary" | "run-boundary" = "run-boundary"
+): InboxItem => ({
   seq,
   id,
   sessionId: "session-1",
-  requestId: `request-${id}`,
-  placement,
+  kind: "user-message",
+  dedupeKey: `request-${id}`,
+  deliverAt,
   content,
   payload: { model: TEST_MODEL },
   createdAt: 1,
 });
 
-const closedStream = (): ReadableStream =>
-  new ReadableStream({
-    start(controller) {
-      controller.close();
-    },
-  });
-
-/** A stream the test ends by hand, standing in for a turn still running. */
-const deferredStream = () => {
+/**
+ * 会话事件流的测试替身。
+ *
+ * 服务端在一次运行开始时说它领走了哪条 user 回合（`turnId`），这里照做：
+ * 测试用它模拟「排队的那条轮到了」。
+ */
+const sessionEvents = () => {
   let controller!: ReadableStreamDefaultController<unknown>;
-  const stream = new ReadableStream<unknown>({
+
+  const stream = new ReadableStream({
     start(controllerArg) {
       controller = controllerArg;
     },
   });
-  return { controller, stream };
+
+  return {
+    close: () => controller.close(),
+    runEnd: (streamId: string, seq: number) =>
+      controller.enqueue({ seq, streamId, type: "run.end" }),
+    runEvent: (streamId: string, seq: number, event: AgentStreamEvent<never>) =>
+      controller.enqueue({ event, seq, streamId, type: "run.event" }),
+    runStart: (streamId: string, seq: number, turnId?: string) =>
+      controller.enqueue({
+        seq,
+        streamId,
+        type: "run.start",
+        ...(turnId === undefined ? {} : { turnId }),
+      }),
+    send: (event: SessionStreamEvent<never>) => controller.enqueue(event),
+    stream,
+  };
 };
 
-const createInbox = (seed: InboxMessage[] = []) => {
+const createInbox = (seed: InboxItem[] = []) => {
   let messages = [...seed];
 
   const api: InboxApi = {
     list: vi.fn<InboxApi["list"]>(() => Promise.resolve([...messages])),
     enqueue: vi.fn<InboxApi["enqueue"]>((input) => {
       const message = inboxMessage(
-        input.requestId,
+        input.dedupeKey,
         messages.length,
         input.turn,
-        input.mode === "steering" ? "next-step" : "next-turn"
+        input.mode === "steering" ? "step-boundary" : "run-boundary"
       );
       messages = [...messages, message];
-      return Promise.resolve({ message });
+      return Promise.resolve({ item: message });
     }),
     cancel: vi.fn<InboxApi["cancel"]>((input) => {
-      messages = messages.filter((message) => message.id !== input.messageId);
+      messages = messages.filter((message) => message.id !== input.itemId);
       return Promise.resolve({ removed: 1 });
     }),
     clear: vi.fn<InboxApi["clear"]>(() => {
@@ -96,16 +113,25 @@ const createInbox = (seed: InboxMessage[] = []) => {
   };
 };
 
+const flush = (): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+
 const storeOf = (input: {
   apiInbox: InboxApi;
-  apiStream: (options: Record<string, unknown>) => Promise<ReadableStream>;
+  apiSend: (options: Record<string, unknown>) => Promise<unknown>;
+  apiEvents?: () => Promise<ReadableStream>;
+  apiResume?: (options: { sessionId: string }) => Promise<unknown>;
   apiStop?: () => Promise<unknown>;
 }) =>
   createAgentSessionStore({
     id: "session-1",
     apiInbox: input.apiInbox,
-    apiStream: input.apiStream as never,
-    apiStop: input.apiStop,
+    apiSend: input.apiSend as never,
+    ...(input.apiEvents === undefined ? {} : { apiEvents: input.apiEvents }),
+    ...(input.apiResume === undefined ? {} : { apiResume: input.apiResume }),
+    ...(input.apiStop === undefined ? {} : { apiStop: input.apiStop }),
     turns: [],
     emit: () => {
       // The store only forwards stream events; the assertions read its state.
@@ -113,14 +139,14 @@ const storeOf = (input: {
   });
 
 describe("createAgentSessionStore queue", () => {
-  test("a new session sends directly and resolves once the stream is accepted", async () => {
+  test("a new session sends directly and resolves once the server accepted it", async () => {
     const calls: Record<string, unknown>[] = [];
     const store = createAgentSessionStore({
       id: "session-1",
       turns: [],
-      apiStream: (options) => {
+      apiSend: (options) => {
         calls.push(options);
-        return Promise.resolve(closedStream());
+        return Promise.resolve();
       },
       emit: () => {
         // no-op
@@ -134,29 +160,37 @@ describe("createAgentSessionStore queue", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.turns).toHaveLength(1);
+    // 服务端收下了，但这一次运行还没开始：状态不能停在「发送中」。
+    expect(store.getStatus()).toBe("ready");
   });
 
-  test("queues a steering message while a turn is running, then drains it", async () => {
-    const first = deferredStream();
-    const calls: Record<string, unknown>[] = [];
+  test("a queued message leaves the queue when the server starts its run", async () => {
+    const events = sessionEvents();
     const inbox = createInbox();
     const store = storeOf({
       apiInbox: inbox.api,
-      apiStream: (options) => {
-        if (typeof options.inboxId === "string") {
-          inbox.claim(options.inboxId);
-        }
-        calls.push(options);
-        return Promise.resolve(
-          calls.length === 1 ? first.stream : closedStream()
-        );
-      },
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => Promise.resolve(),
     });
 
+    // 第一条消息没有会话行可挂，直接发送；它的运行开始后，记录里有了回合。
     await store.submit({
       turn: userTurn("u1", "Start"),
       payload: { model: TEST_MODEL },
     });
+    await flush();
+
+    events.runStart("run-1", 1, "u1");
+    events.runEvent("run-1", 2, {
+      type: "turn.start",
+      turnId: "turn-1",
+      turnType: "assistant",
+      createdAt: 1,
+    });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
+    // 运行中的第二条进队列。
     await store.submit({
       turn: userTurn("u2", "Steer"),
       mode: "steering",
@@ -168,38 +202,57 @@ describe("createAgentSessionStore queue", () => {
     );
     expect(store.getInbox()).toHaveLength(1);
 
-    const [pending] = store.getInbox();
-    expect(pending).toBeDefined();
+    // 第一条跑完，服务端接着领走第二条：它从队列里消失，同时以 user 回合的
+    // 身份出现在记录里。
+    events.runEnd("run-1", 3);
+    await vi.waitFor(() => expect(store.getStatus()).toBe("ready"));
 
-    // 结束当前回合：settle 刷新队列后自动发下一条。
-    first.controller.close();
+    events.runStart("run-2", 4, "u2");
+    events.runEvent("run-2", 5, {
+      type: "turn.start",
+      turnId: "turn-2",
+      turnType: "assistant",
+      createdAt: 1,
+    });
 
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-    expect(calls[1]?.inboxId).toBe(pending?.id);
     await vi.waitFor(() => expect(store.getInbox()).toHaveLength(0));
+    await vi.waitFor(() =>
+      expect(store.getTurns().map((turn) => turn.id)).toStrictEqual([
+        "u1",
+        "turn-1",
+        "u2",
+        "turn-2",
+      ])
+    );
+
+    events.close();
   });
 
   test("a turn.steer event removes the matching pending message", async () => {
-    const first = deferredStream();
-    const calls: Record<string, unknown>[] = [];
+    const events = sessionEvents();
     const inbox = createInbox();
     const store = storeOf({
       apiInbox: inbox.api,
-      apiStream: (options) => {
-        if (typeof options.inboxId === "string") {
-          inbox.claim(options.inboxId);
-        }
-        calls.push(options);
-        return Promise.resolve(
-          calls.length === 1 ? first.stream : closedStream()
-        );
-      },
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => Promise.resolve(),
     });
 
     await store.submit({
       turn: userTurn("u1", "Start"),
       payload: { model: TEST_MODEL },
     });
+    await flush();
+
+    events.runStart("run-1", 1, "u1");
+    events.runEvent("run-1", 2, {
+      type: "turn.start",
+      turnId: "turn-1",
+      turnType: "assistant",
+      createdAt: 1,
+    });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
     await store.submit({
       turn: userTurn("u2", "Steer"),
       mode: "steering",
@@ -209,9 +262,9 @@ describe("createAgentSessionStore queue", () => {
     const [pending] = store.getInbox();
     expect(pending).toBeDefined();
 
-    first.controller.enqueue({
+    events.runEvent("run-1", 3, {
       type: "turn.steer",
-      turnId: "turn-a",
+      turnId: "turn-1",
       step: {
         id: pending!.id,
         type: "steering",
@@ -225,24 +278,21 @@ describe("createAgentSessionStore queue", () => {
 
     await vi.waitFor(() => expect(store.getInbox()).toHaveLength(0));
 
-    first.controller.close();
+    events.close();
   });
 
-  test("stopping pauses automatic draining until the user sends again", async () => {
-    const first = deferredStream();
-    const calls: Record<string, unknown>[] = [];
+  test("stopping settles the run; sending again asks the server to continue", async () => {
+    const events = sessionEvents();
+    const resumes: { sessionId: string }[] = [];
     const inbox = createInbox();
     const store = storeOf({
       apiInbox: inbox.api,
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => Promise.resolve(),
       apiStop: () => Promise.resolve(),
-      apiStream: (options) => {
-        if (typeof options.inboxId === "string") {
-          inbox.claim(options.inboxId);
-        }
-        calls.push(options);
-        return Promise.resolve(
-          calls.length === 1 ? first.stream : closedStream()
-        );
+      apiResume: (options) => {
+        resumes.push(options);
+        return Promise.resolve();
       },
     });
 
@@ -250,6 +300,11 @@ describe("createAgentSessionStore queue", () => {
       turn: userTurn("u1", "Start"),
       payload: { model: TEST_MODEL },
     });
+    await flush();
+
+    events.runStart("run-1", 1, "u1");
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
     await store.submit({
       turn: userTurn("u2", "Steer"),
       mode: "steering",
@@ -258,39 +313,35 @@ describe("createAgentSessionStore queue", () => {
     expect(store.getInbox()).toHaveLength(1);
 
     await store.stop();
-    first.controller.close();
     await vi.waitFor(() => expect(store.getStatus()).toBe("ready"));
 
-    // 停止后不自动发送，消息仍留在队列里。
-    expect(calls).toHaveLength(1);
+    // 停止不发送队列里的消息：它们留在队列里，等用户说继续。
     expect(store.getInbox()).toHaveLength(1);
 
     await store.sendPending();
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-    await vi.waitFor(() => expect(store.getInbox()).toHaveLength(0));
+    expect(resumes).toStrictEqual([{ sessionId: "session-1" }]);
+
+    events.close();
   });
 
   test("cancels one pending message and clears the rest", async () => {
-    const first = deferredStream();
-    const calls: Record<string, unknown>[] = [];
+    const events = sessionEvents();
     const inbox = createInbox();
     const store = storeOf({
       apiInbox: inbox.api,
-      apiStream: (options) => {
-        if (typeof options.inboxId === "string") {
-          inbox.claim(options.inboxId);
-        }
-        calls.push(options);
-        return Promise.resolve(
-          calls.length === 1 ? first.stream : closedStream()
-        );
-      },
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => Promise.resolve(),
     });
 
     await store.submit({
       turn: userTurn("u1", "Start"),
       payload: { model: TEST_MODEL },
     });
+    await flush();
+
+    events.runStart("run-1", 1, "u1");
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
     await store.submit({
       turn: userTurn("u2", "One"),
       mode: "steering",
@@ -311,6 +362,6 @@ describe("createAgentSessionStore queue", () => {
     await store.clearPending();
     expect(store.getInbox()).toStrictEqual([]);
 
-    first.controller.close();
+    events.close();
   });
 });

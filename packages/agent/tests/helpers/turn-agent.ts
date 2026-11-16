@@ -40,7 +40,7 @@ export class FakeStore {
     return Promise.resolve(1);
   }
 
-  listInboxMessages(): Promise<never[]> {
+  listInboxItems(): Promise<never[]> {
     return Promise.resolve([]);
   }
 

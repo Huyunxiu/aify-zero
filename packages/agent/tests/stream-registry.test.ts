@@ -1,7 +1,11 @@
-import type { AgentStreamEvent } from "@workspace/agent-client/types";
+import type {
+  AgentStreamEvent,
+  SessionStreamEvent,
+} from "@workspace/agent-client";
 import { describe, expect, test, vi } from "vitest";
 
 import type { Agent } from "../src/agents.js";
+import { SessionEventRegistry } from "../src/session-events.js";
 import {
   StreamEventEntry,
   StreamEventRegistry,
@@ -75,7 +79,7 @@ const tick = (): Promise<void> =>
 
 describe(StreamEventRegistry, () => {
   test("finds an entry by its session and misses an unknown one", () => {
-    const registry = new StreamEventRegistry();
+    const registry = new StreamEventRegistry(new SessionEventRegistry());
     registry.registerStream(
       "stream-a",
       agentOf("session-1"),
@@ -99,7 +103,7 @@ describe(StreamEventRegistry, () => {
   // A superseded turn stays registered until its own finish unregisters it, and
   // the one running now is the one to read or stop.
   test("prefers the newest entry when a session has two", () => {
-    const registry = new StreamEventRegistry();
+    const registry = new StreamEventRegistry(new SessionEventRegistry());
     registry.registerStream(
       "older",
       agentOf("session-1"),
@@ -117,7 +121,7 @@ describe(StreamEventRegistry, () => {
   });
 
   test("drops an entry once it is unregistered", async () => {
-    const registry = new StreamEventRegistry();
+    const registry = new StreamEventRegistry(new SessionEventRegistry());
     registry.registerStream(
       "stream-a",
       agentOf("session-1"),
@@ -130,7 +134,7 @@ describe(StreamEventRegistry, () => {
   });
 
   test("releases the agent that ran the stream", async () => {
-    const registry = new StreamEventRegistry();
+    const registry = new StreamEventRegistry(new SessionEventRegistry());
     const dispose = vi.fn<() => Promise<void>>(() => Promise.resolve());
     const agent = { sessionId: "session-1", dispose } as unknown as Agent;
 
@@ -145,7 +149,9 @@ describe(StreamEventRegistry, () => {
 // that started the turn is gone, and this one has to see the whole turn.
 describe(StreamEventEntry, () => {
   test("replays the running turn and then follows it live", async () => {
-    const registry = new StreamEventRegistry<AgentToolSet>();
+    const registry = new StreamEventRegistry<AgentToolSet>(
+      new SessionEventRegistry()
+    );
     const producer = source();
     registry.registerStream("stream-a", agentOf("session-1"), producer.stream);
 
@@ -168,7 +174,9 @@ describe(StreamEventEntry, () => {
   });
 
   test("buffers only the turn that is running", async () => {
-    const registry = new StreamEventRegistry<AgentToolSet>();
+    const registry = new StreamEventRegistry<AgentToolSet>(
+      new SessionEventRegistry()
+    );
     const producer = source();
     registry.registerStream("stream-a", agentOf("session-1"), producer.stream);
 
@@ -186,7 +194,9 @@ describe(StreamEventEntry, () => {
   });
 
   test("feeds every reader of a turn", async () => {
-    const registry = new StreamEventRegistry<AgentToolSet>();
+    const registry = new StreamEventRegistry<AgentToolSet>(
+      new SessionEventRegistry()
+    );
     const producer = source();
     registry.registerStream("stream-a", agentOf("session-1"), producer.stream);
     await tick();
@@ -208,7 +218,9 @@ describe(StreamEventEntry, () => {
 // stop, and `whenFinished` is what the stop awaits before it answers.
 describe(`${StreamEventEntry.name} lifetime`, () => {
   test("is not done while its source is open, and settles when it ends", async () => {
-    const registry = new StreamEventRegistry<AgentToolSet>();
+    const registry = new StreamEventRegistry<AgentToolSet>(
+      new SessionEventRegistry()
+    );
     const producer = source();
     registry.registerStream("stream-a", agentOf("session-1"), producer.stream);
     await tick();
@@ -225,7 +237,9 @@ describe(`${StreamEventEntry.name} lifetime`, () => {
   });
 
   test("settles even when its source fails", async () => {
-    const registry = new StreamEventRegistry<AgentToolSet>();
+    const registry = new StreamEventRegistry<AgentToolSet>(
+      new SessionEventRegistry()
+    );
     const producer = source();
     registry.registerStream("stream-a", agentOf("session-1"), producer.stream);
     await tick();
@@ -237,5 +251,66 @@ describe(`${StreamEventEntry.name} lifetime`, () => {
     await finished;
 
     expect(entry.isDone()).toBeTruthy();
+  });
+});
+
+describe("SessionEventRegistry wiring", () => {
+  test("a registered stream is one run on the session's event stream", async () => {
+    const channels = new SessionEventRegistry<AgentToolSet>();
+    const registry = new StreamEventRegistry<AgentToolSet>(channels);
+    const reader = channels.subscribe("session-1").getReader();
+
+    const producer = source();
+    registry.registerStream("stream-a", agentOf("session-1"), producer.stream, {
+      turnId: "turn-1",
+    });
+
+    producer.push(turnStart("turn-1"));
+    producer.push(textDelta("hi"));
+    await tick();
+    producer.close();
+
+    const received: SessionStreamEvent<AgentToolSet>[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      const { value } = await reader.read();
+      received.push(value!);
+    }
+    await reader.cancel();
+
+    expect(received.map((event) => event.type)).toStrictEqual([
+      "ready",
+      "run.start",
+      "run.event",
+      "run.event",
+      "run.end",
+    ]);
+    expect(received[1]).toMatchObject({
+      streamId: "stream-a",
+      turnId: "turn-1",
+    });
+  });
+
+  test("a stream that fails ends its run with the reason", async () => {
+    const channels = new SessionEventRegistry<AgentToolSet>();
+    const registry = new StreamEventRegistry<AgentToolSet>(channels);
+    const reader = channels.subscribe("session-1").getReader();
+
+    const producer = source();
+    registry.registerStream("stream-a", agentOf("session-1"), producer.stream);
+    await tick();
+    producer.fail(new Error("model exploded"));
+    await tick();
+
+    const received: SessionStreamEvent<AgentToolSet>[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const { value } = await reader.read();
+      received.push(value!);
+    }
+    await reader.cancel();
+
+    expect(received.at(-1)).toMatchObject({
+      failure: "model exploded",
+      type: "run.end",
+    });
   });
 });

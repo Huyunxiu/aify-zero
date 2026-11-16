@@ -1,7 +1,7 @@
 import type {
   AgentStreamEvent,
   AgentTurn,
-  InboxMessage,
+  InboxItem,
 } from "@workspace/agent-client";
 import type * as AiModule from "ai";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -100,7 +100,7 @@ class FakeStore {
 
 /** 空的 Inbox：这些测试不关心引导消息。 */
 class FakeInbox {
-  listSteering(): Promise<InboxMessage[]> {
+  listSteering(): Promise<InboxItem[]> {
     return Promise.resolve([]);
   }
 

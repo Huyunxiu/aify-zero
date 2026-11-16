@@ -249,17 +249,18 @@ export type StepModel = InferSelectModel<typeof step_table>;
 export type StepInsertModel = InferInsertModel<typeof step_table>;
 
 /**
- * 会话待发送的消息。
+ * 会话的收件箱：已经到达、还没进入模型循环的东西。
  *
- * `next-step` 表示它是回合运行中补的引导消息，下一个模型步边界领取；
- * `next-turn` 表示它等当前回合结束后作为新回合发送。领取成功就删除这一行，
- * 消息本身随后写进 `turn` / `step`。
+ * `kind` 说明这一行是什么。今天只有用户消息；定时器到点和外部事件以后从这里加。
+ * `deliver-at` 是它最早能交进去的边界：`step-boundary` 表示正在跑的回合可以在下
+ * 一个模型步领走它，`run-boundary` 表示要等下一次运行。领取成功就删除这一行，
+ * 内容随后写进 `turn` / `step`。
  *
- * `seq` 自增，保证 FIFO；`(session_id, request_id)` 唯一，客户端重试不会重复
- * 入队。`content` 存完整的 `AgentUserTurn`，`payload` 存发送所需的模型信息。
+ * `seq` 自增，保证 FIFO；`(session_id, dedupe_key)` 唯一，客户端重试不会重复
+ * 入队。`content` 存完整的 `AgentUserTurn`，`payload` 存起跑所需的宿主配置。
  */
-export const inbox_message_table = sqliteTable(
-  "inbox_message",
+export const inbox_item_table = sqliteTable(
+  "inbox_item",
   {
     seq: integer("seq").primaryKey({ autoIncrement: true }),
     id: text("id")
@@ -267,9 +268,12 @@ export const inbox_message_table = sqliteTable(
       .unique()
       .$defaultFn(() => randomUUID()),
     sessionId: text("session_id").notNull(),
-    requestId: text("request_id").notNull(),
-    placement: text("placement", {
-      enum: ["next-step", "next-turn"],
+    kind: text("kind", { enum: ["user-message"] })
+      .notNull()
+      .default("user-message"),
+    dedupeKey: text("dedupe_key").notNull(),
+    deliverAt: text("deliver_at", {
+      enum: ["step-boundary", "run-boundary"],
     }).notNull(),
     content: text("content", { mode: "json" }).notNull(),
     payload: text("payload", { mode: "json" }).notNull(),
@@ -278,22 +282,20 @@ export const inbox_message_table = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
-    uniqueIndex("idx_inbox_session_request").on(
+    uniqueIndex("idx_inbox_session_dedupe").on(
       table.sessionId,
-      table.requestId
+      table.dedupeKey
     ),
-    index("idx_inbox_session_placement_seq").on(
+    index("idx_inbox_session_delivery_seq").on(
       table.sessionId,
-      table.placement,
+      table.deliverAt,
       table.seq
     ),
   ]
 );
 
-export type InboxMessageModel = InferSelectModel<typeof inbox_message_table>;
-export type InboxMessageInsertModel = InferInsertModel<
-  typeof inbox_message_table
->;
+export type InboxItemModel = InferSelectModel<typeof inbox_item_table>;
+export type InboxItemInsertModel = InferInsertModel<typeof inbox_item_table>;
 
 export const dict_table = sqliteTable("dict", {
   code: text("code").primaryKey(),

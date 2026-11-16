@@ -221,18 +221,16 @@ export type SessionProps = React.ComponentProps<"div"> & {
 };
 
 /**
- * Reads the turn a session is running.
+ * 读到这个会话接下来发生的事。
  *
- * Located by session id, so a page that reloaded can ask without ever having
- * held a stream id. A session with nothing running answers `STREAM_NOT_FOUND`,
- * which is a rejection here — the caller decides whether that is worth
- * reporting.
+ * 按会话定位：正在跑的运行会从它的 `turn.start` 重放，之后的每一次运行都接着
+ * 送到同一条连接上。没有运行的会话不是错误，连接建立后等它的第一次运行。
  */
-async function openStream(
+async function openEvents(
   sessionId: string,
   abortSignal: AbortSignal
 ): Promise<ReadableStream> {
-  const stream = await client.session.streamSession(
+  const stream = await client.session.streamSessionEvents(
     { sessionId },
     { signal: abortSignal }
   );
@@ -357,7 +355,6 @@ export function Session({
     queryFn: () => client.project.list(),
   });
 
-  const activeStreamId = getSessionQuery.data?.session?.activeStreamId ?? null;
   // 会话标题：顶层会话是生成标题，子会话是 `task` 调用交给它的任务简述。
   // 侧边栏收起后，标题栏是唯一还能看到它的地方。
   const sessionTitle = getSessionQuery.data?.session?.title;
@@ -512,11 +509,6 @@ export function Session({
     [sessionId]
   );
 
-  // 本页自己打开过的运行只挂一个读者：`apiStream` 和 `/compact` 打开流时登记
-  // stream id，下面的 effect 就不会因为 `getSession` 稍后返回同一个 id 再挂
-  // 第二个读者。第二个读者会把同一个流重放一遍，文本 part 因此重复。
-  const attachedStreamRef = React.useRef<string | null>(null);
-
   const {
     turns,
     pendingMessages,
@@ -526,16 +518,13 @@ export function Session({
     clearPending,
     error: sessionError,
     status,
-    isReading,
     stop,
-    resume,
     addToolApprovalResponse,
   } = useAgentSession({
     id: sessionKey,
-    // Sending and reading are two requests. The POST is accepted and answered
-    // at once — the turn runs on in the background — so its body says only that
-    // it was accepted, and the events come from the GET below.
-    apiStream: async (options) => {
+    // 发送和读取是两件事：发送只把消息交给服务端，读取是挂在这个会话上的
+    // 一条事件流，它跨过运行之间的空档一直读到页面离开。
+    apiSend: async (options) => {
       if (!options.model || !options.modelEffort || !options.turns.length) {
         return;
       }
@@ -549,7 +538,7 @@ export function Session({
       const inboxId =
         typeof options.inboxId === "string" ? options.inboxId : undefined;
 
-      const accepted = await client.session.createSession(
+      await client.session.createSession(
         {
           sessionId: options.sessionId,
           turns: options.approvals?.length ? [] : [options.turns.at(-1)!],
@@ -565,25 +554,13 @@ export function Session({
         },
         { signal: options.abortSignal }
       );
-      // 还有未审批的工具，不能继续执行
-      if (accepted.awaitingToolApprovals > 0) {
-        return;
-      }
-      // The desktop client reaches the server over oRPC's RPC link, which
-      // always answers 200 — the 201 the REST route sends is not visible here,
-      // so the accepted `streamId` is what says the turn was taken.
-      if (!accepted?.activeStreamId) {
-        throw new Error("The chat did not accept the message.");
-      }
-      // 这次流的读者就是本页：先登记 id，查询稍后返回同一个 id 时不要重挂。
-      attachedStreamRef.current = accepted.activeStreamId;
-      try {
-        return await openStream(options.sessionId, options.abortSignal);
-      } catch (error) {
-        // 流没打开就没有读者；清掉登记，让查询回来后还能重试。
-        attachedStreamRef.current = null;
-        throw error;
-      }
+      // 收到的只是「已落库」：这一次运行什么时候开始，由服务端的运行器决定，
+      // 页面从下面那条事件流上看到 `run.start` 就知道。
+    },
+    apiEvents: async ({ sessionId: id, abortSignal }) =>
+      await openEvents(id, abortSignal),
+    apiResume: async ({ sessionId: id }) => {
+      await client.session.resumeSession({ sessionId: id });
     },
     // Stopping is located by session id, so nothing here has to carry the
     // stream id the POST handed back.
@@ -592,18 +569,18 @@ export function Session({
     },
     apiInbox: {
       list: async ({ sessionId: id }) => {
-        const result = await client.session.listInboxMessages({
+        const result = await client.session.listInboxItems({
           sessionId: id,
         });
-        return result.messages;
+        return result.items;
       },
-      enqueue: async (input) => await client.session.enqueueInboxMessage(input),
-      cancel: async ({ sessionId: id, messageId }) =>
-        await client.session.cancelInboxMessage({ sessionId: id, messageId }),
+      enqueue: async (input) => await client.session.enqueueInboxItem(input),
+      cancel: async ({ sessionId: id, itemId }) =>
+        await client.session.cancelInboxItem({ sessionId: id, itemId }),
       clear: async ({ sessionId: id }) =>
-        await client.session.clearInboxMessages({ sessionId: id }),
+        await client.session.clearInboxItems({ sessionId: id }),
     },
-    // 只读的子会话没有 composer：不渲染队列，也不 drain。
+    // 只读的子会话没有 composer：不渲染队列，也不发送。
     allowSend: !readOnly,
     turns: initialTurns,
     onEvent,
@@ -688,38 +665,6 @@ export function Session({
   const contentRef = React.useRef<HTMLDivElement>(null);
   const hasOutline = outlineSections.length > 1;
 
-  // Attach to a run that is still going, but only when this store has no reader.
-  // A send or a compaction started by this page already registered its stream in
-  // `attachedStreamRef`; a refetch that answers with the same id must not attach
-  // a second reader. The server replays a run from `turn.start`, so a second
-  // reader would append every text part twice.
-  React.useEffect(() => {
-    if (!sessionId || !activeStreamId || isReading()) {
-      return;
-    }
-
-    if (attachedStreamRef.current === activeStreamId) {
-      return;
-    }
-
-    attachedStreamRef.current = activeStreamId;
-
-    const id = sessionId;
-    const controller = new AbortController();
-
-    void (async () => {
-      try {
-        const stream = await openStream(id, controller.signal);
-        await resume({ stream, abortSignal: controller.signal });
-      } catch {
-        // The turn can end between the lookup and the attach; there is then
-        // nothing to resume, and the transcript already has it.
-      }
-    })();
-
-    return () => controller.abort();
-  }, [activeStreamId, isReading, resume, sessionId]);
-
   const tokenUsage =
     turns.findLast((turn) => turn.usage)?.usage || defaultTokenUsage;
 
@@ -789,13 +734,10 @@ export function Session({
   ];
 
   /**
-   * Runs `/compact` as a stream of its own.
+   * 触发一次压缩。
    *
-   * The server only starts the compaction and answers with a stream id; the
-   * summarization itself runs in the background. The compaction turn is
-   * appended to the branch like any other turn — the cut point lives in its
-   * record — so attaching to the stream and letting the assembler append it is
-   * enough: the local transcript stays a prefix of the branch.
+   * 服务端只负责开始：摘要本身在后台跑，压缩事件从本页已经挂着的事件流上
+   * 过来，压缩 turn 也照常落进会话记录。这里说完就结束。
    */
   const handleCompact = async (model: ModelRef): Promise<void> => {
     if (!sessionId) {
@@ -807,13 +749,11 @@ export function Session({
       return;
     }
 
-    let compactionStreamId: string;
     try {
-      ({ activeStreamId: compactionStreamId } =
-        await client.session.compactSession({
-          model,
-          sessionId,
-        }));
+      await client.session.compactSession({
+        model,
+        sessionId,
+      });
     } catch (error) {
       // Refused synchronously — busy session, or nothing to compact.
       toastManager.add({
@@ -824,22 +764,8 @@ export function Session({
       return;
     }
 
-    // 这次流的读者就是本页：先登记 id，`getSession` 稍后返回同一个 id 时
-    // 下面的 effect 不会重挂。
-    attachedStreamRef.current = compactionStreamId;
-    const controller = new AbortController();
-
-    try {
-      const stream = await openStream(sessionId, controller.signal);
-      await resume({ abortSignal: controller.signal, stream });
-    } catch {
-      // The run can end between the POST and the attach; the transcript already
-      // has everything the stream would have replayed.
-      attachedStreamRef.current = null;
-    }
-
-    // The marker is in the branch now; refresh the row and the cached branch so
-    // a remount sees the same thing the transcript just showed.
+    // 标记已经进了 branch：刷新会话行和缓存的 branch，重新挂载时看到的就是
+    // 记录里那一条。
     void queryClient.invalidateQueries({
       queryKey: ["listSessionTurns", sessionId],
     });
@@ -950,8 +876,8 @@ export function Session({
     void sendPending().catch(reportQueueError);
   };
 
-  const handleQueueCancel = (messageId: string) => {
-    void cancelPending(messageId).catch(reportQueueError);
+  const handleQueueCancel = (itemId: string) => {
+    void cancelPending(itemId).catch(reportQueueError);
   };
 
   const handleQueueClear = () => {

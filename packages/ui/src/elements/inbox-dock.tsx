@@ -1,4 +1,4 @@
-import type { AgentUserTurn, InboxMessage } from "@workspace/agent-client";
+import type { AgentUserTurn, InboxItem } from "@workspace/agent-client";
 import { isAgentTextPart } from "@workspace/agent-client";
 import { SendIcon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -7,11 +7,11 @@ import { Badge } from "../components/badge";
 import { Button } from "../components/button";
 
 export type InboxDockProps = {
-  messages: InboxMessage[];
+  messages: InboxItem[];
   /** 回合运行中：不能开始下一条，但仍可移除队列项。 */
   busy: boolean;
   onSend: () => void;
-  onCancel: (messageId: string) => void;
+  onCancel: (itemId: string) => void;
   onClear: () => void;
 };
 
@@ -70,7 +70,7 @@ export const InboxDock = ({
         {messages.map((message) => (
           <li className="flex items-center gap-2" key={message.id}>
             <Badge className="shrink-0" variant="secondary">
-              {message.placement === "next-step"
+              {message.deliverAt === "step-boundary"
                 ? t("inbox.steering")
                 : t("inbox.queued")}
             </Badge>

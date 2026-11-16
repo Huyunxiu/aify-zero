@@ -6,6 +6,7 @@ import { agent } from "./agent/agent.router";
 import { mcp } from "./mcp/mcp.router";
 import { project } from "./project/project.router";
 import { review } from "./review/review.router";
+import { runner } from "./runner/runner.router";
 import { session } from "./session/session.router";
 import { setting } from "./settings/settings.router";
 import { skill } from "./skill/skill.router";
@@ -16,6 +17,7 @@ export const appRouter = {
   mcp,
   project,
   review,
+  runner,
   skill,
   session,
   setting,

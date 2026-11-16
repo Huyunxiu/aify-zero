@@ -2,7 +2,7 @@ import type {
   AgentSteeringStep,
   AgentStreamEvent,
   AgentTurn,
-  InboxMessage,
+  InboxItem,
 } from "@workspace/agent-client";
 import { APICallError } from "ai";
 import type * as AiModule from "ai";
@@ -112,11 +112,11 @@ class FakeStore {
 
 /** Inbox 替身：消息只被领取一次。 */
 class FakeInbox {
-  messages: InboxMessage[] = [];
+  messages: InboxItem[] = [];
 
-  listSteering(): Promise<InboxMessage[]> {
+  listSteering(): Promise<InboxItem[]> {
     return Promise.resolve(
-      this.messages.filter((message) => message.placement === "next-step")
+      this.messages.filter((message) => message.deliverAt === "step-boundary")
     );
   }
 
@@ -148,12 +148,13 @@ class FakeInbox {
   }
 }
 
-const steeringMessage = (id: string, text: string): InboxMessage => ({
+const steeringMessage = (id: string, text: string): InboxItem => ({
   seq: 0,
   id,
   sessionId: "session-1",
-  requestId: id,
-  placement: "next-step",
+  kind: "user-message",
+  dedupeKey: id,
+  deliverAt: "step-boundary",
   content: userTurn(`turn-${id}`, text),
   payload: { model: testModel() },
   createdAt: 1,
@@ -238,7 +239,7 @@ describe("agent steering", () => {
     } as never);
   });
 
-  test("applies a next-step message after a text-only step and continues the turn", async () => {
+  test("applies a step-boundary item after a text-only step and continues the turn", async () => {
     const inbox = new FakeInbox();
     inbox.messages = [steeringMessage("steer-1", "Try the other path.")];
     const { agent, session } = makeAgent(inbox);

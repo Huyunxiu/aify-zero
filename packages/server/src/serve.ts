@@ -33,6 +33,7 @@ import { createAuthStore } from "./auth-store";
 import { issueLoginLink, resolveLoginWebOrigin } from "./login-link";
 import { setMcpOAuthRedirectUrl } from "./mcp/oauth";
 import { shutdownMcp } from "./mcp/registry";
+import { sessionRunner } from "./session/runner";
 import { SQLiteStore } from "./storage/sqlite-store";
 import { attachWebSocket } from "./ws";
 
@@ -129,6 +130,20 @@ export async function startServer(
     logger.warn("[startup] interrupted-session recovery failed", error);
   }
 
+  // 队列里还有待办项的会话各唤醒一次：上一个进程退出时没跑完的消息，重启后
+  // 接着跑。恢复已经先把残留的运行收尾，这里再取件才不会撞上旧标记。
+  try {
+    const pending = await new SQLiteStore().listPendingInboxSessionIds();
+    for (const sessionId of pending) {
+      sessionRunner().wake(sessionId);
+    }
+    if (pending.length > 0) {
+      logger.warn(`[startup] resumed ${pending.length} queued session(s)`);
+    }
+  } catch (error) {
+    logger.warn("[startup] queue sweep failed", error);
+  }
+
   // 浏览器登录态和访问令牌共用同一套来源白名单；放进 `createApp` 和
   // `attachWebSocket`，HTTP 与升级两条路的判断才一致。
   const authStore = createAuthStore();
@@ -181,6 +196,9 @@ export async function startServer(
 
   const close = async (): Promise<void> => {
     const http = server as unknown as Server;
+
+    // 先停止取件：正在跑的运行让它跑完，队列留给下一次启动。
+    sessionRunner().stop();
 
     // WebSocket 要先退干净：它自己会等连接收起，而 closeAllConnections() 是硬断。
     await closeWebSocket();

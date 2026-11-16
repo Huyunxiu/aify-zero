@@ -1,4 +1,4 @@
-import { AgentInbox, STREAM_REGISTRY } from "@workspace/agent";
+import { STREAM_REGISTRY } from "@workspace/agent";
 import type { Agent, AgentToolSet } from "@workspace/agent";
 import {
   addToolApprovalResponse,
@@ -7,23 +7,30 @@ import {
 } from "@workspace/agent-client";
 import type {
   AgentTurn,
+  InboxItem,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { AgentSession } from "@workspace/agent/agent-session";
-import type { TurnWrite } from "@workspace/agent/storage/index";
+import type {
+  SessionEndStatus,
+  TurnWrite,
+} from "@workspace/agent/storage/index";
 import { generateSessionId } from "@workspace/agent/utils/id-util";
 import type { ModelEffort } from "@workspace/shared/constants";
-import { logger } from "@workspace/shared/logger";
+import type { ModelRef } from "@workspace/shared/model";
 
 import type { ConfiguredModel } from "../routers/settings/settings.schema";
+import { findConfiguredModel } from "../routers/settings/settings.service";
 import { SQLiteStore } from "../storage/sqlite-store";
 import { buildSessionAgent } from "./agent";
 import type { BuildSessionAgentInput } from "./agent";
+import { acceptedEffort } from "./model-rules";
 
 export type SessionLifecycleErrorCode =
   | "SESSION_NOT_FOUND"
   | "SESSION_BUSY"
   | "MESSAGE_NOT_FOUND"
+  | "MODEL_NOT_FOUND"
   | "NOTHING_TO_FORK";
 
 /** 会话生命周期里的业务错误；路由负责把它翻译成传输层错误。 */
@@ -49,14 +56,28 @@ export type CreateSessionInput = {
   inboxId?: string;
 };
 
-export type CreateSessionResult = {
-  activeStreamId: string | null;
-  awaitingToolApprovals: number;
-};
+export type CreateSessionResult =
+  | {
+      /** 答复之后还有没答完的调用：没有起跑，等下一个答复。 */
+      status: "held";
+      awaitingToolApprovals: number;
+    }
+  | {
+      status: "running";
+      activeStreamId: string;
+      /** 这次运行落定时的状态；运行器靠它决定队列怎么走。 */
+      settled: Promise<SessionEndStatus>;
+    };
 
 export type CompactSessionInput = {
   sessionId: string;
   configured: ConfiguredModel;
+  /**
+   * 压缩这条流落定之后调一次。
+   *
+   * 压缩占着会话的锁，期间排队项起不了跑；它结束时通知一声，队列才能接着走。
+   */
+  onSettled?: () => void;
 };
 
 export type ForkSessionInput = {
@@ -66,9 +87,10 @@ export type ForkSessionInput = {
 
 export interface SessionLifecycleDeps {
   store: SQLiteStore;
-  inbox: AgentInbox;
   registry: typeof STREAM_REGISTRY;
   buildAgent: (input: BuildSessionAgentInput) => Promise<Agent>;
+  /** 把待办项里的模型引用解析成可用的配置；找不到就拒绝起跑。 */
+  resolveModel: (ref: ModelRef) => Promise<ConfiguredModel | undefined>;
 }
 
 /**
@@ -92,7 +114,7 @@ export class SessionLifecycle {
    */
   async create(input: CreateSessionInput): Promise<CreateSessionResult> {
     const { sessionId, turns, approvals, configured, effort, inboxId } = input;
-    const { store, inbox, registry, buildAgent } = this.#deps;
+    const { store } = this.#deps;
 
     const mostRecentTurn = turns.at(-1);
     if (!mostRecentTurn && !approvals?.length) {
@@ -106,16 +128,7 @@ export class SessionLifecycle {
       ? (previousSession.projectId ?? undefined)
       : input.projectId;
 
-    // 一条流没跑完之前不能再开一条：手工压缩也注册成流，在准备段结束后继续
-    // 跑，所以占用要以注册表为准。已经结束但还没从注册表摘掉的条目（审批
-    // 恢复时常见）不算占用。
-    const running = registry.getStreamEntryBySession(sessionId);
-    if (running && !running.isDone()) {
-      throw new SessionLifecycleError("SESSION_BUSY", {
-        sessionId,
-        reason: "running",
-      });
-    }
+    this.#assertIdle(sessionId);
 
     const previousMessages = await store.getBranchTurns(sessionId, {
       activeStreamId: previousSession?.activeStreamId ?? undefined,
@@ -135,45 +148,156 @@ export class SessionLifecycle {
       }
       const toolParts = findToolApprovalRequests(session.turns);
       if (toolParts.length > 0) {
-        return {
-          activeStreamId: null,
-          awaitingToolApprovals: toolParts.length,
-        };
+        return { status: "held", awaitingToolApprovals: toolParts.length };
       }
     }
+
+    const { activeStreamId, settled } = await this.#startRun({
+      sessionId,
+      turns: originalTurns,
+      configured,
+      ...(effort === undefined ? {} : { effort }),
+      ...(sessionProjectId === undefined
+        ? {}
+        : { projectId: sessionProjectId }),
+      ...(inboxId === undefined ? {} : { inboxId }),
+    });
+
+    return { status: "running", activeStreamId, settled };
+  }
+
+  /**
+   * 审批恢复：把答复写回它指名的 step，再从这条 branch 起一次运行。
+   *
+   * 它和普通发送只差一件事：没有新的 user 回合。答复之后还有待答的调用时，
+   * 只返回数量，不起跑。
+   */
+  async resume(input: {
+    sessionId: string;
+    approvals: TextStreamToolApprovalResponseEvent[];
+    configured: ConfiguredModel;
+    effort?: ModelEffort;
+  }): Promise<CreateSessionResult> {
+    return await this.create({
+      sessionId: input.sessionId,
+      turns: [],
+      approvals: input.approvals,
+      configured: input.configured,
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
+    });
+  }
+
+  /**
+   * 从收件箱领一条待办项，开一次运行。
+   *
+   * 领取和写 turn 在同一个事务里完成（`inboxId` 一路传给 store）：领不到这条
+   * 就抛 `InboxItemNotFoundError`，调用方据此知道它已经被别人领走了。
+   */
+  async startFromInbox({
+    sessionId,
+    item,
+  }: {
+    sessionId: string;
+    item: InboxItem;
+  }): Promise<{ activeStreamId: string; settled: Promise<SessionEndStatus> }> {
+    const { store } = this.#deps;
+
+    const session = await store.getSessionById(sessionId);
+    if (!session) {
+      throw new SessionLifecycleError("SESSION_NOT_FOUND", { sessionId });
+    }
+    if (session.kind !== "main") {
+      // 子会话的运行归创建它的工具调用，收件箱不是它的入口。
+      throw new SessionLifecycleError("SESSION_BUSY", {
+        sessionId,
+        reason: "running",
+      });
+    }
+
+    this.#assertIdle(sessionId);
+
+    const configured = await this.#deps.resolveModel(item.payload.model);
+    if (!configured) {
+      throw new SessionLifecycleError("MODEL_NOT_FOUND", {
+        sessionId,
+        providerId: item.payload.model.providerId,
+        modelId: item.payload.model.modelId,
+      });
+    }
+
+    const branch = await store.getBranchTurns(sessionId, {
+      activeStreamId: session.activeStreamId ?? undefined,
+    });
+
+    const effort = acceptedEffort(
+      configured,
+      item.payload.modelEffort as ModelEffort | undefined
+    );
+    const projectId = item.payload.projectId ?? session.projectId ?? undefined;
+
+    return await this.#startRun({
+      sessionId,
+      turns: [...AgentSession.toAgentTurns(branch), item.content],
+      configured,
+      ...(effort === undefined ? {} : { effort }),
+      ...(projectId === undefined ? {} : { projectId }),
+      inboxId: item.id,
+      turnId: item.content.id,
+    });
+  }
+
+  /**
+   * 起跑一次运行，并给出它落定时的状态。
+   *
+   * `settled` 由 `onFinish` 直接兑现：调用方（运行器）不用回读会话行就知道这
+   * 一次跑成了什么。`onFinish` 里抛错也要兑现，否则等它的人会一直等。
+   */
+  async #startRun(input: {
+    sessionId: string;
+    turns: AgentTurn<AgentToolSet>[];
+    configured: ConfiguredModel;
+    effort?: ModelEffort;
+    projectId?: string;
+    inboxId?: string;
+    turnId?: string;
+  }): Promise<{ activeStreamId: string; settled: Promise<SessionEndStatus> }> {
+    const { sessionId, turns, configured, effort, projectId, inboxId, turnId } =
+      input;
+    const { store, registry, buildAgent } = this.#deps;
 
     const agent = await buildAgent({
       sessionId,
       configured,
-      effort,
-      projectId: sessionProjectId,
-      session,
+      ...(effort === undefined ? {} : { effort }),
+      ...(projectId === undefined ? {} : { projectId }),
+      session: new AgentSession({ turns }),
       store,
     });
 
     const activeStreamId = generateSessionId();
 
+    let settleRun!: (status: SessionEndStatus) => void;
+    const settled = new Promise<SessionEndStatus>((resolve) => {
+      settleRun = resolve;
+    });
+
     let stream: Awaited<ReturnType<Agent["stream"]>>;
     try {
       stream = await agent.stream({
-        turns: originalTurns,
+        turns,
         model: configured.ref,
         streamId: activeStreamId,
         signal: { type: "turn" },
-        inboxId,
+        ...(inboxId === undefined ? {} : { inboxId }),
         onFinish: async (status) => {
-          // 回合结束前没被领走的 next-step 消息不能留在“下一步”上：把它们
-          // 变成下一回合的排队消息，否则它们永远不会被发送。
+          // 收件箱不用在这里收尾：下一次运行开始时领全部待办项，残留的
+          // step-boundary 项自然落到那一次。
           try {
-            await inbox.promoteStale(sessionId);
-          } catch (error) {
-            logger.warn(
-              "[session] failed to promote pending steering messages",
-              error
-            );
+            await registry.unregisterStream(activeStreamId);
+            await store.clearActiveStream(sessionId, activeStreamId, status);
+          } finally {
+            settleRun(status);
           }
-          await registry.unregisterStream(activeStreamId);
-          await store.clearActiveStream(sessionId, activeStreamId, status);
         },
       });
     } catch (error) {
@@ -181,13 +305,26 @@ export class SessionLifecycle {
       throw error;
     }
 
-    registry.registerStream(activeStreamId, agent, stream);
+    registry.registerStream(
+      activeStreamId,
+      agent,
+      stream,
+      turnId === undefined ? {} : { turnId }
+    );
     await store.setActiveStream(sessionId, activeStreamId);
 
-    return {
-      activeStreamId,
-      awaitingToolApprovals: 0,
-    };
+    return { activeStreamId, settled };
+  }
+
+  /** 这个会话上已经有一条流在跑（压缩也算）就拒绝。 */
+  #assertIdle(sessionId: string): void {
+    const running = this.#deps.registry.getStreamEntryBySession(sessionId);
+    if (running && !running.isDone()) {
+      throw new SessionLifecycleError("SESSION_BUSY", {
+        sessionId,
+        reason: "running",
+      });
+    }
   }
 
   /**
@@ -229,8 +366,8 @@ export class SessionLifecycle {
   async compact(
     input: CompactSessionInput
   ): Promise<{ activeStreamId: string }> {
-    const { sessionId, configured } = input;
-    const { store, inbox, registry, buildAgent } = this.#deps;
+    const { sessionId, configured, onSettled } = input;
+    const { store, registry, buildAgent } = this.#deps;
 
     const session = await store.getSessionById(sessionId);
     if (!session) {
@@ -280,14 +417,6 @@ export class SessionLifecycle {
         streamId: activeStreamId,
         signal: { type: "compaction", trigger: "manual" },
         onFinish: async () => {
-          try {
-            await inbox.promoteStale(sessionId);
-          } catch (error) {
-            logger.warn(
-              "[session] failed to promote pending steering messages",
-              error
-            );
-          }
           await registry.unregisterStream(activeStreamId);
           // 压缩只插入一条上下文标记 turn，不是模型回复：成功或失败都不该
           // 改写会话原来的状态——一条完好的会话不该因为摘要失败被标成
@@ -297,6 +426,7 @@ export class SessionLifecycle {
             activeStreamId,
             previousStatus
           );
+          onSettled?.();
         },
       });
     } catch (error) {
@@ -395,8 +525,8 @@ export function createSessionLifecycle(
   const store = overrides.store ?? new SQLiteStore();
   return new SessionLifecycle({
     store,
-    inbox: overrides.inbox ?? new AgentInbox(store),
     registry: overrides.registry ?? STREAM_REGISTRY,
     buildAgent: overrides.buildAgent ?? buildSessionAgent,
+    resolveModel: overrides.resolveModel ?? findConfiguredModel,
   });
 }

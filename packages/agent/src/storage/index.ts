@@ -1,9 +1,9 @@
 import type {
   AgentSteeringStep,
   AgentTurn,
+  DeliverAt,
   EnqueueInboxInput,
-  InboxMessage,
-  InboxPlacement,
+  InboxItem,
 } from "@workspace/agent-client";
 
 import type {
@@ -141,8 +141,8 @@ export interface AgentStore {
    * 用于新的 user turn，也用于兜底写入一条还没落库的 turn。upsert 时只更新
    * 可变的行字段，保留原有 parentId 和 createdAt。
    *
-   * 带 `inboxId` 时，删除 Inbox 行和写入 turn 在同一个事务里完成：删除 0 行
-   * 说明这条消息已被另一个调用者领走，抛 `InboxMessageNotFoundError`。
+   * 带 `inboxId` 时，删除收件箱行和写入 turn 在同一个事务里完成：删除 0 行
+   * 说明这条待办项已被另一个调用者领走，抛 `InboxItemNotFoundError`。
    *
    * 带 `head` 时，同一事务里把这条 turn 设为 branch 的新 head。turn 只追加，
    * 压缩记录切点而不把自己插进 branch 中间，所以 head 永远指向末尾的那条。
@@ -165,34 +165,38 @@ export interface AgentStore {
   saveStep(step: StepWrite): Promise<number>;
 
   /**
-   * 按 seq 列出会话的待发送消息，可只取某一种 placement。
+   * 按 seq 列出会话的待办项，可只取某一种交付边界。
    *
-   * 领取成功时行会被删除，所以这里只返回仍然待发送的内容。
+   * 领取成功时行会被删除，所以这里只返回仍然待领取的内容。
    */
-  listInboxMessages(
+  listInboxItems(
     sessionId: string,
-    options?: { placement?: InboxPlacement }
-  ): Promise<InboxMessage[]>;
+    options?: { deliverAt?: DeliverAt }
+  ): Promise<InboxItem[]>;
 
   /**
-   * 幂等入队一条消息。
+   * 幂等入队一条待办项。
    *
-   * `(sessionId, requestId)` 冲突时返回已有行，客户端重试不会产生两条。
+   * `(sessionId, dedupeKey)` 冲突时返回已有行，客户端重试不会产生两条。
    */
-  insertInboxMessage(input: EnqueueInboxInput): Promise<InboxMessage>;
-
-  /** 删除会话的待发送消息；`ids` 省略时清空。返回删除的行数。 */
-  deleteInboxMessages(
-    sessionId: string,
-    ids?: readonly string[]
-  ): Promise<number>;
+  insertInboxItem(input: EnqueueInboxInput): Promise<InboxItem>;
 
   /**
-   * 原子领取 next-step 消息，并把它们写进指定 assistant turn 的 step 表。
+   * 列出收件箱里还有待办项的会话。
    *
-   * 删除 Inbox 行和插入 steering step 在同一个事务里完成；只插入仍在表中的
-   * id，因此被取消或被并发领走的行不会变成 step。step id 就是 Inbox 行 id，
-   * 前端据此把队列项和 transcript 里的 step 对上。
+   * 启动扫描用它：进程退出时队列没跑完的会话，重启后要各唤醒一次。
+   */
+  listPendingInboxSessionIds(): Promise<string[]>;
+
+  /** 删除会话的待办项；`ids` 省略时清空。返回删除的行数。 */
+  deleteInboxItems(sessionId: string, ids?: readonly string[]): Promise<number>;
+
+  /**
+   * 原子领取 step-boundary 的待办项，并把它们写进指定 assistant turn 的 step 表。
+   *
+   * 删除收件箱行和插入 steering step 在同一个事务里完成；只插入仍在表中的
+   * id，因此被取消或被并发领走的行不会变成 step。step id 就是收件箱行 id，
+   * 前端据此把排队项和 transcript 里的 step 对上。
    */
   applySteeringSteps(input: {
     sessionId: string;
@@ -200,9 +204,6 @@ export interface AgentStore {
     streamId: string;
     messageIds: string[];
   }): Promise<AgentSteeringStep[]>;
-
-  /** 把会话里残留的 next-step 消息提升为 next-turn；返回提升的行数。 */
-  promoteStaleInboxMessages(sessionId: string): Promise<number>;
 
   /**
    * 回合开始时先把 turn 行写成 `streaming`，并把它设为 branch head。

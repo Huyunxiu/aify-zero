@@ -83,15 +83,10 @@ export const ErrorMap = {
     // the client asked for the branch as a whole and there is nothing in it.
     data: z.object({ sessionId: z.string(), messageId: z.string().optional() }),
   },
-  STREAM_NOT_FOUND: {
-    status: 404,
-    message: "No reply is running for this chat.",
-    data: z.object({ sessionId: z.string() }),
-  },
-  INBOX_MESSAGE_NOT_FOUND: {
+  INBOX_ITEM_NOT_FOUND: {
     status: 409,
-    message: "This queued message was already sent or removed.",
-    data: z.object({ sessionId: z.string(), messageId: z.string() }),
+    message: "This queued item was already claimed or removed.",
+    data: z.object({ sessionId: z.string(), itemId: z.string() }),
   },
   SESSION_BUSY: {
     status: 409,

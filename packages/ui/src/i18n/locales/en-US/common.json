@@ -295,7 +295,7 @@
   "inbox": {
     "title": "{{count}} pending",
     "steering": "Steering",
-    "queued": "Queued",
+    "queued": "Waiting",
     "sendNow": "Send now",
     "remove": "Remove",
     "clear": "Clear all",

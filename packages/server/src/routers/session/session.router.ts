@@ -1,12 +1,9 @@
-import { streamToEventIterator, type } from "@orpc/server";
-import {
-  InboxMessageNotFoundError,
-  NothingToCompactError,
-  STREAM_REGISTRY,
-} from "@workspace/agent";
+import { type } from "@orpc/server";
+import { AgentInbox, NothingToCompactError } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import type {
   AgentTurn,
+  AgentUserTurn,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import { ModelEffort } from "@workspace/shared/constants";
@@ -19,14 +16,17 @@ import {
   createSessionLifecycle,
   SessionLifecycleError,
 } from "../../session/lifecycle";
-import { acceptedEffort, unsupportedInputIn } from "../../session/model-rules";
+import { acceptedEffort, unsupportedInput } from "../../session/model-rules";
+import { sessionRunner } from "../../session/runner";
+import { SQLiteStore } from "../../storage/sqlite-store";
 import { modelRefSchema } from "../settings/settings.schema";
 import { findConfiguredModel } from "../settings/settings.service";
+import { streamSessionEvents } from "./session.events";
 import {
-  cancelInboxMessage,
-  clearInboxMessages,
-  enqueueInboxMessage,
-  listInboxMessages,
+  cancelInboxItem,
+  clearInboxItems,
+  enqueueInboxItem,
+  listInboxItems,
 } from "./session.inbox";
 import {
   getSession,
@@ -69,6 +69,14 @@ function toApiError(error: unknown): never {
           },
         });
       }
+      case "MODEL_NOT_FOUND": {
+        throw new ApiError("MODEL_NOT_FOUND", {
+          data: {
+            providerId: error.data?.providerId ?? "",
+            modelId: error.data?.modelId ?? "",
+          },
+        });
+      }
       case "NOTHING_TO_FORK": {
         throw new ApiError("NOTHING_TO_FORK");
       }
@@ -92,7 +100,6 @@ const createSession = publicProcedure
     MODEL_UNSUPPORTED_INPUT: ErrorMap.MODEL_UNSUPPORTED_INPUT,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
-    INBOX_MESSAGE_NOT_FOUND: ErrorMap.INBOX_MESSAGE_NOT_FOUND,
   })
   .input(
     type<{
@@ -121,13 +128,6 @@ const createSession = publicProcedure
       throw new ApiError("MODEL_NOT_FOUND", { data: model });
     }
 
-    const unsupported = unsupportedInputIn(configured, turns);
-    if (unsupported) {
-      throw new ApiError("MODEL_UNSUPPORTED_INPUT", {
-        data: { kind: unsupported },
-      });
-    }
-
     const effort = acceptedEffort(
       configured,
       Object.values(ModelEffort).includes(modelEffort as ModelEffort)
@@ -135,51 +135,87 @@ const createSession = publicProcedure
         : undefined
     );
 
-    try {
-      return await createSessionLifecycle().create({
-        sessionId,
-        turns,
-        approvals,
-        configured,
-        effort,
-        projectId,
-        inboxId,
-      });
-    } catch (error) {
-      if (error instanceof InboxMessageNotFoundError) {
-        throw new ApiError("INBOX_MESSAGE_NOT_FOUND", {
-          data: { sessionId, messageId: error.id },
+    const runner = sessionRunner();
+
+    // 审批恢复先写回答复；它不起新的 user 回合，所以不走收件箱。
+    if (approvals?.length) {
+      try {
+        await runner.resume({
+          sessionId,
+          approvals,
+          configured,
+          ...(effort === undefined ? {} : { effort }),
         });
+      } catch (error) {
+        toApiError(error);
       }
-      toApiError(error);
+
+      return { accepted: true };
     }
+
+    const lastTurn = turns.at(-1);
+    if (!lastTurn) {
+      throw new Error("no message.");
+    }
+
+    const unsupported = unsupportedInput(configured, lastTurn as AgentUserTurn);
+    if (unsupported) {
+      throw new ApiError("MODEL_UNSUPPORTED_INPUT", {
+        data: { kind: unsupported },
+      });
+    }
+
+    // 会话行先落库：收件箱按会话归属，运行器也要靠这一行看项目和状态。
+    const store = new SQLiteStore();
+    const existing = await store.getSessionById(sessionId);
+    if (!existing) {
+      await store.saveSession({
+        id: sessionId,
+        title: "",
+        metadata: {},
+        ...(projectId === undefined ? {} : { projectId }),
+      });
+    }
+
+    // 已经入队的那条（客户端先入队再发）不再重复写一行。
+    if (!inboxId) {
+      await new AgentInbox(store).enqueue({
+        sessionId,
+        kind: "user-message",
+        // 同一条消息重试时 server 认得出它：user 回合的 id 是客户端生成的。
+        dedupeKey: lastTurn.id,
+        deliverAt: "run-boundary",
+        content: lastTurn as AgentUserTurn,
+        payload: {
+          model,
+          ...(modelEffort === undefined ? {} : { modelEffort }),
+          ...(projectId === undefined ? {} : { projectId }),
+        },
+      });
+    }
+
+    // 消息已经落库，也把运行器叫起来了：这一次运行什么时候开始，由运行器决定，
+    // 客户端从会话事件流上看到 `run.start` 就知道。这里不等，因为等的结果只有
+    // 「现在有几条流在跑」，而那不是这个请求要回答的问题。
+    runner.wakeAfterPause(sessionId);
+
+    return { accepted: true };
   });
 
 /**
- * 读取会话正在运行的回合。
+ * 让停下来的队列继续。
  *
- * 按会话定位，而不是按 stream id 定位：客户端持有的是会话 id，而 stream id 只
- * 命名某一个回合。
- *
- * 中途接入的读取方会从回合开头读起——入口会重放已缓冲的内容——所以刷新过的
- * 页面能重新接上这个回合，而不是从句中接入。多个读取方可以同时这样做，每个
- * 读取方拿到自己的流。
+ * 运行失败或用户中止之后，运行器不再自动取件——它不想让一条坏消息反复触发
+ * 同一个错误。暂停只存在内存里，所以「继续」也只需要在这里说一声：清掉暂停，
+ * 再看一眼收件箱。
  */
-export const streamSession = publicProcedure
-  .route({ method: "GET", path: "/sessions/{sessionId}/stream" })
-  .errors({ STREAM_NOT_FOUND: ErrorMap.STREAM_NOT_FOUND })
+export const resumeSession = publicProcedure
+  .route({ method: "POST", path: "/sessions/{sessionId}/resume" })
   .input(z.object({ sessionId: z.string() }))
   .handler(({ input }) => {
-    const streamEntry = STREAM_REGISTRY.getStreamEntryBySession(
-      input.sessionId
-    );
-    if (!streamEntry) {
-      throw new ApiError("STREAM_NOT_FOUND", {
-        data: { sessionId: input.sessionId },
-      });
-    }
+    sessionRunner().wakeAfterPause(input.sessionId);
 
-    return streamToEventIterator(streamEntry.readable());
+    return { accepted: true };
   });
 
 /**
@@ -230,9 +266,9 @@ export const forkSession = publicProcedure
  * 按需压缩一个空闲会话。
  *
  * 和普通回合一样，这里只负责准备工作并把压缩交给 stream：会话检查、agent
- * 装配、流注册，然后返回 streamId；摘要本身在后台跑。客户端从
- * `/sessions/{id}/stream` 读事件，压缩 turn 落库先于流关闭，所以读完再取
- * branch 一定能看到新标记。
+ * 装配、流注册，然后返回 streamId；摘要本身在后台跑。客户端的会话事件流会
+ * 收到这一次运行的 `run.start` 与压缩事件，压缩 turn 落库先于流关闭，所以读完
+ * 再取 branch 一定能看到新标记。
  *
  * 选段仍然在流创建之前完成，`NOTHING_TO_COMPACT` 因此还是同步错误——调用方
  * 不需要先拿 streamId 再等一条失败事件才知道没有可压缩的内容。
@@ -254,7 +290,14 @@ export const compactSession = publicProcedure
     }
 
     try {
-      return await createSessionLifecycle().compact({ sessionId, configured });
+      return await createSessionLifecycle().compact({
+        sessionId,
+        configured,
+        onSettled: () => {
+          // 压缩期间队列起不了跑；它结束时唤醒一次，队列才接着走。
+          sessionRunner().wake(sessionId);
+        },
+      });
     } catch (error) {
       toApiError(error);
     }
@@ -270,10 +313,11 @@ export const session = {
   listSessionResources,
   compactSession,
   forkSession,
-  streamSession,
+  streamSessionEvents,
+  resumeSession,
   stopSession,
-  listInboxMessages,
-  enqueueInboxMessage,
-  cancelInboxMessage,
-  clearInboxMessages,
+  listInboxItems,
+  enqueueInboxItem,
+  cancelInboxItem,
+  clearInboxItems,
 };

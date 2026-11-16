@@ -1,19 +1,15 @@
 import type { AgentToolSet } from "@workspace/agent";
-import {
-  AgentTurnAssembler,
-  findToolApprovalRequests,
-  isAgentToolPart,
-} from "@workspace/agent-client";
+import { AgentTurnAssembler, isAgentToolPart } from "@workspace/agent-client";
 import type {
   AgentStreamEvent,
   AgentTurn,
   AgentUserTurn,
-  InboxMessage,
+  InboxItem,
   JSONObject,
+  SessionStreamEvent,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
-import { parseJsonEventStream } from "ai";
 import { nanoid } from "nanoid";
 import * as React from "react";
 import throttle from "throttleit";
@@ -24,23 +20,23 @@ import { readModelRef } from "../lib/models";
 export type SubmitMode = "steering" | "followup";
 
 /**
- * 服务端 Inbox 的客户端入口。
+ * 服务端收件箱的客户端入口。
  *
- * 入队成功就意味着消息已经落库，之后即使页面关掉也不会丢；发送失败时它会
+ * 入队成功就意味着待办项已经落库，之后即使页面关掉也不会丢；发送失败时它会
  * 留在队列里，等用户手动重试。
  */
 export type InboxApi = {
-  list: (input: { sessionId: string }) => Promise<InboxMessage[]>;
+  list: (input: { sessionId: string }) => Promise<InboxItem[]>;
   enqueue: (input: {
     sessionId: string;
-    requestId: string;
+    dedupeKey: string;
     mode: SubmitMode;
     turn: AgentUserTurn;
     model: ModelRef;
     modelEffort?: string;
     projectId?: string;
-  }) => Promise<{ message: InboxMessage }>;
-  cancel: (input: { sessionId: string; messageId: string }) => Promise<unknown>;
+  }) => Promise<{ item: InboxItem }>;
+  cancel: (input: { sessionId: string; itemId: string }) => Promise<unknown>;
   clear: (input: { sessionId: string }) => Promise<unknown>;
 };
 
@@ -55,19 +51,37 @@ export type SubmitOptions = {
 export type UseAgentSessionOptions = {
   id: string;
   api?: string;
-  apiStream?: (
+  /**
+   * 把一条消息交给服务端。
+   *
+   * 它只负责投递：这一次运行什么时候开始由服务端决定，页面从会话事件流上
+   * 看到 `run.start` 就知道。返回值不用，失败用抛的。
+   */
+  apiSend?: (
     options: {
       sessionId: string;
       turns: AgentTurn<AgentToolSet>[];
       abortSignal: AbortSignal;
       approvals?: TextStreamToolApprovalResponseEvent[];
     } & Record<string, unknown>
-  ) => Promise<ReadableStream | undefined>;
+  ) => Promise<unknown>;
+  /**
+   * 会话的事件流：这个 store 唯一的读者。
+   *
+   * 一条连接读完这个会话接下来所有的运行，每次运行自成一段（`run.start` 到
+   * `run.end`）。页面在挂载时打开它，之后不再为每次发送另开一条。
+   */
+  apiEvents?: (options: {
+    sessionId: string;
+    abortSignal: AbortSignal;
+  }) => Promise<ReadableStream | undefined>;
+  /** 让停下来的队列继续：清掉服务端的暂停，再取一次件。 */
+  apiResume?: (options: { sessionId: string }) => Promise<unknown>;
   /**
    * Stops the turn the session is running on the server. Located by
    * `sessionId`, not by a stream id — the client holds only the session's.
    *
-   * Read when the store is created, like `api` and `apiStream`.
+   * 和其他回调一样，只在 store 建立时读一次。
    */
   apiStop?: (options: { sessionId: string }) => Promise<unknown>;
   /**
@@ -76,8 +90,7 @@ export type UseAgentSessionOptions = {
    */
   apiInbox?: InboxApi;
   /**
-   * Whether this page may send at all. A read-only subagent page lists nothing
-   * and drains nothing.
+   * 这个页面能不能发消息。只读的子会话页面既不列队列，也不发送。
    */
   allowSend?: boolean;
   /**
@@ -87,12 +100,10 @@ export type UseAgentSessionOptions = {
    * transcript re-renders once per token; the intermediate frames are collapsed
    * and only the latest state is painted. `0` publishes every event.
    *
-   * Only the turn snapshots are throttled. `status` and `error` changes and
-   * `onEvent` are not, and the last snapshot of a request is always published
-   * immediately.
+   * 只有回合快照受抑制：`status`、`error` 的变化和 `onEvent` 不受，一次运行
+   * 的最后一份快照也总是立刻发出。
    *
-   * Like `api`, this is read when the store is created, so a new value takes
-   * effect when the session id changes.
+   * 和 `api` 一样，只在 store 建立时读，所以新值要等会话 id 变化才生效。
    */
   throttleMs?: number;
   turns: AgentTurn<AgentToolSet>[];
@@ -109,29 +120,28 @@ type AgentSessionStatus = "submitted" | "streaming" | "ready" | "error";
 export type UseAgentSessionResponse = {
   turns: AgentTurn<AgentToolSet>[];
   /** 服务端返回的待发送消息，按 FIFO 排列。 */
-  pendingMessages: InboxMessage[];
+  pendingMessages: InboxItem[];
   /**
    * Submits a user turn.
    *
    * A session with no transcript yet sends directly — the server has no row to
-   * attach an inbox item to. Every later message is enqueued first, so a
-   * failed send cannot lose it, then drained.
+   * attach an inbox item to. Every later message is enqueued, so a failed send
+   * cannot lose it; the server's runner takes it from there.
    *
-   * The promise resolves once the message is accepted (enqueued, or the first
-   * turn's stream has started), which is what lets the composer clear only on
-   * success.
+   * The promise resolves once the message is accepted (enqueued, or accepted by
+   * the server), which is what lets the composer clear only on success.
    */
   submit: (options: SubmitOptions) => Promise<void>;
-  /** Clears the paused flag and sends the next pending message. */
+  /**
+   * 让服务端停下来的队列继续。
+   *
+   * 暂停在服务端的内存里，页面只说一声「继续」；取件、认领、起跑仍然由
+   * 服务端的运行器做。
+   */
   sendPending: () => Promise<void>;
-  cancelPending: (messageId: string) => Promise<void>;
+  cancelPending: (itemId: string) => Promise<void>;
   clearPending: () => Promise<void>;
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
-  /**
-   * Attaches to the turn a session is already running, for a page that arrived
-   * mid-turn.
-   */
-  resume: (options: ResumeOptions) => Promise<void>;
   /**
    * Answers a call a turn was held on, and resumes the turn with that answer.
    *
@@ -144,14 +154,14 @@ export type UseAgentSessionResponse = {
     options: AddToolApprovalResponseOptions
   ) => Promise<void>;
   /**
-   * Stops the turn the session is running, on both ends: the read this store is
-   * doing, and the server's turn, which outlives it.
+   * 停掉这个会话正在跑的那次运行。
+   *
+   * 屏幕先落定，服务端的那次运行随后停下——它活得比发起它的请求久。会话的
+   * 连接留着，下一次运行的 `run.start` 还要送到这里。
    */
   stop: () => Promise<void>;
   error: Error | undefined;
   status: AgentSessionStatus;
-  /** 这个 store 是否正在读一条流。 */
-  isReading: () => boolean;
 };
 
 type SendTurnsOptions = {
@@ -166,20 +176,10 @@ type SendTurnsOptions = {
   payload?: Record<string, unknown>;
   /** 这条 user turn 来自 Inbox 的哪一行；服务端在同一事务里认领。 */
   inboxId?: string;
-  /** 请求已被服务端接受（流已拿到）时调用。 */
+  /** 服务端收下了这条（消息已落库）时调用。 */
   onAccepted?: () => void;
   /** 流拿到之前失败时调用，参数是原始错误。 */
   onRejected?: (error: unknown) => void;
-};
-
-type ResumeOptions = {
-  /**
-   * The running turn's events, which begin at its `turn.start`: the server
-   * replays what the turn has produced so far and then follows it live, so the
-   * turn is rebuilt whole rather than joined mid-sentence.
-   */
-  stream: ReadableStream;
-  abortSignal?: AbortSignal;
 };
 
 type AddToolApprovalResponseOptions = {
@@ -229,16 +229,13 @@ type AgentSessionStore = {
   subscribe: (onStoreChange: () => void) => () => void;
   getTurns: () => AgentTurn<AgentToolSet>[];
   getStatus: () => AgentSessionStatus;
-  /** 这个 store 是否正在读一条流。 */
-  isReading: () => boolean;
   getError: () => Error | undefined;
-  getInbox: () => InboxMessage[];
+  getInbox: () => InboxItem[];
   submit: (options: SubmitOptions) => Promise<void>;
   sendPending: () => Promise<void>;
-  cancelPending: (messageId: string) => Promise<void>;
+  cancelPending: (itemId: string) => Promise<void>;
   clearPending: () => Promise<void>;
   sendTurns: (options: SendTurnsOptions) => Promise<void>;
-  resume: (options: ResumeOptions) => Promise<void>;
   addToolApprovalResponse: (
     options: AddToolApprovalResponseOptions
   ) => Promise<void>;
@@ -256,13 +253,6 @@ type AgentSessionStoreOptions = UseAgentSessionOptions & {
 
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
-
-/** oRPC 错误带着 `code`；队列发送失败时用它区分“已被领走”和真正的失败。 */
-const isInboxMessageNotFound = (error: unknown): boolean =>
-  typeof error === "object" &&
-  error !== null &&
-  "code" in error &&
-  (error as { code?: unknown }).code === "INBOX_MESSAGE_NOT_FOUND";
 
 const isSessionNotFound = (error: unknown): boolean =>
   typeof error === "object" &&
@@ -352,7 +342,9 @@ const findToolApprovalTarget = (
 export function createAgentSessionStore({
   id,
   api,
-  apiStream,
+  apiSend,
+  apiEvents,
+  apiResume,
   apiStop,
   apiInbox,
   allowSend = true,
@@ -365,26 +357,21 @@ export function createAgentSessionStore({
   let currentTurns = turns;
   let status: AgentSessionStatus = "ready";
   let currentError: Error | undefined;
-  let active: AbortController | null = null;
-  let inbox: InboxMessage[] = [];
+  /** 这个 store 与服务的唯一连接：会话事件流。 */
+  let connection: AbortController | null = null;
+  /** 正在读的那一次运行；同时说明屏幕上有一条还在流。 */
+  let runStreamId: string | undefined;
+  /** 这一次运行的装配器；每次运行换一个。 */
+  let assembler: AgentTurnAssembler<AgentToolSet> | null = null;
+  /** 已经发出、还没有起跑的 user 回合，按回合 id 存。 */
+  const pendingTurns = new Map<string, AgentUserTurn>();
+  let inbox: InboxItem[] = [];
   let inboxRevision = 0;
-  let sendingId: string | undefined;
-  let drainPaused = false;
-  let draining = false;
 
   const notify = (): void => {
     for (const listener of listeners) {
       listener();
     }
-  };
-
-  const setStatus = (next: AgentSessionStatus): void => {
-    if (status === next) {
-      return;
-    }
-
-    status = next;
-    notify();
   };
 
   const subscribe = (onStoreChange: () => void): (() => void) => {
@@ -397,39 +384,36 @@ export function createAgentSessionStore({
 
   const getTurns = (): AgentTurn<AgentToolSet>[] => currentTurns;
   const getStatus = (): AgentSessionStatus => status;
-  const isReading = (): boolean => active !== null;
   const getError = (): Error | undefined => currentError;
-  const getInbox = (): InboxMessage[] => inbox;
+  const getInbox = (): InboxItem[] => inbox;
 
   const isBusy = (): boolean =>
     status === "submitted" || status === "streaming";
 
-  const hasPendingApproval = (): boolean =>
-    findToolApprovalRequests(currentTurns).length > 0;
+  /**
+   * 把装配器此刻的内容发出去。
+   *
+   * `commit` 读的是 `assembler.turns` 而不是别人递进来的快照，所以被合并掉的
+   * 那次调用发布的是最新状态，丢的只是中间帧。
+   */
+  const commit = (): void => {
+    if (assembler) {
+      currentTurns = [...assembler.turns];
+    }
+    notify();
+  };
 
   /**
    * `commit` on a leash: at most one snapshot per window while a response
-   * streams, so per-token deltas stop forcing a render each. The throttle is
-   * consulted inside the body rather than at the call site because the trailing
-   * call arrives from a timer that can outlive the request that scheduled it —
-   * only `active` says whether those turns still belong on screen, and by then
-   * it may name a newer request, or none.
+   * streams, so per-token deltas stop forcing a render each.
    *
-   * `commit` reads `assembler.turns` when it runs rather than being handed a
-   * snapshot, so a collapsed call publishes the latest state and nothing is
-   * lost but the intermediate frames.
-   *
-   * One instance per request, never one per store: the leading call is the one
-   * that fires immediately, and every send has to paint its own turns without
-   * waiting out the window the previous send left open.
+   * 抑制窗口是 store 级的，但判断「还该不该画」用的是 `runStreamId`：收尾之后
+   * 遗留的那次调用到这里时已经没有人可画了。
    */
-  const makePublish = (
-    controller: AbortController,
-    commit: () => void
-  ): (() => void) =>
+  const publish: () => void =
     throttleMs > 0
       ? throttle((): void => {
-          if (active === controller) {
+          if (runStreamId !== undefined) {
             commit();
           }
         }, throttleMs)
@@ -465,153 +449,227 @@ export function createAgentSessionStore({
     }
   };
 
-  const addInboxMessage = (message: InboxMessage): void => {
-    // 入队响应回来之前，流可能已经用 turn.steer 把它领走并删了行。
-    const claimed = currentTurns.some(
+  const addInboxItem = (item: InboxItem): void => {
+    // 入队响应回来之前，它可能已经被领走：以 user 回合的身份进了记录（运行已经
+    // 开始），或者被引导进当前回合——两种都不该再出现在队列里。
+    const adopted = currentTurns.some((turn) => turn.id === item.content.id);
+    const steered = currentTurns.some(
       (turn) =>
         turn.type === "assistant" &&
         turn.content.some(
-          (step) => step.type === "steering" && step.id === message.id
+          (step) => step.type === "steering" && step.id === item.id
         )
     );
-    if (claimed || inbox.some((item) => item.id === message.id)) {
+    if (adopted || steered || inbox.some((entry) => entry.id === item.id)) {
       return;
     }
 
     bumpInbox();
-    inbox = [...inbox, message].toSorted((left, right) => left.seq - right.seq);
+    inbox = [...inbox, item].toSorted((left, right) => left.seq - right.seq);
     notify();
   };
 
-  const removeInboxMessage = (messageId: string): void => {
-    if (!inbox.some((item) => item.id === messageId)) {
+  const removeInboxItem = (itemId: string): void => {
+    if (!inbox.some((item) => item.id === itemId)) {
       return;
     }
 
     bumpInbox();
-    inbox = inbox.filter((item) => item.id !== messageId);
-    if (sendingId === messageId) {
-      sendingId = undefined;
-    }
+    inbox = inbox.filter((item) => item.id !== itemId);
     notify();
   };
 
   /**
-   * Ends a request.
+   * 这一条运行落定。
    *
-   * Only the current request may write state — one that got superseded stops
-   * here rather than clobbering the newer one.
+   * 只有正在读的那一次能写状态：迟到的 `run.end`（本地已经停过）不改屏幕上
+   * 已经落定的内容。
    *
-   * A clean end of stream can still leave work unfinished: aborting a fetch may
-   * resolve a pending `read()` with `done: true` instead of rejecting it, and
-   * the server may close the stream without ever sending `turn.finish`. Whatever
-   * is still pending at this point is by definition unfinished, so it is settled
-   * as aborted — or as errored when the transport failed outright.
-   *
-   * `commit`, not `publish`: the settled turns, the status and the error have to
-   * land now rather than when a window closes. Clearing `active` above is also
-   * what turns any trailing call this request scheduled into a no-op — it must
-   * not move below this line, because `notify` runs listeners synchronously and
-   * a send re-entered from one would otherwise be clobbered by this request
-   * clearing `active` afterwards.
+   * 落定之后立刻对齐队列：待办项可能已经被服务端领走，队列该少一条了。
    */
-  const settle = ({
-    assembler,
-    controller,
-    failure,
-    aborted,
-    commit,
-  }: {
-    assembler: AgentTurnAssembler<AgentToolSet>;
-    controller: AbortController;
-    failure: Error | undefined;
-    aborted: boolean;
-    commit: () => void;
-  }): void => {
-    if (active !== controller) {
+  const settleRun = (failure: Error | undefined): void => {
+    if (runStreamId === undefined) {
       return;
     }
 
-    active = null;
-    assembler.settle(failure && !aborted ? "error" : "aborted");
+    runStreamId = undefined;
+    // 这条流没走完就结束了：还挂着的 part 按定义是没跑完的，收尾成 aborted。
+    assembler?.settle(failure ? "error" : "aborted");
     currentError = failure;
     status = failure ? "error" : "ready";
     commit();
 
-    // 回合结束后队列可能已经变化：先对齐服务端，再尝试发送下一条。错误态
-    // 不自动重试，避免一条坏消息在失败后立刻再次触发同一个错误。
-    void refreshInbox().then(() => {
-      if (status === "ready") {
-        void drain();
-      }
-    });
+    void refreshInbox();
   };
 
   /**
-   * Reads a turn's events into `assembler` until the stream ends, publishing
-   * snapshots as they land and settling what the stream left unfinished.
+   * 认领这条 user 回合。
    *
-   * Shared by `sendTurns` and `resume`, which differ only in where the stream
-   * comes from: a send asks the server for a new turn, a resume attaches to one
-   * already running.
+   * 消息发出时先记在 `pendingTurns` 里：它要等到运行真的开始才算进入会话记录，
+   * 而「开始」这件事是服务端说的——`run.start` 带来它领走的那条回合的 id。
+   * 队列里的同一条从队列里撤下，它已经以回合的身份出现在记录里了。
    */
-  const readInto = async ({
-    stream,
-    assembler,
-    controller,
-    commit,
-    publish,
-  }: {
-    stream: ReadableStream;
-    assembler: AgentTurnAssembler<AgentToolSet>;
-    controller: AbortController;
-    commit: () => void;
-    publish: () => void;
-  }): Promise<void> => {
-    let failure: Error | undefined;
-    let aborted = false;
+  const adoptTurn = (turnId: string): AgentUserTurn | undefined => {
+    const sent = pendingTurns.get(turnId);
+    pendingTurns.delete(turnId);
 
+    const item = inbox.find((entry) => entry.content.id === turnId);
+    if (item) {
+      removeInboxItem(item.id);
+    }
+
+    return sent ?? item?.content;
+  };
+
+  /** 一次运行开始：把它的 user 回合接进记录，然后等它的事件。 */
+  const startRun = (event: { streamId: string; turnId?: string }): void => {
+    if (event.streamId === runStreamId) {
+      // 已经在读这一次运行：重放的内容不能变成第二份。
+      return;
+    }
+
+    const turn =
+      event.turnId === undefined ? undefined : adoptTurn(event.turnId);
+
+    // 每次运行一个装配器：它从这一条开始改写，上一条已经落定的内容不再变。
+    assembler = new AgentTurnAssembler<AgentToolSet>({
+      turns: turn === undefined ? [...currentTurns] : [...currentTurns, turn],
+    });
+
+    runStreamId = event.streamId;
+    currentError = undefined;
+    status = "streaming";
+    commit();
+  };
+
+  /**
+   * 会话事件流上的一条事件。
+   *
+   * `run.event` 之前一定先有 `run.start`：服务端按这个顺序发，所以装配器总是
+   * 先有它要改写的回合。不属于正在读的那次运行的事件在这里被丢弃——它们要么
+   * 已经落定，要么已经写进会话记录。
+   */
+  const handleStreamEvent = async (
+    event: SessionStreamEvent<AgentToolSet>
+  ): Promise<void> => {
+    if (event.type === "ready") {
+      // 握手只说了游标：这条连接不重连，没有要画的东西。
+      return;
+    }
+
+    if (event.type === "run.start") {
+      startRun(event);
+      return;
+    }
+
+    if (event.type === "run.end") {
+      if (event.streamId === runStreamId) {
+        settleRun(
+          event.failure === undefined ? undefined : new Error(event.failure)
+        );
+      }
+      return;
+    }
+
+    // 剩下的是 `run.event`。不属于正在读的那次运行的事件在这里丢掉：它们要么
+    // 已经落定，要么已经写进会话记录。
+    if (event.streamId !== runStreamId || !assembler) {
+      return;
+    }
+
+    await assembler.push(event.event);
+    emit(event.event);
+
+    // 引导消息已经落进当前 assistant turn：队列里的同 id 项可以撤下。
+    if (event.event.type === "turn.steer") {
+      removeInboxItem(event.event.step.id);
+    }
+
+    publish();
+  };
+
+  /**
+   * 读到会话事件流结束为止。
+   *
+   * 关闭一条连接不等于结束一次运行：运行之间的空档里这条流是安静的，而
+   * `run.end` 才是运行结束的那一条。流真的关了（代理断开、服务端退出）时，
+   * 手上正在读的运行按未完成收尾——页面重新挂载时会重新读会话记录。
+   */
+  const readSessionEvents = async (
+    stream: ReadableStream,
+    controller: AbortController
+  ): Promise<void> => {
     const reader = stream.getReader();
+    let failure: Error | undefined;
 
     try {
-      while (true) {
+      for (;;) {
         const { value, done } = await reader.read();
 
-        if (done) {
+        if (done || connection !== controller) {
           break;
         }
 
-        const event = value as AgentStreamEvent<AgentToolSet>;
-        await assembler.push(event);
-        emit(event);
-
-        // 引导消息已经落进当前 assistant turn：队列里的同 id 项可以撤下。
-        if (event.type === "turn.steer") {
-          removeInboxMessage(event.step.id);
-        }
-
-        // The guard is repeated inside the throttle, which is what covers the
-        // trailing call; this one is what covers the unthrottled branch, where
-        // `publish` is `commit`. It also spares a request that is already
-        // superseded the timer.
-        if (active === controller) {
-          publish();
-        }
+        await handleStreamEvent(value as SessionStreamEvent<AgentToolSet>);
       }
     } catch (error) {
-      // An aborted fetch or stream rejects with an `AbortError`; that is a
-      // cancellation, not a failure.
-      if (controller.signal.aborted) {
-        aborted = true;
-      } else {
+      if (!controller.signal.aborted) {
         failure = toError(error);
       }
     } finally {
       reader.releaseLock();
-      settle({ assembler, controller, failure, aborted, commit });
+    }
+
+    if (connection === controller) {
+      connection = null;
+      settleRun(failure);
     }
   };
 
+  /**
+   * 打开这个会话的事件流：这个 store 唯一的读者。
+   *
+   * 页面上的一条连接一直读到会话不再有人看为止。运行开始、结束都不会关掉它，
+   * 所以排队中的消息被服务端领走时，页面已经在读了——不需要谁去追那条新出现
+   * 的流。
+   */
+  const connect = async (): Promise<void> => {
+    if (!apiEvents || connection) {
+      return;
+    }
+
+    const controller = new AbortController();
+    connection = controller;
+
+    try {
+      const stream = await apiEvents({
+        abortSignal: controller.signal,
+        sessionId: id,
+      });
+
+      if (!stream || connection !== controller) {
+        if (connection === controller) {
+          connection = null;
+        }
+        return;
+      }
+
+      await readSessionEvents(stream, controller);
+    } catch {
+      // 连不上不是会话记录的错误：它只说这个页面看不到后续事件。
+      if (connection === controller) {
+        connection = null;
+      }
+    }
+  };
+
+  /**
+   * 把一条消息交给服务端。
+   *
+   * 这里不等运行开始：消息落库之后，这一次运行什么时候跑由运行器决定，页面
+   * 从事件流的 `run.start` 上看到它。等一条流回来只会让「谁在跑」这个判断
+   * 挤回到发送路径上。
+   */
   const sendTurns = async ({
     turns: nextTurns,
     abortSignal,
@@ -620,56 +678,24 @@ export function createAgentSessionStore({
     onAccepted,
     onRejected,
   }: SendTurnsOptions): Promise<void> => {
-    // One request at a time: a newer call takes over and cancels the older one.
-    active?.abort();
-    const controller = new AbortController();
-    active = controller;
-
-    const assembler = new AgentTurnAssembler<AgentToolSet>({
+    const body = {
+      sessionId: id,
       turns: nextTurns,
-    });
-
-    const commit = (): void => {
-      currentTurns = [...assembler.turns];
-      notify();
+      ...payload,
+      ...(inboxId ? { inboxId } : {}),
     };
 
-    const publish = makePublish(controller, commit);
-
-    // Surface the caller's turns straight away, so a new user turn is visible
-    // before the first event arrives. `commit`, not `publish`: this is the
-    // state the throttle exists to hold back, and `status` above rides on its
-    // notify, so it must not wait out a window.
-    currentError = undefined;
-    status = "submitted";
-    commit();
-
-    const forwardAbort = (): void => controller.abort();
-
-    if (abortSignal.aborted) {
-      controller.abort();
-    } else {
-      abortSignal.addEventListener("abort", forwardAbort, { once: true });
+    // 有运行在跑的时候不改状态：屏幕上的那条还在流，它才是当前状态。
+    const idle = runStreamId === undefined;
+    if (idle) {
+      currentError = undefined;
+      status = "submitted";
+      notify();
     }
 
     try {
-      const body = {
-        sessionId: id,
-        turns: nextTurns,
-        ...payload,
-        ...(inboxId ? { inboxId } : {}),
-      };
-      let stream: ReadableStream | undefined = undefined;
-      if (apiStream) {
-        stream = await apiStream({ ...body, abortSignal: controller.signal });
-        // The stream has been handed over, so the turn is under way — the same
-        // transition the `api` branch makes when its response arrives.
-        if (stream && active === controller) {
-          setStatus("streaming");
-        }
-        if (stream) {
-          onAccepted?.();
-        }
+      if (apiSend) {
+        await apiSend({ ...body, abortSignal });
       } else if (api) {
         const response = await fetch(api, {
           method: "POST",
@@ -677,60 +703,40 @@ export function createAgentSessionStore({
             "content-type": "application/json",
           },
           body: JSON.stringify(body),
-          signal: controller.signal,
+          signal: abortSignal,
         });
 
         if (!response.ok) {
           throw new Error(await readErrorMessage(response));
         }
-
-        if (!response.body) {
-          throw new Error("The response body is empty.");
-        }
-
-        // The response has arrived, so the model is streaming — even if the first
-        // event is still in flight.
-        if (active === controller) {
-          setStatus("streaming");
-        }
-        onAccepted?.();
-
-        stream = parseJsonEventStream<AgentStreamEvent<AgentToolSet>>({
-          stream: response.body,
-          // `schema` is required by the signature but optional at runtime, where
-          // a null schema yields the unvalidated JSON as-is.
-          schema: undefined as any,
-        });
+      } else {
+        throw new Error("sendTurns needs an API to send with.");
       }
-
-      // 注意：这里会有工具还未审批完导致 stream 没有的情况
-      if (!stream) {
-        onRejected?.(new Error("The chat did not start a turn."));
-        return;
-      }
-
-      await readInto({ stream, assembler, controller, commit, publish });
     } catch (error) {
-      // Nothing is being read — the request was refused, or the transport died
-      // before a stream existed — so the ending is settled here instead.
       onRejected?.(error);
-      settle({
-        assembler,
-        controller,
-        failure: controller.signal.aborted ? undefined : toError(error),
-        aborted: controller.signal.aborted,
-        commit,
-      });
-    } finally {
-      abortSignal.removeEventListener("abort", forwardAbort);
+      if (idle) {
+        currentError = abortSignal.aborted ? undefined : toError(error);
+        status = abortSignal.aborted ? "ready" : "error";
+        notify();
+      }
+      throw error;
+    }
+
+    onAccepted?.();
+
+    // 服务端已经收下。运行要么已经在跑（`run.start` 到过），要么还没轮到它；
+    // 两种情况都不该让状态停在「发送中」。
+    if (idle && runStreamId === undefined) {
+      status = "ready";
+      notify();
     }
   };
 
   /**
-   * 直接开始一个回合，并等到服务端接受为止。
+   * 直接开始一个回合。
    *
-   * 首条消息还没有 session 行可以挂 Inbox，只能走这条路；`onAccepted` 在流
-   * 拿到后才 resolve，编辑器因此只在真正开始后才清空。
+   * 首条消息还没有 session 行可以挂 Inbox，只能走这条路；`onAccepted` 在服务端
+   * 收下后才 resolve，编辑器因此只在真正收下后才清空。
    */
   const sendDirect = (
     turn: AgentUserTurn,
@@ -746,56 +752,6 @@ export function createAgentSessionStore({
       });
     });
 
-  /**
-   * 发送队列里的下一条。
-   *
-   * 一次只发一条；成功领取后从队列移除，等这次回合 settle 再发下一条。
-   * 失败时保留消息并暂停自动发送，避免同一条坏消息反复重试。
-   */
-  const drain = async (): Promise<void> => {
-    if (!apiInbox || !allowSend || draining || drainPaused) {
-      return;
-    }
-    if (isBusy() || hasPendingApproval()) {
-      return;
-    }
-
-    const [next] = inbox;
-    if (!next) {
-      return;
-    }
-
-    draining = true;
-    sendingId = next.id;
-    notify();
-
-    try {
-      await new Promise<void>((resolve, reject) => {
-        void sendTurns({
-          turns: [...currentTurns, next.content],
-          payload: { ...next.payload },
-          abortSignal: new AbortController().signal,
-          inboxId: next.id,
-          onAccepted: resolve,
-          onRejected: reject,
-        });
-      });
-      removeInboxMessage(next.id);
-    } catch (error) {
-      if (isInboxMessageNotFound(error)) {
-        removeInboxMessage(next.id);
-      } else {
-        drainPaused = true;
-      }
-    } finally {
-      draining = false;
-      if (sendingId === next.id) {
-        sendingId = undefined;
-      }
-      notify();
-    }
-  };
-
   const submit = async ({
     turn,
     mode,
@@ -810,23 +766,29 @@ export function createAgentSessionStore({
       throw new Error("submit requires a model.");
     }
 
+    // 先记下这条回合：它出现在记录里的时刻由服务端的 `run.start` 决定，而那时
+    // 这条消息可能已经从队列里消失了。
+    pendingTurns.set(turn.id, turn);
+
     // 新会话还没有行可以挂 Inbox，直接走原来的发送路径。
     if (!apiInbox || currentTurns.length === 0) {
-      await sendDirect(turn, payload);
+      try {
+        await sendDirect(turn, payload);
+      } catch (error) {
+        pendingTurns.delete(turn.id);
+        throw error;
+      }
       return;
     }
-
-    // 用户明确发了一条新消息：之前因停止/失败暂停的队列继续。
-    drainPaused = false;
 
     const busy = isBusy();
     const effectiveMode: SubmitMode = busy ? (mode ?? "followup") : "followup";
 
-    let message: InboxMessage;
+    let item: InboxItem;
     try {
       const result = await apiInbox.enqueue({
         sessionId: id,
-        requestId: nanoid(),
+        dedupeKey: nanoid(),
         mode: effectiveMode,
         turn,
         model,
@@ -839,8 +801,9 @@ export function createAgentSessionStore({
             ? payload.projectId
             : undefined,
       });
-      ({ message } = result);
+      ({ item } = result);
     } catch (error) {
+      pendingTurns.delete(turn.id);
       // 本地有 transcript 但服务端行已经不在：退回直接发送，让服务端重建。
       if (isSessionNotFound(error)) {
         await sendDirect(turn, payload);
@@ -849,22 +812,35 @@ export function createAgentSessionStore({
       throw error;
     }
 
-    addInboxMessage(message);
-    void drain();
+    addInboxItem(item);
   };
 
   const sendPending = async (): Promise<void> => {
-    drainPaused = false;
-    await drain();
+    if (!apiResume) {
+      return;
+    }
+
+    // 暂停在服务端的内存里：这里只说一声「继续」，由它接着取件。
+    await apiResume({ sessionId: id });
+    await refreshInbox();
   };
 
-  const cancelPending = async (messageId: string): Promise<void> => {
+  /** 队列里这一条被取消了，它的 user 回合也不会再开始。 */
+  const forgetPending = (itemId: string): void => {
+    const item = inbox.find((entry) => entry.id === itemId);
+    if (item) {
+      pendingTurns.delete(item.content.id);
+    }
+  };
+
+  const cancelPending = async (itemId: string): Promise<void> => {
     if (!apiInbox) {
       return;
     }
 
-    await apiInbox.cancel({ sessionId: id, messageId });
-    removeInboxMessage(messageId);
+    await apiInbox.cancel({ sessionId: id, itemId });
+    forgetPending(itemId);
+    removeInboxItem(itemId);
   };
 
   const clearPending = async (): Promise<void> => {
@@ -873,58 +849,12 @@ export function createAgentSessionStore({
     }
 
     await apiInbox.clear({ sessionId: id });
+    for (const item of inbox) {
+      pendingTurns.delete(item.content.id);
+    }
     bumpInbox();
     inbox = [];
     notify();
-  };
-
-  /**
-   * Attaches to a turn that is already running.
-   *
-   * A page that reloads mid-turn has no stream of its own: the send that started
-   * the turn belongs to the page that left, and the turn keeps running without
-   * it. Attaching replays the running turn from its start, so seeding an assembler
-   * with the turns already on screen rebuilds the turn and then follows it live
-   * — the turn is read whole rather than joined mid-sentence.
-   */
-  const resume = async ({
-    stream,
-    abortSignal,
-  }: ResumeOptions): Promise<void> => {
-    // Attaching is a request like a send, and takes over from whatever the
-    // store was doing.
-    active?.abort();
-    const controller = new AbortController();
-    active = controller;
-
-    const assembler = new AgentTurnAssembler<AgentToolSet>({
-      turns: currentTurns,
-    });
-
-    const commit = (): void => {
-      currentTurns = [...assembler.turns];
-      notify();
-    };
-
-    const publish = makePublish(controller, commit);
-
-    currentError = undefined;
-    status = "streaming";
-    commit();
-
-    const forwardAbort = (): void => controller.abort();
-
-    if (abortSignal?.aborted) {
-      controller.abort();
-    } else {
-      abortSignal?.addEventListener("abort", forwardAbort, { once: true });
-    }
-
-    try {
-      await readInto({ stream, assembler, controller, commit, publish });
-    } finally {
-      abortSignal?.removeEventListener("abort", forwardAbort);
-    }
   };
 
   /**
@@ -977,15 +907,15 @@ export function createAgentSessionStore({
     // and a streamed one the same rewrite of the same fields — the part moves
     // to `approval-responded` and nothing else about it moves, because the call
     // has not run and only the stream can say that it did.
-    const assembler = new AgentTurnAssembler<AgentToolSet>({
+    const answerAssembler = new AgentTurnAssembler<AgentToolSet>({
       turns: currentTurns,
     });
-    await assembler.push(answer);
+    await answerAssembler.push(answer);
 
     // The rewrite was in place, so the snapshot has to take a new identity for
     // the listeners to see it — the rule every publish here keeps, and the one
     // `useSyncExternalStore` demands of a snapshot.
-    currentTurns = [...assembler.turns];
+    currentTurns = [...answerAssembler.turns];
     notify();
 
     await sendTurns({
@@ -1002,42 +932,38 @@ export function createAgentSessionStore({
   };
 
   /**
-   * Stops the turn. Two independent things have to stop: the local read, so the
-   * transcript settles now, and the server's turn, which by design outlives the
-   * request that asked for it.
+   * 停掉这一条运行。
    *
-   * `active` is deliberately not cleared here — the request's own `finally` owns
-   * that, and clearing it early would stop that request from settling the turn.
+   * 屏幕先落定，服务端的那次运行随后停下——它按设计活得比发起它的请求久，
+   * 所以这里不能等它。
+   *
+   * 连接留着：停下一次运行不等于这个会话不再有人看，下一次运行的
+   * `run.start` 还要送到这里。
    */
   const stop = async (): Promise<void> => {
     if (!apiStop) {
       return;
     }
 
-    // 用户按了停止：回合结束后的 settle 不能立刻把队列里的消息再发出去。
-    // “立即发送”或下一次显式提交会清除这个暂停标记。
-    drainPaused = true;
-
-    // The local read has to stop too: the server closes its stream, but a
-    // reader parked in `read()` must be woken, or the turn never settles.
-    active?.abort();
+    settleRun(undefined);
 
     try {
       await apiStop({ sessionId: id });
     } catch {
-      // Stopping a turn that is not running is a no-op, not a failure, and a
-      // transport failure here is already covered by the aborted transcript.
+      // 停一条没在跑的运行是空操作，不是失败；传输失败也已经由本地落定覆盖。
     }
   };
 
-  // 页面挂载时恢复服务端队列；不自动发送，等下一次 settle 或用户显式操作。
+  // 页面挂载就开始读这个会话：正在跑的运行会被重放，之后的每一次运行都接着
+  // 送到同一条连接上。
+  void connect();
+  // 顺带恢复服务端的队列；不自动发送，交给服务端按它自己的节奏取件。
   void refreshInbox();
 
   return {
     subscribe,
     getTurns,
     getStatus,
-    isReading,
     getError,
     getInbox,
     submit,
@@ -1045,7 +971,6 @@ export function createAgentSessionStore({
     cancelPending,
     clearPending,
     sendTurns,
-    resume,
     addToolApprovalResponse,
     stop,
   };
@@ -1054,7 +979,9 @@ export function createAgentSessionStore({
 export function useAgentSession({
   id,
   api,
-  apiStream,
+  apiSend,
+  apiEvents,
+  apiResume,
   apiStop,
   apiInbox,
   allowSend,
@@ -1078,7 +1005,9 @@ export function useAgentSession({
     storeRef.current = createAgentSessionStore({
       id,
       api,
-      apiStream,
+      apiSend,
+      apiEvents,
+      apiResume,
       apiStop,
       apiInbox,
       allowSend,
@@ -1120,11 +1049,9 @@ export function useAgentSession({
     cancelPending: store.cancelPending,
     clearPending: store.clearPending,
     sendTurns: store.sendTurns,
-    resume: store.resume,
     addToolApprovalResponse: store.addToolApprovalResponse,
     stop: store.stop,
     error,
     status,
-    isReading: store.isReading,
   };
 }

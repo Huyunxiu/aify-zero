@@ -17,5 +17,6 @@ export * from "./jobs";
 export * from "./mcp";
 export type * from "./types";
 export * from "./stream-registry";
+export * from "./session-events";
 export * from "./subagent";
 export * from "./tool-approval";
