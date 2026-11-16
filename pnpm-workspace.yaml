@@ -27,6 +27,8 @@ catalog:
   "@ai-sdk/openai-compatible": ^3.0.68
   "@ai-sdk/react": 4.0.142
   "@base-ui/react": ^1.9.0
+  "@commitlint/cli": ^21.2.4
+  "@commitlint/config-conventional": ^21.2.4
   "@electron-forge/cli": ^8.0.1
   "@electron-forge/maker-deb": ^8.0.1
   "@electron-forge/maker-rpm": ^8.0.1
