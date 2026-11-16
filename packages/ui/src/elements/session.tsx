@@ -1,7 +1,6 @@
 import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import type { AgentToolSet } from "@workspace/agent";
 import {
   generateSessionId,
   generateStepId,
@@ -9,6 +8,7 @@ import {
   isAgentTextPart,
 } from "@workspace/agent-client";
 import type {
+  AgentToolSet,
   AgentAssistantTurn,
   AgentStreamEvent,
   AgentTurn,

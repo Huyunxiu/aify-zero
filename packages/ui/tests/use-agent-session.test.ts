@@ -1,5 +1,5 @@
-import type { AgentToolSet } from "@workspace/agent";
 import type {
+  AgentToolSet,
   AgentAssistantTurn,
   AgentStaticToolPart,
   AgentTurn,

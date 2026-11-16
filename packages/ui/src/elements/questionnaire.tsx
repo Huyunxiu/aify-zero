@@ -1,4 +1,3 @@
-import type { AgentToolSet, QuestionnaireToolInput } from "@workspace/agent";
 import {
   createQuestionnaireApprovalData,
   isAgentToolPart,
@@ -7,8 +6,10 @@ import {
 } from "@workspace/agent-client";
 import type {
   AgentStaticToolPart,
+  AgentToolSet,
   AgentTurn,
   QuestionnaireAnswers,
+  QuestionnaireToolInput,
 } from "@workspace/agent-client";
 import * as React from "react";
 

@@ -1,5 +1,4 @@
-import type { AgentToolSet } from "@workspace/agent";
-import type { AgentTurn } from "@workspace/agent-client";
+import type { AgentToolSet, AgentTurn } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
 import { findPendingQuestionnaire } from "../src/elements/questionnaire";

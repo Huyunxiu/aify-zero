@@ -1,4 +1,3 @@
-import type { AgentToolSet } from "@workspace/agent";
 import {
   isAgentReasoningPart,
   isAgentStaticToolPart,
@@ -6,6 +5,7 @@ import {
   isAgentToolPart,
 } from "@workspace/agent-client";
 import type {
+  AgentToolSet,
   AgentAssistantStep,
   AgentCompactionStep,
   AgentPart,
