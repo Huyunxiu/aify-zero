@@ -2,7 +2,11 @@ import type { AgentSteeringStep } from "@workspace/agent-client";
 import { useTranslation } from "react-i18next";
 
 import { Bubble, BubbleContent } from "../components/bubble";
-import { UserMessageAttachments, UserMessageText } from "./user-message";
+import {
+  JobNotice,
+  UserMessageAttachments,
+  UserMessageText,
+} from "./user-message";
 
 /**
  * 回合运行中插入的一条引导消息。
@@ -16,20 +20,7 @@ export const SteeringStep = ({ step }: { step: AgentSteeringStep }) => {
 
   // 完成通知可以插进正在跑的回合，但它不是用户说的：不画引导气泡。
   if (step.source === "job-notice") {
-    return (
-      <div
-        aria-label={t("jobNotice.marker")}
-        className="w-full py-1"
-        role="note"
-      >
-        <div className="rounded-xl border bg-muted/40 px-3 py-2">
-          <div className="mb-1 font-medium text-muted-foreground text-xs">
-            {t("jobNotice.marker")}
-          </div>
-          <UserMessageText parts={step.content} />
-        </div>
-      </div>
-    );
+    return <JobNotice parts={step.content} />;
   }
 
   return (

@@ -85,6 +85,22 @@ export const UserMessageText = ({ parts }: { parts: AgentUserPart[] }) => {
   );
 };
 
+/** 后台任务完成通知的展示：它不是用户说的话，不画用户气泡。 */
+export const JobNotice = ({ parts }: { parts: AgentUserPart[] }) => {
+  const { t } = useTranslation();
+
+  return (
+    <div aria-label={t("jobNotice.marker")} className="w-full py-1" role="note">
+      <div className="rounded-xl border bg-muted/40 px-3 py-2">
+        <div className="mb-1 font-medium text-muted-foreground text-xs">
+          {t("jobNotice.marker")}
+        </div>
+        <UserMessageText parts={parts} />
+      </div>
+    </div>
+  );
+};
+
 type UserMessageProps = {
   turn: AgentUserTurn;
   onFork?: (messageId: string) => void;
@@ -92,7 +108,6 @@ type UserMessageProps = {
 
 export const UserMessage = ({ turn }: UserMessageProps) => {
   const isTouch = useTouchPrimary();
-  const { t } = useTranslation();
   // A user turn wraps exactly one user step, so flattening gives back the flat
   // part list the rendering below was written against.
   const parts: AgentUserPart[] = turn.content.flatMap((step) => step.content);
@@ -101,20 +116,7 @@ export const UserMessage = ({ turn }: UserMessageProps) => {
 
   // 完成通知不是用户说的话：不画用户气泡，也不给复制与重新生成的动作。
   if (notice) {
-    return (
-      <div
-        aria-label={t("jobNotice.marker")}
-        className="w-full py-1"
-        role="note"
-      >
-        <div className="rounded-xl border bg-muted/40 px-3 py-2">
-          <div className="mb-1 font-medium text-muted-foreground text-xs">
-            {t("jobNotice.marker")}
-          </div>
-          <UserMessageText parts={parts} />
-        </div>
-      </div>
-    );
+    return <JobNotice parts={parts} />;
   }
 
   return (
