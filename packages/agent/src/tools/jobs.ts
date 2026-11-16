@@ -3,23 +3,51 @@ import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
+import {
+  DEFAULT_OUTPUT_LIMIT_BYTES,
+  fitJobResult,
+  utf8Bytes,
+  writeJobResultFile,
+} from "../jobs/limit";
 import type { JobRegistry } from "../jobs/registry";
-import { publicJob, renderJobRead, statusLine } from "../jobs/render";
+import { publicJob, renderJobBody, statusLine } from "../jobs/render";
 import type { PublicJob } from "../jobs/render";
 import type { JobView } from "../jobs/types";
 import type { ToolOutput } from "./types";
 
-/** `wait: true` 且没给 timeoutMs 时的等待时长。 */
-const DEFAULT_WAIT_MS = 30_000;
+/** `wait: true` 且没给 timeoutMs 时的默认等待时长。 */
+export const DEFAULT_WAIT_MS = 30_000;
 
-/** 任何单次等待的硬上限；模型给得更大就收到这里。 */
-const MAX_WAIT_MS = 600_000;
+/** 任何单次等待的默认硬上限；模型给得更大就收到这里。 */
+export const MAX_WAIT_MS = 600_000;
 
 const JOB_ID_DESCRIPTION =
   "Job id returned by the tool that started the background work.";
 
+/** 任务工具的等待上限；宿主可以按装配覆盖，省略时用默认值。 */
+export type JobToolOptions = {
+  /** `wait: true` 且没给 timeoutMs 时的等待时长。 */
+  waitTimeoutMs?: number;
+  /** 单次等待的硬上限；模型给得更大就收到这里。 */
+  maxWaitTimeoutMs?: number;
+};
+
 type JobToolDeps = {
   agentContext: ToolEnvironment;
+  options?: JobToolOptions;
+};
+
+const waitBounds = (
+  options: JobToolOptions | undefined
+): { defaultMs: number; maxMs: number } => {
+  const defaultMs = options?.waitTimeoutMs ?? DEFAULT_WAIT_MS;
+  const maxMs = options?.maxWaitTimeoutMs ?? MAX_WAIT_MS;
+  if (defaultMs > maxMs) {
+    throw new Error(
+      `invalid job tool options: waitTimeoutMs (${defaultMs}) exceeds maxWaitTimeoutMs (${maxMs})`
+    );
+  }
+  return { defaultMs, maxMs };
 };
 
 /**
@@ -107,8 +135,9 @@ type JobOutputInput = z.infer<typeof JOB_OUTPUT_INPUT>;
 type JobListInput = z.infer<typeof JOB_LIST_INPUT>;
 type JobKillInput = z.infer<typeof JOB_KILL_INPUT>;
 
-const createJobOutputTool = ({ agentContext }: JobToolDeps) => {
+const createJobOutputTool = ({ agentContext, options }: JobToolDeps) => {
   const { jobs, sessionId } = requireJobs(agentContext);
+  const { defaultMs, maxMs } = waitBounds(options);
 
   return tool<
     JobOutputInput,
@@ -123,16 +152,32 @@ const createJobOutputTool = ({ agentContext }: JobToolDeps) => {
         // 超时机制把任务判成失败。
         await jobs.wait(
           jobId,
-          Math.min(timeoutMs ?? DEFAULT_WAIT_MS, MAX_WAIT_MS),
+          Math.min(timeoutMs ?? defaultMs, maxMs),
           sessionId,
           abortSignal
         );
       }
       const read = jobs.read(jobId, sessionId);
+      const job = publicJob(read.job);
+      const limitBytes =
+        read.job.outputLimitBytes ?? DEFAULT_OUTPUT_LIMIT_BYTES;
+      const body = renderJobBody(read);
+      const suffix = `${body.endsWith("\n") ? "" : "\n"}${statusLine(job)}`;
+      // 超出上限才落盘：完整结果要么已经在生产方的输出文件里，要么现在写一份。
+      const spillPath =
+        utf8Bytes(`${body}${suffix}`) > limitBytes
+          ? (read.job.output.spillPaths?.[0] ??
+            writeJobResultFile({
+              dir: agentContext.sessionDir,
+              jobId,
+              text: `${body}${suffix}`,
+            }))
+          : undefined;
+      const fitted = fitJobResult({ body, suffix, limitBytes, spillPath });
       return {
-        output: renderJobRead(read),
-        code: "ok",
-        metadata: { job: publicJob(read.job) },
+        output: fitted.text,
+        code: "ok" as const,
+        metadata: { job },
       };
     },
     toModelOutput({ output }) {

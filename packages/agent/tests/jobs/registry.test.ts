@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { JobError } from "../../src/jobs/error.js";
 import { JobRegistry } from "../../src/jobs/registry.js";
 import type {
   JobEvent,
@@ -153,6 +154,19 @@ describe("JobRegistry 身份与准入", () => {
     expect(() => registry.start(producer().spec)).not.toThrow();
   });
 
+  test("exposes the producer's output limit and rejects an invalid one", () => {
+    const { registry } = createRegistry();
+    const id = registry.start({ ...producer().spec, outputLimitBytes: 2048 });
+
+    expect(registry.get(id).outputLimitBytes).toBe(2048);
+    expect(() =>
+      registry.start({ ...producer().spec, outputLimitBytes: 0 })
+    ).toThrow("invalid outputLimitBytes");
+    expect(() =>
+      registry.start({ ...producer().spec, outputLimitBytes: 1.5 })
+    ).toThrow("invalid outputLimitBytes");
+  });
+
   test("counts each owner separately", () => {
     const { registry } = createRegistry({ maxConcurrentJobsPerOwner: 1 });
 
@@ -209,6 +223,31 @@ describe("JobRegistry 归属围栏", () => {
     const { registry } = createRegistry();
 
     expect(() => registry.get("bash-missing")).toThrow("unknown job");
+  });
+
+  test("classifies not-found and foreign-session failures", () => {
+    const { registry } = createRegistry();
+    const id = registry.start(producer({ owner: "alice" }).spec);
+
+    const notFound = (() => {
+      try {
+        registry.get("bash-missing");
+      } catch (error: unknown) {
+        return error;
+      }
+    })();
+    const foreign = (() => {
+      try {
+        registry.get(id, "bob");
+      } catch (error: unknown) {
+        return error;
+      }
+    })();
+
+    expect(notFound).toBeInstanceOf(JobError);
+    expect(notFound).toMatchObject({ code: "JOB_NOT_FOUND" });
+    expect(foreign).toBeInstanceOf(JobError);
+    expect(foreign).toMatchObject({ code: "JOB_FOREIGN_SESSION" });
   });
 });
 

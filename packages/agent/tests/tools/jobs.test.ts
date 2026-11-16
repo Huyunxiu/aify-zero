@@ -1,3 +1,7 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import type { AgentContext } from "../../src/agent-context.js";
@@ -23,12 +27,16 @@ const deferred = <T>(): Deferred<T> => {
 
 const createRegistry = (): JobRegistry => new JobRegistry({ warn: () => {} });
 
-const createContext = (jobs: JobRegistry, sessionId = SESSION): AgentContext =>
+const createContext = (
+  jobs: JobRegistry,
+  sessionId = SESSION,
+  sessionDir = `/tmp/sessions/${sessionId}`
+): AgentContext =>
   ({
     jobs,
     sessionId,
     primaryProjectDir: "/tmp",
-    sessionDir: `/tmp/sessions/${sessionId}`,
+    sessionDir,
   }) as unknown as AgentContext;
 
 type StartedJob = {
@@ -44,7 +52,12 @@ type StartedJob = {
  */
 const startJob = (
   jobs: JobRegistry,
-  options: { owner?: string; label?: string; append?: string } = {}
+  options: {
+    owner?: string;
+    label?: string;
+    append?: string;
+    outputLimitBytes?: number;
+  } = {}
 ): StartedJob => {
   const gate = deferred<JobOutcome>();
   const cancels: (string | undefined)[] = [];
@@ -53,6 +66,9 @@ const startJob = (
     kind: "bash",
     label: options.label ?? "sleep 60",
     ...(options.owner === undefined ? {} : { owner: options.owner }),
+    ...(options.outputLimitBytes === undefined
+      ? {}
+      : { outputLimitBytes: options.outputLimitBytes }),
     run: (job) => {
       handle = job;
       if (options.append !== undefined) {
@@ -114,6 +130,24 @@ describe("job-output", () => {
 
     expect(first.output).toBe("hello\n[status: running]");
     expect(second.output).toBe("(no new output)\n[status: running]");
+  });
+
+  test("caps a large read and points at the full output file", async () => {
+    const jobs = createRegistry();
+    const dir = mkdtempSync(join(tmpdir(), "jobs-cap-"));
+    const tools = createJobTools({
+      agentContext: createContext(jobs, SESSION, dir),
+    });
+    const full = `${"x".repeat(4096)}\n`;
+    const job = startJob(jobs, { append: full, outputLimitBytes: 1024 });
+
+    const result = await call(tools["job-output"], { jobId: job.jobId });
+
+    expect(Buffer.byteLength(result.output, "utf-8")).toBeLessThanOrEqual(1024);
+    expect(result.output).toContain(join(dir, "jobs", `${job.jobId}.log`));
+    expect(readFileSync(join(dir, "jobs", `${job.jobId}.log`), "utf-8")).toBe(
+      `${full}[status: running]`
+    );
   });
 
   test("hands over the producer's result once after settlement", async () => {

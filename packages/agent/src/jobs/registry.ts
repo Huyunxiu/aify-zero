@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { logger } from "@workspace/shared/logger";
 
+import { JobError } from "./error";
 import { JobEventHub } from "./events";
 import { startPump } from "./pump";
 import type { PumpHandle } from "./pump";
@@ -57,6 +58,7 @@ type TrackedJob = {
   readonly id: JobId;
   readonly kind: string;
   readonly label: string;
+  readonly outputLimitBytes: number | undefined;
   readonly owner: string | undefined;
   status: JobStatus;
   detail: string | undefined;
@@ -163,6 +165,15 @@ export class JobRegistry {
     if (spec.owner !== undefined && spec.owner.length === 0) {
       throw new Error("invalid job owner: expected a non-empty session id");
     }
+    if (
+      spec.outputLimitBytes !== undefined &&
+      (!Number.isSafeInteger(spec.outputLimitBytes) ||
+        spec.outputLimitBytes <= 0)
+    ) {
+      throw new Error(
+        `invalid outputLimitBytes: expected a positive safe integer, got ${JSON.stringify(spec.outputLimitBytes)}`
+      );
+    }
     this.#assertCapacity(spec.owner);
 
     const id = this.#issueId(spec.kind);
@@ -187,6 +198,7 @@ export class JobRegistry {
       id,
       kind: spec.kind,
       label: spec.label,
+      outputLimitBytes: spec.outputLimitBytes,
       owner: spec.owner,
       status: "running",
       detail: undefined,
@@ -436,6 +448,9 @@ export class JobRegistry {
       id: job.id,
       kind: job.kind,
       label: job.label,
+      ...(job.outputLimitBytes === undefined
+        ? {}
+        : { outputLimitBytes: job.outputLimitBytes }),
       ...(job.owner === undefined ? {} : { owner: job.owner }),
       status: job.status,
       ...(job.state.progress === undefined
@@ -456,10 +471,13 @@ export class JobRegistry {
   #expect(id: JobId, caller?: string): TrackedJob {
     const job = this.#store.get(id);
     if (job === undefined) {
-      throw new Error(`unknown job ${id}`);
+      throw new JobError(`unknown job ${id}`, "JOB_NOT_FOUND");
     }
     if (job.owner !== undefined && job.owner !== caller) {
-      throw new Error(`job ${id} belongs to another session`);
+      throw new JobError(
+        `job ${id} belongs to another session`,
+        "JOB_FOREIGN_SESSION"
+      );
     }
     return job;
   }
@@ -476,8 +494,9 @@ export class JobRegistry {
       }
     }
     if (active >= this.#maxConcurrentJobsPerOwner) {
-      throw new Error(
-        `background job limit reached for this owner (limit: ${this.#maxConcurrentJobsPerOwner}); wait for one to finish or stop it, then retry`
+      throw new JobError(
+        `background job limit reached for this owner (limit: ${this.#maxConcurrentJobsPerOwner}); wait for one to finish or stop it, then retry`,
+        "JOB_LIMIT_REACHED"
       );
     }
   }

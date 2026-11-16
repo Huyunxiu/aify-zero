@@ -126,6 +126,11 @@ export type JobSpec = {
   label: string;
   /** 拥有者会话 id；归属校验以它为界，省略则创建无主任务。 */
   owner?: string;
+  /**
+   * 单次模型侧结果（读取、取消确认、完成通知）的 UTF-8 字节上限，省略时
+   * 用工具层的默认值。它只管模型看到的正文，不影响输出环的保留量。
+   */
+  outputLimitBytes?: number;
   /** 注册表按自己的节奏泵进输出环的拉取源。 */
   output?: readonly JobOutputSource[];
   /**
@@ -158,6 +163,8 @@ export type JobView = {
   progress?: string;
   /** 终态原因；被 kill 时合并取消原因。 */
   detail?: string;
+  /** 生产方声明的模型侧结果上限；省略时由工具层兜底。 */
+  outputLimitBytes?: number;
   startedAt: number;
   finishedAt?: number;
   output: JobOutputState;
