@@ -1,8 +1,7 @@
 /**
  * 一条端到端用例的现场：临时目录、假供应商、真实的 API 子进程、Vite dev server。
  *
- * 现场按次创建，跑完就拆。成功时整个目录删掉；失败时留在 `.e2e/runs/<时间戳>/`
- * 里，日志、数据库、临时仓库都在里面，够复盘。
+ * 现场按次创建，跑完就拆。失败或显式要求保留时，留在 `.e2e/runs/<时间戳>/` 里。
  */
 import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";

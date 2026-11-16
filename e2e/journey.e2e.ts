@@ -17,7 +17,7 @@ const COMPOSER_NAME = "What would you like to know?";
 
 const MESSAGE = "把 notes.md 的第二行改一下";
 
-test("主流程：建项目 → 发消息 → 工具改文件 → 改动视图看到那一行", async ({
+test("Main journey: create project → send message → tool edits file → Changes view shows the edited line", async ({
   page,
 }) => {
   let stack: Stack | undefined;
@@ -92,7 +92,8 @@ test("主流程：建项目 → 发消息 → 工具改文件 → 改动视图�
     failed = true;
     throw error;
   } finally {
-    // 失败留现场，成功删干净。
-    await stack?.stop({ keep: failed });
+    await stack?.stop({
+      keep: failed || process.env.E2E_KEEP_ARTIFACTS === "1",
+    });
   }
 });

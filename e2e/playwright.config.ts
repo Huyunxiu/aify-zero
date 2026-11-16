@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const keepArtifacts = process.env.E2E_KEEP_ARTIFACTS === "1";
+
 /**
  * 端到端用例的配置。
  *
@@ -22,8 +24,8 @@ export default defineConfig({
     // 浏览器的 locale 也固定住；应用自己的语言由 localStorage 决定，而每个用例
     // 都是新 context，所以它走的是 i18n 的默认值。
     locale: "en-US",
-    trace: "retain-on-failure",
-    screenshot: "only-on-failure",
+    trace: keepArtifacts ? "on" : "retain-on-failure",
+    screenshot: keepArtifacts ? "on" : "only-on-failure",
     video: "off",
   },
 });

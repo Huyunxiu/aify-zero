@@ -50,9 +50,9 @@ context，`localStorage` 是空的。
 
 请求序列也是一条断言：恰好 1 次非流式的标题请求、2 次流式的正文请求（先要工具、再回答）。标题和主回合并发，所以只数次数，不咬死顺序。
 
-## 失败时看什么
+## 查看现场
 
-成功一场删干净；失败留现场：
+默认情况下，成功后会清理临时现场；失败时会保留现场：
 
 ```text
 .e2e/
@@ -65,6 +65,15 @@ context，`localStorage` 是空的。
 ```
 
 打开 trace：`vp exec playwright show-trace .e2e/results/<用例>/trace.zip`。
+
+要查看成功用例的日志、数据库、临时仓库、截图和 trace，设置 `E2E_KEEP_ARTIFACTS=1`：
+
+```bash
+E2E_KEEP_ARTIFACTS=1 vp run e2e
+```
+
+成功用例的现场也会留在 `.e2e/runs/<时间戳>/`，trace 和截图在 `.e2e/results/`。
+不设置这个变量时，成功用例仍会清理现场，trace 和截图仍只在失败时保存。
 
 ## 它是怎么搭起来的
 
