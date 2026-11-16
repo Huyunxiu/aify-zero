@@ -252,6 +252,8 @@ type AgentSessionStore = {
   stop: () => Promise<void>;
   /** 页面卸载：停掉连接与重连。 */
   destroy: () => void;
+  /** 页面挂载：开始读这个会话；`destroy` 之后也能再开一次。 */
+  start: () => void;
 };
 
 type AgentSessionStoreOptions = UseAgentSessionOptions & {
@@ -734,6 +736,19 @@ export function createAgentSessionStore({
   };
 
   /**
+   * 页面回来了：接着读这个会话。
+   *
+   * 和 `destroy` 成对。页面卸载又挂载时（开发期的 StrictMode 每次挂载都会先
+   * 卸一次），连接必须能再开一次；只销毁不再开，发送之后就再也收不到事件，
+   * 页面上的消息不会实时出现。
+   */
+  const start = (): void => {
+    disposed = false;
+    void connect();
+    void refreshInbox();
+  };
+
+  /**
    * 把一条消息交给服务端。
    *
    * 这里不等运行开始：消息落库之后，这一次运行什么时候跑由运行器决定，页面
@@ -1024,8 +1039,8 @@ export function createAgentSessionStore({
     }
   };
 
-  // 页面挂载就开始读这个会话：正在跑的运行会被重放，之后的每一次运行都接着
-  // 送到同一条连接上。
+  // 建出来就开始读这个会话：正在跑的运行会被重放，之后的每一次运行都接着送
+  // 到同一条连接上。页面卸载又挂载时由 `start` 再开一次，见它的注释。
   void connect();
   // 顺带恢复服务端的队列；不自动发送，交给服务端按它自己的节奏取件。
   void refreshInbox();
@@ -1044,6 +1059,7 @@ export function createAgentSessionStore({
     addToolApprovalResponse,
     stop,
     destroy,
+    start,
   };
 }
 
@@ -1090,8 +1106,14 @@ export function useAgentSession({
 
   const store = storeRef.current;
 
-  // 页面走了就停掉连接：否则断线后还会在这里重连。
-  React.useEffect(() => () => store.destroy(), [store]);
+  // 连接的生死跟着页面走，而不是跟着某一次渲染走：挂载时开始读，卸载时停掉。
+  // 两者必须成对——开发期的 StrictMode 每次挂载都先卸一次，只销毁不再开，
+  // 页面就再也读不到事件，发送之后也没有实时消息。
+  React.useEffect(() => {
+    store.start();
+
+    return () => store.destroy();
+  }, [store]);
 
   // Four subscriptions over a single listener set, mirroring `useChat`.
   const currentTurns = React.useSyncExternalStore(
