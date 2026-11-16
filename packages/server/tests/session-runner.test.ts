@@ -221,7 +221,6 @@ const makeRunner = (input: {
   store: FakeStore;
   registry?: FakeRegistry;
   start: ReturnType<typeof makeStart>;
-  maxConcurrent?: number;
 }) =>
   new SessionRunner({
     store: input.store,
@@ -229,9 +228,6 @@ const makeRunner = (input: {
     startRun: input.start.startRun,
     resumeRun: () =>
       Promise.reject(new Error("resumeRun is not used in these tests")),
-    ...(input.maxConcurrent === undefined
-      ? {}
-      : { maxConcurrent: input.maxConcurrent }),
     warn: () => {},
   });
 
@@ -444,52 +440,29 @@ describe(SessionRunner, () => {
     }).toStrictEqual({ calls: 1, running: [] });
   });
 
-  test("state 报告正在跑、等待和暂停", async () => {
-    const store = new FakeStore([sessionRow("s1"), sessionRow("s2")]);
+  test("state 报告正在跑和暂停", async () => {
+    const store = new FakeStore([sessionRow("s1")]);
     store.add("s1", 2);
-    store.add("s2", 1);
     const start = makeStart(store);
-    const runner = makeRunner({ store, start, maxConcurrent: 1 });
+    const runner = makeRunner({ store, start });
 
     runner.wake("s1");
-    runner.wake("s2");
     await flush();
 
     expect(runner.state()).toStrictEqual({
       running: ["s1"],
-      waiting: ["s2"],
+      waiting: [],
       paused: [],
     });
 
     start.started[0]?.settle("error");
     await flush();
 
-    expect(runner.state().paused).toStrictEqual([
-      { sessionId: "s1", reason: "error" },
-    ]);
-  });
-
-  test("并发上限之外的会话留到下一个名额", async () => {
-    const sessions = ["s1", "s2", "s3", "s4", "s5"];
-    const store = new FakeStore(sessions.map((id) => sessionRow(id)));
-    const start = makeStart(store);
-    for (const id of sessions) {
-      store.add(id, 1);
-    }
-    const runner = makeRunner({ store, start, maxConcurrent: 2 });
-
-    for (const id of sessions) {
-      runner.wake(id);
-    }
-    await flush();
-
-    expect(runner.state().running).toHaveLength(2);
-    expect(start.calls).toHaveLength(2);
-
-    start.started[0]?.settle("done");
-    await flush();
-
-    expect(start.calls).toHaveLength(3);
+    expect(runner.state()).toStrictEqual({
+      running: [],
+      waiting: [],
+      paused: [{ sessionId: "s1", reason: "error" }],
+    });
   });
 });
 

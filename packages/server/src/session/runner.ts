@@ -59,13 +59,9 @@ export type SessionRunnerOptions = {
   startRun: StartRun;
   /** 审批恢复：写回答复之后再起一次运行。 */
   resumeRun: ResumeRun;
-  /** 同时最多几条运行；省略时 4。 */
-  maxConcurrent?: number;
   /** 内部告警的落点；测试可以换成收集器。 */
   warn?: (message: string, error?: unknown) => void;
 };
-
-const DEFAULT_MAX_CONCURRENT = 4;
 
 /**
  * 一个会话同时只有一条运行，主会话的运行只由它启动。
@@ -80,7 +76,6 @@ export class SessionRunner {
   readonly #registry: RunnerRegistry;
   readonly #startRun: StartRun;
   readonly #resumeRun: ResumeRun;
-  readonly #maxConcurrent: number;
   readonly #warn: (message: string, error?: unknown) => void;
 
   /** 等一次微任务批量处理的会话；不是队列本身，收件箱才是。 */
@@ -98,7 +93,6 @@ export class SessionRunner {
     this.#registry = options.registry;
     this.#startRun = options.startRun;
     this.#resumeRun = options.resumeRun;
-    this.#maxConcurrent = options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
     this.#warn =
       options.warn ?? ((message, error) => logger.warn(message, error));
   }
@@ -185,8 +179,8 @@ export class SessionRunner {
   /**
    * 把等待中的会话各推进一格。
    *
-   * 每条会话的循环自己接着跑，这里只负责在并发上限内把它们放出去；名额满了
-   * 就留着，等下一次唤醒。
+   * 不设并发上限：每条会话同时只有一条运行，而会话数是人开出来的。真正的
+   * 资源边界在沙箱和供应商那里——它们才知道一条运行要花多少。
    */
   #pump(): void {
     if (this.#stopped) {
@@ -194,10 +188,6 @@ export class SessionRunner {
     }
 
     for (const sessionId of this.#wakeups) {
-      if (this.#runs.size >= this.#maxConcurrent) {
-        return;
-      }
-
       this.#wakeups.delete(sessionId);
 
       if (this.#runs.has(sessionId) || this.#paused.has(sessionId)) {
@@ -340,9 +330,6 @@ export function createSessionRunner(
     startRun:
       overrides.startRun ?? ((input) => lifecycle.startFromInbox(input)),
     resumeRun: overrides.resumeRun ?? ((input) => lifecycle.resume(input)),
-    ...(overrides.maxConcurrent === undefined
-      ? {}
-      : { maxConcurrent: overrides.maxConcurrent }),
     ...(overrides.warn === undefined ? {} : { warn: overrides.warn }),
   });
 }
