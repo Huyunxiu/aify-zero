@@ -317,6 +317,22 @@ describe(SessionRunner, () => {
     expect(runner.pauseReason("s1")).toBeUndefined();
   });
 
+  test("运行起点也领残留的 step-boundary 项", async () => {
+    const store = new FakeStore([sessionRow("s1")]);
+    store.add("s1", 1);
+    const [leftover] = store.pending("s1");
+    if (leftover) {
+      leftover.deliverAt = "step-boundary";
+    }
+    const start = makeStart(store);
+    const runner = makeRunner({ store, start });
+
+    runner.wake("s1");
+    await flush();
+
+    expect(start.calls.map((call) => call.item.seq)).toStrictEqual([0]);
+  });
+
   test("子会话不跑", async () => {
     const store = new FakeStore([sessionRow("child", { kind: "subagent" })]);
     store.add("child", 1);

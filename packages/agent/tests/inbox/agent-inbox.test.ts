@@ -109,21 +109,6 @@ class FakeStore {
     return Promise.resolve(before - this.messages.length);
   }
 
-  promoteStaleInboxMessages(sessionId: string): Promise<number> {
-    let promoted = 0;
-    this.messages = this.messages.map((message) => {
-      if (
-        message.sessionId === sessionId &&
-        message.deliverAt === "step-boundary"
-      ) {
-        promoted += 1;
-        return { ...message, deliverAt: "run-boundary" };
-      }
-      return message;
-    });
-    return Promise.resolve(promoted);
-  }
-
   applySteeringSteps({
     sessionId,
     turnId: _turnId,
@@ -217,20 +202,6 @@ describe(AgentInbox, () => {
     await expect(inbox.list("session-1")).resolves.toHaveLength(1);
     await expect(inbox.clear("session-1")).resolves.toBe(1);
     await expect(inbox.list("session-1")).resolves.toStrictEqual([]);
-  });
-
-  test("promotes leftover step-boundary items to next-turn", async () => {
-    const store = new FakeStore();
-    const inbox = inboxOf(store);
-
-    await inbox.enqueue(inboxInput("request-1", "step-boundary", "steer"));
-    await inbox.enqueue(inboxInput("request-2", "run-boundary", "queue"));
-
-    await expect(inbox.promoteStale("session-1")).resolves.toBe(1);
-    await expect(inbox.list("session-1")).resolves.toMatchObject([
-      { dedupeKey: "request-1", deliverAt: "run-boundary" },
-      { dedupeKey: "request-2", deliverAt: "run-boundary" },
-    ]);
   });
 
   test("applies steering once and removes the claimed messages", async () => {

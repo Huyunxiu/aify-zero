@@ -60,9 +60,4 @@ export class AgentInbox {
   applySteeringSteps(input: ApplySteeringInput): Promise<AgentSteeringStep[]> {
     return this.#store.applySteeringSteps(input);
   }
-
-  /** 回合结束后把残留的 step-boundary 项改成等下一次运行。 */
-  promoteStale(sessionId: string): Promise<number> {
-    return this.#store.promoteStaleInboxMessages(sessionId);
-  }
 }

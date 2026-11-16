@@ -25,7 +25,6 @@ const asStore = (store: Partial<SQLiteStore>): SQLiteStore =>
 const makeLifecycle = (store: Partial<SQLiteStore>): SessionLifecycle =>
   new SessionLifecycle({
     store: asStore(store),
-    inbox: {} as never,
     registry: {
       getStreamEntryBySession: () => {},
     } as never,
@@ -255,7 +254,6 @@ describe("SessionLifecycle.startFromInbox", () => {
         setActiveStream: () => Promise.resolve(1),
         clearActiveStream: () => Promise.resolve(1),
       }),
-      inbox: { promoteStale: () => Promise.resolve(0) } as never,
       registry: {
         getStreamEntryBySession: () => null,
         registerStream: () => {},

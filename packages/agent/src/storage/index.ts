@@ -201,9 +201,6 @@ export interface AgentStore {
     messageIds: string[];
   }): Promise<AgentSteeringStep[]>;
 
-  /** 把会话里残留的 step-boundary 项改成等下一次运行；返回改动的行数。 */
-  promoteStaleInboxMessages(sessionId: string): Promise<number>;
-
   /**
    * 回合开始时先把 turn 行写成 `streaming`，并把它设为 branch head。
    *

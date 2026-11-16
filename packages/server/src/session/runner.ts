@@ -189,9 +189,8 @@ export class SessionRunner {
         return;
       }
 
-      const [item] = await this.#store.listInboxMessages(sessionId, {
-        deliverAt: "run-boundary",
-      });
+      // 运行起点不看交付边界：残留的 step-boundary 项也在这一次领走。
+      const [item] = await this.#store.listInboxMessages(sessionId);
       if (!item) {
         return;
       }

@@ -1,4 +1,4 @@
-import { AgentInbox, STREAM_REGISTRY } from "@workspace/agent";
+import { STREAM_REGISTRY } from "@workspace/agent";
 import type { Agent, AgentToolSet } from "@workspace/agent";
 import {
   addToolApprovalResponse,
@@ -17,7 +17,6 @@ import type {
 } from "@workspace/agent/storage/index";
 import { generateSessionId } from "@workspace/agent/utils/id-util";
 import type { ModelEffort } from "@workspace/shared/constants";
-import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
 
 import type { ConfiguredModel } from "../routers/settings/settings.schema";
@@ -74,7 +73,6 @@ export type ForkSessionInput = {
 
 export interface SessionLifecycleDeps {
   store: SQLiteStore;
-  inbox: AgentInbox;
   registry: typeof STREAM_REGISTRY;
   buildAgent: (input: BuildSessionAgentInput) => Promise<Agent>;
   /** 把待办项里的模型引用解析成可用的配置；找不到就拒绝起跑。 */
@@ -254,7 +252,7 @@ export class SessionLifecycle {
     inboxId?: string;
   }): Promise<{ activeStreamId: string; settled: Promise<SessionEndStatus> }> {
     const { sessionId, turns, configured, effort, projectId, inboxId } = input;
-    const { store, inbox, registry, buildAgent } = this.#deps;
+    const { store, registry, buildAgent } = this.#deps;
 
     const agent = await buildAgent({
       sessionId,
@@ -281,17 +279,9 @@ export class SessionLifecycle {
         signal: { type: "turn" },
         ...(inboxId === undefined ? {} : { inboxId }),
         onFinish: async (status) => {
+          // 收件箱不用在这里收尾：下一次运行开始时领全部待办项，残留的
+          // step-boundary 项自然落到那一次。
           try {
-            // 回合结束前没被领走的 step-boundary 项不能留在“下一个步”上：改成
-            // 等下一次运行，否则它们永远不会被发送。
-            try {
-              await inbox.promoteStale(sessionId);
-            } catch (error) {
-              logger.warn(
-                "[session] failed to settle the pending inbox items",
-                error
-              );
-            }
             await registry.unregisterStream(activeStreamId);
             await store.clearActiveStream(sessionId, activeStreamId, status);
           } finally {
@@ -361,7 +351,7 @@ export class SessionLifecycle {
     input: CompactSessionInput
   ): Promise<{ activeStreamId: string }> {
     const { sessionId, configured } = input;
-    const { store, inbox, registry, buildAgent } = this.#deps;
+    const { store, registry, buildAgent } = this.#deps;
 
     const session = await store.getSessionById(sessionId);
     if (!session) {
@@ -411,14 +401,6 @@ export class SessionLifecycle {
         streamId: activeStreamId,
         signal: { type: "compaction", trigger: "manual" },
         onFinish: async () => {
-          try {
-            await inbox.promoteStale(sessionId);
-          } catch (error) {
-            logger.warn(
-              "[session] failed to promote pending steering messages",
-              error
-            );
-          }
           await registry.unregisterStream(activeStreamId);
           // 压缩只插入一条上下文标记 turn，不是模型回复：成功或失败都不该
           // 改写会话原来的状态——一条完好的会话不该因为摘要失败被标成
@@ -526,7 +508,6 @@ export function createSessionLifecycle(
   const store = overrides.store ?? new SQLiteStore();
   return new SessionLifecycle({
     store,
-    inbox: overrides.inbox ?? new AgentInbox(store),
     registry: overrides.registry ?? STREAM_REGISTRY,
     buildAgent: overrides.buildAgent ?? buildSessionAgent,
     resolveModel: overrides.resolveModel ?? findConfiguredModel,

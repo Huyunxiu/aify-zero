@@ -556,21 +556,6 @@ export class SQLiteStore implements AgentStore {
     });
   }
 
-  async promoteStaleInboxMessages(sessionId: string): Promise<number> {
-    const promoted = await db
-      .update(inbox_item_table)
-      .set({ deliverAt: "run-boundary" })
-      .where(
-        and(
-          eq(inbox_item_table.sessionId, sessionId),
-          eq(inbox_item_table.deliverAt, "step-boundary")
-        )
-      )
-      .returning({ id: inbox_item_table.id });
-
-    return promoted.length;
-  }
-
   async beginTurn({ turn }: { turn: TurnWrite }): Promise<void> {
     // 强制成 streaming：恢复一条 wait_review turn 时，内存里的 status 可能还是
     // 旧值；这一行是崩溃标记，必须从回合开始就写明正在运行。
