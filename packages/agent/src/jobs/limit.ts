@@ -92,7 +92,8 @@ export const writeJobResultFile = ({
   const target = join(dir, "jobs");
   try {
     mkdirSync(target, { recursive: true });
-    const path = join(target, `${jobId}.log`);
+    // 与生产方的完整输出文件（`<jobId>.log`）分开，避免互相覆盖。
+    const path = join(target, `${jobId}-read.log`);
     writeFileSync(path, text, "utf-8");
     return path;
   } catch {

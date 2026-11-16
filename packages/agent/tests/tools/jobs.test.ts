@@ -175,10 +175,10 @@ describe("job-output", () => {
     const result = await call(tools["job-output"], { jobId: job.jobId });
 
     expect(Buffer.byteLength(result.output, "utf-8")).toBeLessThanOrEqual(1024);
-    expect(result.output).toContain(join(dir, "jobs", `${job.jobId}.log`));
-    expect(readFileSync(join(dir, "jobs", `${job.jobId}.log`), "utf-8")).toBe(
-      `${full}[status: running]`
-    );
+    expect(result.output).toContain(join(dir, "jobs", `${job.jobId}-read.log`));
+    expect(
+      readFileSync(join(dir, "jobs", `${job.jobId}-read.log`), "utf-8")
+    ).toBe(`${full}[status: running]`);
   });
 
   test("hands over the producer's result once after settlement", async () => {
