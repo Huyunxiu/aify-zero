@@ -8,7 +8,12 @@ import type { AgentContext } from "../../src/agent-context.js";
 import { createSteeringSignal } from "../../src/inbox/steering.js";
 import type { SteeringSignal } from "../../src/inbox/steering.js";
 import { JobRegistry } from "../../src/jobs/registry.js";
-import type { JobHandle, JobOutcome } from "../../src/jobs/types.js";
+import type {
+  JobHandle,
+  JobNoticeAdapter,
+  JobOutcome,
+  JobView,
+} from "../../src/jobs/types.js";
 import { createJobTools } from "../../src/tools/jobs.js";
 import { testSandbox } from "../helpers/sandbox.js";
 
@@ -28,6 +33,28 @@ const deferred = <T>(): Deferred<T> => {
 };
 
 const createRegistry = (): JobRegistry => new JobRegistry({ warn: () => {} });
+
+const flush = (): Promise<void> =>
+  new Promise((resolve) => {
+    setImmediate(() => resolve());
+  });
+
+const notices = (): {
+  adapter: JobNoticeAdapter;
+  delivered: JobView[];
+  withdrawn: string[];
+} => {
+  const delivered: JobView[] = [];
+  const withdrawn: string[] = [];
+  return {
+    delivered,
+    withdrawn,
+    adapter: {
+      deliver: (job) => delivered.push(job),
+      withdraw: (id) => withdrawn.push(id),
+    },
+  };
+};
 
 const createContext = (
   jobs: JobRegistry,
@@ -294,5 +321,35 @@ describe(createJobTools, () => {
     expect(() => createJobTools({ agentContext: context })).toThrow(
       "agentContext.jobs"
     );
+  });
+});
+
+describe("完成通知与工具", () => {
+  test("job-kill 的结果就是交付，不再另发通知", async () => {
+    const jobs = createRegistry();
+    const { adapter, delivered } = notices();
+    jobs.setNoticeAdapter(adapter);
+    const tools = createJobTools({ agentContext: createContext(jobs) });
+    const job = startJob(jobs);
+
+    await call(tools["job-kill"], { jobId: job.jobId, reason: "done" });
+    await flush();
+
+    expect(delivered).toStrictEqual([]);
+  });
+
+  test("job-output 撤回还没送达的通知", async () => {
+    const jobs = createRegistry();
+    const { adapter, delivered, withdrawn } = notices();
+    jobs.setNoticeAdapter(adapter);
+    const tools = createJobTools({ agentContext: createContext(jobs) });
+    const job = startJob(jobs, { append: "done\n" });
+    job.settle({ status: "completed" });
+    await flush();
+    expect(delivered.map((view) => view.id)).toStrictEqual([job.jobId]);
+
+    await call(tools["job-output"], { jobId: job.jobId });
+
+    expect(withdrawn).toStrictEqual([job.jobId]);
   });
 });

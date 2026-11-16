@@ -13,6 +13,8 @@ import type {
   JobEvents,
   JobHandle,
   JobId,
+  JobKillOrigin,
+  JobNoticeAdapter,
   JobOutcome,
   JobOutputRead,
   JobOutputSource,
@@ -70,6 +72,7 @@ type TrackedJob = {
   result: string | undefined;
   resultDelivered: boolean;
   killReason: string | undefined;
+  killOrigin: JobKillOrigin | undefined;
   settleCause: JobSettleCause | undefined;
   readonly cancel: (reason?: string) => void;
   readonly state: ProducerState;
@@ -114,6 +117,9 @@ export class JobRegistry {
   readonly #settledRetainBytes: number;
   readonly #pumpPollMs: number;
   readonly #warn: (message: string) => void;
+  /** 正在被某次 `read` 收走的任务；这段时间不投递完成通知。 */
+  readonly #collecting = new Set<JobId>();
+  #notice: JobNoticeAdapter | undefined;
 
   constructor(options: JobRegistryOptions = {}) {
     this.#maxConcurrentJobsPerOwner = positiveInteger(
@@ -209,6 +215,7 @@ export class JobRegistry {
       result: undefined,
       resultDelivered: false,
       killReason: undefined,
+      killOrigin: undefined,
       settleCause: undefined,
       cancel: (reason) => {
         hooks.cancel(reason);
@@ -321,7 +328,8 @@ export class JobRegistry {
   kill(
     id: JobId,
     caller?: string,
-    reason?: string
+    reason?: string,
+    origin: JobKillOrigin = "human"
   ): "requested" | "already-finished" {
     const job = this.#expect(id, caller);
     if (isTerminal(job.status)) {
@@ -334,6 +342,7 @@ export class JobRegistry {
     if (reason !== undefined) {
       job.killReason = reason;
     }
+    job.killOrigin = origin;
     job.settleCause = "kill";
     this.#emit({ type: "stopping", job: this.#view(job) }, job.owner);
     return "requested";
@@ -613,18 +622,21 @@ export class JobRegistry {
       resolveWait();
     }
     job.markSettled();
+    const killedByModel = cause === "kill" && job.killOrigin === "model";
     this.#emit(
       {
         type: "settled",
         job: this.#view(job),
         cause,
         awaited: waitResolvers.length > 0,
+        killedByModel,
       },
       job.owner
     );
     // 环的流随结算结束；信号排在已提交的结算之后，被它唤醒的观察者读到的
     // 是终态。
     this.#emitOutput(job);
+    this.#deliverNotice(job, cause, waitResolvers.length > 0, killedByModel);
   }
 
   /** 公告一个任务的环前进了（追加或结算）。 */
@@ -638,6 +650,67 @@ export class JobRegistry {
       },
       job.owner
     );
+  }
+
+  /**
+   * 接上完成通知的投递口。宿主在创建注册表之后接一次；不接就没有通知。
+   * @param adapter - 投递与撤回的实现。
+   */
+  setNoticeAdapter(adapter: JobNoticeAdapter): void {
+    this.#notice = adapter;
+  }
+
+  /**
+   * 撤回某条还没送达的通知；模型已经自己读走这个任务时调用。
+   * @param id - 任务 id。
+   */
+  withdrawNotice(id: JobId): void {
+    this.#notice?.withdraw(id);
+  }
+
+  /**
+   * 声明这次调用正在收走某个任务。结算落在这段时间里，就不投递通知：
+   * 调用方自己的读取会带上终态。
+   * @param id - 任务 id。
+   * @param caller - 调用方会话，校验归属。
+   * @returns 结束声明的函数；可重复调用。
+   */
+  beginCollect(id: JobId, caller?: string): () => void {
+    this.#expect(id, caller);
+    this.#collecting.add(id);
+    return () => {
+      this.#collecting.delete(id);
+    };
+  }
+
+  /** 一个任务是否正被某次调用收走。 */
+  isCollecting(id: JobId): boolean {
+    return this.#collecting.has(id);
+  }
+
+  /** 只在结算确实需要通知时投递；失败只记日志。 */
+  #deliverNotice(
+    job: TrackedJob,
+    cause: JobSettleCause,
+    awaited: boolean,
+    killedByModel: boolean
+  ): void {
+    if (this.#notice === undefined) {
+      return;
+    }
+    if (awaited || killedByModel || cause === "teardown") {
+      return;
+    }
+    if (this.#collecting.has(job.id)) {
+      return;
+    }
+    try {
+      this.#notice.deliver(this.#view(job));
+    } catch (error: unknown) {
+      this.#warn(
+        `jobs: notice delivery for ${job.id} failed: ${String(error)}`
+      );
+    }
   }
 
   #emit(event: JobEvent, owner?: string): void {

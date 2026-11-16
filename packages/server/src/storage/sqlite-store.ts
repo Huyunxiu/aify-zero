@@ -538,6 +538,10 @@ export class SQLiteStore implements AgentStore {
           createdAt,
           completedAt: createdAt,
           status: "done",
+          // 完成通知插进来时仍然是通知，不是用户说的话。
+          ...(row.kind === "job-notice"
+            ? { source: "job-notice" as const }
+            : {}),
           content: turn.content.flatMap((userStep) => userStep.content),
         };
 

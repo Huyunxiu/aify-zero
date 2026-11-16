@@ -122,6 +122,20 @@ class FakeStore {
     return Promise.resolve(list);
   }
 
+  deleteInboxItems(sessionId: string, ids?: readonly string[]) {
+    const before = this.items.length;
+    for (let index = this.items.length - 1; index >= 0; index -= 1) {
+      const entry = this.items[index];
+      if (entry === undefined || entry.sessionId !== sessionId) {
+        continue;
+      }
+      if (ids === undefined || ids.includes(entry.id)) {
+        this.items.splice(index, 1);
+      }
+    }
+    return Promise.resolve(before - this.items.length);
+  }
+
   listPendingInboxSessionIds() {
     return Promise.resolve([
       ...new Set(this.items.map((entry) => entry.sessionId)),
@@ -236,6 +250,80 @@ describe("AgentRunner", () => {
     expect(store.cleared[0]?.status).toBe("done");
 
     await runner.shutdown();
+  });
+
+  test("enqueueNotice 在空闲会话开一次运行，并把通知标成 job-notice", async () => {
+    const store = new FakeStore([session("s1")]);
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
+    await vi.waitFor(() => {
+      expect(builder.calls).toHaveLength(1);
+      expect(runner.state().running).toHaveLength(0);
+    });
+
+    const item = await runner.enqueueNotice({
+      sessionId: "s1",
+      text: "background job bash-1 finished",
+      dedupeKey: "job-notice:bash-1",
+    });
+
+    expect(item?.kind).toBe("job-notice");
+    expect(item?.deliverAt).toBe("run-boundary");
+    expect(item?.content.content[0]?.source).toBe("job-notice");
+
+    await vi.waitFor(() => expect(builder.calls).toHaveLength(2));
+    await runner.shutdown();
+  });
+
+  test("enqueueNotice 在没有模型配置时只记日志", async () => {
+    const store = new FakeStore([session("s1")]);
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: () => Promise.reject(new Error("must not build")),
+      logger: { warn: () => {} },
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    const item = await runner.enqueueNotice({
+      sessionId: "s1",
+      text: "background job bash-1 finished",
+      dedupeKey: "job-notice:bash-1",
+    });
+
+    expect(item).toBeUndefined();
+    await runner.shutdown();
+  });
+
+  test("start 丢掉上一个进程留下的完成通知", async () => {
+    const store = new FakeStore([session("s1")]);
+    store.claimOnRead = false;
+    store.items.push({
+      seq: 0,
+      id: "notice-1",
+      sessionId: "s1",
+      kind: "job-notice",
+      dedupeKey: "job-notice:bash-1",
+      deliverAt: "run-boundary",
+      content: userTurn("turn-1"),
+      payload: { model },
+      createdAt: 1,
+    });
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: () => Promise.reject(new Error("must not build")),
+      logger: { warn: () => {} },
+    });
+
+    const report = await runner.start();
+
+    expect(store.items).toStrictEqual([]);
+    expect(report.woken).toStrictEqual([]);
   });
 
   test("起不来时暂停，并保留待办项", async () => {

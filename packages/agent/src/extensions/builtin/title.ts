@@ -76,7 +76,14 @@ export class TitleExtension extends Extension {
       return;
     }
 
-    const userTurn = deps.turns().findLast((turn) => turn.type === "user");
+    // 完成通知不是用户说的话，不能拿来给会话起标题。
+    const userTurn = deps
+      .turns()
+      .findLast(
+        (turn) =>
+          turn.type === "user" &&
+          !turn.content.some((step) => step.source === "job-notice")
+      );
     if (!userTurn) {
       return;
     }

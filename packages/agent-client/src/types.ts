@@ -860,6 +860,9 @@ export type StepMetadata = Record<string, any> & {
  * two sessions after a fork; always address a turn or step together with its
  * session.
  */
+/** 一条用户侧步骤的来源。 */
+export type StepSource = "user" | "job-notice";
+
 export type AgentStepBase = AgentStepStatus & {
   /**
    * A unique identifier within the step's session.
@@ -953,6 +956,12 @@ export type AgentUserStep = AgentStepBase & {
    */
   type: "user";
 
+  /**
+   * 这一条是谁写的。省略即用户输入；完成通知不是用户说的话，界面和
+   * 「用户插话」判定都要按它区分。
+   */
+  source?: StepSource;
+
   content: AgentUserPart[];
 };
 
@@ -967,6 +976,9 @@ export type AgentUserStep = AgentStepBase & {
  */
 export type AgentSteeringStep = AgentStepBase & {
   type: "steering";
+
+  /** 这一条是谁写的，含义同 {@link AgentUserStep.source}。 */
+  source?: StepSource;
 
   content: AgentUserPart[];
 };

@@ -147,62 +147,73 @@ const createJobOutputTool = ({ agentContext, options }: JobToolDeps) => {
     description: JOB_OUTPUT_DESCRIPTION,
     inputSchema: JOB_OUTPUT_INPUT,
     execute: async ({ jobId, wait, timeoutMs }, { abortSignal }) => {
-      let steered = false;
-      if (wait === true) {
-        // 等待超时返回运行中的状态，所以这里自己管截止时间，而不让工具
-        // 超时机制把任务判成失败。用户插话时也提前返回，任务继续跑。
-        const interruption = new AbortController();
-        const unsubscribe = agentContext.steering?.subscribe(() => {
-          steered = true;
-          interruption.abort();
-        });
-        try {
-          await jobs.wait(
-            jobId,
-            Math.min(timeoutMs ?? defaultMs, maxMs),
-            sessionId,
-            abortSignal === undefined
-              ? interruption.signal
-              : AbortSignal.any([abortSignal, interruption.signal])
-          );
-        } catch (error: unknown) {
-          // 只吞掉自己制造的打断；调用方中止照旧传播。
-          if (!interruption.signal.aborted || abortSignal?.aborted === true) {
-            throw error;
-          }
-        } finally {
-          unsubscribe?.();
-        }
-      }
-      const read = jobs.read(jobId, sessionId);
-      const job = publicJob(read.job);
-      // 打断发生在任务还在跑的时候：状态行说明这次读取为什么提前返回。
-      if (steered && (job.status === "running" || job.status === "stopping")) {
-        job.detail =
-          job.detail === undefined
-            ? "user steered"
-            : `${job.detail}; user steered`;
-      }
-      const limitBytes =
-        read.job.outputLimitBytes ?? DEFAULT_OUTPUT_LIMIT_BYTES;
-      const body = renderJobBody(read);
-      const suffix = `${body.endsWith("\n") ? "" : "\n"}${statusLine(job)}`;
-      // 超出上限才落盘：完整结果要么已经在生产方的输出文件里，要么现在写一份。
-      const spillPath =
-        utf8Bytes(`${body}${suffix}`) > limitBytes
-          ? (read.job.output.spillPaths?.[0] ??
-            writeJobResultFile({
-              dir: agentContext.sessionDir,
+      // 这次调用会自己把终态交给模型；这期间结算的任务不再另发通知。
+      const release = jobs.beginCollect(jobId, sessionId);
+      try {
+        let steered = false;
+        if (wait === true) {
+          // 等待超时返回运行中的状态，所以这里自己管截止时间，而不让工具
+          // 超时机制把任务判成失败。用户插话时也提前返回，任务继续跑。
+          const interruption = new AbortController();
+          const unsubscribe = agentContext.steering?.subscribe(() => {
+            steered = true;
+            interruption.abort();
+          });
+          try {
+            await jobs.wait(
               jobId,
-              text: `${body}${suffix}`,
-            }))
-          : undefined;
-      const fitted = fitJobResult({ body, suffix, limitBytes, spillPath });
-      return {
-        output: fitted.text,
-        code: "ok" as const,
-        metadata: { job },
-      };
+              Math.min(timeoutMs ?? defaultMs, maxMs),
+              sessionId,
+              abortSignal === undefined
+                ? interruption.signal
+                : AbortSignal.any([abortSignal, interruption.signal])
+            );
+          } catch (error: unknown) {
+            // 只吞掉自己制造的打断；调用方中止照旧传播。
+            if (!interruption.signal.aborted || abortSignal?.aborted === true) {
+              throw error;
+            }
+          } finally {
+            unsubscribe?.();
+          }
+        }
+        const read = jobs.read(jobId, sessionId);
+        // 模型已经拿到这个任务的输出，还没送达的通知没有意义了。
+        jobs.withdrawNotice(jobId);
+        const job = publicJob(read.job);
+        // 打断发生在任务还在跑的时候：状态行说明这次读取为什么提前返回。
+        if (
+          steered &&
+          (job.status === "running" || job.status === "stopping")
+        ) {
+          job.detail =
+            job.detail === undefined
+              ? "user steered"
+              : `${job.detail}; user steered`;
+        }
+        const limitBytes =
+          read.job.outputLimitBytes ?? DEFAULT_OUTPUT_LIMIT_BYTES;
+        const body = renderJobBody(read);
+        const suffix = `${body.endsWith("\n") ? "" : "\n"}${statusLine(job)}`;
+        // 超出上限才落盘：完整结果要么已经在生产方的输出文件里，要么现在写一份。
+        const spillPath =
+          utf8Bytes(`${body}${suffix}`) > limitBytes
+            ? (read.job.output.spillPaths?.[0] ??
+              writeJobResultFile({
+                dir: agentContext.sessionDir,
+                jobId,
+                text: `${body}${suffix}`,
+              }))
+            : undefined;
+        const fitted = fitJobResult({ body, suffix, limitBytes, spillPath });
+        return {
+          output: fitted.text,
+          code: "ok" as const,
+          metadata: { job },
+        };
+      } finally {
+        release();
+      }
     },
     toModelOutput({ output }) {
       return { type: "text", value: output.output };
@@ -240,7 +251,8 @@ const createJobKillTool = ({ agentContext }: JobToolDeps) => {
     description: JOB_KILL_DESCRIPTION,
     inputSchema: JOB_KILL_INPUT,
     execute: ({ jobId, reason }) => {
-      const killed = jobs.kill(jobId, sessionId, reason);
+      // 来源是模型自己：结算通知不该重复这条结果。
+      const killed = jobs.kill(jobId, sessionId, reason, "model");
       const outcome =
         killed === "requested"
           ? ("cancellation-requested" as const)

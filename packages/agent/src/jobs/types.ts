@@ -19,6 +19,20 @@ export type JobStatus =
 /** 结算的触发方：生产方自己结束、外部 kill、或者所有权/服务销毁。 */
 export type JobSettleCause = "producer" | "kill" | "teardown";
 
+/** 取消请求的来源：人（界面或宿主）还是模型自己的 `job-kill`。 */
+export type JobKillOrigin = "human" | "model";
+
+/**
+ * 完成通知的投递口。注册表在结算时调用它；投递失败只记日志，不影响任务
+ * 已经提交的事实。
+ */
+export type JobNoticeAdapter = {
+  /** 投递一条结算通知；实现必须同步返回，不能抛错。 */
+  deliver(job: JobView): void;
+  /** 撤回某条还没送达的通知；没有时什么也不做。 */
+  withdraw(jobId: JobId): void;
+};
+
 /**
  * 输出块的流标签。`stdout` 和 `stderr` 会进模型的消费式读取；`log` 是生产
  * 方的旁白，只给观察者看。
@@ -210,6 +224,11 @@ export type JobEvent =
        * 所以完成通知要跳过它，避免同一件事说两遍。
        */
       awaited: boolean;
+      /**
+       * 终止来自模型自己的 `job-kill`。那个工具结果就是它的交付，通知只会
+       * 重复一遍。
+       */
+      killedByModel: boolean;
     }
   | {
       type: "output";

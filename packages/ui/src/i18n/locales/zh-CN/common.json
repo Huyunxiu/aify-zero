@@ -295,11 +295,15 @@
   "inbox": {
     "title": "{{count}} 条待办",
     "steering": "引导中",
+    "notice": "任务完成",
     "queued": "等待中",
     "sendNow": "立即发送",
     "remove": "移除",
     "clear": "全部清除",
     "empty": "（空消息）"
+  },
+  "jobNotice": {
+    "marker": "后台任务完成"
   },
   "steering": {
     "marker": "引导消息"

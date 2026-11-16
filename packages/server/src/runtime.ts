@@ -1,5 +1,6 @@
 import { createAgentRunner } from "@workspace/agent";
 
+import { createJobNoticeAdapter } from "./job-notices";
 import { JOB_REGISTRY } from "./jobs";
 import { findConfiguredModel } from "./routers/settings/settings.service";
 import { buildSessionAgent } from "./session/agent";
@@ -40,3 +41,8 @@ export const agentRunner = createAgentRunner({
     });
   },
 });
+
+// 任务结算后，完成通知投进拥有者的收件箱；空闲会话会被唤醒。
+JOB_REGISTRY.setNoticeAdapter(
+  createJobNoticeAdapter({ registry: JOB_REGISTRY, runner: agentRunner, store })
+);

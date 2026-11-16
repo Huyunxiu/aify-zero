@@ -5,9 +5,11 @@ import { JobRegistry } from "../../src/jobs/registry.js";
 import type {
   JobEvent,
   JobHandle,
+  JobNoticeAdapter,
   JobOutcome,
   JobOutputSource,
   JobSpec,
+  JobView,
 } from "../../src/jobs/types.js";
 
 type Deferred<T> = {
@@ -71,6 +73,27 @@ const producer = (
     },
   };
   return produced;
+};
+
+const notices = (): {
+  adapter: JobNoticeAdapter;
+  delivered: JobView[];
+  withdrawn: string[];
+} => {
+  const delivered: JobView[] = [];
+  const withdrawn: string[] = [];
+  return {
+    delivered,
+    withdrawn,
+    adapter: {
+      deliver: (job) => {
+        delivered.push(job);
+      },
+      withdraw: (id) => {
+        withdrawn.push(id);
+      },
+    },
+  };
 };
 
 const createRegistry = (
@@ -608,5 +631,87 @@ describe("JobRegistry 等待与事件", () => {
     expect(
       warnings.some((message) => message.includes("event listener threw"))
     ).toBeTruthy();
+  });
+});
+
+describe("JobRegistry 完成通知", () => {
+  test("delivers one notice after a producer settlement nobody collected", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const produced = producer();
+    const id = registry.start(produced.spec);
+
+    produced.settle({ status: "completed" });
+    await flush();
+
+    expect(delivered.map((job) => job.id)).toStrictEqual([id]);
+    expect(delivered[0]?.status).toBe("completed");
+  });
+
+  test("stays silent when a live wait collected the settlement", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const produced = producer();
+    const id = registry.start(produced.spec);
+
+    const waiting = registry.wait(id, 1000);
+    produced.settle({ status: "completed" });
+    await waiting;
+    await flush();
+
+    expect(delivered).toStrictEqual([]);
+  });
+
+  test("stays silent for the model's own kill", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const id = registry.start(producer().spec);
+
+    registry.kill(id, undefined, "not needed", "model");
+    await flush();
+
+    expect(delivered).toStrictEqual([]);
+  });
+
+  test("notifies for a human kill", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const id = registry.start(producer().spec);
+
+    registry.kill(id, undefined, "stop");
+    await flush();
+
+    expect(delivered.map((job) => job.id)).toStrictEqual([id]);
+    expect(delivered[0]?.status).toBe("killed");
+  });
+
+  test("stays silent while a call is collecting the job", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const produced = producer();
+    const id = registry.start(produced.spec);
+
+    const release = registry.beginCollect(id);
+    produced.settle({ status: "completed" });
+    await flush();
+    expect(delivered).toStrictEqual([]);
+
+    release();
+    expect(registry.isCollecting(id)).toBeFalsy();
+  });
+
+  test("forwards withdrawal to the adapter", () => {
+    const { registry } = createRegistry();
+    const { adapter, withdrawn } = notices();
+    registry.setNoticeAdapter(adapter);
+
+    registry.withdrawNotice("bash-missing");
+
+    expect(withdrawn).toStrictEqual(["bash-missing"]);
   });
 });

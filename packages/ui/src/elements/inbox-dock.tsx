@@ -70,9 +70,11 @@ export const InboxDock = ({
         {messages.map((message) => (
           <li className="flex items-center gap-2" key={message.id}>
             <Badge className="shrink-0" variant="secondary">
-              {message.deliverAt === "step-boundary"
-                ? t("inbox.steering")
-                : t("inbox.queued")}
+              {message.kind === "job-notice"
+                ? t("inbox.notice")
+                : message.deliverAt === "step-boundary"
+                  ? t("inbox.steering")
+                  : t("inbox.queued")}
             </Badge>
             <span className="min-w-0 flex-1 truncate text-sm">
               {messageText(message.content) || t("inbox.empty")}

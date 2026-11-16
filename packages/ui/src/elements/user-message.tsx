@@ -1,6 +1,7 @@
 import type { AgentUserPart, AgentUserTurn } from "@workspace/agent-client";
 import { isAgentFilePart, isAgentTextPart } from "@workspace/agent-client";
 import { nanoid } from "nanoid";
+import { useTranslation } from "react-i18next";
 
 import {
   Attachment,
@@ -91,10 +92,30 @@ type UserMessageProps = {
 
 export const UserMessage = ({ turn }: UserMessageProps) => {
   const isTouch = useTouchPrimary();
+  const { t } = useTranslation();
   // A user turn wraps exactly one user step, so flattening gives back the flat
   // part list the rendering below was written against.
   const parts: AgentUserPart[] = turn.content.flatMap((step) => step.content);
   const text = getUserMessageText(parts);
+  const notice = turn.content.some((step) => step.source === "job-notice");
+
+  // 完成通知不是用户说的话：不画用户气泡，也不给复制与重新生成的动作。
+  if (notice) {
+    return (
+      <div
+        aria-label={t("jobNotice.marker")}
+        className="w-full py-1"
+        role="note"
+      >
+        <div className="rounded-xl border bg-muted/40 px-3 py-2">
+          <div className="mb-1 font-medium text-muted-foreground text-xs">
+            {t("jobNotice.marker")}
+          </div>
+          <UserMessageText parts={parts} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Message avatar={<UserAvatar />} from="user" className="group">

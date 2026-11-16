@@ -69,6 +69,14 @@ export type EnqueueInput = {
   dedupeKey?: string;
 };
 
+export type EnqueueNoticeInput = {
+  sessionId: string;
+  /** 通知正文；与用户消息同构，由任务结算处组好。 */
+  text: string;
+  /** 幂等键；同一个任务重复结算不会投第二条。 */
+  dedupeKey: string;
+};
+
 export type ResumeInput = {
   sessionId: string;
   approvals: TextStreamToolApprovalResponseEvent[];
