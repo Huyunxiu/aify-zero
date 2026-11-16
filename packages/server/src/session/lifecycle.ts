@@ -56,10 +56,18 @@ export type CreateSessionInput = {
   inboxId?: string;
 };
 
-export type CreateSessionResult = {
-  activeStreamId: string | null;
-  awaitingToolApprovals: number;
-};
+export type CreateSessionResult =
+  | {
+      /** 答复之后还有没答完的调用：没有起跑，等下一个答复。 */
+      status: "held";
+      awaitingToolApprovals: number;
+    }
+  | {
+      status: "running";
+      activeStreamId: string;
+      /** 这次运行落定时的状态；运行器靠它决定队列怎么走。 */
+      settled: Promise<SessionEndStatus>;
+    };
 
 export type CompactSessionInput = {
   sessionId: string;
@@ -140,14 +148,11 @@ export class SessionLifecycle {
       }
       const toolParts = findToolApprovalRequests(session.turns);
       if (toolParts.length > 0) {
-        return {
-          activeStreamId: null,
-          awaitingToolApprovals: toolParts.length,
-        };
+        return { status: "held", awaitingToolApprovals: toolParts.length };
       }
     }
 
-    const { activeStreamId } = await this.#startRun({
+    const { activeStreamId, settled } = await this.#startRun({
       sessionId,
       turns: originalTurns,
       configured,
@@ -158,10 +163,7 @@ export class SessionLifecycle {
       ...(inboxId === undefined ? {} : { inboxId }),
     });
 
-    return {
-      activeStreamId,
-      awaitingToolApprovals: 0,
-    };
+    return { status: "running", activeStreamId, settled };
   }
 
   /**

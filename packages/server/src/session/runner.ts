@@ -13,6 +13,7 @@ import { logger } from "@workspace/shared/logger";
 import type { ConfiguredModel } from "../routers/settings/settings.schema";
 import { SQLiteStore } from "../storage/sqlite-store";
 import { createSessionLifecycle } from "./lifecycle";
+import type { CreateSessionResult } from "./lifecycle";
 
 /** 从 store 里读到的、运行器需要的那几件事。 */
 export type RunnerStore = Pick<
@@ -22,9 +23,7 @@ export type RunnerStore = Pick<
 
 /** 注册表里运行器需要的那一面：这个会话有没有一条流在跑。 */
 export type RunnerRegistry = {
-  getStreamEntryBySession(
-    sessionId: string
-  ): { isDone(): boolean; whenFinished(): Promise<void> } | undefined;
+  getStreamEntryBySession(sessionId: string): { isDone(): boolean } | undefined;
 };
 
 /** 起跑一次运行；`settled` 在运行落定时给出结束状态。 */
@@ -45,9 +44,7 @@ export type ResumeInput = {
   effort?: ModelEffort;
 };
 
-export type ResumeRun = (
-  input: ResumeInput
-) => Promise<{ activeStreamId: string | null; awaitingToolApprovals: number }>;
+export type ResumeRun = (input: ResumeInput) => Promise<CreateSessionResult>;
 
 export type SessionRunnerOptions = {
   store: RunnerStore;
@@ -148,20 +145,20 @@ export class SessionRunner {
    * 它不是从收件箱领一条，而是把答复写回对应的 step 再起一次运行；同样经过
    * 这里，主会话的模型回合才只有运行器一个起点。
    */
-  async resume(input: ResumeInput): Promise<{
-    activeStreamId: string | null;
-    awaitingToolApprovals: number;
-  }> {
+  async resume(input: ResumeInput): Promise<CreateSessionResult> {
     const { sessionId } = input;
     this.#paused.delete(sessionId);
 
     const result = await this.#resumeRun(input);
 
-    // 审批恢复的那次运行也要回到循环里：它结束之后，排在其后的待办项要接着跑。
-    const entry = this.#registry.getStreamEntryBySession(sessionId);
-    if (entry && !entry.isDone()) {
-      void entry.whenFinished().then(() => {
-        this.wake(sessionId);
+    // 审批恢复的那次运行也要回到循环里，并且按普通运行的规矩收尾：跑完接着
+    // 取下一件，失败就暂停。看不到这条运行的结尾，队列就会在失败后继续往下
+    // 跑——那正是它该停的时候。
+    if (result.status === "running") {
+      void result.settled.then((status) => {
+        if (this.#decide(sessionId, status)) {
+          this.wake(sessionId);
+        }
       });
     }
 
@@ -243,15 +240,30 @@ export class SessionRunner {
         return;
       }
 
-      const status = await started.settled;
-      if (status === "wait_review") {
-        return;
-      }
-      if (status !== "done") {
-        this.#paused.set(sessionId, status);
+      if (!this.#decide(sessionId, await started.settled)) {
         return;
       }
     }
+  }
+
+  /**
+   * 一次运行落定之后怎么走，返回「循环可以接着取下一条」。
+   *
+   * `wait_review` 是结构性的等待：历史里有一条没有结果的调用，推进它没有意义，
+   * 也不需要记成暂停。`error` / `canceled` 记住原因并停下，免得同一条坏消息
+   * 反复触发同一个错误。审批恢复的那次运行和队列里的运行走同一套判断。
+   */
+  #decide(sessionId: string, status: SessionEndStatus): boolean {
+    if (status === "wait_review") {
+      return false;
+    }
+
+    if (status !== "done") {
+      this.#paused.set(sessionId, status);
+      return false;
+    }
+
+    return true;
   }
 
   /**

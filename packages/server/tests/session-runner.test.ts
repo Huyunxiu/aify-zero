@@ -9,6 +9,8 @@ import { describe, expect, test } from "vitest";
 
 import { SessionRunner } from "../src/session/runner";
 import type {
+  ResumeInput,
+  ResumeRun,
   RunnerRegistry,
   RunnerStore,
   StartedRun,
@@ -488,5 +490,94 @@ describe(SessionRunner, () => {
     await flush();
 
     expect(start.calls).toHaveLength(3);
+  });
+});
+
+/**
+ * 审批恢复的替身：返回一个由测试决定何时落定的运行。
+ *
+ * 真实的恢复会写回答复再起一次运行；运行器只关心「起没起、什么时候落定」，
+ * 所以这里只造这两件事。
+ */
+const makeResume = () => {
+  const settle: ((status: SessionEndStatus) => void)[] = [];
+  let resumed = 0;
+
+  const resumeRun: ResumeRun = () => {
+    resumed += 1;
+    let settleRun!: (status: SessionEndStatus) => void;
+    const settled = new Promise<SessionEndStatus>((resolve) => {
+      settleRun = resolve;
+    });
+    settle.push(settleRun);
+
+    return Promise.resolve({
+      activeStreamId: "stream-1",
+      settled,
+      status: "running",
+    });
+  };
+
+  return {
+    calls: () => resumed,
+    resumeRun,
+    settle: (status: SessionEndStatus) => settle.at(-1)?.(status),
+  };
+};
+
+const makeResumeRunner = (input: {
+  store: FakeStore;
+  start: ReturnType<typeof makeStart>;
+}) => {
+  const resume = makeResume();
+
+  const runner = new SessionRunner({
+    store: input.store,
+    registry: new FakeRegistry(),
+    resumeRun: resume.resumeRun,
+    startRun: input.start.startRun,
+    warn: () => {},
+  });
+
+  return { resume, runner };
+};
+
+const resumeInput = (sessionId: string): ResumeInput =>
+  ({
+    approvals: [],
+    configured: { ref: { modelId: "test-model", providerId: "test" } },
+    sessionId,
+  }) as unknown as ResumeInput;
+
+describe("SessionRunner approval resume", () => {
+  test("审批恢复失败后队列暂停，不再自动取件", async () => {
+    const store = new FakeStore([sessionRow("s1")]);
+    store.add("s1", 1);
+    const start = makeStart(store);
+    const { resume, runner } = makeResumeRunner({ store, start });
+
+    await runner.resume(resumeInput("s1"));
+    expect(resume.calls()).toBe(1);
+
+    resume.settle("error");
+    await flush();
+
+    // 失败的那条已经落定，队列里还有一条，但它没有接着跑。
+    expect(pausedReason(runner, "s1")).toBe("error");
+    expect(start.calls).toHaveLength(0);
+  });
+
+  test("审批恢复跑完之后队列接着取件", async () => {
+    const store = new FakeStore([sessionRow("s1")]);
+    store.add("s1", 1);
+    const start = makeStart(store);
+    const { resume, runner } = makeResumeRunner({ store, start });
+
+    await runner.resume(resumeInput("s1"));
+    resume.settle("done");
+    await flush();
+
+    expect(pausedReason(runner, "s1")).toBeUndefined();
+    expect(start.calls.map((call) => call.item.seq)).toStrictEqual([0]);
   });
 });
