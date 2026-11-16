@@ -1,11 +1,16 @@
 import type { AgentToolSet } from "@workspace/agent";
-import { AgentTurnAssembler, isAgentToolPart } from "@workspace/agent-client";
+import {
+  AgentTurnAssembler,
+  formatSessionCursor,
+  isAgentToolPart,
+} from "@workspace/agent-client";
 import type {
   AgentStreamEvent,
   AgentTurn,
   AgentUserTurn,
   InboxItem,
   JSONObject,
+  SessionCursor,
   SessionStreamEvent,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
@@ -73,6 +78,11 @@ export type UseAgentSessionOptions = {
    */
   apiEvents?: (options: {
     sessionId: string;
+    /**
+     * 从哪一条之后接着读。断线重连时带上它，服务端就不会把已经看过的事件
+     * 再发一遍；第一次连接没有游标。
+     */
+    since?: string;
     abortSignal: AbortSignal;
   }) => Promise<ReadableStream | undefined>;
   /** 让停下来的队列继续：清掉服务端的暂停，再取一次件。 */
@@ -240,6 +250,8 @@ type AgentSessionStore = {
     options: AddToolApprovalResponseOptions
   ) => Promise<void>;
   stop: () => Promise<void>;
+  /** 页面卸载：停掉连接与重连。 */
+  destroy: () => void;
 };
 
 type AgentSessionStoreOptions = UseAgentSessionOptions & {
@@ -359,6 +371,12 @@ export function createAgentSessionStore({
   let currentError: Error | undefined;
   /** 这个 store 与服务的唯一连接：会话事件流。 */
   let connection: AbortController | null = null;
+  /** 读到哪里了；重连时带上去，服务端从下一条接着发。 */
+  let cursor: SessionCursor | undefined;
+  /** 页面已经走了：不再重连。 */
+  let disposed = false;
+  /** 等下一次重连的计时器；卸载时要清掉。 */
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
   /** 正在读的那一次运行；同时说明屏幕上有一条还在流。 */
   let runStreamId: string | undefined;
   /** 这一次运行的装配器；每次运行换一个。 */
@@ -553,9 +571,20 @@ export function createAgentSessionStore({
     event: SessionStreamEvent<AgentToolSet>
   ): Promise<void> => {
     if (event.type === "ready") {
-      // 握手只说了游标：这条连接不重连，没有要画的东西。
+      // 通道换了实例说明手上的游标作废：这次运行的重放接不上，按丢失收尾，
+      // 让页面重新挂载时重读会话记录。
+      if (cursor !== undefined && cursor.epoch !== event.epoch) {
+        settleRun(undefined);
+      }
+
+      cursor = { epoch: event.epoch, seq: event.seq };
       return;
     }
+
+    cursor = {
+      epoch: cursor?.epoch ?? "",
+      seq: Math.max(cursor?.seq ?? 0, event.seq),
+    };
 
     if (event.type === "run.start") {
       startRun(event);
@@ -589,40 +618,32 @@ export function createAgentSessionStore({
   };
 
   /**
-   * 读到会话事件流结束为止。
+   * 读到会话事件流结束为止，返回结束的原因（正常关闭时没有）。
    *
    * 关闭一条连接不等于结束一次运行：运行之间的空档里这条流是安静的，而
-   * `run.end` 才是运行结束的那一条。流真的关了（代理断开、服务端退出）时，
-   * 手上正在读的运行按未完成收尾——页面重新挂载时会重新读会话记录。
+   * `run.end` 才是运行结束的那一条。所以这里只把原因交回去，落定不落定由
+   * `connect` 决定——它可能带着游标再接一次。
    */
   const readSessionEvents = async (
     stream: ReadableStream,
     controller: AbortController
-  ): Promise<void> => {
+  ): Promise<Error | undefined> => {
     const reader = stream.getReader();
-    let failure: Error | undefined;
 
     try {
       for (;;) {
         const { value, done } = await reader.read();
 
         if (done || connection !== controller) {
-          break;
+          return undefined;
         }
 
         await handleStreamEvent(value as SessionStreamEvent<AgentToolSet>);
       }
     } catch (error) {
-      if (!controller.signal.aborted) {
-        failure = toError(error);
-      }
+      return controller.signal.aborted ? undefined : toError(error);
     } finally {
       reader.releaseLock();
-    }
-
-    if (connection === controller) {
-      connection = null;
-      settleRun(failure);
     }
   };
 
@@ -633,33 +654,82 @@ export function createAgentSessionStore({
    * 所以排队中的消息被服务端领走时，页面已经在读了——不需要谁去追那条新出现
    * 的流。
    */
-  const connect = async (): Promise<void> => {
-    if (!apiEvents || connection) {
+  /**
+   * 重连的等待时间。
+   *
+   * 真实的断线（代理超时、合盖休眠）会持续几秒，立即重试必然撞在断口上。
+   * 几次之后放弃：再久就是「服务端不在」，该由人刷新。
+   */
+  const RECONNECT_DELAYS_MS = [1000, 2000, 4000];
+
+  /** 等一会儿再重连；页面走了就让这个 Promise 永远不兑现。 */
+  const waitBeforeRetry = (ms: number): Promise<void> =>
+    new Promise((resolve) => {
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        resolve();
+      }, ms);
+    });
+
+  const connect = async (attempt = 0): Promise<void> => {
+    if (!apiEvents || connection || disposed) {
       return;
     }
 
     const controller = new AbortController();
     connection = controller;
 
+    let failure: Error | undefined;
+
     try {
       const stream = await apiEvents({
         abortSignal: controller.signal,
         sessionId: id,
+        ...(cursor === undefined ? {} : { since: formatSessionCursor(cursor) }),
       });
 
-      if (!stream || connection !== controller) {
-        if (connection === controller) {
-          connection = null;
-        }
-        return;
+      if (stream && connection === controller) {
+        failure = await readSessionEvents(stream, controller);
       }
+    } catch (error) {
+      failure = controller.signal.aborted ? undefined : toError(error);
+    }
 
-      await readSessionEvents(stream, controller);
-    } catch {
-      // 连不上不是会话记录的错误：它只说这个页面看不到后续事件。
-      if (connection === controller) {
-        connection = null;
+    if (connection !== controller) {
+      // 被取代了（换了 store，或者页面卸了），没有要收的尾。
+      return;
+    }
+
+    connection = null;
+
+    if (disposed) {
+      return;
+    }
+
+    // 断线重连。运行还挂在装配器上，带游标接上就不会重画；通道换了实例时
+    // `ready` 会把这次运行按丢失收尾。等几次还不行就落定，不在这里空转。
+    const delay = RECONNECT_DELAYS_MS[attempt];
+    if (delay !== undefined) {
+      await waitBeforeRetry(delay);
+
+      if (!disposed) {
+        await connect(attempt + 1);
       }
+      return;
+    }
+
+    settleRun(failure);
+  };
+
+  /** 页面走了：停掉连接和还在等的那次重连。 */
+  const destroy = (): void => {
+    disposed = true;
+    connection?.abort();
+    connection = null;
+
+    if (retryTimer !== undefined) {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
     }
   };
 
@@ -973,6 +1043,7 @@ export function createAgentSessionStore({
     sendTurns,
     addToolApprovalResponse,
     stop,
+    destroy,
   };
 }
 
@@ -1018,6 +1089,9 @@ export function useAgentSession({
   }
 
   const store = storeRef.current;
+
+  // 页面走了就停掉连接：否则断线后还会在这里重连。
+  React.useEffect(() => () => store.destroy(), [store]);
 
   // Four subscriptions over a single listener set, mirroring `useChat`.
   const currentTurns = React.useSyncExternalStore(
