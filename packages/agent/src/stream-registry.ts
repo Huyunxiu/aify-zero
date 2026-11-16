@@ -3,9 +3,20 @@ import { logger } from "@workspace/shared/logger";
 import type { ToolSet } from "ai";
 
 import type { Agent } from "./agents";
+import { SESSION_EVENTS } from "./session-events";
+import type { SessionEventRegistry } from "./session-events";
 
 export class StreamEventRegistry<TOOLS extends ToolSet> {
   readonly #store = new Map<string, StreamEventEntry<TOOLS>>();
+  readonly #sessionEvents: SessionEventRegistry<TOOLS>;
+
+  /**
+   * `events` 是会话事件通道：运行注册与注销正好是一次运行的起止，事件本身也
+   * 从这里流过，所以通道不必另找观察点。
+   */
+  constructor(events: SessionEventRegistry<TOOLS>) {
+    this.#sessionEvents = events;
+  }
 
   /**
    * Registers a turn's stream and starts draining it.
@@ -17,10 +28,21 @@ export class StreamEventRegistry<TOOLS extends ToolSet> {
   registerStream(
     streamId: string,
     agent: Agent,
-    stream: ReadableStream<AgentStreamEvent<TOOLS>>
+    stream: ReadableStream<AgentStreamEvent<TOOLS>>,
+    options: { turnId?: string } = {}
   ): StreamEventEntry<TOOLS> {
-    const entry = new StreamEventEntry(streamId, agent, stream);
+    const entry = new StreamEventEntry(
+      streamId,
+      agent,
+      stream,
+      this.#sessionEvents
+    );
     this.#store.set(streamId, entry);
+
+    // 通道先知道这一次运行开始，事件才可能到达：读者总是在 `run.start` 之后
+    // 收到属于它的事件。
+    this.#sessionEvents.startRun(agent.sessionId, streamId, options.turnId);
+
     entry.start();
     return entry;
   }
@@ -107,14 +129,20 @@ export class StreamEventEntry<TOOLS extends ToolSet> {
     this.#resolveFinished = resolve;
   });
 
+  readonly sessionId: string;
+  readonly #sessionEvents: SessionEventRegistry<TOOLS>;
+
   constructor(
     streamId: string,
     agent: Agent,
-    stream: ReadableStream<AgentStreamEvent<TOOLS>>
+    stream: ReadableStream<AgentStreamEvent<TOOLS>>,
+    events: SessionEventRegistry<TOOLS>
   ) {
     this.streamId = streamId;
+    this.sessionId = agent.sessionId;
     this.agent = agent;
     this.#source = stream;
+    this.#sessionEvents = events;
   }
 
   /**
@@ -216,6 +244,7 @@ export class StreamEventEntry<TOOLS extends ToolSet> {
     }
 
     this.#events.push(event);
+    this.#sessionEvents.publish(this.sessionId, this.streamId, event);
 
     for (const subscriber of this.#subscribers) {
       subscriber.onEvent(event);
@@ -224,6 +253,11 @@ export class StreamEventEntry<TOOLS extends ToolSet> {
 
   #finish(): void {
     this.#done = true;
+    this.#sessionEvents.endRun(
+      this.sessionId,
+      this.streamId,
+      this.#failureReason()
+    );
 
     for (const subscriber of this.#subscribers) {
       if (this.#failure === undefined) {
@@ -238,6 +272,20 @@ export class StreamEventEntry<TOOLS extends ToolSet> {
     this.#resolveFinished();
   }
 
+  /** 收尾的原因，带给失败落在通道上的人看。 */
+  #failureReason(): string | undefined {
+    const failure = this.#failure;
+
+    if (failure === undefined) {
+      return undefined;
+    }
+    if (failure instanceof Error) {
+      return failure.message;
+    }
+
+    return typeof failure === "string" ? failure : "unknown failure";
+  }
+
   #close(
     controller: ReadableStreamDefaultController<AgentStreamEvent<TOOLS>>
   ): void {
@@ -249,4 +297,4 @@ export class StreamEventEntry<TOOLS extends ToolSet> {
   }
 }
 
-export const STREAM_REGISTRY = new StreamEventRegistry();
+export const STREAM_REGISTRY = new StreamEventRegistry(SESSION_EVENTS);

@@ -1,9 +1,5 @@
-import { streamToEventIterator, type } from "@orpc/server";
-import {
-  AgentInbox,
-  NothingToCompactError,
-  STREAM_REGISTRY,
-} from "@workspace/agent";
+import { type } from "@orpc/server";
+import { AgentInbox, NothingToCompactError } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import type {
   AgentTurn,
@@ -25,6 +21,7 @@ import { sessionRunner } from "../../session/runner";
 import { SQLiteStore } from "../../storage/sqlite-store";
 import { modelRefSchema } from "../settings/settings.schema";
 import { findConfiguredModel } from "../settings/settings.service";
+import { streamSessionEvents } from "./session.events";
 import {
   cancelInboxMessage,
   clearInboxMessages,
@@ -96,36 +93,6 @@ function toApiError(error: unknown): never {
   throw error;
 }
 
-const START_TIMEOUT_MS = 5000;
-
-/**
- * 等这一次唤醒带来的运行真的开始。
- *
- * `previousStreamId` 是唤醒之前已经存在的那条：它还在跑的话不能当成这次的结果，
- * 否则发送方会挂到别人的流上。
- */
-const waitForStream = (
-  sessionId: string,
-  timeoutMs: number,
-  previousStreamId: string | undefined
-): Promise<string | null> =>
-  new Promise<string | null>((resolve) => {
-    const deadline = Date.now() + timeoutMs;
-    const check = (): void => {
-      const entry = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
-      if (entry && !entry.isDone() && entry.streamId !== previousStreamId) {
-        resolve(entry.streamId);
-        return;
-      }
-      if (Date.now() >= deadline) {
-        resolve(null);
-        return;
-      }
-      setTimeout(check, 25);
-    };
-    check();
-  });
-
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
   .errors({
@@ -174,7 +141,7 @@ const createSession = publicProcedure
     // 审批恢复先写回答复；它不起新的 user 回合，所以不走收件箱。
     if (approvals?.length) {
       try {
-        return await runner.resume({
+        await runner.resume({
           sessionId,
           approvals,
           configured,
@@ -183,6 +150,8 @@ const createSession = publicProcedure
       } catch (error) {
         toApiError(error);
       }
+
+      return { accepted: true };
     }
 
     const lastTurn = turns.at(-1);
@@ -226,47 +195,28 @@ const createSession = publicProcedure
       });
     }
 
-    const previous = STREAM_REGISTRY.getStreamEntryBySession(sessionId);
+    // 消息已经落库，也把运行器叫起来了：这一次运行什么时候开始，由运行器决定，
+    // 客户端从会话事件流上看到 `run.start` 就知道。这里不等，因为等的结果只有
+    // 「现在有几条流在跑」，而那不是这个请求要回答的问题。
     runner.wakeAfterPause(sessionId);
-    const activeStreamId = await waitForStream(
-      sessionId,
-      START_TIMEOUT_MS,
-      previous?.streamId
-    );
-    if (!activeStreamId) {
-      // 消息已经落库，这一轮起不来（会话在跑、等审批、或已经暂停）不等于失败：
-      // 客户端拿到的 null 就是「还没开始」。
-      return { activeStreamId: null, awaitingToolApprovals: 0 };
-    }
 
-    return { activeStreamId, awaitingToolApprovals: 0 };
+    return { accepted: true };
   });
 
 /**
- * 读取会话正在运行的回合。
+ * 让停下来的队列继续。
  *
- * 按会话定位，而不是按 stream id 定位：客户端持有的是会话 id，而 stream id 只
- * 命名某一个回合。
- *
- * 中途接入的读取方会从回合开头读起——入口会重放已缓冲的内容——所以刷新过的
- * 页面能重新接上这个回合，而不是从句中接入。多个读取方可以同时这样做，每个
- * 读取方拿到自己的流。
+ * 运行失败或用户中止之后，运行器不再自动取件——它不想让一条坏消息反复触发
+ * 同一个错误。暂停只存在内存里，所以「继续」也只需要在这里说一声：清掉暂停，
+ * 再看一眼收件箱。
  */
-export const streamSession = publicProcedure
-  .route({ method: "GET", path: "/sessions/{sessionId}/stream" })
-  .errors({ STREAM_NOT_FOUND: ErrorMap.STREAM_NOT_FOUND })
+export const resumeSession = publicProcedure
+  .route({ method: "POST", path: "/sessions/{sessionId}/resume" })
   .input(z.object({ sessionId: z.string() }))
   .handler(({ input }) => {
-    const streamEntry = STREAM_REGISTRY.getStreamEntryBySession(
-      input.sessionId
-    );
-    if (!streamEntry) {
-      throw new ApiError("STREAM_NOT_FOUND", {
-        data: { sessionId: input.sessionId },
-      });
-    }
+    sessionRunner().wakeAfterPause(input.sessionId);
 
-    return streamToEventIterator(streamEntry.readable());
+    return { accepted: true };
   });
 
 /**
@@ -317,9 +267,9 @@ export const forkSession = publicProcedure
  * 按需压缩一个空闲会话。
  *
  * 和普通回合一样，这里只负责准备工作并把压缩交给 stream：会话检查、agent
- * 装配、流注册，然后返回 streamId；摘要本身在后台跑。客户端从
- * `/sessions/{id}/stream` 读事件，压缩 turn 落库先于流关闭，所以读完再取
- * branch 一定能看到新标记。
+ * 装配、流注册，然后返回 streamId；摘要本身在后台跑。客户端的会话事件流会
+ * 收到这一次运行的 `run.start` 与压缩事件，压缩 turn 落库先于流关闭，所以读完
+ * 再取 branch 一定能看到新标记。
  *
  * 选段仍然在流创建之前完成，`NOTHING_TO_COMPACT` 因此还是同步错误——调用方
  * 不需要先拿 streamId 再等一条失败事件才知道没有可压缩的内容。
@@ -364,7 +314,8 @@ export const session = {
   listSessionResources,
   compactSession,
   forkSession,
-  streamSession,
+  streamSessionEvents,
+  resumeSession,
   stopSession,
   listInboxMessages,
   enqueueInboxMessage,

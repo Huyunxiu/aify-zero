@@ -240,6 +240,7 @@ export class SessionLifecycle {
       ...(effort === undefined ? {} : { effort }),
       ...(projectId === undefined ? {} : { projectId }),
       inboxId: item.id,
+      turnId: item.content.id,
     });
   }
 
@@ -256,8 +257,10 @@ export class SessionLifecycle {
     effort?: ModelEffort;
     projectId?: string;
     inboxId?: string;
+    turnId?: string;
   }): Promise<{ activeStreamId: string; settled: Promise<SessionEndStatus> }> {
-    const { sessionId, turns, configured, effort, projectId, inboxId } = input;
+    const { sessionId, turns, configured, effort, projectId, inboxId, turnId } =
+      input;
     const { store, registry, buildAgent } = this.#deps;
 
     const agent = await buildAgent({
@@ -300,7 +303,12 @@ export class SessionLifecycle {
       throw error;
     }
 
-    registry.registerStream(activeStreamId, agent, stream);
+    registry.registerStream(
+      activeStreamId,
+      agent,
+      stream,
+      turnId === undefined ? {} : { turnId }
+    );
     await store.setActiveStream(sessionId, activeStreamId);
 
     return { activeStreamId, settled };
