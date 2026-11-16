@@ -9,7 +9,12 @@ import {
   McpExtension,
   SkillExtension,
 } from "@workspace/agent";
-import type { Agent, BuildAgentInput, JobRegistry } from "@workspace/agent";
+import type {
+  Agent,
+  BuildAgentInput,
+  JobRegistry,
+  SteeringSignal,
+} from "@workspace/agent";
 import type { ModelEffort } from "@workspace/shared/constants";
 
 import { getSessionDir } from "../config";
@@ -35,6 +40,8 @@ export interface BuildSessionAgentInput {
   /** 运行器实例的注册表；子会话必须复用它。 */
   streams: BuildAgentInput["streams"];
   jobs?: JobRegistry;
+  /** 运行器的插话信号；等待任务的工具订阅它。 */
+  steering?: SteeringSignal;
 }
 
 /**
@@ -52,6 +59,7 @@ export async function buildSessionAgent({
   store,
   streams,
   jobs,
+  steering,
 }: BuildSessionAgentInput): Promise<Agent> {
   // 会话目录先建出来：Environment 提示会把路径告诉模型，模型可能直接往里
   // 写文件，不该让它先自己 mkdir。
@@ -89,6 +97,7 @@ export async function buildSessionAgent({
     compactionOverrides: settings.compaction,
     modelContextWindows: modelContextWindows(settings),
     jobs: jobs ?? JOB_REGISTRY,
+    steering,
     sandbox,
     // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。
     toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),
