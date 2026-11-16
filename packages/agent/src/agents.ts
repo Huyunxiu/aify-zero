@@ -168,6 +168,9 @@ export class Agent {
         ? {}
         : { projectId: this.context.projectId }),
       ...(this.context.jobs === undefined ? {} : { jobs: this.context.jobs }),
+      ...(this.context.steering === undefined
+        ? {}
+        : { steering: this.context.steering }),
       sandbox: this.context.sandbox,
     };
 

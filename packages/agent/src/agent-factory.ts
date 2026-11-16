@@ -20,6 +20,7 @@ import {
 } from "./extensions/builtin";
 import { EnvironmentExtension } from "./extensions/environment";
 import type { Extension } from "./extensions/types";
+import type { SteeringSignal } from "./inbox/steering";
 import type { JobRegistry } from "./jobs/registry";
 import type { ModelTargetResolver } from "./kernel/model-gateway";
 import type { AgentStore } from "./storage";
@@ -86,6 +87,8 @@ export interface SessionAgentOptions {
   /** 每个已配置模型的上下文窗口，按供应商和模型两级索引。 */
   modelContextWindows?: ModelContextWindows;
   jobs?: JobRegistry;
+  /** 用户插话信号；等待任务的工具用它提前结束阻塞。 */
+  steering?: SteeringSignal;
   /**
    * 工具读写文件和运行命令的环境。必须由宿主决定：这里给默认值等于在装配处
    * 隐式选择适配器，和「选择必须是显式的」相悖（见 docs/adr/0008）。
@@ -124,6 +127,7 @@ export async function createSessionAgent(
     compactionOverrides: options.compactionOverrides,
     modelContextWindows: options.modelContextWindows,
     jobs: options.jobs,
+    steering: options.steering,
     sandbox: options.sandbox,
   });
 

@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 
 import type { AgentContext } from "../../src/agent-context.js";
+import { createSteeringSignal } from "../../src/inbox/steering.js";
+import type { SteeringSignal } from "../../src/inbox/steering.js";
 import { JobRegistry } from "../../src/jobs/registry.js";
 import type { JobHandle, JobOutcome } from "../../src/jobs/types.js";
 import { createJobTools } from "../../src/tools/jobs.js";
@@ -30,13 +32,15 @@ const createRegistry = (): JobRegistry => new JobRegistry({ warn: () => {} });
 const createContext = (
   jobs: JobRegistry,
   sessionId = SESSION,
-  sessionDir = `/tmp/sessions/${sessionId}`
+  sessionDir = `/tmp/sessions/${sessionId}`,
+  steering?: SteeringSignal
 ): AgentContext =>
   ({
     jobs,
     sessionId,
     primaryProjectDir: "/tmp",
     sessionDir,
+    ...(steering === undefined ? {} : { steering }),
   }) as unknown as AgentContext;
 
 type StartedJob = {
@@ -181,6 +185,27 @@ describe("job-output", () => {
 
     expect(result.output).toContain("late result");
     expect(result.output).toContain("[status: completed]");
+  });
+
+  test("a user steer ends the wait and names the interruption", async () => {
+    const jobs = createRegistry();
+    const steering = createSteeringSignal();
+    const tools = createJobTools({
+      agentContext: createContext(jobs, SESSION, "/tmp/sessions/s1", steering),
+    });
+    const job = startJob(jobs);
+
+    const waiting = call(tools["job-output"], {
+      jobId: job.jobId,
+      wait: true,
+      timeoutMs: 10_000,
+    });
+    steering.raise();
+    const result = await waiting;
+
+    expect(result.output).toBe(
+      "(no new output)\n[status: running, user steered]"
+    );
   });
 
   test("a timed-out wait reports the running job without killing it", async () => {

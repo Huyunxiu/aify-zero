@@ -13,6 +13,7 @@ import type { ModelRef } from "@workspace/shared/model";
 
 import { AgentSession } from "../agent-session";
 import type { Agent } from "../agents";
+import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
 import type { StreamEventRegistry } from "../stream-registry";
@@ -51,6 +52,8 @@ export interface SessionLifecycleDeps {
   registry: StreamEventRegistry<AgentToolSet>;
   buildAgent: (input: BuildAgentInput) => Promise<Agent>;
   jobs?: JobRegistry;
+  /** 按会话取插话信号；没有时等待只能靠中止或超时结束。 */
+  steering?: (sessionId: string) => SteeringSignal;
 }
 
 /**
@@ -222,6 +225,9 @@ export class SessionLifecycle {
       ...(projectId === undefined ? {} : { projectId }),
       streams: registry,
       ...(this.#deps.jobs === undefined ? {} : { jobs: this.#deps.jobs }),
+      ...(this.#deps.steering === undefined
+        ? {}
+        : { steering: this.#deps.steering(sessionId) }),
     });
 
     const activeStreamId = generateSessionId();
@@ -352,6 +358,9 @@ export class SessionLifecycle {
         : { projectId: session.projectId }),
       streams: registry,
       ...(this.#deps.jobs === undefined ? {} : { jobs: this.#deps.jobs }),
+      ...(this.#deps.steering === undefined
+        ? {}
+        : { steering: this.#deps.steering(sessionId) }),
     });
 
     const activeStreamId = generateSessionId();

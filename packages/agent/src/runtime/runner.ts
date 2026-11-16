@@ -10,6 +10,8 @@ import type { ModelRef } from "@workspace/shared/model";
 import type { Agent } from "../agents";
 import { resolveDeliverAt } from "../inbox/delivery";
 import { InboxItemNotFoundError } from "../inbox/errors";
+import type { SteeringSignal } from "../inbox/steering";
+import { createSteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import { SessionEventRegistry } from "../session-events";
 import type { SessionEndStatus } from "../storage";
@@ -64,6 +66,8 @@ export class AgentRunner {
 
   /** 等一次微任务批量处理的会话；不是队列本身，收件箱才是。 */
   readonly #wakeups = new Set<string>();
+  /** 每个会话一个插话信号；用户消息插进正在跑的回合时触发。 */
+  readonly #steering = new Map<string, SteeringSignal>();
   /** 正在推进的会话；有值表示这条会话的循环在跑，不是“有一条运行在跑”。 */
   readonly #runs = new Map<string, Promise<void>>();
   /** 不再自动推进的会话，以及原因。不落库。 */
@@ -88,6 +92,7 @@ export class AgentRunner {
       registry: this.#streams,
       buildAgent: this.#buildAgent,
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
+      steering: (sessionId) => this.steeringSignal(sessionId),
     });
   }
 
@@ -168,6 +173,11 @@ export class AgentRunner {
       },
     });
 
+    // 消息能插进正在跑的回合时，等待中的工具先让路；排在下一轮的不用打断。
+    if (item.deliverAt === "step-boundary") {
+      this.steeringSignal(input.sessionId).raise();
+    }
+
     this.#paused.delete(input.sessionId);
     this.wake(input.sessionId);
 
@@ -211,6 +221,20 @@ export class AgentRunner {
 
     this.#wakeups.add(sessionId);
     this.#schedule();
+  }
+
+  /**
+   * 一个会话的插话信号；没有时创建。
+   * @param sessionId - 会话 id。
+   */
+  steeringSignal(sessionId: string): SteeringSignal {
+    const existing = this.#steering.get(sessionId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const created = createSteeringSignal();
+    this.#steering.set(sessionId, created);
+    return created;
   }
 
   /** 清掉暂停并唤醒；用户明确要求继续时用它。 */
