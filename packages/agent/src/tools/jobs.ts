@@ -251,6 +251,8 @@ const createJobKillTool = ({ agentContext }: JobToolDeps) => {
     description: JOB_KILL_DESCRIPTION,
     inputSchema: JOB_KILL_INPUT,
     execute: ({ jobId, reason }) => {
+      // 取消确认是固定短文案，且以任务 id 开头：不按任务上限裁剪，裁掉 id
+      // 会让这条结果无法对应到任务。
       // 来源是模型自己：结算通知不该重复这条结果。
       const killed = jobs.kill(jobId, sessionId, reason, "model");
       const outcome =
