@@ -36,3 +36,7 @@ Five canonical roles. Four map to same-named Linear labels; `wontfix` means stat
 ### Domain docs
 
 Multi-context: a root `GLOSSARY-MAP.md` points at one `GLOSSARY.md` per app and package. See `docs/agents/domain.md`.
+
+### Commit messages
+
+Use Conventional Commits. The `commit-msg` hook rejects a message that breaks the rules. Put the Linear key in the `Refs:` footer, not in the subject. Do not use `git commit --no-verify`. See `docs/agents/commit-message.md`.

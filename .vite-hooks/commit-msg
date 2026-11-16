@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# 提交信息必须是 Conventional Commits 格式。规则见 docs/agents/commit-message.md。
+# commitlint 由 pnpm 装在工作区根，vp 的分发器已经把 node_modules/.bin 加进 PATH。
+exec commitlint --edit "$1"
