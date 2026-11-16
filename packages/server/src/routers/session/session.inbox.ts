@@ -6,6 +6,7 @@ import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
+import { sessionRunner } from "../../session/runner";
 import { SQLiteStore } from "../../storage/sqlite-store";
 import { inboxItemIdSchema, resolveDeliverAt } from "./session.schema";
 import type { InboxMode } from "./session.schema";
@@ -73,6 +74,10 @@ export const enqueueInboxMessage = publicProcedure
         projectId: session.projectId ?? input.projectId ?? undefined,
       },
     });
+
+    // 入队就算投递成功：唤醒运行器，让它在空闲时自己开始。页面随后关掉也不
+    // 影响这一条。
+    sessionRunner().wakeAfterPause(input.sessionId);
 
     return { message };
   });
