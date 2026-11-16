@@ -1,45 +1,45 @@
 import { describe, expect, test } from "vitest";
 
-import { resolveInboxPlacement } from "../src/routers/session/session.schema";
+import { resolveDeliverAt } from "../src/routers/session/session.schema";
 
-describe(resolveInboxPlacement, () => {
+describe(resolveDeliverAt, () => {
   test("sends steering to the next step while a turn is running", () => {
     expect(
-      resolveInboxPlacement({
+      resolveDeliverAt({
         mode: "steering",
         running: true,
         streamKind: "turn",
       })
-    ).toBe("next-step");
+    ).toBe("step-boundary");
   });
 
   test("sends steering to the next turn during a manual compaction", () => {
     expect(
-      resolveInboxPlacement({
+      resolveDeliverAt({
         mode: "steering",
         running: true,
         streamKind: "compaction",
       })
-    ).toBe("next-turn");
+    ).toBe("run-boundary");
   });
 
   test("sends steering to the next turn while idle", () => {
     expect(
-      resolveInboxPlacement({
+      resolveDeliverAt({
         mode: "steering",
         running: false,
         streamKind: undefined,
       })
-    ).toBe("next-turn");
+    ).toBe("run-boundary");
   });
 
   test("sends a follow-up to the next turn even while a turn is running", () => {
     expect(
-      resolveInboxPlacement({
+      resolveDeliverAt({
         mode: "followup",
         running: true,
         streamKind: "turn",
       })
-    ).toBe("next-turn");
+    ).toBe("run-boundary");
   });
 });

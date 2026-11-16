@@ -1,6 +1,6 @@
 import { streamToEventIterator, type } from "@orpc/server";
 import {
-  InboxMessageNotFoundError,
+  InboxItemNotFoundError,
   NothingToCompactError,
   STREAM_REGISTRY,
 } from "@workspace/agent";
@@ -92,7 +92,7 @@ const createSession = publicProcedure
     MODEL_UNSUPPORTED_INPUT: ErrorMap.MODEL_UNSUPPORTED_INPUT,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
-    INBOX_MESSAGE_NOT_FOUND: ErrorMap.INBOX_MESSAGE_NOT_FOUND,
+    INBOX_ITEM_NOT_FOUND: ErrorMap.INBOX_ITEM_NOT_FOUND,
   })
   .input(
     type<{
@@ -146,8 +146,8 @@ const createSession = publicProcedure
         inboxId,
       });
     } catch (error) {
-      if (error instanceof InboxMessageNotFoundError) {
-        throw new ApiError("INBOX_MESSAGE_NOT_FOUND", {
+      if (error instanceof InboxItemNotFoundError) {
+        throw new ApiError("INBOX_ITEM_NOT_FOUND", {
           data: { sessionId, messageId: error.id },
         });
       }

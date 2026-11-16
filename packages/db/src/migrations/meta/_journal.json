@@ -78,6 +78,13 @@
       "when": 1794500440901,
       "tag": "0010_chilly_mac_gargan",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1794802374662,
+      "tag": "0011_inbox_item",
+      "breakpoints": true
     }
   ]
 }

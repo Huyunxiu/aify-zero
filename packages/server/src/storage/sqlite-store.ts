@@ -3,11 +3,11 @@ import type {
   AgentTurn,
   AgentUserTurn,
   EnqueueInboxInput,
-  InboxMessage,
-  InboxPlacement,
+  DeliverAt,
+  InboxItem,
   InboxPayload,
 } from "@workspace/agent-client";
-import { InboxMessageNotFoundError } from "@workspace/agent/inbox/errors";
+import { InboxItemNotFoundError } from "@workspace/agent/inbox/errors";
 import type {
   AgentStore,
   SessionEndStatus,
@@ -25,14 +25,14 @@ import type {
 } from "@workspace/agent/storage/turn-record";
 import type { StepRow } from "@workspace/agent/storage/types";
 import {
-  inbox_message_table,
+  inbox_item_table,
   session_table,
   db,
   step_table,
   turn_table,
 } from "@workspace/db";
 import type {
-  InboxMessageModel,
+  InboxItemModel,
   SessionInsertModel,
   SessionModel,
   StepModel,
@@ -110,18 +110,19 @@ function turnRowPatch(turn: AgentTurn) {
 }
 
 /**
- * 把 Inbox 行映射成 wire 类型。
+ * 把收件箱行映射成 wire 类型。
  *
  * `content` / `payload` 在 schema 里是 `unknown` 的 JSON 列；写入时来自
  * `EnqueueInboxInput`，读取时在这里收窄回会话类型。
  */
-function toInboxMessage(row: InboxMessageModel): InboxMessage {
+function toInboxItem(row: InboxItemModel): InboxItem {
   return {
     seq: row.seq,
     id: row.id,
     sessionId: row.sessionId,
-    requestId: row.requestId,
-    placement: row.placement,
+    kind: row.kind,
+    dedupeKey: row.dedupeKey,
+    deliverAt: row.deliverAt,
     content: row.content as AgentUserTurn,
     payload: row.payload as InboxPayload,
     createdAt: row.createdAt.getTime(),
@@ -132,28 +133,28 @@ function toInboxMessage(row: InboxMessageModel): InboxMessage {
 type Deleter = Pick<Transaction, "delete">;
 
 /**
- * 删除会话里的 Inbox 行；`ids` 省略时删除全部。
+ * 删除会话里的收件箱行；`ids` 省略时删除全部。
  *
- * 返回被删的行。认领路径（`saveTurn` / `applySteeringSteps`）靠返回的行判断
- * 消息是否仍待发送：取消或并发领走的行不在其中。
+ * 返回被删的行。领取路径（`saveTurn` / `applySteeringSteps`）靠返回的行判断
+ * 待办项是否还没被领走：取消或并发领走的行不在其中。
  */
 async function deleteInboxRows(
   handle: Deleter,
   sessionId: string,
   ids?: readonly string[]
-): Promise<InboxMessageModel[]> {
+): Promise<InboxItemModel[]> {
   // 空集合不能退化成“删除全部”。
   if (ids?.length === 0) {
     return [];
   }
 
-  const conditions = [eq(inbox_message_table.sessionId, sessionId)];
+  const conditions = [eq(inbox_item_table.sessionId, sessionId)];
   if (ids) {
-    conditions.push(inArray(inbox_message_table.id, [...ids]));
+    conditions.push(inArray(inbox_item_table.id, [...ids]));
   }
 
   return await handle
-    .delete(inbox_message_table)
+    .delete(inbox_item_table)
     .where(and(...conditions))
     .returning();
 }
@@ -335,7 +336,7 @@ export class SQLiteStore implements AgentStore {
         ]);
 
         if (claimed.length === 0) {
-          throw new InboxMessageNotFoundError(options.inboxId);
+          throw new InboxItemNotFoundError(options.inboxId);
         }
       }
 
@@ -436,46 +437,47 @@ export class SQLiteStore implements AgentStore {
 
   async listInboxMessages(
     sessionId: string,
-    options?: { placement?: InboxPlacement }
-  ): Promise<InboxMessage[]> {
-    const conditions = [eq(inbox_message_table.sessionId, sessionId)];
+    options?: { deliverAt?: DeliverAt }
+  ): Promise<InboxItem[]> {
+    const conditions = [eq(inbox_item_table.sessionId, sessionId)];
 
-    if (options?.placement) {
-      conditions.push(eq(inbox_message_table.placement, options.placement));
+    if (options?.deliverAt) {
+      conditions.push(eq(inbox_item_table.deliverAt, options.deliverAt));
     }
 
     const rows = await db
       .select()
-      .from(inbox_message_table)
+      .from(inbox_item_table)
       .where(and(...conditions))
-      .orderBy(asc(inbox_message_table.seq));
+      .orderBy(asc(inbox_item_table.seq));
 
-    return rows.map(toInboxMessage);
+    return rows.map(toInboxItem);
   }
 
-  async insertInboxMessage(input: EnqueueInboxInput): Promise<InboxMessage> {
+  async insertInboxMessage(input: EnqueueInboxInput): Promise<InboxItem> {
     // 冲突时把原值写回同一行再 RETURNING：一次往返就能拿到已有行，客户端
     // 重试和并发提交都只会留下一条。
     const [row] = await db
-      .insert(inbox_message_table)
+      .insert(inbox_item_table)
       .values({
         sessionId: input.sessionId,
-        requestId: input.requestId,
-        placement: input.placement,
+        kind: input.kind,
+        dedupeKey: input.dedupeKey,
+        deliverAt: input.deliverAt,
         content: input.content,
         payload: input.payload,
       })
       .onConflictDoUpdate({
-        target: [inbox_message_table.sessionId, inbox_message_table.requestId],
-        set: { requestId: input.requestId },
+        target: [inbox_item_table.sessionId, inbox_item_table.dedupeKey],
+        set: { dedupeKey: input.dedupeKey },
       })
       .returning();
 
     if (!row) {
-      throw new Error("inbox message insert did not produce a row");
+      throw new Error("inbox item insert did not produce a row");
     }
 
-    return toInboxMessage(row);
+    return toInboxItem(row);
   }
 
   /** 删除会话的待发送消息；`ids` 省略时清空。返回删除的行数。 */
@@ -556,15 +558,15 @@ export class SQLiteStore implements AgentStore {
 
   async promoteStaleInboxMessages(sessionId: string): Promise<number> {
     const promoted = await db
-      .update(inbox_message_table)
-      .set({ placement: "next-turn" })
+      .update(inbox_item_table)
+      .set({ deliverAt: "run-boundary" })
       .where(
         and(
-          eq(inbox_message_table.sessionId, sessionId),
-          eq(inbox_message_table.placement, "next-step")
+          eq(inbox_item_table.sessionId, sessionId),
+          eq(inbox_item_table.deliverAt, "step-boundary")
         )
       )
-      .returning({ id: inbox_message_table.id });
+      .returning({ id: inbox_item_table.id });
 
     return promoted.length;
   }

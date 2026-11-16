@@ -7,14 +7,13 @@ import z from "zod";
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
 import { SQLiteStore } from "../../storage/sqlite-store";
-import { inboxMessageIdSchema, resolveInboxPlacement } from "./session.schema";
+import { inboxItemIdSchema, resolveDeliverAt } from "./session.schema";
 import type { InboxMode } from "./session.schema";
 
 /**
- * 列出会话的待发送消息。
+ * 列出会话的待办项。
  *
- * 已领取的行会被删除，所以这里只返回仍然排队的消息；客户端刷新后据此恢复
- * 队列 dock。
+ * 已领取的行会被删除，所以这里只返回仍然排队的项；客户端刷新后据此恢复队列条。
  */
 export const listInboxMessages = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/inbox" })
@@ -25,11 +24,11 @@ export const listInboxMessages = publicProcedure
   });
 
 /**
- * 入队一条消息。
+ * 入队一条待办项。
  *
- * placement 由当前流决定：运行中的普通回合 + steering 才是下一步；空闲、
- * 等待审批、手工压缩都排到下一回合。同 (sessionId, requestId) 的重试返回
- * 已有行，不会重复入队。
+ * 交付边界由当前流决定：运行中的普通回合 + steering 才能插进下一个步边界；
+ * 空闲、等待审批、手工压缩都排到下一次运行。同 (sessionId, dedupeKey) 的重试
+ * 返回已有行，不会重复入队。
  */
 export const enqueueInboxMessage = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/inbox" })
@@ -37,7 +36,7 @@ export const enqueueInboxMessage = publicProcedure
   .input(
     type<{
       sessionId: string;
-      requestId: string;
+      dedupeKey: string;
       mode: InboxMode;
       turn: AgentUserTurn;
       model: ModelRef;
@@ -55,7 +54,7 @@ export const enqueueInboxMessage = publicProcedure
     }
 
     const running = STREAM_REGISTRY.getStreamEntryBySession(input.sessionId);
-    const placement = resolveInboxPlacement({
+    const deliverAt = resolveDeliverAt({
       mode: input.mode,
       running: running !== undefined && !running.isDone(),
       streamKind: running?.agent.streamKind,
@@ -64,8 +63,9 @@ export const enqueueInboxMessage = publicProcedure
     const inbox = new AgentInbox(store);
     const message = await inbox.enqueue({
       sessionId: input.sessionId,
-      requestId: input.requestId,
-      placement,
+      kind: "user-message",
+      dedupeKey: input.dedupeKey,
+      deliverAt,
       content: input.turn,
       payload: {
         model: input.model,
@@ -77,19 +77,19 @@ export const enqueueInboxMessage = publicProcedure
     return { message };
   });
 
-/** 移除一条待发送消息。 */
+/** 移除一条待办项。 */
 export const cancelInboxMessage = publicProcedure
   .route({
     method: "DELETE",
     path: "/sessions/{sessionId}/inbox/{messageId}",
   })
-  .input(inboxMessageIdSchema)
+  .input(inboxItemIdSchema)
   .handler(async ({ input }) => {
     const inbox = new AgentInbox(new SQLiteStore());
     return { removed: await inbox.cancel(input.sessionId, input.messageId) };
   });
 
-/** 清空会话的待发送消息。 */
+/** 清空会话的待办项。 */
 export const clearInboxMessages = publicProcedure
   .route({ method: "DELETE", path: "/sessions/{sessionId}/inbox" })
   .input(z.object({ sessionId: z.string() }))

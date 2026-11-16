@@ -1,7 +1,7 @@
 import type {
   AgentStreamEvent,
   AgentUserTurn,
-  InboxMessage,
+  InboxItem,
 } from "@workspace/agent-client";
 import { describe, expect, test, vi } from "vitest";
 
@@ -31,13 +31,14 @@ const inboxMessage = (
   id: string,
   seq: number,
   content: AgentUserTurn,
-  placement: "next-step" | "next-turn" = "next-turn"
-): InboxMessage => ({
+  deliverAt: "step-boundary" | "run-boundary" = "run-boundary"
+): InboxItem => ({
   seq,
   id,
   sessionId: "session-1",
-  requestId: `request-${id}`,
-  placement,
+  kind: "user-message",
+  dedupeKey: `request-${id}`,
+  deliverAt,
   content,
   payload: { model: TEST_MODEL },
   createdAt: 1,
@@ -61,17 +62,17 @@ const deferredStream = () => {
   return { controller, stream };
 };
 
-const createInbox = (seed: InboxMessage[] = []) => {
+const createInbox = (seed: InboxItem[] = []) => {
   let messages = [...seed];
 
   const api: InboxApi = {
     list: vi.fn<InboxApi["list"]>(() => Promise.resolve([...messages])),
     enqueue: vi.fn<InboxApi["enqueue"]>((input) => {
       const message = inboxMessage(
-        input.requestId,
+        input.dedupeKey,
         messages.length,
         input.turn,
-        input.mode === "steering" ? "next-step" : "next-turn"
+        input.mode === "steering" ? "step-boundary" : "run-boundary"
       );
       messages = [...messages, message];
       return Promise.resolve({ message });

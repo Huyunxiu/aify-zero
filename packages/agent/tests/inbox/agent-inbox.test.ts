@@ -2,8 +2,8 @@ import type {
   AgentSteeringStep,
   AgentUserTurn,
   EnqueueInboxInput,
-  InboxMessage,
-  InboxPlacement,
+  InboxItem,
+  DeliverAt,
 } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
@@ -27,14 +27,15 @@ const userTurn = (id: string, text: string): AgentUserTurn => ({
 });
 
 const inboxInput = (
-  requestId: string,
-  placement: InboxPlacement,
+  dedupeKey: string,
+  deliverAt: DeliverAt,
   text: string
 ): EnqueueInboxInput => ({
   sessionId: "session-1",
-  requestId,
-  placement,
-  content: userTurn(`turn-${requestId}`, text),
+  kind: "user-message",
+  dedupeKey,
+  deliverAt,
+  content: userTurn(`turn-${dedupeKey}`, text),
   payload: { model: { providerId: "test-provider", modelId: "test-model" } },
 });
 
@@ -45,26 +46,27 @@ const inboxInput = (
  * 本身只表达这些动作，所以测试断言的是动作的结果，不是 SQL。
  */
 class FakeStore {
-  messages: InboxMessage[] = [];
+  messages: InboxItem[] = [];
   #nextSeq = 0;
   #nextId = 0;
 
-  insertInboxMessage(input: EnqueueInboxInput): Promise<InboxMessage> {
+  insertInboxMessage(input: EnqueueInboxInput): Promise<InboxItem> {
     const existing = this.messages.find(
       (message) =>
         message.sessionId === input.sessionId &&
-        message.requestId === input.requestId
+        message.dedupeKey === input.dedupeKey
     );
     if (existing) {
       return Promise.resolve(existing);
     }
 
-    const message: InboxMessage = {
+    const message: InboxItem = {
       seq: this.#nextSeq,
       id: `inbox-${this.#nextId}`,
       sessionId: input.sessionId,
-      requestId: input.requestId,
-      placement: input.placement,
+      kind: input.kind,
+      dedupeKey: input.dedupeKey,
+      deliverAt: input.deliverAt,
       content: input.content,
       payload: input.payload,
       createdAt: 1,
@@ -78,15 +80,15 @@ class FakeStore {
 
   listInboxMessages(
     sessionId: string,
-    options?: { placement?: InboxPlacement }
-  ): Promise<InboxMessage[]> {
+    options?: { deliverAt?: DeliverAt }
+  ): Promise<InboxItem[]> {
     return Promise.resolve(
       this.messages
         .filter(
           (message) =>
             message.sessionId === sessionId &&
-            (options?.placement === undefined ||
-              message.placement === options.placement)
+            (options?.deliverAt === undefined ||
+              message.deliverAt === options.deliverAt)
         )
         .toSorted((left, right) => left.seq - right.seq)
     );
@@ -112,10 +114,10 @@ class FakeStore {
     this.messages = this.messages.map((message) => {
       if (
         message.sessionId === sessionId &&
-        message.placement === "next-step"
+        message.deliverAt === "step-boundary"
       ) {
         promoted += 1;
-        return { ...message, placement: "next-turn" };
+        return { ...message, deliverAt: "run-boundary" };
       }
       return message;
     });
@@ -165,12 +167,12 @@ describe(AgentInbox, () => {
     const store = new FakeStore();
     const inbox = inboxOf(store);
 
-    await inbox.enqueue(inboxInput("request-1", "next-turn", "first"));
-    await inbox.enqueue(inboxInput("request-2", "next-turn", "second"));
+    await inbox.enqueue(inboxInput("request-1", "run-boundary", "first"));
+    await inbox.enqueue(inboxInput("request-2", "run-boundary", "second"));
 
     await expect(inbox.list("session-1")).resolves.toMatchObject([
-      { requestId: "request-1", placement: "next-turn" },
-      { requestId: "request-2", placement: "next-turn" },
+      { dedupeKey: "request-1", deliverAt: "run-boundary" },
+      { dedupeKey: "request-2", deliverAt: "run-boundary" },
     ]);
   });
 
@@ -179,26 +181,26 @@ describe(AgentInbox, () => {
     const inbox = inboxOf(store);
 
     const first = await inbox.enqueue(
-      inboxInput("request-1", "next-turn", "once")
+      inboxInput("request-1", "run-boundary", "once")
     );
     const second = await inbox.enqueue(
-      inboxInput("request-1", "next-step", "changed")
+      inboxInput("request-1", "step-boundary", "changed")
     );
 
     expect(second.id).toBe(first.id);
-    expect(second.placement).toBe("next-turn");
+    expect(second.deliverAt).toBe("run-boundary");
     await expect(inbox.list("session-1")).resolves.toHaveLength(1);
   });
 
-  test("lists only next-step messages for steering", async () => {
+  test("lists only step-boundary items for steering", async () => {
     const store = new FakeStore();
     const inbox = inboxOf(store);
 
-    await inbox.enqueue(inboxInput("request-1", "next-step", "steer"));
-    await inbox.enqueue(inboxInput("request-2", "next-turn", "queue"));
+    await inbox.enqueue(inboxInput("request-1", "step-boundary", "steer"));
+    await inbox.enqueue(inboxInput("request-2", "run-boundary", "queue"));
 
     await expect(inbox.listSteering("session-1")).resolves.toMatchObject([
-      { requestId: "request-1", placement: "next-step" },
+      { dedupeKey: "request-1", deliverAt: "step-boundary" },
     ]);
   });
 
@@ -207,9 +209,9 @@ describe(AgentInbox, () => {
     const inbox = inboxOf(store);
 
     const first = await inbox.enqueue(
-      inboxInput("request-1", "next-turn", "first")
+      inboxInput("request-1", "run-boundary", "first")
     );
-    await inbox.enqueue(inboxInput("request-2", "next-turn", "second"));
+    await inbox.enqueue(inboxInput("request-2", "run-boundary", "second"));
 
     await expect(inbox.cancel("session-1", first.id)).resolves.toBe(1);
     await expect(inbox.list("session-1")).resolves.toHaveLength(1);
@@ -217,17 +219,17 @@ describe(AgentInbox, () => {
     await expect(inbox.list("session-1")).resolves.toStrictEqual([]);
   });
 
-  test("promotes leftover next-step messages to next-turn", async () => {
+  test("promotes leftover step-boundary items to next-turn", async () => {
     const store = new FakeStore();
     const inbox = inboxOf(store);
 
-    await inbox.enqueue(inboxInput("request-1", "next-step", "steer"));
-    await inbox.enqueue(inboxInput("request-2", "next-turn", "queue"));
+    await inbox.enqueue(inboxInput("request-1", "step-boundary", "steer"));
+    await inbox.enqueue(inboxInput("request-2", "run-boundary", "queue"));
 
     await expect(inbox.promoteStale("session-1")).resolves.toBe(1);
     await expect(inbox.list("session-1")).resolves.toMatchObject([
-      { requestId: "request-1", placement: "next-turn" },
-      { requestId: "request-2", placement: "next-turn" },
+      { dedupeKey: "request-1", deliverAt: "run-boundary" },
+      { dedupeKey: "request-2", deliverAt: "run-boundary" },
     ]);
   });
 
@@ -236,10 +238,10 @@ describe(AgentInbox, () => {
     const inbox = inboxOf(store);
 
     const first = await inbox.enqueue(
-      inboxInput("request-1", "next-step", "one")
+      inboxInput("request-1", "step-boundary", "one")
     );
     const second = await inbox.enqueue(
-      inboxInput("request-2", "next-step", "two")
+      inboxInput("request-2", "step-boundary", "two")
     );
 
     const steps = await inbox.applySteeringSteps({

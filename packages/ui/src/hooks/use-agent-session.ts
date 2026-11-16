@@ -8,7 +8,7 @@ import type {
   AgentStreamEvent,
   AgentTurn,
   AgentUserTurn,
-  InboxMessage,
+  InboxItem,
   JSONObject,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
@@ -24,22 +24,22 @@ import { readModelRef } from "../lib/models";
 export type SubmitMode = "steering" | "followup";
 
 /**
- * 服务端 Inbox 的客户端入口。
+ * 服务端收件箱的客户端入口。
  *
- * 入队成功就意味着消息已经落库，之后即使页面关掉也不会丢；发送失败时它会
+ * 入队成功就意味着待办项已经落库，之后即使页面关掉也不会丢；发送失败时它会
  * 留在队列里，等用户手动重试。
  */
 export type InboxApi = {
-  list: (input: { sessionId: string }) => Promise<InboxMessage[]>;
+  list: (input: { sessionId: string }) => Promise<InboxItem[]>;
   enqueue: (input: {
     sessionId: string;
-    requestId: string;
+    dedupeKey: string;
     mode: SubmitMode;
     turn: AgentUserTurn;
     model: ModelRef;
     modelEffort?: string;
     projectId?: string;
-  }) => Promise<{ message: InboxMessage }>;
+  }) => Promise<{ message: InboxItem }>;
   cancel: (input: { sessionId: string; messageId: string }) => Promise<unknown>;
   clear: (input: { sessionId: string }) => Promise<unknown>;
 };
@@ -109,7 +109,7 @@ type AgentSessionStatus = "submitted" | "streaming" | "ready" | "error";
 export type UseAgentSessionResponse = {
   turns: AgentTurn<AgentToolSet>[];
   /** 服务端返回的待发送消息，按 FIFO 排列。 */
-  pendingMessages: InboxMessage[];
+  pendingMessages: InboxItem[];
   /**
    * Submits a user turn.
    *
@@ -232,7 +232,7 @@ type AgentSessionStore = {
   /** 这个 store 是否正在读一条流。 */
   isReading: () => boolean;
   getError: () => Error | undefined;
-  getInbox: () => InboxMessage[];
+  getInbox: () => InboxItem[];
   submit: (options: SubmitOptions) => Promise<void>;
   sendPending: () => Promise<void>;
   cancelPending: (messageId: string) => Promise<void>;
@@ -257,12 +257,12 @@ type AgentSessionStoreOptions = UseAgentSessionOptions & {
 const toError = (cause: unknown): Error =>
   cause instanceof Error ? cause : new Error(String(cause));
 
-/** oRPC 错误带着 `code`；队列发送失败时用它区分“已被领走”和真正的失败。 */
-const isInboxMessageNotFound = (error: unknown): boolean =>
+/** oRPC 错误带着 `code`；入队失败时用它区分“已被领走”和真正的失败。 */
+const isInboxItemNotFound = (error: unknown): boolean =>
   typeof error === "object" &&
   error !== null &&
   "code" in error &&
-  (error as { code?: unknown }).code === "INBOX_MESSAGE_NOT_FOUND";
+  (error as { code?: unknown }).code === "INBOX_ITEM_NOT_FOUND";
 
 const isSessionNotFound = (error: unknown): boolean =>
   typeof error === "object" &&
@@ -366,7 +366,7 @@ export function createAgentSessionStore({
   let status: AgentSessionStatus = "ready";
   let currentError: Error | undefined;
   let active: AbortController | null = null;
-  let inbox: InboxMessage[] = [];
+  let inbox: InboxItem[] = [];
   let inboxRevision = 0;
   let sendingId: string | undefined;
   let drainPaused = false;
@@ -399,7 +399,7 @@ export function createAgentSessionStore({
   const getStatus = (): AgentSessionStatus => status;
   const isReading = (): boolean => active !== null;
   const getError = (): Error | undefined => currentError;
-  const getInbox = (): InboxMessage[] => inbox;
+  const getInbox = (): InboxItem[] => inbox;
 
   const isBusy = (): boolean =>
     status === "submitted" || status === "streaming";
@@ -465,7 +465,7 @@ export function createAgentSessionStore({
     }
   };
 
-  const addInboxMessage = (message: InboxMessage): void => {
+  const addInboxItem = (message: InboxItem): void => {
     // 入队响应回来之前，流可能已经用 turn.steer 把它领走并删了行。
     const claimed = currentTurns.some(
       (turn) =>
@@ -483,7 +483,7 @@ export function createAgentSessionStore({
     notify();
   };
 
-  const removeInboxMessage = (messageId: string): void => {
+  const removeInboxItem = (messageId: string): void => {
     if (!inbox.some((item) => item.id === messageId)) {
       return;
     }
@@ -587,7 +587,7 @@ export function createAgentSessionStore({
 
         // 引导消息已经落进当前 assistant turn：队列里的同 id 项可以撤下。
         if (event.type === "turn.steer") {
-          removeInboxMessage(event.step.id);
+          removeInboxItem(event.step.id);
         }
 
         // The guard is repeated inside the throttle, which is what covers the
@@ -780,10 +780,10 @@ export function createAgentSessionStore({
           onRejected: reject,
         });
       });
-      removeInboxMessage(next.id);
+      removeInboxItem(next.id);
     } catch (error) {
-      if (isInboxMessageNotFound(error)) {
-        removeInboxMessage(next.id);
+      if (isInboxItemNotFound(error)) {
+        removeInboxItem(next.id);
       } else {
         drainPaused = true;
       }
@@ -822,11 +822,11 @@ export function createAgentSessionStore({
     const busy = isBusy();
     const effectiveMode: SubmitMode = busy ? (mode ?? "followup") : "followup";
 
-    let message: InboxMessage;
+    let message: InboxItem;
     try {
       const result = await apiInbox.enqueue({
         sessionId: id,
-        requestId: nanoid(),
+        dedupeKey: nanoid(),
         mode: effectiveMode,
         turn,
         model,
@@ -849,7 +849,7 @@ export function createAgentSessionStore({
       throw error;
     }
 
-    addInboxMessage(message);
+    addInboxItem(message);
     void drain();
   };
 
@@ -864,7 +864,7 @@ export function createAgentSessionStore({
     }
 
     await apiInbox.cancel({ sessionId: id, messageId });
-    removeInboxMessage(messageId);
+    removeInboxItem(messageId);
   };
 
   const clearPending = async (): Promise<void> => {

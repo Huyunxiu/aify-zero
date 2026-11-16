@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { EnqueueInboxInput } from "@workspace/agent-client";
-import { InboxMessageNotFoundError } from "@workspace/agent/inbox/errors";
+import { InboxItemNotFoundError } from "@workspace/agent/inbox/errors";
 import type { AgentStore, TurnWrite } from "@workspace/agent/storage/index";
 import { beforeAll, describe, expect, test } from "vitest";
 
@@ -167,19 +167,20 @@ describe("SQLiteStore", () => {
     const sessionId = "session-inbox";
 
     const inboxInput = (
-      requestId: string,
+      dedupeKey: string,
       text: string
     ): EnqueueInboxInput => ({
       sessionId,
-      requestId,
-      placement: "next-turn",
-      content: userTurn(`turn-${requestId}`, text),
+      kind: "user-message",
+      dedupeKey,
+      deliverAt: "run-boundary",
+      content: userTurn(`turn-${dedupeKey}`, text),
       payload: {
         model: { providerId: "test-provider", modelId: "test-model" },
       },
     });
 
-    test("入队按 (sessionId, requestId) 幂等", async () => {
+    test("入队按 (sessionId, dedupeKey) 幂等", async () => {
       const input = inboxInput("req-1", "hello");
       const first = await store.insertInboxMessage(input);
       const second = await store.insertInboxMessage(input);
@@ -228,7 +229,7 @@ describe("SQLiteStore", () => {
 
       await expect(
         store.saveTurn(turn, { inboxId: message.id })
-      ).rejects.toBeInstanceOf(InboxMessageNotFoundError);
+      ).rejects.toBeInstanceOf(InboxItemNotFoundError);
     });
   });
 

@@ -88,9 +88,9 @@ export const ErrorMap = {
     message: "No reply is running for this chat.",
     data: z.object({ sessionId: z.string() }),
   },
-  INBOX_MESSAGE_NOT_FOUND: {
+  INBOX_ITEM_NOT_FOUND: {
     status: 409,
-    message: "This queued message was already sent or removed.",
+    message: "This queued item was already claimed or removed.",
     data: z.object({ sessionId: z.string(), messageId: z.string() }),
   },
   SESSION_BUSY: {
