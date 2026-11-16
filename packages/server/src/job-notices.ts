@@ -5,6 +5,7 @@ import type {
   JobNoticeAdapter,
   JobRegistry,
 } from "@workspace/agent";
+import { JOB_NOTICE_INBOX_KIND } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 /** 适配器只依赖删除待办项这一项存储能力。 */
@@ -74,7 +75,7 @@ export const createJobNoticeAdapter = ({
         .enqueueNotice({
           sessionId,
           text,
-          dedupeKey: `job-notice:${job.id}`,
+          dedupeKey: `${JOB_NOTICE_INBOX_KIND}:${job.id}`,
         })
         .then((item) => {
           inFlight.delete(job.id);

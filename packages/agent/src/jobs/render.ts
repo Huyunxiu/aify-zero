@@ -6,45 +6,46 @@ export type PublicJob = {
   kind: string;
   label: string;
   status: JobStatus;
-  /** 运行中的进度行，或结算后的终态原因。 */
+  /** 运行中的进度行；结算后清空。 */
+  progress?: string;
+  /** 终态原因；运行中不写。 */
   detail?: string;
   startedAt: number;
   finishedAt?: number;
 };
 
 /**
- * 状态行旁的限定语：运行中是进度行，结算后是终态原因。
- * @param job - 注册表投影。
- */
-const jobDetail = (
-  job: Pick<JobView, "progress" | "detail">
-): string | undefined => job.progress ?? job.detail;
-
-/**
  * 抹掉归属、偏移和上限，只留下模型该知道的事实。
  * @param job - 注册表投影。
  */
-export const publicJob = (job: JobView): PublicJob => {
-  const detail = jobDetail(job);
-  return {
-    id: job.id,
-    kind: job.kind,
-    label: job.label,
-    status: job.status,
-    ...(detail === undefined ? {} : { detail }),
-    startedAt: job.startedAt,
-    ...(job.finishedAt === undefined ? {} : { finishedAt: job.finishedAt }),
-  };
-};
+export const publicJob = (job: JobView): PublicJob => ({
+  id: job.id,
+  kind: job.kind,
+  label: job.label,
+  status: job.status,
+  ...(job.progress === undefined ? {} : { progress: job.progress }),
+  ...(job.detail === undefined ? {} : { detail: job.detail }),
+  startedAt: job.startedAt,
+  ...(job.finishedAt === undefined ? {} : { finishedAt: job.finishedAt }),
+});
 
 /**
- * 状态行，模型读到的每个任务结果都以它结尾。
+ * 状态行，模型读到的每个任务结果都以它结尾。运行中取进度行，结算后取终态
+ * 原因；`note` 是这次调用自己加的说明（例如 `user steered`）。
  * @param job - 任务快照。
+ * @param note - 追加在限定语后面的说明。
  */
-export const statusLine = (job: Pick<PublicJob, "status" | "detail">): string =>
-  job.detail === undefined
+export const statusLine = (
+  job: Pick<PublicJob, "status" | "progress" | "detail">,
+  note?: string
+): string => {
+  const qualifier = [job.detail ?? job.progress, note]
+    .filter((part): part is string => part !== undefined && part.length > 0)
+    .join("; ");
+  return qualifier.length === 0
     ? `[status: ${job.status}]`
-    : `[status: ${job.status}, ${job.detail}]`;
+    : `[status: ${job.status}, ${qualifier}]`;
+};
 
 /** 丢失输出的提示；有完整输出文件时把路径也交出去。 */
 const lostOutputNotice = (spillPaths: readonly string[]): string =>

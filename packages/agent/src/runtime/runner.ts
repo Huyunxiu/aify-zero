@@ -1,3 +1,7 @@
+import {
+  JOB_NOTICE_INBOX_KIND,
+  JOB_NOTICE_STEP_SOURCE,
+} from "@workspace/agent-client";
 import type {
   AgentUserTurn,
   InboxItem,
@@ -189,7 +193,7 @@ export class AgentRunner {
 
     // 用户自己说话了：唤醒预算重新开始，通知不再按上一条链计数。
     this.#noticeWakes.delete(input.sessionId);
-    this.#lastPayload.set(input.sessionId, {
+    this.#rememberPayload(input.sessionId, {
       model: input.model,
       ...(input.effort === undefined ? {} : { effort: input.effort }),
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
@@ -197,13 +201,31 @@ export class AgentRunner {
 
     // 消息能插进正在跑的回合时，等待中的工具先让路；排在下一轮的不用打断。
     if (item.deliverAt === "step-boundary") {
-      this.steeringSignal(input.sessionId).raise();
+      this.steeringSignal(input.sessionId).notify();
     }
 
     this.#paused.delete(input.sessionId);
     this.wake(input.sessionId);
 
     return item;
+  }
+
+  /**
+   * 记住这个会话最近一次起跑用的模型配置；项目归属没变时沿用上一次的。
+   * @param sessionId - 会话 id。
+   * @param payload - 本次起跑拿到的配置。
+   */
+  #rememberPayload(
+    sessionId: string,
+    payload: { model: ModelRef; effort?: ModelEffort; projectId?: string }
+  ): void {
+    const projectId =
+      payload.projectId ?? this.#lastPayload.get(sessionId)?.projectId;
+    this.#lastPayload.set(sessionId, {
+      model: payload.model,
+      ...(payload.effort === undefined ? {} : { effort: payload.effort }),
+      ...(projectId === undefined ? {} : { projectId }),
+    });
   }
 
   /**
@@ -253,7 +275,7 @@ export class AgentRunner {
           type: "user",
           createdAt: now,
           status: "done",
-          source: "job-notice",
+          source: JOB_NOTICE_STEP_SOURCE,
           content: [{ type: "text", text: input.text, createdAt: now }],
         },
       ],
@@ -261,7 +283,7 @@ export class AgentRunner {
 
     const item = await this.#store.insertInboxItem({
       sessionId: input.sessionId,
-      kind: "job-notice",
+      kind: JOB_NOTICE_INBOX_KIND,
       dedupeKey: input.dedupeKey,
       deliverAt,
       content: turn,
@@ -282,7 +304,7 @@ export class AgentRunner {
   /** 审批恢复：答复写回 step，再起一次运行。 */
   async resume(input: ResumeInput): Promise<RunStart> {
     this.#paused.delete(input.sessionId);
-    this.#lastPayload.set(input.sessionId, {
+    this.#rememberPayload(input.sessionId, {
       model: input.model,
       ...(input.effort === undefined ? {} : { effort: input.effort }),
     });
@@ -416,7 +438,7 @@ export class AgentRunner {
       try {
         const items = await this.#store.listInboxItems(sessionId);
         const stale = items
-          .filter((item) => item.kind === "job-notice")
+          .filter((item) => item.kind === JOB_NOTICE_INBOX_KIND)
           .map((item) => item.id);
         if (stale.length > 0) {
           await this.#store.deleteInboxItems(sessionId, stale);
@@ -552,7 +574,7 @@ export class AgentRunner {
    * 重发。继续转只会用同一个错误反复敲库。
    */
   async #start(sessionId: string, item: InboxItem): Promise<StartOutcome> {
-    this.#lastPayload.set(sessionId, {
+    this.#rememberPayload(sessionId, {
       model: item.payload.model,
       ...(typeof item.payload.modelEffort === "string"
         ? { effort: item.payload.modelEffort as ModelEffort }

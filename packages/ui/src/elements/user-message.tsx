@@ -1,5 +1,9 @@
 import type { AgentUserPart, AgentUserTurn } from "@workspace/agent-client";
-import { isAgentFilePart, isAgentTextPart } from "@workspace/agent-client";
+import {
+  isAgentFilePart,
+  isAgentTextPart,
+  JOB_NOTICE_STEP_SOURCE,
+} from "@workspace/agent-client";
 import { nanoid } from "nanoid";
 import { useTranslation } from "react-i18next";
 
@@ -112,7 +116,9 @@ export const UserMessage = ({ turn }: UserMessageProps) => {
   // part list the rendering below was written against.
   const parts: AgentUserPart[] = turn.content.flatMap((step) => step.content);
   const text = getUserMessageText(parts);
-  const notice = turn.content.some((step) => step.source === "job-notice");
+  const notice = turn.content.some(
+    (step) => step.source === JOB_NOTICE_STEP_SOURCE
+  );
 
   // 完成通知不是用户说的话：不画用户气泡，也不给复制与重新生成的动作。
   if (notice) {

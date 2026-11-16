@@ -227,7 +227,7 @@ describe("job-output", () => {
       wait: true,
       timeoutMs: 10_000,
     });
-    steering.raise();
+    steering.notify();
     const result = await waiting;
 
     expect(result.output).toBe(
@@ -257,10 +257,10 @@ describe("job-output", () => {
 
     await expect(
       call(tools["job-output"], { jobId: "bash-missing" })
-    ).rejects.toThrow("unknown job");
+    ).rejects.toThrow("JOB_NOT_FOUND: unknown job");
     await expect(
       call(tools["job-output"], { jobId: foreign.jobId })
-    ).rejects.toThrow("belongs to another session");
+    ).rejects.toThrow(/JOB_FOREIGN_SESSION: .*belongs to another session/);
   });
 });
 

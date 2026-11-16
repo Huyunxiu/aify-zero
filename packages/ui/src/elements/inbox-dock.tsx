@@ -1,5 +1,8 @@
 import type { AgentUserTurn, InboxItem } from "@workspace/agent-client";
-import { isAgentTextPart } from "@workspace/agent-client";
+import {
+  isAgentTextPart,
+  JOB_NOTICE_INBOX_KIND,
+} from "@workspace/agent-client";
 import { SendIcon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -70,7 +73,7 @@ export const InboxDock = ({
         {messages.map((message) => (
           <li className="flex items-center gap-2" key={message.id}>
             <Badge className="shrink-0" variant="secondary">
-              {message.kind === "job-notice"
+              {message.kind === JOB_NOTICE_INBOX_KIND
                 ? t("inbox.notice")
                 : message.deliverAt === "step-boundary"
                   ? t("inbox.steering")

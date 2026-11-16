@@ -15,7 +15,7 @@ export type SteeringSignal = {
    */
   subscribe(listener: () => void): () => void;
   /** 通知所有订阅者；监听器抛错会被隔离。 */
-  raise(): void;
+  notify(): void;
 };
 
 /** 建一个插话信号。 */
@@ -28,7 +28,7 @@ export const createSteeringSignal = (): SteeringSignal => {
         listeners.delete(listener);
       };
     },
-    raise() {
+    notify() {
       // 直接在集合上迭代：监听器在回调里注销自己是安全的，Set 不会访问已删项。
       for (const listener of listeners) {
         try {

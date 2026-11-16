@@ -268,6 +268,8 @@ export const inbox_item_table = sqliteTable(
       .unique()
       .$defaultFn(() => randomUUID()),
     sessionId: text("session_id").notNull(),
+    // `job-notice` 与 @workspace/agent-client 的 JOB_NOTICE_INBOX_KIND 对应；
+    // 数据库层不依赖协议包，这里保留字面量。
     kind: text("kind", { enum: ["user-message", "job-notice"] })
       .notNull()
       .default("user-message"),

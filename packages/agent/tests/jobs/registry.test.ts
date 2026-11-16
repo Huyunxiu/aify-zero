@@ -702,7 +702,6 @@ describe("JobRegistry 完成通知", () => {
     expect(delivered).toStrictEqual([]);
 
     release();
-    expect(registry.isCollecting(id)).toBeFalsy();
   });
 
   test("forwards withdrawal to the adapter", () => {

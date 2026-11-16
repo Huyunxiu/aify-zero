@@ -13,13 +13,16 @@ import type { AgentUserTurn } from "./types";
  */
 export type DeliverAt = "step-boundary" | "run-boundary";
 
+/** 完成通知专用的待办项种类。 */
+export const JOB_NOTICE_INBOX_KIND = "job-notice";
+
 /**
  * 待办项的种类。
  *
  * 用户消息由人写；`job-notice` 是后台任务结算后系统投递的完成通知，不是
  * 用户输入，也不参与「用户插话」判定。
  */
-export type InboxKind = "user-message" | "job-notice";
+export type InboxKind = "user-message" | typeof JOB_NOTICE_INBOX_KIND;
 
 /** 起跑一条待办项所需的宿主配置。 */
 export type InboxPayload = {

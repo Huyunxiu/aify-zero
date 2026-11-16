@@ -688,11 +688,6 @@ export class JobRegistry {
     };
   }
 
-  /** 一个任务是否正被某次调用收走。 */
-  isCollecting(id: JobId): boolean {
-    return this.#collecting.has(id);
-  }
-
   /** 只在结算确实需要通知时投递；失败只记日志。 */
   #deliverNotice(
     job: TrackedJob,

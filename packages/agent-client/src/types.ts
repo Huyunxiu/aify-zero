@@ -860,8 +860,11 @@ export type StepMetadata = Record<string, any> & {
  * two sessions after a fork; always address a turn or step together with its
  * session.
  */
+/** 完成通知专用的步骤来源。 */
+export const JOB_NOTICE_STEP_SOURCE = "job-notice";
+
 /** 一条用户侧步骤的来源。 */
-export type StepSource = "user" | "job-notice";
+export type StepSource = "user" | typeof JOB_NOTICE_STEP_SOURCE;
 
 export type AgentStepBase = AgentStepStatus & {
   /**

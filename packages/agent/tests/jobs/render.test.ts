@@ -25,10 +25,17 @@ const chunk = (text: string, overrides: Partial<JobChunk> = {}): JobChunk => ({
 });
 
 describe(publicJob, () => {
-  test("surfaces the live progress line beside the status", () => {
-    expect(publicJob(view({ progress: "3/10" })).detail).toBe("3/10");
-    expect(statusLine(publicJob(view({ progress: "3/10" })))).toBe(
-      "[status: running, 3/10]"
+  test("keeps progress out of detail and renders it beside the status", () => {
+    const job = publicJob(view({ progress: "3/10" }));
+    expect(job.progress).toBe("3/10");
+    expect(job.detail).toBeUndefined();
+    expect(statusLine(job)).toBe("[status: running, 3/10]");
+  });
+
+  test("appends a note after the qualifier", () => {
+    const job = publicJob(view({ progress: "3/10" }));
+    expect(statusLine(job, "user steered")).toBe(
+      "[status: running, 3/10; user steered]"
     );
   });
 

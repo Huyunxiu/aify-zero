@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
+import { JobError } from "../jobs/error";
 import {
   DEFAULT_OUTPUT_LIMIT_BYTES,
   fitJobResult,
@@ -16,13 +17,25 @@ import type { JobView } from "../jobs/types";
 import type { ToolOutput } from "./types";
 
 /** `wait: true` 且没给 timeoutMs 时的默认等待时长。 */
-export const DEFAULT_WAIT_MS = 30_000;
+const DEFAULT_WAIT_MS = 30_000;
 
 /** 任何单次等待的默认硬上限；模型给得更大就收到这里。 */
-export const MAX_WAIT_MS = 600_000;
+const MAX_WAIT_MS = 600_000;
 
 const JOB_ID_DESCRIPTION =
   "Job id returned by the tool that started the background work.";
+
+/**
+ * 把带分类码的任务错误翻成模型可读的失败：码放在最前面，日志和测试都能按它
+ * 分类，模型也仍然看得到原因。
+ * @param error - 工具调用里抛出的错误。
+ */
+const toToolError = (error: unknown): never => {
+  if (error instanceof JobError) {
+    throw new TypeError(`${error.code}: ${error.message}`);
+  }
+  throw error;
+};
 
 /** 任务工具的等待上限；宿主可以按装配覆盖，省略时用默认值。 */
 export type JobToolOptions = {
@@ -148,8 +161,9 @@ const createJobOutputTool = ({ agentContext, options }: JobToolDeps) => {
     inputSchema: JOB_OUTPUT_INPUT,
     execute: async ({ jobId, wait, timeoutMs }, { abortSignal }) => {
       // 这次调用会自己把终态交给模型；这期间结算的任务不再另发通知。
-      const release = jobs.beginCollect(jobId, sessionId);
+      let release: (() => void) | undefined;
       try {
+        release = jobs.beginCollect(jobId, sessionId);
         let steered = false;
         if (wait === true) {
           // 等待超时返回运行中的状态，所以这里自己管截止时间，而不让工具
@@ -182,19 +196,14 @@ const createJobOutputTool = ({ agentContext, options }: JobToolDeps) => {
         jobs.withdrawNotice(jobId);
         const job = publicJob(read.job);
         // 打断发生在任务还在跑的时候：状态行说明这次读取为什么提前返回。
-        if (
-          steered &&
-          (job.status === "running" || job.status === "stopping")
-        ) {
-          job.detail =
-            job.detail === undefined
-              ? "user steered"
-              : `${job.detail}; user steered`;
-        }
+        const note =
+          steered && (job.status === "running" || job.status === "stopping")
+            ? "user steered"
+            : undefined;
         const limitBytes =
           read.job.outputLimitBytes ?? DEFAULT_OUTPUT_LIMIT_BYTES;
         const body = renderJobBody(read);
-        const suffix = `${body.endsWith("\n") ? "" : "\n"}${statusLine(job)}`;
+        const suffix = `${body.endsWith("\n") ? "" : "\n"}${statusLine(job, note)}`;
         // 超出上限才落盘：完整结果要么已经在生产方的输出文件里，要么现在写一份。
         const spillPath =
           utf8Bytes(`${body}${suffix}`) > limitBytes
@@ -211,8 +220,10 @@ const createJobOutputTool = ({ agentContext, options }: JobToolDeps) => {
           code: "ok" as const,
           metadata: { job },
         };
+      } catch (error: unknown) {
+        return toToolError(error);
       } finally {
-        release();
+        release?.();
       }
     },
     toModelOutput({ output }) {
@@ -251,23 +262,27 @@ const createJobKillTool = ({ agentContext }: JobToolDeps) => {
     description: JOB_KILL_DESCRIPTION,
     inputSchema: JOB_KILL_INPUT,
     execute: ({ jobId, reason }) => {
-      // 取消确认是固定短文案，且以任务 id 开头：不按任务上限裁剪，裁掉 id
-      // 会让这条结果无法对应到任务。
-      // 来源是模型自己：结算通知不该重复这条结果。
-      const killed = jobs.kill(jobId, sessionId, reason, "model");
-      const outcome =
-        killed === "requested"
-          ? ("cancellation-requested" as const)
-          : ("already-finished" as const);
-      const job = publicJob(jobs.get(jobId, sessionId));
-      return {
-        output:
-          outcome === "already-finished"
-            ? `job ${jobId} had already finished ${statusLine(job)}`
-            : `requested cancellation of job ${jobId}`,
-        code: "ok" as const,
-        metadata: { outcome, job },
-      };
+      try {
+        // 取消确认是固定短文案，且以任务 id 开头：不按任务上限裁剪，裁掉 id
+        // 会让这条结果无法对应到任务。
+        // 来源是模型自己：结算通知不该重复这条结果。
+        const killed = jobs.kill(jobId, sessionId, reason, "model");
+        const outcome =
+          killed === "requested"
+            ? ("cancellation-requested" as const)
+            : ("already-finished" as const);
+        const job = publicJob(jobs.get(jobId, sessionId));
+        return {
+          output:
+            outcome === "already-finished"
+              ? `job ${jobId} had already finished ${statusLine(job)}`
+              : `requested cancellation of job ${jobId}`,
+          code: "ok" as const,
+          metadata: { outcome, job },
+        };
+      } catch (error: unknown) {
+        return toToolError(error);
+      }
     },
     toModelOutput({ output }) {
       return { type: "text", value: output.output };

@@ -1,3 +1,4 @@
+import { JOB_NOTICE_STEP_SOURCE } from "@workspace/agent-client";
 import type { AgentTurn } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 import type { StepResultPerformance } from "ai";
@@ -82,7 +83,7 @@ export class TitleExtension extends Extension {
       .findLast(
         (turn) =>
           turn.type === "user" &&
-          !turn.content.some((step) => step.source === "job-notice")
+          !turn.content.some((step) => step.source === JOB_NOTICE_STEP_SOURCE)
       );
     if (!userTurn) {
       return;
