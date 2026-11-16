@@ -37,3 +37,6 @@ local.db.*
 
 # 假供应商的录制，默认只在本地
 packages/agent/scenarios/recorded/
+
+# 端到端用例的现场与证据
+.e2e/

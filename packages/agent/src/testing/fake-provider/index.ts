@@ -146,6 +146,7 @@ export async function startFakeProvider(
       rule,
       model: seen.model ?? fallbackModel,
       replay,
+      stream: seen.stream,
     });
   };
 
@@ -238,6 +239,9 @@ const describeRule = (rule: Rule | undefined): string => {
   }
   if (rule.corrupt) {
     return "-> corrupt";
+  }
+  if (rule.toolCall) {
+    return `-> toolCall ${rule.toolCall.name}`;
   }
 
   return "-> answer";

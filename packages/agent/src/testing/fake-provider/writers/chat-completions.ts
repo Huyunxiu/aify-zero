@@ -71,8 +71,10 @@ export async function writeChatCompletions(options: {
   rule: Rule | undefined;
   model: string;
   replay: ReplayBook;
+  /** 这次请求是不是流式的；工具调用只在流上表达得出来。 */
+  stream: boolean;
 }): Promise<void> {
-  const { response, rule, model, replay } = options;
+  const { response, rule, model, replay, stream } = options;
 
   if (!rule) {
     response.writeHead(500, { "content-type": "application/json" });
@@ -102,6 +104,20 @@ export async function writeChatCompletions(options: {
           message: failureMessage(rule.fail),
           type: "fake_provider_error",
           code: rule.fail,
+        },
+      })
+    );
+    return;
+  }
+
+  // 写手要报「不支持」，不能悄悄降级：把 SSE 块塞进非流式响应，客户端只会当成
+  // 一条坏响应。这条判断必须落在写响应头之前。见 ADR-0011。
+  if (rule.toolCall && !stream) {
+    response.writeHead(500, { "content-type": "application/json" });
+    response.end(
+      JSON.stringify({
+        error: {
+          message: "fake provider: a toolCall rule needs a streaming request",
         },
       })
     );
@@ -164,6 +180,36 @@ export async function writeChatCompletions(options: {
   }
 
   response.write(chunk(model, { role: "assistant" }));
+
+  if (rule.toolCall) {
+    // 名字和 id 走第一块，之后每块只带 `arguments` 的一段前缀；客户端按 index
+    // 把它们拼回一个 JSON 字符串。分块长度固定，测试才能既看到拼接、又不被块数淹掉。
+    const argsJson = JSON.stringify(rule.toolCall.args ?? {});
+    response.write(
+      chunk(model, {
+        tool_calls: [
+          {
+            index: 0,
+            id: rule.toolCall.id ?? "call_fake_1",
+            type: "function",
+            function: { name: rule.toolCall.name, arguments: "" },
+          },
+        ],
+      })
+    );
+    for (const piece of argsJson.match(/[\S\s]{1,8}/gu) ?? []) {
+      await wait(rule.slow?.chunkMs);
+      response.write(
+        chunk(model, {
+          tool_calls: [{ index: 0, function: { arguments: piece } }],
+        })
+      );
+    }
+    response.write(chunk(model, {}, "tool_calls"));
+    response.end("data: [DONE]\n\n");
+    return;
+  }
+
   for (const piece of rule.answer ?? "") {
     await wait(rule.slow?.chunkMs);
     response.write(chunk(model, { content: piece }));

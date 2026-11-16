@@ -78,7 +78,7 @@ describe("scenario schema", () => {
     expect(
       issues({ name: "test", rules: [{ slow: { chunkMs: 10 } }] })
     ).toContain(
-      "每条规则必须正好有一个结果：answer / fail / failMidStream / replay / reset / corrupt"
+      "每条规则必须正好有一个结果：answer / fail / failMidStream / replay / reset / corrupt / toolCall"
     );
   });
 

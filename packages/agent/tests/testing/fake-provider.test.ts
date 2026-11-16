@@ -2,38 +2,16 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 
-import { startFakeProvider } from "../../src/testing/fake-provider/index.js";
-import type { FakeProvider } from "../../src/testing/fake-provider/index.js";
-
-const running: FakeProvider[] = [];
-
-const start = async (
-  ...arguments_: Parameters<typeof startFakeProvider>
-): Promise<FakeProvider> => {
-  const provider = await startFakeProvider(...arguments_);
-  running.push(provider);
-  return provider;
-};
-
-const post = async (
-  baseURL: string,
-  body: unknown
-): Promise<{ response: Response; text: string }> => {
-  const response = await fetch(`${baseURL}/chat/completions`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-
-  return { response, text: await response.text() };
-};
+import {
+  postChatCompletions as post,
+  startProvider as start,
+  useStartedProviders,
+} from "./helpers.js";
 
 describe("fake provider", () => {
-  afterEach(async () => {
-    await Promise.all(running.splice(0).map((provider) => provider.close()));
-  });
+  useStartedProviders();
 
   test("lists the models the scenario declares", async () => {
     const provider = await start({
