@@ -363,6 +363,51 @@ describe(SessionRunner, () => {
     expect(start.calls).toHaveLength(1);
   });
 
+  test("stop 之后不再取新件，正在跑的那条照样落定", async () => {
+    const store = new FakeStore([sessionRow("s1")]);
+    store.add("s1", 2);
+    const start = makeStart(store);
+    const runner = makeRunner({ store, start });
+
+    runner.wake("s1");
+    await flush();
+    expect(start.calls).toHaveLength(1);
+
+    runner.stop();
+    start.started[0]?.settle("done");
+    await flush();
+
+    expect({
+      calls: start.calls.length,
+      running: runner.runningSessions(),
+    }).toStrictEqual({ calls: 1, running: [] });
+  });
+
+  test("state 报告正在跑、等待和暂停", async () => {
+    const store = new FakeStore([sessionRow("s1"), sessionRow("s2")]);
+    store.add("s1", 2);
+    store.add("s2", 1);
+    const start = makeStart(store);
+    const runner = makeRunner({ store, start, maxConcurrent: 1 });
+
+    runner.wake("s1");
+    runner.wake("s2");
+    await flush();
+
+    expect(runner.state()).toStrictEqual({
+      running: ["s1"],
+      waiting: ["s2"],
+      paused: [],
+    });
+
+    start.started[0]?.settle("error");
+    await flush();
+
+    expect(runner.state().paused).toStrictEqual([
+      { sessionId: "s1", reason: "error" },
+    ]);
+  });
+
   test("并发上限之外的会话留到下一个名额", async () => {
     const sessions = ["s1", "s2", "s3", "s4", "s5"];
     const store = new FakeStore(sessions.map((id) => sessionRow(id)));

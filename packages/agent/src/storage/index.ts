@@ -181,6 +181,13 @@ export interface AgentStore {
    */
   insertInboxMessage(input: EnqueueInboxInput): Promise<InboxItem>;
 
+  /**
+   * 列出收件箱里还有待办项的会话。
+   *
+   * 启动扫描用它：进程退出时队列没跑完的会话，重启后要各唤醒一次。
+   */
+  listPendingInboxSessionIds(): Promise<string[]>;
+
   /** 删除会话的待办项；`ids` 省略时清空。返回删除的行数。 */
   deleteInboxMessages(
     sessionId: string,

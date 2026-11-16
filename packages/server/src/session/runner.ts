@@ -85,6 +85,8 @@ export class SessionRunner {
   /** 不再自动推进的会话，以及原因。不落库。 */
   readonly #paused = new Map<string, PauseReason>();
   #scheduled = false;
+  /** 关停中：不再取新件，正在跑的让它跑完。 */
+  #stopped = false;
 
   constructor(options: SessionRunnerOptions) {
     this.#store = options.store;
@@ -98,8 +100,38 @@ export class SessionRunner {
 
   /** 登记一次唤醒；不阻塞调用方，也不保证马上有运行开始。 */
   wake(sessionId: string): void {
+    if (this.#stopped) {
+      return;
+    }
     this.#wakeups.add(sessionId);
     this.#schedule();
+  }
+
+  /**
+   * 停止取件，正在跑的运行继续跑完。
+   *
+   * 关停用它：半途掐断一条运行会把 turn 留成 streaming，重启后由恢复收尾；
+   * 让它跑完更省事，反正进程还要等 HTTP 连接退干净。
+   */
+  stop(): void {
+    this.#stopped = true;
+    this.#wakeups.clear();
+  }
+
+  /** 只读状态：正在推进的会话、等待中的唤醒、暂停原因。 */
+  state(): {
+    running: string[];
+    waiting: string[];
+    paused: { sessionId: string; reason: PauseReason }[];
+  } {
+    return {
+      running: [...this.#runs.keys()],
+      waiting: [...this.#wakeups],
+      paused: [...this.#paused].map(([sessionId, reason]) => ({
+        sessionId,
+        reason,
+      })),
+    };
   }
 
   /** 解除暂停并立刻看一眼收件箱：用户投递时用它。 */
@@ -155,6 +187,10 @@ export class SessionRunner {
    * 就留着，等下一次唤醒。
    */
   #pump(): void {
+    if (this.#stopped) {
+      return;
+    }
+
     for (const sessionId of this.#wakeups) {
       if (this.#runs.size >= this.#maxConcurrent) {
         return;
@@ -185,7 +221,7 @@ export class SessionRunner {
    */
   async #runSession(sessionId: string): Promise<void> {
     for (;;) {
-      if (!(await this.#ready(sessionId))) {
+      if (this.#stopped || !(await this.#ready(sessionId))) {
         return;
       }
 

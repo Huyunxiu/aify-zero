@@ -480,7 +480,15 @@ export class SQLiteStore implements AgentStore {
     return toInboxItem(row);
   }
 
-  /** 删除会话的待发送消息；`ids` 省略时清空。返回删除的行数。 */
+  async listPendingInboxSessionIds(): Promise<string[]> {
+    const rows = await db
+      .selectDistinct({ sessionId: inbox_item_table.sessionId })
+      .from(inbox_item_table);
+
+    return rows.map((row) => row.sessionId);
+  }
+
+  /** 删除会话的待办项；`ids` 省略时清空。返回删除的行数。 */
   async deleteInboxMessages(
     sessionId: string,
     ids?: readonly string[]
