@@ -86,6 +86,7 @@ export class TapePlayer {
   #cursor = 0;
   #frames = 0;
   #busy = false;
+  #taken = false;
 
   private constructor(
     path: string,
@@ -184,6 +185,21 @@ export class TapePlayer {
     this.#gate.release();
   }
 
+  /** 已经接管：录制带不再提供后续响应。 */
+  get taken(): boolean {
+    return this.#taken;
+  }
+
+  /**
+   * 接管：时间轴在这一点分叉。
+   *
+   * 正在播的响应会截断并正常收尾；之后的请求不再走录制带。单程，不提供回退。
+   */
+  takeover(): void {
+    this.#taken = true;
+    this.#gate.release();
+  }
+
   /**
    * 等挂起结束。挂起期间定期发注释保活，超过上限就报超时。
    *
@@ -247,6 +263,11 @@ export class TapePlayer {
       this.#clock.reset?.();
 
       for (const [index, frame] of scheduled.entry.response.frames.entries()) {
+        // 接管之后这一条就停了，剩下的字节不补。
+        if (this.#taken) {
+          break;
+        }
+
         // 挂起的判据是「已经发出多少帧」，所以自增放在写之后。
         if (this.#holdAt !== undefined && this.#frames === this.#holdAt) {
           this.#gate.hold();
@@ -256,6 +277,11 @@ export class TapePlayer {
         if ((await this.#hold(response)) === "timeout") {
           response.end();
           return;
+        }
+
+        // 挂起期间可能被接管：醒过来之后要再看一眼，别把这一帧补上去。
+        if (this.#taken) {
+          break;
         }
 
         await this.#clock.next(index, frame);

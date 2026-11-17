@@ -7,6 +7,7 @@ import {
 import {
   postChatCompletions as post,
   startProvider,
+  startUpstream,
   tempTape,
   useStartedProviders,
   waitFor,
@@ -360,6 +361,73 @@ describe("tape player", () => {
     // 超时就不放这一帧了；连接照常收尾，客户端不会一直挂着。
     expect(text).not.toContain("data: a");
     expect(provider.tape?.held).toBeTruthy();
+  });
+
+  test("stops the current response when taken over", async () => {
+    const out = tempTape();
+    await writeTape(out, [
+      {
+        frames: [
+          { at: 0, text: "data: a\n\n" },
+          { at: 0, text: "data: b\n\n" },
+        ],
+      },
+    ]);
+
+    const provider = await startProvider({ play: { path: out, holdAt: 1 } });
+    const pending = post(provider.baseURL, { stream: true });
+
+    await waitFor(() => provider.tape?.held === true);
+
+    await fetch(new URL("/__tape/takeover", provider.baseURL), {
+      method: "POST",
+    });
+
+    const { text } = await pending;
+
+    // 接管发生在两帧之间：前一半已经出去了，后一半不再补。
+    expect(text).toContain("data: a");
+    expect(text).not.toContain("data: b");
+  });
+
+  test("answers 501 after a takeover without a target", async () => {
+    const out = tempTape();
+    await writeTape(out, [{ frames: [{ at: 0, text: "data: a\n\n" }] }]);
+
+    const provider = await startProvider({ play: { path: out } });
+
+    await post(provider.baseURL, { stream: true });
+    await fetch(new URL("/__tape/takeover", provider.baseURL), {
+      method: "POST",
+    });
+
+    const { response } = await post(provider.baseURL, { stream: true });
+
+    expect(response.status).toBe(501);
+  });
+
+  test("forwards to the real provider after a takeover", async () => {
+    const upstream = await startUpstream();
+
+    try {
+      const out = tempTape();
+      await writeTape(out, [{ frames: [{ at: 0, text: "data: 录制\n\n" }] }]);
+
+      const provider = await startProvider({
+        play: { path: out, takeoverUrl: upstream.url },
+      });
+
+      await post(provider.baseURL, { stream: true });
+      await fetch(new URL("/__tape/takeover", provider.baseURL), {
+        method: "POST",
+      });
+
+      const { text } = await post(provider.baseURL, { stream: true });
+
+      expect(text).toBe("data: a\n\ndata: b\n\n");
+    } finally {
+      await upstream.close();
+    }
   });
 
   test("serves the playback panel", async () => {

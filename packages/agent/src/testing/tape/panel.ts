@@ -64,6 +64,7 @@ export const PANEL_HTML = `<!doctype html>
       <button data-action="hold">hold</button>
       <button data-action="step">step</button>
       <button data-action="resume">resume</button>
+      <button data-action="takeover">takeover</button>
     </div>
     <script>
       const stateEl = document.getElementById("state");

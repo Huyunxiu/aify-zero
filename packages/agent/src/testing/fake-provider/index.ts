@@ -63,6 +63,8 @@ export type FakeProviderPlaybackOptions = {
   readonly keepaliveMs?: number;
   /** 一次挂起的上限；超了就结束响应。 */
   readonly holdLimitMs?: number;
+  /** 接管之后把请求转给谁；不给就回 501。 */
+  readonly takeoverUrl?: string;
 };
 
 /** 播放器的状态；没开播放时 `FakeProvider.tape` 是 undefined。 */
@@ -171,6 +173,48 @@ export async function startFakeProvider(
     });
   });
 
+  /** 接管之后的请求：交给真供应商，或者明确拒绝。 */
+  const handOver = async (
+    response: ServerResponse,
+    body: string,
+    url: URL
+  ): Promise<void> => {
+    const target = options.play?.takeoverUrl;
+
+    if (target === undefined) {
+      response.writeHead(501, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            message:
+              "tape: taken over, and no --takeover-url was given to continue with",
+          },
+        })
+      );
+      return;
+    }
+
+    const upstream = await fetch(
+      `${target.replace(/\/$/, "")}${url.pathname}${url.search}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      }
+    );
+    const headers = withoutHopByHop(
+      Object.fromEntries(upstream.headers.entries())
+    );
+
+    response.writeHead(upstream.status, headers);
+
+    for await (const piece of upstream.body ?? []) {
+      response.write(piece);
+    }
+
+    response.end();
+  };
+
   /** 控制面：一切 `/__tape/*` 都从这里走。 */
   const handleTape = async (
     action: string,
@@ -260,6 +304,10 @@ export async function startFakeProvider(
         player.resume();
         break;
       }
+      case "takeover": {
+        player.takeover();
+        break;
+      }
       default: {
         fail(404, "not found");
         return;
@@ -329,6 +377,11 @@ export async function startFakeProvider(
     );
 
     if (player !== undefined) {
+      if (player.taken) {
+        await handOver(response, body, url);
+        return;
+      }
+
       await player.play(response);
       return;
     }

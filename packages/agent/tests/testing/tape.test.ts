@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { createServer } from "node:http";
 
 import { describe, expect, test } from "vitest";
 
@@ -14,6 +13,7 @@ import type { TapeFrame, TapeItem } from "../../src/testing/tape/index.js";
 import {
   postChatCompletions as post,
   startProvider,
+  startUpstream,
   tempTape,
   useStartedProviders,
   waitFor,
@@ -29,50 +29,6 @@ const frame = (text: string): TapeFrame => ({
   at: 0,
   bytes: encodeFrameBytes(Buffer.from(text)),
 });
-
-/**
- * 一个只发两段 SSE 的上游；它替的是真供应商。
- *
- * `delays` 按第几次请求决定「首块之前等多久」，用来制造「先发后到」的形状。
- */
-const startUpstream = async (
-  delays: readonly number[] = [0]
-): Promise<{
-  url: string;
-  close: () => Promise<void>;
-}> => {
-  let count = 0;
-
-  const server = createServer((_request, response) => {
-    const delay = delays[Math.min(count, delays.length - 1)] ?? 0;
-    count += 1;
-
-    setTimeout(() => {
-      response.writeHead(200, { "content-type": "text/event-stream" });
-      response.write("data: a\n\n");
-      setTimeout(() => {
-        response.write("data: b\n\n");
-        response.end();
-      }, 10);
-    }, delay);
-  });
-
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
-
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
-
-  return {
-    url: `http://127.0.0.1:${port}/v1`,
-    close: async () => {
-      await new Promise<void>((resolve) => {
-        server.close(() => resolve());
-      });
-    },
-  };
-};
 
 describe(eventFrameIndexes, () => {
   test("counts two events that end in one frame", () => {

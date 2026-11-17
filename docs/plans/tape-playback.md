@@ -228,6 +228,7 @@ POST /__tape/hold             → 下一帧起挂起
 POST /__tape/step             → 放一帧，然后回到挂起
 POST /__tape/resume           → 完全放行
 POST /__tape/load    { path } → 换带；播放中 409
+POST /__tape/takeover         → 停止录制带，之后的请求转给真供应商
 POST /__tape/input   { type, summary }  → 录制时追加一条输入事件
 ```
 
@@ -240,7 +241,6 @@ POST /__tape/input   { type, summary }  → 录制时追加一条输入事件
 GET  /__tape/tapes            → 可用带的清单
 POST /__tape/rewind           → 同一条从头再来
 POST /__tape/speed   { x }    → 0.1 到 10
-POST /__tape/takeover         → 分叉，之后转实时
 ```
 
 换带必须配新会话：带是「一次会话的外部输入」，换带就是换历史。旧会话已经有自己的
@@ -269,6 +269,13 @@ Server（重放器）                 Provider
 ```
 
 单程，不提供回到录制的入口。判据放在下一条请求：游标已耗尽或已接管，就走代理。
+
+已经落地的是后半段：`POST /__tape/takeover` 把正在播的响应截断（醒过来之后不再
+补帧），之后的请求交给 `--takeover-url`；没给这个参数就回 501。
+
+还缺前半段：谁来发现「用户发了一条消息」。候选是 server 在投递待办项时 ping 一下
+控制面，但那要在生产路径上加一个 dev-only 分支，代价比这一段的收益大。今天的做法
+是在面板上点 `takeover`，或者用脚本调。
 
 ## 三条边界
 

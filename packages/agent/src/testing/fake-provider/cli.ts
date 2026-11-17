@@ -79,6 +79,9 @@ const provider = await startFakeProvider({
           ...(valueOf("hold-at") === undefined
             ? {}
             : { holdAt: Number(valueOf("hold-at")) }),
+          ...(valueOf("takeover-url") === undefined
+            ? {}
+            : { takeoverUrl: valueOf("takeover-url") }),
         },
       }),
   port,
