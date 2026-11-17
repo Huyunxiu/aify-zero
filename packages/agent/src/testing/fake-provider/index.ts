@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import { withoutHopByHop } from "./headers.js";
 import { Recorder, ReplayBook } from "./record.js";
 import { RuleBook } from "./rules.js";
 import { loadScenario } from "./scenario.js";
@@ -64,14 +65,23 @@ export async function startFakeProvider(
       : options.scenario;
   const book = scenario ? new RuleBook(scenario.rules) : undefined;
   const replay = new ReplayBook();
-  const recorder = options.record
-    ? new Recorder(options.record.out, options.record.append)
+  const recording = options.record
+    ? {
+        record: options.record,
+        recorder: new Recorder(options.record.out, options.record.append),
+      }
     : undefined;
   const requests: FakeProviderRequest[] = [];
   const fallbackModel = scenario?.models?.[0] ?? scenario?.name ?? "fake-model";
 
   const server = createServer((request, response) => {
     handle(request, response).catch((error: unknown) => {
+      // 响应已经走完（比如录制失败）时不能再掐连接：客户端已经拿到完整响应，
+      // 剩下要说的只是日志里那一行。
+      if (response.writableEnded) {
+        return;
+      }
+
       if (response.headersSent) {
         response.destroy();
         return;
@@ -134,8 +144,12 @@ export async function startFakeProvider(
       `${seen.method} ${seen.path} stream=${seen.stream} model=${seen.model ?? "-"}`
     );
 
-    if (options.record) {
-      await proxy({ request, response, body, seen, url });
+    if (recording) {
+      await proxy(
+        { response, body, seen, url },
+        recording.record,
+        recording.recorder
+      );
       return;
     }
 
@@ -151,18 +165,16 @@ export async function startFakeProvider(
   };
 
   /** 代理模式：转发给真供应商，边转发边把响应录下来。 */
-  const proxy = async (input: {
-    request: IncomingMessage;
-    response: ServerResponse;
-    body: string;
-    seen: FakeProviderRequest;
-    url: URL;
-  }): Promise<void> => {
-    const { record } = options;
-    if (!record) {
-      return;
-    }
-
+  const proxy = async (
+    input: {
+      response: ServerResponse;
+      body: string;
+      seen: FakeProviderRequest;
+      url: URL;
+    },
+    record: FakeProviderRecordOptions,
+    recorder: Recorder
+  ): Promise<void> => {
     const target = `${record.url.replace(/\/$/, "")}${input.url.pathname}${input.url.search}`;
     const upstream = await fetch(target, {
       method: "POST",
@@ -173,32 +185,43 @@ export async function startFakeProvider(
       body: input.body,
     });
 
-    input.response.writeHead(
-      upstream.status,
+    // 自己分帧：上游那些「由连接决定长度」的头不能跟着走，否则客户端收满上游
+    // 声明的字节数就认为读完，不等本条连接结束 —— 录制还来不及落盘。
+    const headers = withoutHopByHop(
       Object.fromEntries(upstream.headers.entries())
     );
+
+    input.response.writeHead(upstream.status, headers);
 
     const captured: Buffer[] = [];
     for await (const piece of upstream.body ?? []) {
       captured.push(Buffer.from(piece));
       input.response.write(piece);
     }
-    input.response.end();
 
-    // 一条一条落盘：录制进程可能在审批暂停里挂很久。
-    await recorder?.add({
-      request: {
-        method: input.seen.method,
-        path: input.seen.path,
-        ...(input.seen.stream ? { stream: true } : {}),
-        ...(input.seen.model ? { model: input.seen.model } : {}),
-      },
-      response: {
-        status: upstream.status,
-        headers: Object.fromEntries(upstream.headers.entries()),
-        body: Buffer.concat(captured).toString("utf-8"),
-      },
-    });
+    // 客户端读到响应结束时就会返回，之后可能立刻读录制文件；所以先落盘，再结束响应。
+    try {
+      await recorder.add({
+        request: {
+          method: input.seen.method,
+          path: input.seen.path,
+          ...(input.seen.stream ? { stream: true } : {}),
+          ...(input.seen.model ? { model: input.seen.model } : {}),
+        },
+        response: {
+          status: upstream.status,
+          headers,
+          body: Buffer.concat(captured).toString("utf-8"),
+        },
+      });
+    } catch (error) {
+      options.log?.(
+        `record failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+      throw error;
+    } finally {
+      input.response.end();
+    }
   };
 
   await new Promise<void>((resolve) => {

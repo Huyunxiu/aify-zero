@@ -1,5 +1,6 @@
 import type { ServerResponse } from "node:http";
 
+import { withoutHopByHop } from "../headers.js";
 import type { ReplayBook } from "../record.js";
 import type { Rule } from "../scenario.js";
 
@@ -51,14 +52,6 @@ const failureMessage = (status: number): string => {
     }
   }
 };
-
-/** 响应头里不该跟着回放的头：改由当前连接决定。 */
-const HOP_BY_HOP = new Set([
-  "connection",
-  "content-length",
-  "keep-alive",
-  "transfer-encoding",
-]);
 
 /**
  * 把一条规则写到 chat completions 的线上。
@@ -153,11 +146,7 @@ export async function writeChatCompletions(options: {
       return;
     }
 
-    const headers = Object.fromEntries(
-      Object.entries(entry.response.headers).filter(
-        ([name]) => !HOP_BY_HOP.has(name.toLowerCase())
-      )
-    );
+    const headers = withoutHopByHop(entry.response.headers);
     response.writeHead(entry.response.status, headers);
     response.end(entry.response.body);
     return;
