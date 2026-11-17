@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { TapeFrame, TapeRecorderOptions } from "../tape/index.js";
 import {
   encodeFrameBytes,
+  PANEL_HTML,
   TapePlayer,
   TapeRecorder,
   tapeInputSchema,
@@ -172,6 +173,12 @@ export async function startFakeProvider(
       response.writeHead(status, { "content-type": "application/json" });
       response.end(JSON.stringify({ error: { message } }));
     };
+
+    if (action === "panel") {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(PANEL_HTML);
+      return;
+    }
 
     if (action === "input") {
       if (tape === undefined) {

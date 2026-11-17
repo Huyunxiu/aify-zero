@@ -305,4 +305,17 @@ describe("tape player", () => {
 
     expect(text).toBe("data: 二\n\n");
   });
+
+  test("serves the playback panel", async () => {
+    const out = tempTape();
+    await writeTape(out, [{ frames: [{ at: 0, text: "data: a\n\n" }] }]);
+
+    const provider = await startProvider({ play: { path: out } });
+
+    const response = await fetch(new URL("/__tape/panel", provider.baseURL));
+    const html = await response.text();
+
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(html).toContain('data-action="step"');
+  });
 });

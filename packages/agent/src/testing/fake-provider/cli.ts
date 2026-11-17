@@ -102,6 +102,7 @@ if (playPath !== undefined) {
   parts.push(
     `playing ${playPath}${pauseAt === undefined ? "" : ` (pause at frame ${pauseAt})`}`
   );
+  parts.push(`panel ${provider.baseURL.replace(/\/v1$/, "")}/__tape/panel`);
 }
 process.stdout.write(`${parts.join("  ")}\n`);
 
