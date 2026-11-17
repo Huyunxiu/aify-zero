@@ -149,7 +149,40 @@ const call = async (
   )) as JobToolResult;
 };
 
+/**
+ * `job-output` 里 `timeoutMs` 的模型侧描述。
+ *
+ * 工具把 zod schema 放在 `inputSchema` 上，测试只读它的文案，所以这里收窄到
+ * 需要的那个形状，而不是重述整个 schema。
+ */
+const timeoutDescription = (
+  tools: ReturnType<typeof createJobTools>
+): string => {
+  const schema = tools["job-output"].inputSchema as unknown as {
+    shape: { timeoutMs: { description?: string } };
+  };
+
+  return schema.shape.timeoutMs.description ?? "";
+};
+
 describe("job-output", () => {
+  test("names the real wait bounds to the model", () => {
+    const jobs = createRegistry();
+    const stock = createJobTools({ agentContext: createContext(jobs) });
+
+    expect(timeoutDescription(stock)).toContain("Defaults to 30 seconds");
+    expect(timeoutDescription(stock)).toContain("capped at 10 minutes");
+
+    // 装配换了边界，描述跟着换：模型看到的数字必须是它真的会撞上的那两个。
+    const custom = createJobTools({
+      agentContext: createContext(jobs),
+      options: { waitTimeoutMs: 5000, maxWaitTimeoutMs: 90_000 },
+    });
+
+    expect(timeoutDescription(custom)).toContain("Defaults to 5 seconds");
+    expect(timeoutDescription(custom)).toContain("capped at 90 seconds");
+  });
+
   test("returns the unread delta and the status line", async () => {
     const jobs = createRegistry();
     const tools = createJobTools({ agentContext: createContext(jobs) });

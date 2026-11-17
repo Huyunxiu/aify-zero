@@ -64,6 +64,19 @@ const waitBounds = (
 };
 
 /**
+ * 把毫秒写成人读的时间：整分钟说分钟，其余说秒。
+ * @param ms - 时长，单位毫秒。
+ */
+const spokenMs = (ms: number): string => {
+  if (ms % 60_000 === 0) {
+    const minutes = ms / 60_000;
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  const seconds = ms / 1000;
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
+};
+
+/**
  * 取工具需要的两个依赖。任务工具只在装配了注册表的会话里注册，缺注册表说明
  * 宿主装错了，直接报错比让模型看见一个永远失败的工具好。
  */
@@ -115,22 +128,30 @@ type JobKillMetadata = {
   job: PublicJob;
 };
 
-const JOB_OUTPUT_INPUT = z.object({
-  jobId: z.string().min(1).describe(JOB_ID_DESCRIPTION),
-  wait: z
-    .boolean()
-    .optional()
-    .describe(
-      "Block until the job finishes or the timeout expires; a timed-out wait leaves the job running. Defaults to false."
-    ),
-  timeoutMs: z
-    .number()
-    .positive()
-    .optional()
-    .describe(
-      "Max wait in milliseconds with wait: true. Defaults to and is capped by the task tool configuration."
-    ),
-});
+/**
+ * `job-output` 的入参。
+ *
+ * `timeoutMs` 的描述要说真实边界：模型只能从描述里知道一次等待默认多久、最多
+ * 多久，所以这份 schema 跟着装配给的边界走，不写成常量。
+ * @param bounds - 解析后的默认等待与硬上限，单位毫秒。
+ */
+const jobOutputInput = (bounds: { defaultMs: number; maxMs: number }) =>
+  z.object({
+    jobId: z.string().min(1).describe(JOB_ID_DESCRIPTION),
+    wait: z
+      .boolean()
+      .optional()
+      .describe(
+        "Block until the job finishes or the timeout expires; a timed-out wait leaves the job running. Defaults to false."
+      ),
+    timeoutMs: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        `Max wait in milliseconds with wait: true. Defaults to ${spokenMs(bounds.defaultMs)} and is capped at ${spokenMs(bounds.maxMs)}.`
+      ),
+  });
 
 const JOB_LIST_INPUT = z.object({});
 
@@ -144,7 +165,7 @@ const JOB_KILL_INPUT = z.object({
     ),
 });
 
-type JobOutputInput = z.infer<typeof JOB_OUTPUT_INPUT>;
+type JobOutputInput = z.infer<ReturnType<typeof jobOutputInput>>;
 type JobListInput = z.infer<typeof JOB_LIST_INPUT>;
 type JobKillInput = z.infer<typeof JOB_KILL_INPUT>;
 
@@ -158,7 +179,7 @@ const createJobOutputTool = ({ agentContext, options }: JobToolDeps) => {
     AgentContext
   >({
     description: JOB_OUTPUT_DESCRIPTION,
-    inputSchema: JOB_OUTPUT_INPUT,
+    inputSchema: jobOutputInput({ defaultMs, maxMs }),
     execute: async ({ jobId, wait, timeoutMs }, { abortSignal }) => {
       // 这次调用会自己把终态交给模型；这期间结算的任务不再另发通知。
       let release: (() => void) | undefined;
