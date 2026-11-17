@@ -204,4 +204,105 @@ describe("tape player", () => {
     expect(text).toBe("data: a\n\ndata: b\n\ndata: c\n\n");
     expect(provider.tape?.paused).toBeFalsy();
   });
+
+  test("reports the tape position", async () => {
+    const out = tempTape();
+    await writeTape(out, [
+      {
+        frames: [
+          { at: 0, text: "data: a\n\n" },
+          { at: 0, text: "data: b\n\n" },
+        ],
+      },
+    ]);
+
+    const provider = await startProvider({ play: { path: out } });
+
+    const response = await fetch(new URL("/__tape/state", provider.baseURL));
+    const state = (await response.json()) as Record<string, unknown>;
+
+    expect(state).toMatchObject({
+      position: 0,
+      remaining: 1,
+      frames: 0,
+      mode: "run",
+      paused: false,
+    });
+  });
+
+  test("steps one frame at a time", async () => {
+    const out = tempTape();
+    await writeTape(out, [
+      {
+        frames: [
+          { at: 0, text: "data: a\n\n" },
+          { at: 0, text: "data: b\n\n" },
+        ],
+      },
+    ]);
+
+    const provider = await startProvider({ play: { path: out, pauseAt: 0 } });
+    const pending = post(provider.baseURL, { stream: true });
+
+    await waitFor(() => provider.tape?.paused === true);
+
+    await fetch(new URL("/__tape/step", provider.baseURL), { method: "POST" });
+    await waitFor(() => provider.tape?.frames === 1);
+
+    await fetch(new URL("/__tape/step", provider.baseURL), { method: "POST" });
+    await waitFor(() => provider.tape?.frames === 2);
+
+    await fetch(new URL("/__tape/resume", provider.baseURL), {
+      method: "POST",
+    });
+
+    const { text } = await pending;
+
+    expect(text).toBe("data: a\n\ndata: b\n\n");
+  });
+
+  test("refuses to load another tape while one is playing", async () => {
+    const out = tempTape();
+    await writeTape(out, [{ frames: [{ at: 0, text: "data: a\n\n" }] }]);
+
+    const provider = await startProvider({ play: { path: out, pauseAt: 0 } });
+    const pending = post(provider.baseURL, { stream: true });
+
+    await waitFor(() => provider.tape?.paused === true);
+
+    const response = await fetch(new URL("/__tape/load", provider.baseURL), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: out }),
+    });
+
+    expect(response.status).toBe(409);
+
+    await fetch(new URL("/__tape/resume", provider.baseURL), {
+      method: "POST",
+    });
+    await pending;
+  });
+
+  test("loads another tape when idle", async () => {
+    const first = tempTape();
+    const second = tempTape();
+    await writeTape(first, [{ frames: [{ at: 0, text: "data: 一\n\n" }] }]);
+    await writeTape(second, [{ frames: [{ at: 0, text: "data: 二\n\n" }] }]);
+
+    const provider = await startProvider({ play: { path: first } });
+    await post(provider.baseURL, { stream: true });
+
+    const loaded = await fetch(new URL("/__tape/load", provider.baseURL), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: second }),
+    });
+
+    expect(loaded.status).toBe(204);
+
+    const { text } = await post(provider.baseURL, { stream: true });
+
+    expect(text).toBe("data: 二\n\n");
+  });
 });

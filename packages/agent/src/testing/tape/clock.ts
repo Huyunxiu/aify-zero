@@ -42,32 +42,60 @@ export const wallClock = (options: WallClockOptions = {}): Clock => {
   };
 };
 
+/** 闸门的三种状态：全放行、每帧都等、只放一帧。 */
+export type GateMode = "run" | "hold" | "step";
+
 /**
  * 挂起闸门：播放器停在某一帧，等一个外部信号才继续。
  *
  * 连接保持打开、不发数据；客户端看到的是「还在生成」，这正是要停住的那一刻。
  */
 export class TapeGate {
-  #paused = false;
+  #mode: GateMode = "run";
   readonly #waiters: (() => void)[] = [];
 
+  get mode(): GateMode {
+    return this.#mode;
+  }
+
   get paused(): boolean {
-    return this.#paused;
+    return this.#mode !== "run";
   }
 
+  /** 挂起：下一帧及之后都等。已经在等的不会被唤醒。 */
   hold(): void {
-    this.#paused = true;
+    this.#mode = "hold";
   }
 
+  /** 放一帧，然后回到挂起。没人在等就留给下一次。 */
+  step(): void {
+    const resolve = this.#waiters.shift();
+
+    if (resolve === undefined) {
+      this.#mode = "step";
+
+      return;
+    }
+
+    resolve();
+  }
+
+  /** 完全放行，唤醒所有等待者。 */
   release(): void {
-    this.#paused = false;
+    this.#mode = "run";
     for (const resolve of this.#waiters.splice(0)) {
       resolve();
     }
   }
 
   async wait(): Promise<void> {
-    if (!this.#paused) {
+    if (this.#mode === "run") {
+      return;
+    }
+
+    if (this.#mode === "step") {
+      this.#mode = "hold";
+
       return;
     }
 

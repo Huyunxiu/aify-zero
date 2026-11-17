@@ -60,6 +60,9 @@ export type FakeProviderPlaybackOptions = {
 export type TapePlaybackState = {
   readonly paused: boolean;
   readonly frames: number;
+  readonly position: number;
+  readonly remaining: number;
+  readonly mode: "run" | "hold" | "step";
 };
 
 export type FakeProviderOptions = {
@@ -115,26 +118,23 @@ export async function startFakeProvider(
             : new Recorder(options.record.out, options.record.append),
       }
     : undefined;
-  const player =
-    options.play === undefined
-      ? undefined
-      : await TapePlayer.load({
-          path: options.play.path,
-          clock: wallClock({
-            ...(options.play.speed === undefined
-              ? {}
-              : { speed: options.play.speed }),
-            ...(options.play.capMs === undefined
-              ? {}
-              : { capMs: options.play.capMs }),
-          }),
-          ...(options.play.pauseAt === undefined
-            ? {}
-            : { pauseAt: options.play.pauseAt }),
-          onHold: (frame) => {
-            options.log?.(`paused at frame ${String(frame)}`);
-          },
-        });
+  const loadPlayer = async (
+    play: FakeProviderPlaybackOptions
+  ): Promise<TapePlayer> =>
+    await TapePlayer.load({
+      path: play.path,
+      clock: wallClock({
+        ...(play.speed === undefined ? {} : { speed: play.speed }),
+        ...(play.capMs === undefined ? {} : { capMs: play.capMs }),
+      }),
+      ...(play.pauseAt === undefined ? {} : { pauseAt: play.pauseAt }),
+      onHold: (frame) => {
+        options.log?.(`paused at frame ${String(frame)}`);
+      },
+    });
+
+  let player =
+    options.play === undefined ? undefined : await loadPlayer(options.play);
   const requests: FakeProviderRequest[] = [];
   const fallbackModel = scenario?.models?.[0] ?? scenario?.name ?? "fake-model";
 
@@ -162,30 +162,20 @@ export async function startFakeProvider(
     });
   });
 
-  const handle = async (
+  /** 控制面：一切 `/__tape/*` 都从这里走。 */
+  const handleTape = async (
+    action: string,
     request: IncomingMessage,
     response: ServerResponse
   ): Promise<void> => {
-    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const fail = (status: number, message: string): void => {
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message } }));
+    };
 
-    if (request.method === "POST" && url.pathname === "/__tape/resume") {
-      if (player === undefined) {
-        response.writeHead(404, { "content-type": "application/json" });
-        response.end(JSON.stringify({ error: { message: "no tape" } }));
-        return;
-      }
-
-      player.release();
-      options.log?.("resumed");
-      response.writeHead(204);
-      response.end();
-      return;
-    }
-
-    if (request.method === "POST" && url.pathname === "/__tape/input") {
+    if (action === "input") {
       if (tape === undefined) {
-        response.writeHead(404, { "content-type": "application/json" });
-        response.end(JSON.stringify({ error: { message: "no tape" } }));
+        fail(404, "no tape");
         return;
       }
 
@@ -193,6 +183,100 @@ export async function startFakeProvider(
       await tape.recordInput(tape.at(), tapeInputSchema.parse(JSON.parse(raw)));
       response.writeHead(204);
       response.end();
+      return;
+    }
+
+    if (action === "load") {
+      if (options.play === undefined) {
+        fail(404, "no tape");
+        return;
+      }
+
+      if (player?.busy === true) {
+        fail(409, "tape is playing");
+        return;
+      }
+
+      const raw = (await readBody(request)) ?? "{}";
+      const parsed = JSON.parse(raw) as { path?: unknown };
+
+      if (typeof parsed.path !== "string") {
+        fail(400, "path is required");
+        return;
+      }
+
+      player = await loadPlayer({
+        ...options.play,
+        path: parsed.path,
+        pauseAt: undefined,
+      });
+      options.log?.(`loaded tape ${parsed.path}`);
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+
+    if (action === "state") {
+      if (player === undefined) {
+        fail(404, "no tape");
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          tape: player.path,
+          position: player.position,
+          remaining: player.remaining,
+          frames: player.frames,
+          mode: player.mode,
+          paused: player.paused,
+        })
+      );
+      return;
+    }
+
+    if (player === undefined) {
+      fail(404, "no tape");
+      return;
+    }
+
+    switch (action) {
+      case "pause": {
+        player.pause();
+        break;
+      }
+      case "step": {
+        player.step();
+        break;
+      }
+      case "resume": {
+        player.resume();
+        break;
+      }
+      default: {
+        fail(404, "not found");
+        return;
+      }
+    }
+
+    options.log?.(action);
+    response.writeHead(204);
+    response.end();
+  };
+
+  const handle = async (
+    request: IncomingMessage,
+    response: ServerResponse
+  ): Promise<void> => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (url.pathname.startsWith("/__tape/")) {
+      await handleTape(
+        url.pathname.slice("/__tape/".length),
+        request,
+        response
+      );
       return;
     }
 
@@ -363,18 +447,19 @@ export async function startFakeProvider(
   return {
     baseURL: `http://127.0.0.1:${port}/v1`,
     requests,
-    ...(player === undefined
-      ? {}
-      : {
-          tape: {
-            get paused() {
-              return player.paused;
-            },
-            get frames() {
-              return player.frames;
-            },
-          },
-        }),
+    get tape(): TapePlaybackState | undefined {
+      if (player === undefined) {
+        return undefined;
+      }
+
+      return {
+        paused: player.paused,
+        frames: player.frames,
+        position: player.position,
+        remaining: player.remaining,
+        mode: player.mode,
+      };
+    },
     close: async () => {
       await new Promise<void>((resolve) => {
         server.close(() => resolve());

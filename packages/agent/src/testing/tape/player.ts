@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { ServerResponse } from "node:http";
 
 import { TapeGate, wallClock } from "./clock.js";
-import type { Clock } from "./clock.js";
+import type { Clock, GateMode } from "./clock.js";
 import { decodeFrameBytes, parseTapeLine, TAPE_VERSION } from "./format.js";
 import type { TapeEntry, TapeItem } from "./format.js";
 
@@ -54,6 +54,7 @@ export class TapePlayer {
   readonly #onHold: ((frame: number) => void) | undefined;
   #cursor = 0;
   #frames = 0;
+  #busy = false;
 
   private constructor(
     path: string,
@@ -80,6 +81,11 @@ export class TapePlayer {
     });
   }
 
+  /** 这份带从哪来。 */
+  get path(): string {
+    return this.#path;
+  }
+
   /** 还有几条没放。 */
   get remaining(): number {
     return this.#entries.length - this.#cursor;
@@ -100,8 +106,28 @@ export class TapePlayer {
     return this.#gate.paused;
   }
 
-  /** 放行挂起的播放。 */
-  release(): void {
+  /** 闸门现在是什么状态。 */
+  get mode(): GateMode {
+    return this.#gate.mode;
+  }
+
+  /** 有没有一条响应正在往外写。 */
+  get busy(): boolean {
+    return this.#busy;
+  }
+
+  /** 挂起：下一帧起都等。 */
+  pause(): void {
+    this.#gate.hold();
+  }
+
+  /** 放一帧，然后回到挂起。 */
+  step(): void {
+    this.#gate.step();
+  }
+
+  /** 完全放行。 */
+  resume(): void {
     this.#gate.release();
   }
 
@@ -124,19 +150,24 @@ export class TapePlayer {
     }
 
     this.#cursor += 1;
+    this.#busy = true;
     response.writeHead(entry.response.status, entry.response.headers);
 
-    for (const [index, frame] of entry.response.frames.entries()) {
-      // 挂起的判据是「已经发出多少帧」，所以自增放在写之后。
-      if (this.#pauseAt !== undefined && this.#frames === this.#pauseAt) {
-        this.#gate.hold();
-        this.#onHold?.(this.#frames);
-      }
+    try {
+      for (const [index, frame] of entry.response.frames.entries()) {
+        // 挂起的判据是「已经发出多少帧」，所以自增放在写之后。
+        if (this.#pauseAt !== undefined && this.#frames === this.#pauseAt) {
+          this.#gate.hold();
+          this.#onHold?.(this.#frames);
+        }
 
-      await this.#gate.wait();
-      await this.#clock.next(index, frame);
-      response.write(decodeFrameBytes(frame.bytes));
-      this.#frames += 1;
+        await this.#gate.wait();
+        await this.#clock.next(index, frame);
+        response.write(decodeFrameBytes(frame.bytes));
+        this.#frames += 1;
+      }
+    } finally {
+      this.#busy = false;
     }
 
     response.end();

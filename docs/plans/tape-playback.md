@@ -216,22 +216,28 @@ vp run fake:provider -- \
 
 ## 控制面
 
-和数据面同端口：
+和数据面同端口。P2 已经落地的：
 
 ```text
-GET  /__tape/state            → { tape, item, frame, total, event, clock, paused, compressedMs }
-GET  /__tape/tapes            → 可用带的清单
-POST /__tape/load    { path } → 换带，游标归零；忙时 409，带 force 才中断
-POST /__tape/rewind           → 同一条从头再来
-POST /__tape/pause
-POST /__tape/resume
-POST /__tape/step             → 放行一帧，然后重新挂起
-POST /__tape/speed   { x }    → 0.1 到 10
-POST /__tape/takeover
+GET  /__tape/state            → { tape, position, remaining, frames, mode, paused }
+POST /__tape/pause            → 下一帧起挂起
+POST /__tape/step             → 放一帧，然后回到挂起
+POST /__tape/resume           → 完全放行
+POST /__tape/load    { path } → 换带；播放中 409
 POST /__tape/input   { type, summary }  → 录制时追加一条输入事件
 ```
 
-`compressedMs` 是累计压缩掉的时间，面板要显示，免得让人以为录制就是这么快的。
+`mode` 是 `run` / `hold` / `step` 三种。`step` 在没有等待者时留给下一次，播放器下次
+`wait` 就用掉它，所以连点两次不会丢帧。
+
+还留在后面：
+
+```text
+GET  /__tape/tapes            → 可用带的清单
+POST /__tape/rewind           → 同一条从头再来
+POST /__tape/speed   { x }    → 0.1 到 10
+POST /__tape/takeover         → 分叉，之后转实时
+```
 
 换带必须配新会话：带是「一次会话的外部输入」，换带就是换历史。旧会话已经有自己的
 记录，拿新带喂它只会错位。A/B 对比两条带时起两个实例，不要在一个进程里来回切。
@@ -278,7 +284,8 @@ Server（重放器）                 Provider
 | P3   | 保活 + 空闲压缩 + 接管        | 挂起 10 分钟不断          |
 | P4   | e2e 迁移                      | 删掉 `slow-answer` 的三秒 |
 
-P0 与 P1 已经落地。P2 之后才有日常价值：只有控制面存在，播放才能被停住。
+P0、P1 与 P2 的控制面已经落地。面板还没做：现在只能 curl 步进。面板落地之前，
+这套东西对「一边看界面一边步进」还不算完整。
 
 ## 风险
 
