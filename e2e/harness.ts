@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { startFakeProvider } from "@workspace/agent/testing";
-import type { FakeProvider } from "@workspace/agent/testing";
+import type { FakeProvider, Scenario } from "@workspace/agent/testing";
 
 /** 仓库根：本文件在 `e2e/` 下。 */
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -32,6 +32,10 @@ export type Stack = {
   readonly fake: FakeProvider;
   /** server 启动时打印的那条登录链接，带 `?token=`。 */
   readonly loginUrl: string;
+  /** API 的基地址；用例要读 `/timer/state` 这类只读状态时用。 */
+  readonly apiUrl: string;
+  /** 请求 API 用的机器凭据。 */
+  readonly token: string;
   readonly projectDir: string;
   /** 拆现场。`keep` 为真时留下目录当证据。 */
   stop(options?: { readonly keep?: boolean }): Promise<void>;
@@ -199,10 +203,11 @@ const seedProvider = async (input: {
  * 起一整套现场，等它真的能服务请求。
  *
  * `scenario` 换假供应商的剧本：主流程要工具，批处理用例要一段够长的流，
- * 好让后两条消息在第一次运行还没结束时排进队列。
+ * 好让后两条消息在第一次运行还没结束时排进队列。日程用例要在运行时算出一个
+ * 「下一个整分」，所以这里也收场次对象本身。
  */
 export async function startStack(
-  input: { readonly scenario?: string } = {}
+  input: { readonly scenario?: string | Scenario } = {}
 ): Promise<Stack> {
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
   const runDir = join(REPO_ROOT, ".e2e", "runs", stamp);
@@ -289,7 +294,7 @@ export async function startStack(
 
     await seedProvider({ apiUrl, baseURL: fake.baseURL, token });
 
-    return { fake, loginUrl, projectDir, stop };
+    return { fake, loginUrl, apiUrl, token, projectDir, stop };
   } catch (error) {
     await stop({ keep: true });
     throw new Error(`the stack did not come up; logs are in ${runDir}`, {
