@@ -304,6 +304,28 @@ export class JobRegistry {
   }
 
   /**
+   * 看一遍这次读取会交出的内容，不移动模型游标。
+   *
+   * 完成通知要先把正文组出来，再确认它投得出去，最后才落实消耗：投不出去
+   * （会话没有模型、入队失败、模型自己先读走了）时游标原地不动，模型之后照
+   * 常读到这些字节。确认投递之后再调 {@link read} 落实消耗。
+   * @param id - 要读的任务。
+   * @param caller - 读取方会话，校验归属。
+   */
+  peek(id: JobId, caller?: string): JobRead {
+    const job = this.#expect(id, caller);
+    const read = job.ring.readFrom(job.modelCursor);
+    const result =
+      isTerminal(job.status) && !job.resultDelivered ? job.result : undefined;
+    return {
+      chunks: read.chunks,
+      lossy: read.lossy,
+      ...(result === undefined ? {} : { result }),
+      job: this.#view(job),
+    };
+  }
+
+  /**
    * 读取保留的输出而不移动模型游标；用上一次的 `next` 续读。
    * @param id - 要读的任务。
    * @param from - 起始的绝对字节偏移，0 表示保留内容的开头。

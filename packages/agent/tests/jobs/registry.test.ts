@@ -447,6 +447,22 @@ describe("JobRegistry 输出", () => {
     expect(registry.read(id).result).toBeUndefined();
   });
 
+  test("peek never moves the model cursor", () => {
+    const { registry } = createRegistry();
+    const produced = producer();
+    const id = registry.start(produced.spec);
+    produced.handle?.append("hello");
+
+    const preview = registry.peek(id);
+
+    expect(preview.chunks.map((chunk) => chunk.text)).toStrictEqual(["hello"]);
+    // 预看不落实消耗：真正的读取照样交得出同样的字节。
+    expect(registry.read(id).chunks.map((chunk) => chunk.text)).toStrictEqual([
+      "hello",
+    ]);
+    expect(registry.peek(id).chunks).toStrictEqual([]);
+  });
+
   test("readAt never moves the model cursor", () => {
     const { registry } = createRegistry();
     const produced = producer();

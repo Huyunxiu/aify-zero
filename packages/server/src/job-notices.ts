@@ -44,6 +44,17 @@ export const createJobNoticeAdapter = ({
     });
   };
 
+  /** 通知带走了未读输出：把模型游标推过去。失败只记日志，字节留在任务里。 */
+  const commitNoticeOutput = (sessionId: string, jobId: JobId): void => {
+    try {
+      registry.read(jobId, sessionId);
+    } catch (error: unknown) {
+      logger.warn(
+        `job-notices: failed to consume the output of ${jobId}: ${String(error)}`
+      );
+    }
+  };
+
   return {
     deliver(job) {
       const sessionId = job.owner;
@@ -51,18 +62,17 @@ export const createJobNoticeAdapter = ({
         // 无主任务没有会话可送达。
         return;
       }
-      // 先确认这条通知投得出去，再去消费任务的未读输出：消费之后再失败，
-      // 模型就再也拿不到它了。
+      // 先确认这条通知投得出去，再落实消耗未读输出：中间任何一步失败（会话
+      // 没有模型、入队失败、模型自己先读走），游标都留在原处，模型之后照常
+      // 读得到这些字节。
       if (!runner.canDeliverNotice(sessionId)) {
         return;
       }
 
-      let text: string;
+      let notice: ReturnType<typeof composeJobNotice>;
       try {
-        ({ text } = composeJobNotice({
-          job,
-          readOutput: () => registry.read(job.id, sessionId),
-        }));
+        const preview = registry.peek(job.id, sessionId);
+        notice = composeJobNotice({ job, readOutput: () => preview });
       } catch (error: unknown) {
         logger.warn(
           `job-notices: failed to compose a notice for ${job.id}: ${String(error)}`
@@ -74,7 +84,7 @@ export const createJobNoticeAdapter = ({
       void runner
         .enqueueNotice({
           sessionId,
-          text,
+          text: notice.text,
           dedupeKey: `${JOB_NOTICE_INBOX_KIND}:${job.id}`,
         })
         .then((item) => {
@@ -86,6 +96,11 @@ export const createJobNoticeAdapter = ({
             // 入队期间模型已经自己读走了：通知不必再出现。
             remove(sessionId, item.id);
             return;
+          }
+          // 通知真的落库了，现在才把游标推过去。摘要类通知没有消费正文，
+          // 不用落实。
+          if (notice.inline) {
+            commitNoticeOutput(sessionId, job.id);
           }
           pending.set(job.id, { sessionId, itemId: item.id });
         })

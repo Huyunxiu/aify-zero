@@ -56,7 +56,7 @@ describe(createJobNoticeAdapter, () => {
     const enqueueNotice = vi.fn<EnqueueNotice>().mockResolvedValue(item());
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
-      registry: { read } as never,
+      registry: { peek: read, read } as never,
       runner: {
         enqueueNotice,
         canDeliverNotice: () => true,
@@ -80,7 +80,7 @@ describe(createJobNoticeAdapter, () => {
     const enqueueNotice = vi.fn<EnqueueNotice>().mockResolvedValue(item());
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
-      registry: { read } as never,
+      registry: { peek: read, read } as never,
       runner: {
         enqueueNotice,
         canDeliverNotice: () => true,
@@ -106,7 +106,7 @@ describe(createJobNoticeAdapter, () => {
     );
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
-      registry: { read } as never,
+      registry: { peek: read, read } as never,
       runner: {
         enqueueNotice,
         canDeliverNotice: () => true,
@@ -129,7 +129,7 @@ describe(createJobNoticeAdapter, () => {
       read()
     );
     const adapter = createJobNoticeAdapter({
-      registry: { read: readJob } as never,
+      registry: { peek: readJob, read: readJob } as never,
       runner: {
         enqueueNotice,
         canDeliverNotice: () => false,
@@ -146,7 +146,7 @@ describe(createJobNoticeAdapter, () => {
   test("does nothing for an unowned job", () => {
     const enqueueNotice = vi.fn<EnqueueNotice>();
     const adapter = createJobNoticeAdapter({
-      registry: { read } as never,
+      registry: { peek: read, read } as never,
       runner: {
         enqueueNotice,
         canDeliverNotice: () => true,
@@ -157,5 +157,85 @@ describe(createJobNoticeAdapter, () => {
     adapter.deliver(view({ owner: undefined }));
 
     expect(enqueueNotice).not.toHaveBeenCalled();
+  });
+
+  // 未读输出只在通知真的落库之后才被消费。入队失败、或者模型抢先自己读走，
+  // 游标都必须留在原处，否则那几个字节谁都看不到了。
+  test("keeps the unread output when enqueueing fails", async () => {
+    const peek = vi.fn<(id: string, caller?: string) => JobRead>(() => read());
+    const commit = vi.fn<(id: string, caller?: string) => JobRead>(() =>
+      read()
+    );
+    const enqueueNotice = vi
+      .fn<EnqueueNotice>()
+      .mockRejectedValue(new Error("the store is down"));
+    const adapter = createJobNoticeAdapter({
+      registry: { peek, read: commit } as never,
+      runner: {
+        enqueueNotice,
+        canDeliverNotice: () => true,
+      } as never,
+      store: { deleteInboxItems: vi.fn<DeleteItems>() },
+    });
+
+    adapter.deliver(view());
+
+    await vi.waitFor(() => expect(enqueueNotice).toHaveBeenCalledOnce());
+    expect(peek).toHaveBeenCalledOnce();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  test("keeps the unread output when the model withdraws the notice", async () => {
+    let resolveItem!: (value: NoticeItem) => void;
+    const peek = vi.fn<(id: string, caller?: string) => JobRead>(() => read());
+    const commit = vi.fn<(id: string, caller?: string) => JobRead>(() =>
+      read()
+    );
+    const enqueueNotice = vi.fn<EnqueueNotice>().mockReturnValue(
+      new Promise((resolve) => {
+        resolveItem = resolve;
+      })
+    );
+    const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
+    const adapter = createJobNoticeAdapter({
+      registry: { peek, read: commit } as never,
+      runner: {
+        enqueueNotice,
+        canDeliverNotice: () => true,
+      } as never,
+      store: { deleteInboxItems },
+    });
+
+    adapter.deliver(view());
+    adapter.withdraw("bash-1");
+    resolveItem(item());
+
+    await vi.waitFor(() =>
+      expect(deleteInboxItems).toHaveBeenCalledWith("s1", ["item-1"])
+    );
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  test("consumes the unread output once the notice lands", async () => {
+    const peek = vi.fn<(id: string, caller?: string) => JobRead>(() => read());
+    const commit = vi.fn<(id: string, caller?: string) => JobRead>(() =>
+      read()
+    );
+    const enqueueNotice = vi.fn<EnqueueNotice>().mockResolvedValue(item());
+    const adapter = createJobNoticeAdapter({
+      registry: { peek, read: commit } as never,
+      runner: {
+        enqueueNotice,
+        canDeliverNotice: () => true,
+      } as never,
+      store: { deleteInboxItems: vi.fn<DeleteItems>() },
+    });
+
+    adapter.deliver(view());
+
+    await vi.waitFor(() => expect(commit).toHaveBeenCalledOnce());
+    // 先预看组正文，落库之后再落实消耗：同一个任务、同一个会话。
+    expect(peek).toHaveBeenCalledWith("bash-1", "s1");
+    expect(commit).toHaveBeenCalledWith("bash-1", "s1");
   });
 });
