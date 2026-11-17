@@ -82,6 +82,10 @@ const provider = await startFakeProvider({
           ...(valueOf("takeover-url") === undefined
             ? {}
             : { takeoverUrl: valueOf("takeover-url") }),
+          // 真实应用会并发发标题请求，顺序会漂；`--match stream` 按流式与否分流。
+          ...(valueOf("match") === "stream"
+            ? { match: "stream" as const }
+            : {}),
         },
       }),
   port,
