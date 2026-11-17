@@ -57,7 +57,9 @@ vp run fake:provider -- \
   --out packages/agent/scenarios/recorded/deepseek-429.json
 ```
 
-代理模式把响应原样转发并落盘，一条一条写。录完把场景里的规则换成
+代理模式把响应体原样转发并落盘，一条一条写；落盘在结束响应之前完成，所以客户端
+拿到完整响应的那一刻，文件里已经有这一条。由连接决定长度的头（`content-length`、
+`transfer-encoding` 等）不跟着走，代理自己分帧。录完把场景里的规则换成
 `{ "replay": "recorded/deepseek-429.json" }`，就不再请求真供应商。录制默认落在
 `.gitignore` 的目录里：它带着你的提示词与答案。
 

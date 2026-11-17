@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -142,5 +143,48 @@ describe("fake provider", () => {
     expect(body.text).toBe(recorded.text);
     // 答案按字符分块发出，所以断言单个字符，而不是整句。
     expect(body.text).toContain('"content":"录"');
+  });
+
+  test("has the recording on disk when a sized response finishes", async () => {
+    // 带 content-length 的上游：客户端收满字节就完成 body，不等结束信号。代理若把
+    // 这个头原样传下去，客户端会抢在录制落盘之前去读文件。
+    const answered = JSON.stringify({ ok: true });
+    const plain = createServer((_request, response) => {
+      response.writeHead(200, {
+        "content-type": "application/json",
+        "content-length": String(Buffer.byteLength(answered)),
+      });
+      response.end(answered);
+    });
+    await new Promise<void>((resolve) => {
+      plain.listen(0, "127.0.0.1", resolve);
+    });
+    const address = plain.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const out = join(mkdtempSync(join(tmpdir(), "fake-provider-")), "one.json");
+
+    try {
+      const recorder = await start({
+        record: { url: `http://127.0.0.1:${port}/v1`, out },
+      });
+
+      const { response, text } = await post(recorder.baseURL, {
+        stream: false,
+      });
+
+      expect(response.headers.get("content-length")).toBeNull();
+
+      const recorded = JSON.parse(readFileSync(out, "utf-8")) as {
+        response: { status: number; body: string };
+      }[];
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]?.response.status).toBe(200);
+      expect(recorded[0]?.response.body).toBe(text);
+    } finally {
+      await new Promise<void>((resolve) => {
+        plain.close(() => resolve());
+        plain.closeAllConnections();
+      });
+    }
   });
 });
