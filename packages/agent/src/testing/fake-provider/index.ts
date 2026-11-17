@@ -1,6 +1,12 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { TapeFrame, TapeRecorderOptions } from "../tape/index.js";
+import {
+  encodeFrameBytes,
+  TapeRecorder,
+  tapeInputSchema,
+} from "../tape/index.js";
 import { withoutHopByHop } from "./headers.js";
 import { Recorder, ReplayBook } from "./record.js";
 import { RuleBook } from "./rules.js";
@@ -27,8 +33,8 @@ export type FakeProvider = {
 export type FakeProviderRecordOptions = {
   /** 真供应商的地址，例如 `https://api.deepseek.com/v1`。 */
   readonly url: string;
-  /** 录制文件写到哪。 */
-  readonly out: string;
+  /** 旧格式（整条响应）写到哪；不给就只写录制带。 */
+  readonly out?: string;
   /** 追加到已有文件：跨审批暂停续录时用。 */
   readonly append?: boolean;
   /** 转发时额外带的头，例如 `authorization`。 */
@@ -40,6 +46,12 @@ export type FakeProviderOptions = {
   readonly scenario?: Scenario | string;
   /** 开了就是代理模式：转发给真供应商，并把响应录下来。 */
   readonly record?: FakeProviderRecordOptions;
+  /**
+   * 录制带：把每条往返按帧写成一个 JSONL 文件。
+   *
+   * 只在代理模式里有内容。P0 不录场景模式生成的流。
+   */
+  readonly tape?: TapeRecorderOptions;
   /** 端口；缺省是 0，由系统挑一个。 */
   readonly port?: number;
   /**
@@ -65,10 +77,15 @@ export async function startFakeProvider(
       : options.scenario;
   const book = scenario ? new RuleBook(scenario.rules) : undefined;
   const replay = new ReplayBook();
+  const tape =
+    options.tape === undefined ? undefined : new TapeRecorder(options.tape);
   const recording = options.record
     ? {
         record: options.record,
-        recorder: new Recorder(options.record.out, options.record.append),
+        recorder:
+          options.record.out === undefined
+            ? undefined
+            : new Recorder(options.record.out, options.record.append),
       }
     : undefined;
   const requests: FakeProviderRequest[] = [];
@@ -103,6 +120,20 @@ export async function startFakeProvider(
     response: ServerResponse
   ): Promise<void> => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (request.method === "POST" && url.pathname === "/__tape/input") {
+      if (tape === undefined) {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "no tape" } }));
+        return;
+      }
+
+      const raw = (await readBody(request)) ?? "{}";
+      await tape.recordInput(tape.at(), tapeInputSchema.parse(JSON.parse(raw)));
+      response.writeHead(204);
+      response.end();
+      return;
+    }
 
     if (request.method === "GET" && url.pathname.endsWith("/models")) {
       const models = scenario?.models ?? [fallbackModel];
@@ -173,7 +204,7 @@ export async function startFakeProvider(
       url: URL;
     },
     record: FakeProviderRecordOptions,
-    recorder: Recorder
+    recorder: Recorder | undefined
   ): Promise<void> => {
     const target = `${record.url.replace(/\/$/, "")}${input.url.pathname}${input.url.search}`;
     const upstream = await fetch(target, {
@@ -193,27 +224,59 @@ export async function startFakeProvider(
 
     input.response.writeHead(upstream.status, headers);
 
+    const startedAt = performance.now();
     const captured: Buffer[] = [];
+    const frames: TapeFrame[] = [];
     for await (const piece of upstream.body ?? []) {
-      captured.push(Buffer.from(piece));
+      const bytes = Buffer.from(piece);
+      captured.push(bytes);
+      frames.push({
+        at: Math.round(performance.now() - startedAt),
+        bytes: encodeFrameBytes(bytes),
+      });
       input.response.write(piece);
     }
 
+    const lastAt = frames.at(-1)?.at ?? 0;
+    const tailMs = Math.max(
+      0,
+      Math.round(performance.now() - startedAt) - lastAt
+    );
+
     // 客户端读到响应结束时就会返回，之后可能立刻读录制文件；所以先落盘，再结束响应。
     try {
-      await recorder.add({
-        request: {
+      if (tape !== undefined) {
+        await tape.recordRequest({
+          at: tape.at(),
           method: input.seen.method,
           path: input.seen.path,
-          ...(input.seen.stream ? { stream: true } : {}),
-          ...(input.seen.model ? { model: input.seen.model } : {}),
-        },
-        response: {
+          stream: input.seen.stream,
+          ...(input.seen.model === undefined
+            ? {}
+            : { model: input.seen.model }),
+          body: input.body,
           status: upstream.status,
           headers,
-          body: Buffer.concat(captured).toString("utf-8"),
-        },
-      });
+          frames,
+          tailMs,
+        });
+      }
+
+      if (recorder !== undefined) {
+        await recorder.add({
+          request: {
+            method: input.seen.method,
+            path: input.seen.path,
+            ...(input.seen.stream ? { stream: true } : {}),
+            ...(input.seen.model ? { model: input.seen.model } : {}),
+          },
+          response: {
+            status: upstream.status,
+            headers,
+            body: Buffer.concat(captured).toString("utf-8"),
+          },
+        });
+      }
     } catch (error) {
       options.log?.(
         `record failed: ${error instanceof Error ? error.message : String(error)}`

@@ -30,7 +30,21 @@ const headers = (): Record<string, string> => {
 const scenario = valueOf("scenario");
 const recordUrl = valueOf("record");
 const out = valueOf("out");
+const tapeOut = valueOf("tape");
 const port = Number(valueOf("port") ?? 0);
+
+// 录制带只在代理模式里有内容：没有上游，就没有帧可记。
+if (tapeOut !== undefined && recordUrl === undefined) {
+  process.stderr.write("[fake] --tape needs --record\n");
+  process.exit(1);
+}
+
+// 同时给 `--tape` 与 `--record` 时默认不写旧格式；要两份就显式给 `--out`。
+const legacyOut =
+  out ??
+  (tapeOut === undefined && recordUrl !== undefined
+    ? "packages/agent/scenarios/recorded/recording.json"
+    : undefined);
 
 const provider = await startFakeProvider({
   ...(scenario ? { scenario } : {}),
@@ -38,12 +52,15 @@ const provider = await startFakeProvider({
     ? {
         record: {
           url: recordUrl,
-          out: out ?? "packages/agent/scenarios/recorded/recording.json",
+          ...(legacyOut === undefined ? {} : { out: legacyOut }),
           append: has("append"),
           headers: headers(),
         },
       }
     : {}),
+  ...(tapeOut === undefined
+    ? {}
+    : { tape: { out: tapeOut, redact: has("redact") } }),
   port,
   log: (message) => {
     process.stdout.write(`[fake] ${message}\n`);
@@ -55,9 +72,10 @@ if (scenario) {
   parts.push(`scenario=${scenario}`);
 }
 if (recordUrl) {
-  parts.push(
-    `recording ${recordUrl} -> ${out ?? "scenarios/recorded/recording.json"}`
-  );
+  parts.push(`recording ${recordUrl} -> ${legacyOut ?? "(tape only)"}`);
+}
+if (tapeOut !== undefined) {
+  parts.push(`tape -> ${tapeOut}${has("redact") ? " (redacted)" : ""}`);
 }
 process.stdout.write(`${parts.join("  ")}\n`);
 

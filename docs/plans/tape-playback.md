@@ -35,12 +35,14 @@
 
 ## 格式
 
-文件是 JSONL，一行一个 `TapeItem`，只追加。一次会话几十分钟，整份读改写会越来越慢；
-现有的 `Recorder` 每次全量 `writeFile`（[record.ts:45](../../packages/agent/src/testing/fake-provider/record.ts#L45)），
+文件是 JSONL，一行一个 `TapeItem`，只追加。第一行是头，带版本号；读到别的版本就
+拒绝，不做静默降级。一次会话几十分钟，整份读改写会越来越慢；现有的 `Recorder`
+每次全量 `writeFile`（[record.ts:45](../../packages/agent/src/testing/fake-provider/record.ts#L45)），
 整会话场景下不合适。
 
 ```ts
 export type TapeItem =
+  | { kind: "header"; version: 1; startedAt: string }
   | { kind: "request"; at: number; entry: TapeEntry }
   | { kind: "input"; at: number; input: TapeInput };
 
@@ -75,7 +77,7 @@ export type TapeEntry = {
 export type TapeFrame = {
   /** 相对本条响应开始。 */
   at: number;
-  /** 原始字节，不重组。 */
+  /** base64 编码的原始字节。 */
   bytes: string;
 };
 ```
@@ -85,7 +87,8 @@ export type TapeFrame = {
 `eventFrames` 是索引不是切分：它是一个查找表，用来支持「播到下一个事件」；原始字节
 始终是唯一真相。一个事件可以跨两帧，一帧也可以结束两个事件。
 
-`bytes` 不重组：回放时原样写出。帧切在 UTF-8 多字节字符中间也没问题，写的是字节。
+`bytes` 不重组：回放时原样写出。帧按 base64 存，因为上游的 chunk 边界可能切在 UTF-8
+多字节字符中间；按文本存，JSON 序列化会把坏掉的那几个字节换成 U+FFFD，拼不回来。
 
 ### 脱敏
 
@@ -102,7 +105,7 @@ const startedAt = performance.now();
 for await (const piece of upstream.body ?? []) {
   frames.push({
     at: Math.round(performance.now() - startedAt),
-    bytes: Buffer.from(piece).toString("utf-8"),
+    bytes: encodeFrameBytes(Buffer.from(piece)),
   });
   response.write(piece);
 }
@@ -127,8 +130,12 @@ POST /__tape/input  { type: "user", summary: "把 notes.md 的标题改一下" }
 ```bash
 vp run fake:provider -- \
   --record https://api.deepseek.com/v1 \
-  --tape packages/agent/scenarios/tapes/my-session.jsonl
+  --tape packages/agent/scenarios/tapes/my-session.jsonl \
+  --redact
 ```
+
+`--tape` 要配 `--record`：没有上游，就没有帧可记。只给 `--record` 时仍写旧格式；
+同时给两个时默认只写录制带，要两份就显式加 `--out`。
 
 入仓的样本放 `scenarios/tapes/`（少量、脱敏）；`scenarios/recorded/` 继续在
 `.gitignore` 里，留给本地录制。
