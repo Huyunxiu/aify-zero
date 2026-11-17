@@ -1,6 +1,6 @@
 import type { ToolSet } from "ai";
 
-import type { AgentStreamEvent } from "./types";
+import type { AgentStreamEvent, AgentUserTurn } from "./types";
 
 /**
  * 会话事件流上的一条事件。
@@ -31,6 +31,14 @@ export type SessionStreamEvent<TOOLS extends ToolSet> =
        * 时从队列里消失，同时以 user 回合的身份出现在会话记录里。
        */
       turnId?: string;
+      /**
+       * 那条回合的内容。
+       *
+       * 会话里的 user 回合不都是读者发的：后台任务的完成通知由运行器自己投递，
+       * 读者既没发过它，也来不及在收件箱里看见它。带上内容，读者不必回读会话
+       * 记录就能把它接进记录。
+       */
+      turn?: AgentUserTurn;
     }
   | {
       type: "run.event";

@@ -4,7 +4,7 @@ import type { ToolSet } from "ai";
 
 import type { Agent } from "./agents";
 import { SESSION_EVENTS } from "./session-events";
-import type { SessionEventRegistry } from "./session-events";
+import type { SessionEventRegistry, StartedTurn } from "./session-events";
 
 export class StreamEventRegistry<TOOLS extends ToolSet> {
   readonly #store = new Map<string, StreamEventEntry<TOOLS>>();
@@ -29,7 +29,7 @@ export class StreamEventRegistry<TOOLS extends ToolSet> {
     streamId: string,
     agent: Agent,
     stream: ReadableStream<AgentStreamEvent<TOOLS>>,
-    options: { turnId?: string } = {}
+    options: StartedTurn = {}
   ): StreamEventEntry<TOOLS> {
     const entry = new StreamEventEntry(
       streamId,
@@ -41,7 +41,7 @@ export class StreamEventRegistry<TOOLS extends ToolSet> {
 
     // 通道先知道这一次运行开始，事件才可能到达：读者总是在 `run.start` 之后
     // 收到属于它的事件。
-    this.#sessionEvents.startRun(agent.sessionId, streamId, options.turnId);
+    this.#sessionEvents.startRun(agent.sessionId, streamId, options);
 
     entry.start();
     return entry;

@@ -5,6 +5,7 @@ import {
 } from "@workspace/agent-client";
 import type {
   AgentTurn,
+  AgentUserTurn,
   InboxItem,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
@@ -195,6 +196,7 @@ export class SessionLifecycle {
       ...(projectId === undefined ? {} : { projectId }),
       inboxId: item.id,
       turnId: item.content.id,
+      turn: item.content,
     });
   }
 
@@ -212,9 +214,19 @@ export class SessionLifecycle {
     projectId?: string;
     inboxId?: string;
     turnId?: string;
+    /** 领走的那条 user 回合的内容；随 `run.start` 一起交给读者。 */
+    turn?: AgentUserTurn;
   }): Promise<StartedRun> {
-    const { sessionId, turns, model, effort, projectId, inboxId, turnId } =
-      input;
+    const {
+      sessionId,
+      turns,
+      model,
+      effort,
+      projectId,
+      inboxId,
+      turnId,
+      turn,
+    } = input;
     const { store, registry, buildAgent } = this.#deps;
 
     const agent = await buildAgent({
@@ -261,12 +273,10 @@ export class SessionLifecycle {
       throw error;
     }
 
-    registry.registerStream(
-      activeStreamId,
-      agent,
-      stream,
-      turnId === undefined ? {} : { turnId }
-    );
+    registry.registerStream(activeStreamId, agent, stream, {
+      ...(turnId === undefined ? {} : { turnId }),
+      ...(turn === undefined ? {} : { turn }),
+    });
     await store.setActiveStream(sessionId, activeStreamId);
 
     return { status: "running", activeStreamId, settled };

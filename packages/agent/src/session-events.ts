@@ -1,5 +1,6 @@
 import type {
   AgentStreamEvent,
+  AgentUserTurn,
   SessionCursor,
   SessionStreamEvent,
 } from "@workspace/agent-client";
@@ -16,11 +17,24 @@ type RunRecord<TOOLS extends ToolSet> = {
   streamId: string;
   /** 领走的那条 user 回合的 id；运行不是由待办项发起时没有。 */
   turnId?: string;
+  /** 那条回合的内容；读者可能既没发过它，也没在收件箱里见过它。 */
+  turn?: AgentUserTurn;
   /** 这条运行的 `run.start` 的序号；重连时先补这一条，再补事件。 */
   startSeq: number;
   events: { seq: number; event: AgentStreamEvent<TOOLS> }[];
   done: boolean;
   failure?: string;
+};
+
+/**
+ * 一次运行领走的那条 user 回合。
+ *
+ * `turnId` 是它的身份，`turn` 是它的内容。运行器自己发起的回合（例如后台任务
+ * 的完成通知）读者手里没有，所以内容随 `run.start` 一起过去。
+ */
+export type StartedTurn = {
+  turnId?: string;
+  turn?: AgentUserTurn;
 };
 
 type Subscriber<TOOLS extends ToolSet> = {
@@ -58,7 +72,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
     return idle && this.#subscribers.size === 0;
   }
 
-  startRun(streamId: string, turnId?: string): void {
+  startRun(streamId: string, started: StartedTurn = {}): void {
     if (this.#run && !this.#run.done) {
       // 一个会话一次只该跑一次运行。真撞上了，说明前一次的读者再也等不到
       // 它的结尾；把它标成结束，别让它在通道里悬着。
@@ -75,7 +89,8 @@ class SessionEventChannel<TOOLS extends ToolSet> {
       events: [],
       startSeq: seq,
       streamId,
-      ...(turnId === undefined ? {} : { turnId }),
+      ...(started.turnId === undefined ? {} : { turnId: started.turnId }),
+      ...(started.turn === undefined ? {} : { turn: started.turn }),
     };
     this.#broadcast(this.#runStart({ ...this.#run }));
   }
@@ -197,6 +212,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
       streamId: run.streamId,
       type: "run.start",
       ...(run.turnId === undefined ? {} : { turnId: run.turnId }),
+      ...(run.turn === undefined ? {} : { turn: run.turn }),
     };
   }
 
@@ -221,8 +237,12 @@ class SessionEventChannel<TOOLS extends ToolSet> {
 export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
   readonly #channels = new Map<string, SessionEventChannel<TOOLS>>();
 
-  startRun(sessionId: string, streamId: string, turnId?: string): void {
-    this.#channelFor(sessionId).startRun(streamId, turnId);
+  startRun(
+    sessionId: string,
+    streamId: string,
+    started: StartedTurn = {}
+  ): void {
+    this.#channelFor(sessionId).startRun(streamId, started);
   }
 
   publish(

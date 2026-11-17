@@ -3,6 +3,7 @@ import type {
   AgentAssistantTurn,
   AgentStaticToolPart,
   AgentTurn,
+  AgentUserTurn,
   SessionStreamEvent,
 } from "@workspace/agent-client";
 import { describe, expect, test, vi } from "vitest";
@@ -202,6 +203,68 @@ describe("session events", () => {
 
     await vi.waitFor(() => expect(store.getStatus()).toBe("ready"));
     expect(store.getTurns()[0]?.status).not.toBe("streaming");
+
+    events.close();
+  });
+
+  test("a turn the page never sent enters the transcript", async () => {
+    const events = sessionEvents();
+
+    const store = createAgentSessionStore({
+      apiEvents: () => Promise.resolve(events.stream),
+      id: "session-1",
+      throttleMs: 0,
+      turns: [],
+      emit: () => {},
+    });
+
+    await flush();
+
+    // 后台任务的完成通知：这一页既没发过它，也没在收件箱里见过它，所以运行
+    // 开始的那条事件自己带着内容。
+    const notice = {
+      id: "turn-notice",
+      type: "user",
+      createdAt: 1,
+      status: "done",
+      content: [
+        {
+          id: "step-notice",
+          type: "user",
+          createdAt: 1,
+          status: "done",
+          source: "job-notice",
+          content: [
+            { type: "text", text: "background job finished", createdAt: 1 },
+          ],
+        },
+      ],
+    } as unknown as AgentUserTurn;
+
+    events.send({ type: "ready", epoch: "epoch-1", seq: 0 });
+    events.send({
+      seq: 1,
+      streamId: "run-1",
+      turn: notice,
+      turnId: notice.id,
+      type: "run.start",
+    });
+    events.send({
+      event: {
+        type: "turn.start",
+        turnId: "turn-1",
+        turnType: "assistant",
+        createdAt: 1,
+      },
+      seq: 2,
+      streamId: "run-1",
+      type: "run.event",
+    });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
+    // 通知排在它唤醒的那个回合前面：读者先看到它，才看到回答。
+    expect(store.getTurns()[0]).toStrictEqual(notice);
 
     events.close();
   });

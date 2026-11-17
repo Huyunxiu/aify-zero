@@ -528,8 +528,14 @@ export function createAgentSessionStore({
    * 消息发出时先记在 `pendingTurns` 里：它要等到运行真的开始才算进入会话记录，
    * 而「开始」这件事是服务端说的——`run.start` 带来它领走的那条回合的 id。
    * 队列里的同一条从队列里撤下，它已经以回合的身份出现在记录里了。
+   *
+   * 有些回合不是这一页发的（例如后台任务的完成通知）：它既不在 `pendingTurns`，
+   * 也来不及在收件箱里被看见，所以 `run.start` 把内容一起带来。
    */
-  const adoptTurn = (turnId: string): AgentUserTurn | undefined => {
+  const adoptTurn = (
+    turnId: string,
+    turn?: AgentUserTurn
+  ): AgentUserTurn | undefined => {
     const sent = pendingTurns.get(turnId);
     pendingTurns.delete(turnId);
 
@@ -538,18 +544,24 @@ export function createAgentSessionStore({
       removeInboxItem(item.id);
     }
 
-    return sent ?? item?.content;
+    return sent ?? item?.content ?? turn;
   };
 
   /** 一次运行开始：把它的 user 回合接进记录，然后等它的事件。 */
-  const startRun = (event: { streamId: string; turnId?: string }): void => {
+  const startRun = (event: {
+    streamId: string;
+    turnId?: string;
+    turn?: AgentUserTurn;
+  }): void => {
     if (event.streamId === runStreamId) {
       // 已经在读这一次运行：重放的内容不能变成第二份。
       return;
     }
 
     const turn =
-      event.turnId === undefined ? undefined : adoptTurn(event.turnId);
+      event.turnId === undefined
+        ? undefined
+        : adoptTurn(event.turnId, event.turn);
 
     // 每次运行一个装配器：它从这一条开始改写，上一条已经落定的内容不再变。
     assembler = new AgentTurnAssembler<AgentToolSet>({

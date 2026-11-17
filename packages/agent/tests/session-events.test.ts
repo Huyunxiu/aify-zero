@@ -1,5 +1,6 @@
 import type {
   AgentStreamEvent,
+  AgentUserTurn,
   SessionStreamEvent,
 } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
@@ -65,7 +66,7 @@ describe(SessionEventRegistry, () => {
   test("a late reader gets the live run from its start", async () => {
     const events = new SessionEventRegistry<never>();
 
-    events.startRun("session-1", "run-1", "turn-1");
+    events.startRun("session-1", "run-1", { turnId: "turn-1" });
     events.publish("session-1", "run-1", turnStart("turn-1"));
     events.publish("session-1", "run-1", textStart("turn-1", "part-1"));
 
@@ -95,6 +96,41 @@ describe(SessionEventRegistry, () => {
         type: "run.event",
       },
     ]);
+  });
+
+  test("a turn the reader never sent arrives with the run", async () => {
+    const events = new SessionEventRegistry<never>();
+
+    // 运行器自己发起的回合（例如后台任务的完成通知）：读者手里没有它，也不
+    // 可能来得及在收件箱里看见它，所以内容必须随 `run.start` 一起过去。
+    const turn = {
+      id: "turn-notice",
+      type: "user",
+      createdAt: 1,
+      status: "done",
+      content: [
+        {
+          id: "step-notice",
+          type: "user",
+          createdAt: 1,
+          status: "done",
+          source: "job-notice",
+          content: [{ type: "text", text: "job finished", createdAt: 1 }],
+        },
+      ],
+    } as unknown as AgentUserTurn;
+
+    events.startRun("session-1", "run-1", { turnId: turn.id, turn });
+
+    const received = await readEvents(events.subscribe("session-1"), 2);
+
+    expect(received[1]).toStrictEqual({
+      seq: 1,
+      streamId: "run-1",
+      turnId: "turn-notice",
+      turn,
+      type: "run.start",
+    });
   });
 
   test("does not replay a run that already finished", async () => {
