@@ -173,6 +173,7 @@ const model: ModelRef = { providerId: "test", modelId: "test-model" };
 
 const fakeAgent = (
   onStream: (options: {
+    claims?: readonly { inboxId: string; turn: AgentTurn<never> }[];
     turns: AgentTurn<never>[];
     onFinish: (status: SessionEndStatus) => Promise<void>;
   }) => void = (options) => {
@@ -180,6 +181,7 @@ const fakeAgent = (
   }
 ): Agent => {
   const stream = (options: {
+    claims?: readonly { inboxId: string; turn: AgentTurn<never> }[];
     turns: AgentTurn<never>[];
     onFinish: (status: SessionEndStatus) => Promise<void>;
   }) => {
@@ -242,7 +244,10 @@ describe("AgentRunner", () => {
     const store = new FakeStore([session("s1")]);
     const seen: AgentTurn<never>[][] = [];
     const agent = fakeAgent((options) => {
-      seen.push(options.turns);
+      seen.push([
+        ...options.turns,
+        ...(options.claims ?? []).map((claim) => claim.turn),
+      ]);
       void options.onFinish("done");
     });
     const runner = createAgentRunner({

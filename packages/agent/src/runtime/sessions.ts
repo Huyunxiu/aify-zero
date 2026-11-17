@@ -14,6 +14,7 @@ import type { ModelRef } from "@workspace/shared/model";
 import { AgentSession } from "../agent-session";
 import type { Agent } from "../agents";
 import type { JobRegistry } from "../jobs/registry";
+import type { InboxClaim } from "../kernel/run-types";
 import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
 import type { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
@@ -28,7 +29,6 @@ export type CreateInput = {
   model: ModelRef;
   effort?: ModelEffort;
   projectId?: string;
-  inboxIds?: readonly string[];
 };
 
 export type StartFromInboxResult = StartedRun;
@@ -73,7 +73,7 @@ export class SessionLifecycle {
    * 数量，不启动新的流。
    */
   async create(input: CreateInput): Promise<RunStart> {
-    const { sessionId, turns, approvals, model, effort, inboxIds } = input;
+    const { sessionId, turns, approvals, model, effort } = input;
     const { store } = this.#deps;
 
     const mostRecentTurn = turns.at(-1);
@@ -121,7 +121,6 @@ export class SessionLifecycle {
       ...(sessionProjectId === undefined
         ? {}
         : { projectId: sessionProjectId }),
-      ...(inboxIds === undefined ? {} : { inboxIds }),
     });
 
     return { status: "running", activeStreamId, settled };
@@ -192,14 +191,11 @@ export class SessionLifecycle {
 
     return await this.#startRun({
       sessionId,
-      turns: [
-        ...AgentSession.toAgentTurns(branch),
-        ...items.map((item) => item.content),
-      ],
+      turns: AgentSession.toAgentTurns(branch),
       model: latest.payload.model,
       ...(effort === undefined ? {} : { effort }),
       ...(projectId === undefined ? {} : { projectId }),
-      inboxIds: items.map((item) => item.id),
+      claims: items.map((item) => ({ inboxId: item.id, turn: item.content })),
     });
   }
 
@@ -215,9 +211,9 @@ export class SessionLifecycle {
     model: ModelRef;
     effort?: ModelEffort;
     projectId?: string;
-    inboxIds?: readonly string[];
+    claims?: readonly InboxClaim[];
   }): Promise<StartedRun> {
-    const { sessionId, turns, model, effort, projectId, inboxIds } = input;
+    const { sessionId, turns, model, effort, projectId, claims } = input;
     const { store, registry, buildAgent } = this.#deps;
 
     const agent = await buildAgent({
@@ -245,7 +241,7 @@ export class SessionLifecycle {
         model,
         streamId: activeStreamId,
         signal: { type: "turn" },
-        ...(inboxIds === undefined ? {} : { inboxIds }),
+        ...(claims === undefined ? {} : { claims }),
         onClaimed: (turnIds) => {
           claimedTurnIds = turnIds;
         },

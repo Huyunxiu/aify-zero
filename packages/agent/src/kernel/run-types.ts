@@ -1,4 +1,4 @@
-import type { AgentTurn } from "@workspace/agent-client";
+import type { AgentTurn, AgentUserTurn } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
 
 import type { SessionEndStatus } from "../storage";
@@ -18,6 +18,12 @@ export type AgentStreamSignal =
   | { readonly type: "turn" }
   | { readonly type: "compaction"; readonly trigger: "manual" };
 
+/** 一条待领取的待办项：收件箱行的 id，以及它要变成的 user 回合。 */
+export type InboxClaim = {
+  inboxId: string;
+  turn: AgentUserTurn;
+};
+
 export type AgentStreamOptions = {
   model: ModelRef;
   turns: AgentTurn<AgentToolSet>[];
@@ -36,13 +42,13 @@ export type AgentStreamOptions = {
    */
   onFinish: (status: SessionEndStatus) => Promise<void>;
   /**
-   * 这次运行要领的待办项，按到达顺序；`turns` 末尾的同等数量条目就是它们。
+   * 这次运行要领的待办项，以及它们各自的 user 回合。
    *
-   * 给了就要求保存 turn 时原子删除这些行；一条都删不到说明整批已被另一个
-   * 调用者领走，本次启动会失败，而不是写出重复的 user 回合。删到一部分说明
-   * 其余被取消了，按剩下的写。
+   * 保存 turn 时原子删除这些收件箱行；一条都删不到说明整批已被另一个调用者
+   * 领走，本次启动会失败，而不是写出重复的 user 回合。删到一部分说明其余被
+   * 取消了：只有领到的那几条进入模型历史，`turns` 只是它们之前的历史。
    */
-  inboxIds?: readonly string[];
+  claims?: readonly InboxClaim[];
   /**
    * 这次运行真正写下的 user 回合 id，顺序即记录里的顺序。
    *

@@ -3,6 +3,7 @@ import type {
   AgentStreamEvent,
   AgentTurn,
   AgentTurnStatus,
+  AgentUserTurn,
   CompactionRecord,
 } from "@workspace/agent-client";
 import { getErrorMessage } from "@workspace/shared/errors";
@@ -28,11 +29,32 @@ import {
   generateTurnId,
 } from "../utils/id-util";
 import type { CompactionController } from "./compaction-controller";
-import type { AgentStreamOptions, AgentStreamSignal } from "./run-types";
+import type {
+  AgentStreamOptions,
+  AgentStreamSignal,
+  InboxClaim,
+} from "./run-types";
 import { NothingToCompactError } from "./run-types";
 import type { TranscriptJournal } from "./transcript-journal";
 import type { TurnRunner } from "./turn-runner";
 import { ZERO_USAGE } from "./usage";
+
+/** 一条 user 回合的写入形状；父链由调用方或 store 赋值。 */
+function userTurnWrite(
+  sessionId: string,
+  turn: AgentUserTurn,
+  parentId?: string | null
+): TurnWrite {
+  return {
+    id: turn.id,
+    sessionId,
+    type: "user",
+    metadata: {},
+    ...(parentId === undefined ? {} : { parentId }),
+    content: turn,
+    createdAt: new Date(),
+  };
+}
 
 // A session row borrows the ending the turn already recorded — `aborted` is the
 // turn's word for a stop, `canceled` is the session's. `streaming` is listed
@@ -140,41 +162,20 @@ export class RunController {
   /**
    * 把这次运行领走的待办项写成 user 回合。
    *
-   * `inboxIds` 与 `turns` 末尾的条目按位置对应：`SessionLifecycle` 用同一份
-   * 待办项构造这两样东西，位置就是它们的到达顺序。父链由 store 按真正领到
-   * 的那几条重算，所以这里不传 parentId。
+   * 配对是显式的：每条待办项自带它要变成的回合，不靠数组位置对齐。父链由
+   * store 按真正领到的那几条重算，所以这里不传 parentId。
    */
   async #claimInboxTurns(
-    turns: readonly AgentTurn<AgentToolSet>[],
-    inboxIds: readonly string[]
+    history: readonly AgentTurn<AgentToolSet>[],
+    claims: readonly InboxClaim[]
   ): Promise<readonly string[]> {
-    const claimed = turns.slice(-inboxIds.length);
-    const parentTurnId = turns.at(-inboxIds.length - 1)?.id ?? null;
-    const claims: { inboxId: string; turn: TurnWrite }[] = [];
-
-    for (const [index, inboxId] of inboxIds.entries()) {
-      const turn = claimed[index];
-      if (turn?.type !== "user") {
-        throw new Error("inboxIds do not name the trailing user turns");
-      }
-
-      claims.push({
-        inboxId,
-        turn: {
-          id: turn.id,
-          sessionId: this.#deps.sessionId,
-          type: "user",
-          metadata: {},
-          content: turn,
-          createdAt: new Date(),
-        },
-      });
-    }
-
     return await this.#deps.store.saveClaimedTurns({
       sessionId: this.#deps.sessionId,
-      parentTurnId,
-      claims,
+      parentTurnId: history.at(-1)?.id ?? null,
+      claims: claims.map((claim) => ({
+        inboxId: claim.inboxId,
+        turn: userTurnWrite(this.#deps.sessionId, claim.turn),
+      })),
       head: true,
     });
   }
@@ -236,10 +237,10 @@ export class RunController {
   }
 
   async #startTurnStream({
-    turns,
+    turns: baseTurns,
+    claims = [],
     model,
     onFinish,
-    inboxIds,
     onClaimed,
   }: AgentStreamOptions) {
     const {
@@ -251,6 +252,22 @@ export class RunController {
       extensions,
       turnRunner,
     } = this.#deps;
+    // 领取最先做，因为它决定这次运行读到什么。被取消的待办项不进入模型
+    // 历史，记录和上下文因此不会分叉。
+    const written =
+      claims.length > 0 ? await this.#claimInboxTurns(baseTurns, claims) : [];
+    if (claims.length > 0) {
+      onClaimed?.(written);
+    }
+
+    const surviving = new Set(written);
+    const turns = [
+      ...baseTurns,
+      ...claims
+        .filter((claim) => surviving.has(claim.turn.id))
+        .map((claim) => claim.turn),
+    ];
+
     context.model = model;
     session.turns = turns;
     // 提示片段在 turn 开始时拼一次：同一 turn 的每一步看到同一份提示词，
@@ -263,7 +280,8 @@ export class RunController {
     if (!mostRecentTurn) {
       throw new Error("no message.");
     }
-    const startedFromUserTurn = mostRecentTurn.type === "user";
+    const startedFromUserTurn =
+      claims.length > 0 || mostRecentTurn.type === "user";
 
     // turn_start 的返回值可以覆盖这个 turn 的模型和系统提示。用
     // emitAsyncHooks 收集全部补丁：emit 只留最后一个返回值，会丢掉前面
@@ -301,24 +319,13 @@ export class RunController {
     const originalTurns = turns;
     let lastTurnId = turns.at(-2)?.id;
 
-    if (inboxIds?.length) {
-      // 一次运行可以领走多条待办项。它们按位置对应 `turns` 末尾的那几条，
+    if (claims.length > 0) {
       // 父链和 head 由 store 按真正领到的那几条重算。
-      const written = await this.#claimInboxTurns(turns, inboxIds);
-      onClaimed?.(written);
-      lastTurnId = written.at(-1) ?? lastTurnId;
-    } else if (mostRecentTurn?.type === "user") {
+      lastTurnId = written.at(-1);
+    } else if (mostRecentTurn.type === "user") {
       // 没有收件行的调用方（测试、宿主自己的回合）仍然直接写一条。
       await store.saveTurn(
-        {
-          id: mostRecentTurn.id,
-          sessionId: this.#deps.sessionId,
-          type: "user",
-          metadata: {},
-          parentId: lastTurnId,
-          content: mostRecentTurn,
-          createdAt: new Date(),
-        },
+        userTurnWrite(this.#deps.sessionId, mostRecentTurn, lastTurnId),
         { head: true }
       );
       lastTurnId = mostRecentTurn.id;
