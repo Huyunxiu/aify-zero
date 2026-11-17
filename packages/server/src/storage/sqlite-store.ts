@@ -127,6 +127,41 @@ function toInboxItem(row: InboxItemModel): InboxItem {
   };
 }
 
+/**
+ * 写一条 turn 行和它的全部 step。
+ *
+ * 冲突时只更新可变列：`parentId` 和 `createdAt` 保持这条 turn 原来的 branch
+ * 位置。两条写入路径（单条与批量领取）共用它，免得列集各写一遍。
+ */
+async function upsertTurnRow(
+  handle: Transaction,
+  turn: TurnWrite
+): Promise<void> {
+  const row = toTurnRow(turn);
+  await handle
+    .insert(turn_table)
+    .values(row)
+    .onConflictDoUpdate({
+      target: [turn_table.sessionId, turn_table.turnId],
+      set: {
+        type: row.type,
+        metadata: row.metadata,
+        status: row.status,
+        detail: row.detail,
+        completedAt: row.completedAt,
+        updatedAt: row.updatedAt,
+      },
+    });
+  await upsertStepRows(
+    handle,
+    toStepRows({
+      turnId: turn.id,
+      sessionId: turn.sessionId,
+      content: turn.content,
+    })
+  );
+}
+
 /** 能执行 delete 的句柄：`db` 和事务句柄都满足它。 */
 type Deleter = Pick<Transaction, "delete">;
 
@@ -318,29 +353,8 @@ export class SQLiteStore implements AgentStore {
   ): Promise<number> {
     // Upsert: client resends existing message ids on regenerate. 只改可变行字段，
     // parentId 和 createdAt 保持它原来的 branch 位置。
-    const row = toTurnRow(turn);
-    const steps = toStepRows({
-      turnId: turn.id,
-      sessionId: turn.sessionId,
-      content: turn.content,
-    });
-
     await db.transaction(async (tx) => {
-      await tx
-        .insert(turn_table)
-        .values(row)
-        .onConflictDoUpdate({
-          target: [turn_table.sessionId, turn_table.turnId],
-          set: {
-            type: row.type,
-            metadata: row.metadata,
-            status: row.status,
-            detail: row.detail,
-            completedAt: row.completedAt,
-            updatedAt: row.updatedAt,
-          },
-        });
-      await upsertStepRows(tx, steps);
+      await upsertTurnRow(tx, turn);
 
       // head 和写入同成同败：失败不会留下悬空的行，也不会留下指向空处的 head。
       if (options?.head) {
@@ -405,29 +419,7 @@ export class SQLiteStore implements AgentStore {
         }
 
         const write: TurnWrite = { ...turn, parentId };
-        const row = toTurnRow(write);
-        await tx
-          .insert(turn_table)
-          .values(row)
-          .onConflictDoUpdate({
-            target: [turn_table.sessionId, turn_table.turnId],
-            set: {
-              type: row.type,
-              metadata: row.metadata,
-              status: row.status,
-              detail: row.detail,
-              completedAt: row.completedAt,
-              updatedAt: row.updatedAt,
-            },
-          });
-        await upsertStepRows(
-          tx,
-          toStepRows({
-            turnId: write.id,
-            sessionId,
-            content: write.content,
-          })
-        );
+        await upsertTurnRow(tx, write);
 
         parentId = write.id;
         written.push(write.id);
