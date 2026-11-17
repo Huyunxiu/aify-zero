@@ -5,6 +5,7 @@ import {
 } from "@workspace/agent-client";
 import type {
   AgentTurn,
+  AgentUserTurn,
   InboxItem,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
@@ -13,6 +14,7 @@ import type { ModelRef } from "@workspace/shared/model";
 
 import { AgentSession } from "../agent-session";
 import type { Agent } from "../agents";
+import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { InboxClaim } from "../kernel/run-types";
 import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
@@ -51,6 +53,8 @@ export interface SessionLifecycleDeps {
   registry: StreamEventRegistry<AgentToolSet>;
   buildAgent: (input: BuildAgentInput) => Promise<Agent>;
   jobs?: JobRegistry;
+  /** 按会话取插话信号；没有时等待只能靠中止或超时结束。 */
+  steering?: (sessionId: string) => SteeringSignal;
 }
 
 /**
@@ -224,6 +228,9 @@ export class SessionLifecycle {
       ...(projectId === undefined ? {} : { projectId }),
       streams: registry,
       ...(this.#deps.jobs === undefined ? {} : { jobs: this.#deps.jobs }),
+      ...(this.#deps.steering === undefined
+        ? {}
+        : { steering: this.#deps.steering(sessionId) }),
     });
 
     const activeStreamId = generateSessionId();
@@ -262,11 +269,22 @@ export class SessionLifecycle {
     }
 
     // 压缩运行没有领待办项：不写这个字段，事件里就不会出现空数组。
+    // 内容按真正领到的顺序取回：被取消的那一行不在 `claimedTurnIds` 里。
+    const claimed = claimedTurnIds.map((id) =>
+      (claims ?? []).find((claim) => claim.turn.id === id)
+    );
     registry.registerStream(
       activeStreamId,
       agent,
       stream,
-      claimedTurnIds.length === 0 ? {} : { turnIds: claimedTurnIds }
+      claimedTurnIds.length === 0
+        ? {}
+        : {
+            turnIds: claimedTurnIds,
+            turns: claimed
+              .map((claim) => claim?.turn)
+              .filter((turn): turn is AgentUserTurn => turn !== undefined),
+          }
     );
     await store.setActiveStream(sessionId, activeStreamId);
 
@@ -359,6 +377,9 @@ export class SessionLifecycle {
         : { projectId: session.projectId }),
       streams: registry,
       ...(this.#deps.jobs === undefined ? {} : { jobs: this.#deps.jobs }),
+      ...(this.#deps.steering === undefined
+        ? {}
+        : { steering: this.#deps.steering(sessionId) }),
     });
 
     const activeStreamId = generateSessionId();

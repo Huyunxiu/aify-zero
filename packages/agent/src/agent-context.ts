@@ -9,6 +9,7 @@ import type {
   SummarizeFn,
 } from "./compaction/types";
 import type { InstructionsSection } from "./extensions/types";
+import type { SteeringSignal } from "./inbox/steering";
 import type { JobRegistry } from "./jobs/registry";
 import type { AgentToolSet } from "./types";
 
@@ -83,6 +84,8 @@ export type AgentContextOptions = AgentStateOptions & {
    * 控制工具。
    */
   jobs?: JobRegistry;
+  /** 用户插话信号；等待任务的工具用它提前结束阻塞。 */
+  steering?: SteeringSignal;
   controller?: AgentStreamEventController;
   /**
    * 工具在其中读写文件和运行命令的环境。工具只认这个面，不认具体实现；
@@ -105,6 +108,8 @@ export class AgentContext extends AgentState {
   /** The Agent that owns this context sets it; its `abort()` triggers it. */
   abortSignal?: AbortSignal;
   jobs?: JobRegistry;
+  /** 用户插话信号；等待任务的工具用它提前结束阻塞。 */
+  steering?: SteeringSignal;
   controller?: AgentStreamEventController;
   /** 工具读写文件和运行命令的环境；会话内不变。 */
   readonly sandbox: Sandbox;
@@ -128,6 +133,7 @@ export class AgentContext extends AgentState {
     this.summarize = options.summarize;
     this.modelContextWindows = options.modelContextWindows;
     this.jobs = options.jobs;
+    this.steering = options.steering;
     this.controller = options.controller;
     this.sandbox = options.sandbox;
   }

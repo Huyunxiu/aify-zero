@@ -251,7 +251,7 @@ export type StepInsertModel = InferInsertModel<typeof step_table>;
 /**
  * 会话的收件箱：已经到达、还没进入模型循环的东西。
  *
- * `kind` 说明这一行是什么。今天只有用户消息；定时器到点和外部事件以后从这里加。
+ * `kind` 说明这一行是什么：用户消息，或者后台任务结算后的完成通知。
  * `deliver-at` 是它最早能交进去的边界：`step-boundary` 表示正在跑的回合可以在下
  * 一个模型步领走它，`run-boundary` 表示要等下一次运行。领取成功就删除这一行，
  * 内容随后写进 `turn` / `step`。
@@ -268,7 +268,9 @@ export const inbox_item_table = sqliteTable(
       .unique()
       .$defaultFn(() => randomUUID()),
     sessionId: text("session_id").notNull(),
-    kind: text("kind", { enum: ["user-message"] })
+    // `job-notice` 与 @workspace/agent-client 的 JOB_NOTICE_INBOX_KIND 对应；
+    // 数据库层不依赖协议包，这里保留字面量。
+    kind: text("kind", { enum: ["user-message", "job-notice"] })
       .notNull()
       .default("user-message"),
     dedupeKey: text("dedupe_key").notNull(),

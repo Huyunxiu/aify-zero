@@ -295,11 +295,15 @@
   "inbox": {
     "title": "{{count}} pending",
     "steering": "Steering",
+    "notice": "Job finished",
     "queued": "Waiting",
     "sendNow": "Send now",
     "remove": "Remove",
     "clear": "Clear all",
     "empty": "(empty message)"
+  },
+  "jobNotice": {
+    "marker": "Background job finished"
   },
   "steering": {
     "marker": "Steering message"

@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { logger } from "@workspace/shared/logger";
 
+import { JobError } from "./error";
 import { JobEventHub } from "./events";
+import { utf8Bytes } from "./limit";
 import { startPump } from "./pump";
 import type { PumpHandle } from "./pump";
 import { OutputRing } from "./ring";
@@ -12,6 +14,8 @@ import type {
   JobEvents,
   JobHandle,
   JobId,
+  JobKillOrigin,
+  JobNoticeAdapter,
   JobOutcome,
   JobOutputRead,
   JobOutputSource,
@@ -57,6 +61,7 @@ type TrackedJob = {
   readonly id: JobId;
   readonly kind: string;
   readonly label: string;
+  readonly outputLimitBytes: number | undefined;
   readonly owner: string | undefined;
   status: JobStatus;
   detail: string | undefined;
@@ -68,6 +73,7 @@ type TrackedJob = {
   result: string | undefined;
   resultDelivered: boolean;
   killReason: string | undefined;
+  killOrigin: JobKillOrigin | undefined;
   settleCause: JobSettleCause | undefined;
   readonly cancel: (reason?: string) => void;
   readonly state: ProducerState;
@@ -112,6 +118,9 @@ export class JobRegistry {
   readonly #settledRetainBytes: number;
   readonly #pumpPollMs: number;
   readonly #warn: (message: string) => void;
+  /** 正在被某次 `read` 收走的任务；这段时间不投递完成通知。 */
+  readonly #collecting = new Set<JobId>();
+  #notice: JobNoticeAdapter | undefined;
 
   constructor(options: JobRegistryOptions = {}) {
     this.#maxConcurrentJobsPerOwner = positiveInteger(
@@ -163,6 +172,15 @@ export class JobRegistry {
     if (spec.owner !== undefined && spec.owner.length === 0) {
       throw new Error("invalid job owner: expected a non-empty session id");
     }
+    if (
+      spec.outputLimitBytes !== undefined &&
+      (!Number.isSafeInteger(spec.outputLimitBytes) ||
+        spec.outputLimitBytes <= 0)
+    ) {
+      throw new Error(
+        `invalid outputLimitBytes: expected a positive safe integer, got ${JSON.stringify(spec.outputLimitBytes)}`
+      );
+    }
     this.#assertCapacity(spec.owner);
 
     const id = this.#issueId(spec.kind);
@@ -187,6 +205,7 @@ export class JobRegistry {
       id,
       kind: spec.kind,
       label: spec.label,
+      outputLimitBytes: spec.outputLimitBytes,
       owner: spec.owner,
       status: "running",
       detail: undefined,
@@ -197,6 +216,7 @@ export class JobRegistry {
       result: undefined,
       resultDelivered: false,
       killReason: undefined,
+      killOrigin: undefined,
       settleCause: undefined,
       cancel: (reason) => {
         hooks.cancel(reason);
@@ -284,6 +304,19 @@ export class JobRegistry {
   }
 
   /**
+   * 看一遍这次读取会交出的内容，不移动模型游标。
+   *
+   * 完成通知要先把正文组出来，再确认它投得出去，最后才落实消耗：投不出去
+   * （会话没有模型、入队失败、模型自己先读走了）时游标原地不动，模型之后照
+   * 常读到这些字节。确认投递之后再调 {@link read} 落实消耗。
+   * @param id - 要读的任务。
+   * @param caller - 读取方会话，校验归属。
+   */
+  peek(id: JobId, caller?: string): JobRead {
+    return this.#preview(this.#expect(id, caller));
+  }
+
+  /**
    * 读取保留的输出而不移动模型游标；用上一次的 `next` 续读。
    * @param id - 要读的任务。
    * @param from - 起始的绝对字节偏移，0 表示保留内容的开头。
@@ -309,7 +342,8 @@ export class JobRegistry {
   kill(
     id: JobId,
     caller?: string,
-    reason?: string
+    reason?: string,
+    origin: JobKillOrigin = "human"
   ): "requested" | "already-finished" {
     const job = this.#expect(id, caller);
     if (isTerminal(job.status)) {
@@ -322,6 +356,7 @@ export class JobRegistry {
     if (reason !== undefined) {
       job.killReason = reason;
     }
+    job.killOrigin = origin;
     job.settleCause = "kill";
     this.#emit({ type: "stopping", job: this.#view(job) }, job.owner);
     return "requested";
@@ -436,6 +471,12 @@ export class JobRegistry {
       id: job.id,
       kind: job.kind,
       label: job.label,
+      ...(job.outputLimitBytes === undefined
+        ? {}
+        : { outputLimitBytes: job.outputLimitBytes }),
+      ...(job.result === undefined
+        ? {}
+        : { resultBytes: utf8Bytes(job.result) }),
       ...(job.owner === undefined ? {} : { owner: job.owner }),
       status: job.status,
       ...(job.state.progress === undefined
@@ -447,6 +488,7 @@ export class JobRegistry {
       output: {
         total: job.ring.total,
         earliest: job.ring.earliest,
+        unreadBytes: Math.max(0, job.ring.total - job.modelCursor),
         ...(spillPaths.length === 0 ? {} : { spillPaths }),
       },
     };
@@ -456,10 +498,13 @@ export class JobRegistry {
   #expect(id: JobId, caller?: string): TrackedJob {
     const job = this.#store.get(id);
     if (job === undefined) {
-      throw new Error(`unknown job ${id}`);
+      throw new JobError(`unknown job ${id}`, "JOB_NOT_FOUND");
     }
     if (job.owner !== undefined && job.owner !== caller) {
-      throw new Error(`job ${id} belongs to another session`);
+      throw new JobError(
+        `job ${id} belongs to another session`,
+        "JOB_FOREIGN_SESSION"
+      );
     }
     return job;
   }
@@ -476,8 +521,9 @@ export class JobRegistry {
       }
     }
     if (active >= this.#maxConcurrentJobsPerOwner) {
-      throw new Error(
-        `background job limit reached for this owner (limit: ${this.#maxConcurrentJobsPerOwner}); wait for one to finish or stop it, then retry`
+      throw new JobError(
+        `background job limit reached for this owner (limit: ${this.#maxConcurrentJobsPerOwner}); wait for one to finish or stop it, then retry`,
+        "JOB_LIMIT_REACHED"
       );
     }
   }
@@ -496,16 +542,27 @@ export class JobRegistry {
    * 结算保留量的那个点——结算时留着模型没读走的全部字节，就为这一次读取。
    */
   #readJob(job: TrackedJob): JobRead {
-    const read = job.ring.readFrom(job.modelCursor);
+    const read = this.#preview(job);
     job.modelCursor = job.ring.total;
-    const result =
-      isTerminal(job.status) && !job.resultDelivered ? job.result : undefined;
-    if (result !== undefined) {
+    if (read.result !== undefined) {
       job.resultDelivered = true;
     }
     if (isTerminal(job.status)) {
       job.ring.trim(this.#settledRetainBytes);
     }
+    return read;
+  }
+
+  /**
+   * 一次读取会交出的内容，不动游标，也不动结果水位。
+   *
+   * 消费和预看共用这一段：交出去的形状只有一个地方说了算。归属检查在两者的
+   * 入口各做一次，这里只认已经校验过的记录。
+   */
+  #preview(job: TrackedJob): JobRead {
+    const read = job.ring.readFrom(job.modelCursor);
+    const result =
+      isTerminal(job.status) && !job.resultDelivered ? job.result : undefined;
     return {
       chunks: read.chunks,
       lossy: read.lossy,
@@ -594,18 +651,21 @@ export class JobRegistry {
       resolveWait();
     }
     job.markSettled();
+    const killedByModel = cause === "kill" && job.killOrigin === "model";
     this.#emit(
       {
         type: "settled",
         job: this.#view(job),
         cause,
         awaited: waitResolvers.length > 0,
+        killedByModel,
       },
       job.owner
     );
     // 环的流随结算结束；信号排在已提交的结算之后，被它唤醒的观察者读到的
     // 是终态。
     this.#emitOutput(job);
+    this.#deliverNotice(job, cause, waitResolvers.length > 0, killedByModel);
   }
 
   /** 公告一个任务的环前进了（追加或结算）。 */
@@ -619,6 +679,62 @@ export class JobRegistry {
       },
       job.owner
     );
+  }
+
+  /**
+   * 接上完成通知的投递口。宿主在创建注册表之后接一次；不接就没有通知。
+   * @param adapter - 投递与撤回的实现。
+   */
+  setNoticeAdapter(adapter: JobNoticeAdapter): void {
+    this.#notice = adapter;
+  }
+
+  /**
+   * 撤回某条还没送达的通知；模型已经自己读走这个任务时调用。
+   * @param id - 任务 id。
+   */
+  withdrawNotice(id: JobId): void {
+    this.#notice?.withdraw(id);
+  }
+
+  /**
+   * 声明这次调用正在收走某个任务。结算落在这段时间里，就不投递通知：
+   * 调用方自己的读取会带上终态。
+   * @param id - 任务 id。
+   * @param caller - 调用方会话，校验归属。
+   * @returns 结束声明的函数；可重复调用。
+   */
+  beginCollect(id: JobId, caller?: string): () => void {
+    this.#expect(id, caller);
+    this.#collecting.add(id);
+    return () => {
+      this.#collecting.delete(id);
+    };
+  }
+
+  /** 只在结算确实需要通知时投递；失败只记日志。 */
+  #deliverNotice(
+    job: TrackedJob,
+    cause: JobSettleCause,
+    awaited: boolean,
+    killedByModel: boolean
+  ): void {
+    if (this.#notice === undefined) {
+      return;
+    }
+    if (awaited || killedByModel || cause === "teardown") {
+      return;
+    }
+    if (this.#collecting.has(job.id)) {
+      return;
+    }
+    try {
+      this.#notice.deliver(this.#view(job));
+    } catch (error: unknown) {
+      this.#warn(
+        `jobs: notice delivery for ${job.id} failed: ${String(error)}`
+      );
+    }
   }
 
   #emit(event: JobEvent, owner?: string): void {

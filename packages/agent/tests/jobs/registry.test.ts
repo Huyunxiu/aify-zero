@@ -1,12 +1,15 @@
 import { describe, expect, test } from "vitest";
 
+import { JobError } from "../../src/jobs/error.js";
 import { JobRegistry } from "../../src/jobs/registry.js";
 import type {
   JobEvent,
   JobHandle,
+  JobNoticeAdapter,
   JobOutcome,
   JobOutputSource,
   JobSpec,
+  JobView,
 } from "../../src/jobs/types.js";
 
 type Deferred<T> = {
@@ -70,6 +73,27 @@ const producer = (
     },
   };
   return produced;
+};
+
+const notices = (): {
+  adapter: JobNoticeAdapter;
+  delivered: JobView[];
+  withdrawn: string[];
+} => {
+  const delivered: JobView[] = [];
+  const withdrawn: string[] = [];
+  return {
+    delivered,
+    withdrawn,
+    adapter: {
+      deliver: (job) => {
+        delivered.push(job);
+      },
+      withdraw: (id) => {
+        withdrawn.push(id);
+      },
+    },
+  };
 };
 
 const createRegistry = (
@@ -153,6 +177,19 @@ describe("JobRegistry 身份与准入", () => {
     expect(() => registry.start(producer().spec)).not.toThrow();
   });
 
+  test("exposes the producer's output limit and rejects an invalid one", () => {
+    const { registry } = createRegistry();
+    const id = registry.start({ ...producer().spec, outputLimitBytes: 2048 });
+
+    expect(registry.get(id).outputLimitBytes).toBe(2048);
+    expect(() =>
+      registry.start({ ...producer().spec, outputLimitBytes: 0 })
+    ).toThrow("invalid outputLimitBytes");
+    expect(() =>
+      registry.start({ ...producer().spec, outputLimitBytes: 1.5 })
+    ).toThrow("invalid outputLimitBytes");
+  });
+
   test("counts each owner separately", () => {
     const { registry } = createRegistry({ maxConcurrentJobsPerOwner: 1 });
 
@@ -209,6 +246,31 @@ describe("JobRegistry 归属围栏", () => {
     const { registry } = createRegistry();
 
     expect(() => registry.get("bash-missing")).toThrow("unknown job");
+  });
+
+  test("classifies not-found and foreign-session failures", () => {
+    const { registry } = createRegistry();
+    const id = registry.start(producer({ owner: "alice" }).spec);
+
+    const notFound = (() => {
+      try {
+        registry.get("bash-missing");
+      } catch (error: unknown) {
+        return error;
+      }
+    })();
+    const foreign = (() => {
+      try {
+        registry.get(id, "bob");
+      } catch (error: unknown) {
+        return error;
+      }
+    })();
+
+    expect(notFound).toBeInstanceOf(JobError);
+    expect(notFound).toMatchObject({ code: "JOB_NOT_FOUND" });
+    expect(foreign).toBeInstanceOf(JobError);
+    expect(foreign).toMatchObject({ code: "JOB_FOREIGN_SESSION" });
   });
 });
 
@@ -383,6 +445,22 @@ describe("JobRegistry 输出", () => {
 
     expect(registry.read(id).result).toBe("final");
     expect(registry.read(id).result).toBeUndefined();
+  });
+
+  test("peek never moves the model cursor", () => {
+    const { registry } = createRegistry();
+    const produced = producer();
+    const id = registry.start(produced.spec);
+    produced.handle?.append("hello");
+
+    const preview = registry.peek(id);
+
+    expect(preview.chunks.map((chunk) => chunk.text)).toStrictEqual(["hello"]);
+    // 预看不落实消耗：真正的读取照样交得出同样的字节。
+    expect(registry.read(id).chunks.map((chunk) => chunk.text)).toStrictEqual([
+      "hello",
+    ]);
+    expect(registry.peek(id).chunks).toStrictEqual([]);
   });
 
   test("readAt never moves the model cursor", () => {
@@ -569,5 +647,86 @@ describe("JobRegistry 等待与事件", () => {
     expect(
       warnings.some((message) => message.includes("event listener threw"))
     ).toBeTruthy();
+  });
+});
+
+describe("JobRegistry 完成通知", () => {
+  test("delivers one notice after a producer settlement nobody collected", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const produced = producer();
+    const id = registry.start(produced.spec);
+
+    produced.settle({ status: "completed" });
+    await flush();
+
+    expect(delivered.map((job) => job.id)).toStrictEqual([id]);
+    expect(delivered[0]?.status).toBe("completed");
+  });
+
+  test("stays silent when a live wait collected the settlement", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const produced = producer();
+    const id = registry.start(produced.spec);
+
+    const waiting = registry.wait(id, 1000);
+    produced.settle({ status: "completed" });
+    await waiting;
+    await flush();
+
+    expect(delivered).toStrictEqual([]);
+  });
+
+  test("stays silent for the model's own kill", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const id = registry.start(producer().spec);
+
+    registry.kill(id, undefined, "not needed", "model");
+    await flush();
+
+    expect(delivered).toStrictEqual([]);
+  });
+
+  test("notifies for a human kill", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const id = registry.start(producer().spec);
+
+    registry.kill(id, undefined, "stop");
+    await flush();
+
+    expect(delivered.map((job) => job.id)).toStrictEqual([id]);
+    expect(delivered[0]?.status).toBe("killed");
+  });
+
+  test("stays silent while a call is collecting the job", async () => {
+    const { registry } = createRegistry();
+    const { adapter, delivered } = notices();
+    registry.setNoticeAdapter(adapter);
+    const produced = producer();
+    const id = registry.start(produced.spec);
+
+    const release = registry.beginCollect(id);
+    produced.settle({ status: "completed" });
+    await flush();
+    expect(delivered).toStrictEqual([]);
+
+    release();
+  });
+
+  test("forwards withdrawal to the adapter", () => {
+    const { registry } = createRegistry();
+    const { adapter, withdrawn } = notices();
+    registry.setNoticeAdapter(adapter);
+
+    registry.withdrawNotice("bash-missing");
+
+    expect(withdrawn).toStrictEqual(["bash-missing"]);
   });
 });

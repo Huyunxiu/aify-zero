@@ -6,6 +6,7 @@ import type {
 import type { Sandbox } from "@workspace/sandbox";
 
 import type { HooksManager } from "../hooks-manager";
+import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { ModelGateway } from "../kernel/model-gateway";
@@ -29,6 +30,8 @@ export interface ToolEnvironment {
   readonly projectId?: string;
   /** 后台任务注册表；省略时后台执行和任务控制工具都不可用。 */
   readonly jobs?: JobRegistry;
+  /** 用户插话信号；省略时等待只能靠中止或超时结束。 */
+  readonly steering?: SteeringSignal;
   /** 工具读写文件和运行命令的环境。 */
   readonly sandbox: Sandbox;
 }

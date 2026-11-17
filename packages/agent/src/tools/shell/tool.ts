@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import type { Sandbox, ShellKind } from "@workspace/sandbox";
 import { tool } from "ai";
 import type { Tool } from "ai";
@@ -5,6 +7,7 @@ import { z } from "zod";
 
 import type { AgentContext } from "../../agent-context";
 import type { ToolEnvironment } from "../../extensions/capabilities";
+import { DEFAULT_OUTPUT_LIMIT_BYTES } from "../../jobs/limit";
 import type { JobOutcome } from "../../jobs/types";
 import type { ToolOutput } from "../types";
 import { createShellStreamBuffer } from "./background";
@@ -224,21 +227,25 @@ function startBackgroundCommand({
     kind: shell,
     label: command,
     owner: sessionId,
+    outputLimitBytes: DEFAULT_OUTPUT_LIMIT_BYTES,
     output: buffer.sources,
-    run: () => ({
-      cancel: () => {
-        controller.abort();
-      },
-      done: runBackgroundCommand({
-        buffer,
-        controller,
-        sandbox: agentContext.sandbox,
-        shell,
-        env,
-        command,
-        cwd,
-      }),
-    }),
+    run: (job) => {
+      buffer.spillTo(join(agentContext.sessionDir, "jobs", `${job.id}.log`));
+      return {
+        cancel: () => {
+          controller.abort();
+        },
+        done: runBackgroundCommand({
+          buffer,
+          controller,
+          sandbox: agentContext.sandbox,
+          shell,
+          env,
+          command,
+          cwd,
+        }),
+      };
+    },
   });
   return {
     output: `started background job ${jobId}\nRead it with job-output and stop it with job-kill.`,

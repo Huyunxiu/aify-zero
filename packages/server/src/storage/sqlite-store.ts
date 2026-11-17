@@ -8,6 +8,10 @@ import type {
   InboxPayload,
 } from "@workspace/agent-client";
 import {
+  JOB_NOTICE_INBOX_KIND,
+  JOB_NOTICE_STEP_SOURCE,
+} from "@workspace/agent-client";
+import {
   hydrateTurn,
   InboxItemNotFoundError,
   toStepRows,
@@ -609,6 +613,10 @@ export class SQLiteStore implements AgentStore {
           createdAt,
           completedAt: createdAt,
           status: "done",
+          // 完成通知插进来时仍然是通知，不是用户说的话。
+          ...(row.kind === JOB_NOTICE_INBOX_KIND
+            ? { source: JOB_NOTICE_STEP_SOURCE }
+            : {}),
           content: turn.content.flatMap((userStep) => userStep.content),
         };
 

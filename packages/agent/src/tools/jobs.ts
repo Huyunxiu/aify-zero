@@ -3,23 +3,77 @@ import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { ToolEnvironment } from "../extensions/capabilities";
+import { JobError } from "../jobs/error";
+import {
+  DEFAULT_OUTPUT_LIMIT_BYTES,
+  fitJobResult,
+  utf8Bytes,
+  writeJobResultFile,
+} from "../jobs/limit";
 import type { JobRegistry } from "../jobs/registry";
-import { publicJob, renderJobRead, statusLine } from "../jobs/render";
+import { publicJob, renderJobBody, statusLine } from "../jobs/render";
 import type { PublicJob } from "../jobs/render";
 import type { JobView } from "../jobs/types";
 import type { ToolOutput } from "./types";
 
-/** `wait: true` 且没给 timeoutMs 时的等待时长。 */
+/** `wait: true` 且没给 timeoutMs 时的默认等待时长。 */
 const DEFAULT_WAIT_MS = 30_000;
 
-/** 任何单次等待的硬上限；模型给得更大就收到这里。 */
+/** 任何单次等待的默认硬上限；模型给得更大就收到这里。 */
 const MAX_WAIT_MS = 600_000;
 
 const JOB_ID_DESCRIPTION =
   "Job id returned by the tool that started the background work.";
 
+/**
+ * 把带分类码的任务错误翻成模型可读的失败：码放在最前面，日志和测试都能按它
+ * 分类，模型也仍然看得到原因。
+ * @param error - 工具调用里抛出的错误。
+ */
+const toToolError = (error: unknown): never => {
+  if (error instanceof JobError) {
+    throw new TypeError(`${error.code}: ${error.message}`);
+  }
+  throw error;
+};
+
+/** 任务工具的等待上限；宿主可以按装配覆盖，省略时用默认值。 */
+export type JobToolOptions = {
+  /** `wait: true` 且没给 timeoutMs 时的等待时长。 */
+  waitTimeoutMs?: number;
+  /** 单次等待的硬上限；模型给得更大就收到这里。 */
+  maxWaitTimeoutMs?: number;
+};
+
 type JobToolDeps = {
   agentContext: ToolEnvironment;
+  options?: JobToolOptions;
+};
+
+const waitBounds = (
+  options: JobToolOptions | undefined
+): { defaultMs: number; maxMs: number } => {
+  const defaultMs = options?.waitTimeoutMs ?? DEFAULT_WAIT_MS;
+  const maxMs = options?.maxWaitTimeoutMs ?? MAX_WAIT_MS;
+  if (defaultMs > maxMs) {
+    throw new Error(
+      `invalid job tool options: waitTimeoutMs (${defaultMs}) exceeds maxWaitTimeoutMs (${maxMs})`
+    );
+  }
+  return { defaultMs, maxMs };
+};
+
+/**
+ * 把毫秒写成人读的时间：整分钟说分钟，其余说秒。
+ * @param ms - 时长，单位毫秒。
+ */
+const spokenMs = (ms: number): string => {
+  if (ms % 60_000 === 0) {
+    const minutes = ms / 60_000;
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  const seconds = ms / 1000;
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
 };
 
 /**
@@ -74,22 +128,30 @@ type JobKillMetadata = {
   job: PublicJob;
 };
 
-const JOB_OUTPUT_INPUT = z.object({
-  jobId: z.string().min(1).describe(JOB_ID_DESCRIPTION),
-  wait: z
-    .boolean()
-    .optional()
-    .describe(
-      "Block until the job finishes or the timeout expires; a timed-out wait leaves the job running. Defaults to false."
-    ),
-  timeoutMs: z
-    .number()
-    .positive()
-    .optional()
-    .describe(
-      "Max wait in milliseconds with wait: true. Defaults to 30 seconds and is capped at 10 minutes."
-    ),
-});
+/**
+ * `job-output` 的入参。
+ *
+ * `timeoutMs` 的描述要说真实边界：模型只能从描述里知道一次等待默认多久、最多
+ * 多久，所以这份 schema 跟着装配给的边界走，不写成常量。
+ * @param bounds - 解析后的默认等待与硬上限，单位毫秒。
+ */
+const jobOutputInput = (bounds: { defaultMs: number; maxMs: number }) =>
+  z.object({
+    jobId: z.string().min(1).describe(JOB_ID_DESCRIPTION),
+    wait: z
+      .boolean()
+      .optional()
+      .describe(
+        "Block until the job finishes or the timeout expires; a timed-out wait leaves the job running. Defaults to false."
+      ),
+    timeoutMs: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        `Max wait in milliseconds with wait: true. Defaults to ${spokenMs(bounds.defaultMs)} and is capped at ${spokenMs(bounds.maxMs)}.`
+      ),
+  });
 
 const JOB_LIST_INPUT = z.object({});
 
@@ -103,12 +165,13 @@ const JOB_KILL_INPUT = z.object({
     ),
 });
 
-type JobOutputInput = z.infer<typeof JOB_OUTPUT_INPUT>;
+type JobOutputInput = z.infer<ReturnType<typeof jobOutputInput>>;
 type JobListInput = z.infer<typeof JOB_LIST_INPUT>;
 type JobKillInput = z.infer<typeof JOB_KILL_INPUT>;
 
-const createJobOutputTool = ({ agentContext }: JobToolDeps) => {
+const createJobOutputTool = ({ agentContext, options }: JobToolDeps) => {
   const { jobs, sessionId } = requireJobs(agentContext);
+  const { defaultMs, maxMs } = waitBounds(options);
 
   return tool<
     JobOutputInput,
@@ -116,24 +179,73 @@ const createJobOutputTool = ({ agentContext }: JobToolDeps) => {
     AgentContext
   >({
     description: JOB_OUTPUT_DESCRIPTION,
-    inputSchema: JOB_OUTPUT_INPUT,
+    inputSchema: jobOutputInput({ defaultMs, maxMs }),
     execute: async ({ jobId, wait, timeoutMs }, { abortSignal }) => {
-      if (wait === true) {
-        // 等待超时返回运行中的状态，所以这里自己管截止时间，而不让工具
-        // 超时机制把任务判成失败。
-        await jobs.wait(
-          jobId,
-          Math.min(timeoutMs ?? DEFAULT_WAIT_MS, MAX_WAIT_MS),
-          sessionId,
-          abortSignal
-        );
+      // 这次调用会自己把终态交给模型；这期间结算的任务不再另发通知。
+      let release: (() => void) | undefined;
+      try {
+        release = jobs.beginCollect(jobId, sessionId);
+        let steered = false;
+        if (wait === true) {
+          // 等待超时返回运行中的状态，所以这里自己管截止时间，而不让工具
+          // 超时机制把任务判成失败。用户插话时也提前返回，任务继续跑。
+          const interruption = new AbortController();
+          const unsubscribe = agentContext.steering?.subscribe(() => {
+            steered = true;
+            interruption.abort();
+          });
+          try {
+            await jobs.wait(
+              jobId,
+              Math.min(timeoutMs ?? defaultMs, maxMs),
+              sessionId,
+              abortSignal === undefined
+                ? interruption.signal
+                : AbortSignal.any([abortSignal, interruption.signal])
+            );
+          } catch (error: unknown) {
+            // 只吞掉自己制造的打断；调用方中止照旧传播。
+            if (!interruption.signal.aborted || abortSignal?.aborted === true) {
+              throw error;
+            }
+          } finally {
+            unsubscribe?.();
+          }
+        }
+        const read = jobs.read(jobId, sessionId);
+        // 模型已经拿到这个任务的输出，还没送达的通知没有意义了。
+        jobs.withdrawNotice(jobId);
+        const job = publicJob(read.job);
+        // 打断发生在任务还在跑的时候：状态行说明这次读取为什么提前返回。
+        const note =
+          steered && (job.status === "running" || job.status === "stopping")
+            ? "user steered"
+            : undefined;
+        const limitBytes =
+          read.job.outputLimitBytes ?? DEFAULT_OUTPUT_LIMIT_BYTES;
+        const body = renderJobBody(read);
+        const suffix = `${body.endsWith("\n") ? "" : "\n"}${statusLine(job, note)}`;
+        // 超出上限才落盘：完整结果要么已经在生产方的输出文件里，要么现在写一份。
+        const spillPath =
+          utf8Bytes(`${body}${suffix}`) > limitBytes
+            ? (read.job.output.spillPaths?.[0] ??
+              writeJobResultFile({
+                dir: agentContext.sessionDir,
+                jobId,
+                text: `${body}${suffix}`,
+              }))
+            : undefined;
+        const fitted = fitJobResult({ body, suffix, limitBytes, spillPath });
+        return {
+          output: fitted.text,
+          code: "ok" as const,
+          metadata: { job },
+        };
+      } catch (error: unknown) {
+        return toToolError(error);
+      } finally {
+        release?.();
       }
-      const read = jobs.read(jobId, sessionId);
-      return {
-        output: renderJobRead(read),
-        code: "ok",
-        metadata: { job: publicJob(read.job) },
-      };
     },
     toModelOutput({ output }) {
       return { type: "text", value: output.output };
@@ -171,20 +283,27 @@ const createJobKillTool = ({ agentContext }: JobToolDeps) => {
     description: JOB_KILL_DESCRIPTION,
     inputSchema: JOB_KILL_INPUT,
     execute: ({ jobId, reason }) => {
-      const killed = jobs.kill(jobId, sessionId, reason);
-      const outcome =
-        killed === "requested"
-          ? ("cancellation-requested" as const)
-          : ("already-finished" as const);
-      const job = publicJob(jobs.get(jobId, sessionId));
-      return {
-        output:
-          outcome === "already-finished"
-            ? `job ${jobId} had already finished ${statusLine(job)}`
-            : `requested cancellation of job ${jobId}`,
-        code: "ok" as const,
-        metadata: { outcome, job },
-      };
+      try {
+        // 取消确认是固定短文案，且以任务 id 开头：不按任务上限裁剪，裁掉 id
+        // 会让这条结果无法对应到任务。
+        // 来源是模型自己：结算通知不该重复这条结果。
+        const killed = jobs.kill(jobId, sessionId, reason, "model");
+        const outcome =
+          killed === "requested"
+            ? ("cancellation-requested" as const)
+            : ("already-finished" as const);
+        const job = publicJob(jobs.get(jobId, sessionId));
+        return {
+          output:
+            outcome === "already-finished"
+              ? `job ${jobId} had already finished ${statusLine(job)}`
+              : `requested cancellation of job ${jobId}`,
+          code: "ok" as const,
+          metadata: { outcome, job },
+        };
+      } catch (error: unknown) {
+        return toToolError(error);
+      }
     },
     toModelOutput({ output }) {
       return { type: "text", value: output.output };

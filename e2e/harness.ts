@@ -251,10 +251,10 @@ export async function startStack(
 
   let api: Child | undefined;
 
-  const stop = async (options: { readonly keep?: boolean } = {}) => {
+  const stop = async (stopOptions: { readonly keep?: boolean } = {}) => {
     await Promise.all([api?.stop(), web.stop()]);
     await fake.close();
-    if (!options.keep) {
+    if (!stopOptions.keep) {
       rmSync(runDir, { recursive: true, force: true });
     }
   };

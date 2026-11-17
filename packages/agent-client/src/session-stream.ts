@@ -1,6 +1,6 @@
 import type { ToolSet } from "ai";
 
-import type { AgentStreamEvent } from "./types";
+import type { AgentStreamEvent, AgentUserTurn } from "./types";
 
 /**
  * 会话事件流上的一条事件。
@@ -32,6 +32,14 @@ export type SessionStreamEvent<TOOLS extends ToolSet> =
        * 领走多条，所以它是数组；没有领待办项的运行没有这个字段。
        */
       turnIds?: readonly string[];
+      /**
+       * 那几条回合的内容，和 `turnIds` 一一对应。
+       *
+       * 会话里的 user 回合不都是读者发的：后台任务的完成通知由运行器自己投递，
+       * 读者既没发过它，也来不及在收件箱里看见它。带上内容，读者不必回读会话
+       * 记录就能把它接进记录。
+       */
+      turns?: readonly AgentUserTurn[];
     }
   | {
       type: "run.event";

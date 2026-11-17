@@ -1,8 +1,19 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, test } from "vitest";
 
 import type { AgentContext } from "../../src/agent-context.js";
+import { createSteeringSignal } from "../../src/inbox/steering.js";
+import type { SteeringSignal } from "../../src/inbox/steering.js";
 import { JobRegistry } from "../../src/jobs/registry.js";
-import type { JobHandle, JobOutcome } from "../../src/jobs/types.js";
+import type {
+  JobHandle,
+  JobNoticeAdapter,
+  JobOutcome,
+  JobView,
+} from "../../src/jobs/types.js";
 import { createJobTools } from "../../src/tools/jobs.js";
 import { testSandbox } from "../helpers/sandbox.js";
 
@@ -23,12 +34,40 @@ const deferred = <T>(): Deferred<T> => {
 
 const createRegistry = (): JobRegistry => new JobRegistry({ warn: () => {} });
 
-const createContext = (jobs: JobRegistry, sessionId = SESSION): AgentContext =>
+const flush = (): Promise<void> =>
+  new Promise((resolve) => {
+    setImmediate(() => resolve());
+  });
+
+const notices = (): {
+  adapter: JobNoticeAdapter;
+  delivered: JobView[];
+  withdrawn: string[];
+} => {
+  const delivered: JobView[] = [];
+  const withdrawn: string[] = [];
+  return {
+    delivered,
+    withdrawn,
+    adapter: {
+      deliver: (job) => delivered.push(job),
+      withdraw: (id) => withdrawn.push(id),
+    },
+  };
+};
+
+const createContext = (
+  jobs: JobRegistry,
+  sessionId = SESSION,
+  sessionDir = `/tmp/sessions/${sessionId}`,
+  steering?: SteeringSignal
+): AgentContext =>
   ({
     jobs,
     sessionId,
     primaryProjectDir: "/tmp",
-    sessionDir: `/tmp/sessions/${sessionId}`,
+    sessionDir,
+    ...(steering === undefined ? {} : { steering }),
   }) as unknown as AgentContext;
 
 type StartedJob = {
@@ -44,7 +83,12 @@ type StartedJob = {
  */
 const startJob = (
   jobs: JobRegistry,
-  options: { owner?: string; label?: string; append?: string } = {}
+  options: {
+    owner?: string;
+    label?: string;
+    append?: string;
+    outputLimitBytes?: number;
+  } = {}
 ): StartedJob => {
   const gate = deferred<JobOutcome>();
   const cancels: (string | undefined)[] = [];
@@ -53,6 +97,9 @@ const startJob = (
     kind: "bash",
     label: options.label ?? "sleep 60",
     ...(options.owner === undefined ? {} : { owner: options.owner }),
+    ...(options.outputLimitBytes === undefined
+      ? {}
+      : { outputLimitBytes: options.outputLimitBytes }),
     run: (job) => {
       handle = job;
       if (options.append !== undefined) {
@@ -102,7 +149,40 @@ const call = async (
   )) as JobToolResult;
 };
 
+/**
+ * `job-output` 里 `timeoutMs` 的模型侧描述。
+ *
+ * 工具把 zod schema 放在 `inputSchema` 上，测试只读它的文案，所以这里收窄到
+ * 需要的那个形状，而不是重述整个 schema。
+ */
+const timeoutDescription = (
+  tools: ReturnType<typeof createJobTools>
+): string => {
+  const schema = tools["job-output"].inputSchema as unknown as {
+    shape: { timeoutMs: { description?: string } };
+  };
+
+  return schema.shape.timeoutMs.description ?? "";
+};
+
 describe("job-output", () => {
+  test("names the real wait bounds to the model", () => {
+    const jobs = createRegistry();
+    const stock = createJobTools({ agentContext: createContext(jobs) });
+
+    expect(timeoutDescription(stock)).toContain("Defaults to 30 seconds");
+    expect(timeoutDescription(stock)).toContain("capped at 10 minutes");
+
+    // 装配换了边界，描述跟着换：模型看到的数字必须是它真的会撞上的那两个。
+    const custom = createJobTools({
+      agentContext: createContext(jobs),
+      options: { waitTimeoutMs: 5000, maxWaitTimeoutMs: 90_000 },
+    });
+
+    expect(timeoutDescription(custom)).toContain("Defaults to 5 seconds");
+    expect(timeoutDescription(custom)).toContain("capped at 90 seconds");
+  });
+
   test("returns the unread delta and the status line", async () => {
     const jobs = createRegistry();
     const tools = createJobTools({ agentContext: createContext(jobs) });
@@ -114,6 +194,24 @@ describe("job-output", () => {
 
     expect(first.output).toBe("hello\n[status: running]");
     expect(second.output).toBe("(no new output)\n[status: running]");
+  });
+
+  test("caps a large read and points at the full output file", async () => {
+    const jobs = createRegistry();
+    const dir = mkdtempSync(join(tmpdir(), "jobs-cap-"));
+    const tools = createJobTools({
+      agentContext: createContext(jobs, SESSION, dir),
+    });
+    const full = `${"x".repeat(4096)}\n`;
+    const job = startJob(jobs, { append: full, outputLimitBytes: 1024 });
+
+    const result = await call(tools["job-output"], { jobId: job.jobId });
+
+    expect(Buffer.byteLength(result.output, "utf-8")).toBeLessThanOrEqual(1024);
+    expect(result.output).toContain(join(dir, "jobs", `${job.jobId}-read.log`));
+    expect(
+      readFileSync(join(dir, "jobs", `${job.jobId}-read.log`), "utf-8")
+    ).toBe(`${full}[status: running]`);
   });
 
   test("hands over the producer's result once after settlement", async () => {
@@ -149,6 +247,27 @@ describe("job-output", () => {
     expect(result.output).toContain("[status: completed]");
   });
 
+  test("a user steer ends the wait and names the interruption", async () => {
+    const jobs = createRegistry();
+    const steering = createSteeringSignal();
+    const tools = createJobTools({
+      agentContext: createContext(jobs, SESSION, "/tmp/sessions/s1", steering),
+    });
+    const job = startJob(jobs);
+
+    const waiting = call(tools["job-output"], {
+      jobId: job.jobId,
+      wait: true,
+      timeoutMs: 10_000,
+    });
+    steering.notify();
+    const result = await waiting;
+
+    expect(result.output).toBe(
+      "(no new output)\n[status: running, user steered]"
+    );
+  });
+
   test("a timed-out wait reports the running job without killing it", async () => {
     const jobs = createRegistry();
     const tools = createJobTools({ agentContext: createContext(jobs) });
@@ -171,10 +290,10 @@ describe("job-output", () => {
 
     await expect(
       call(tools["job-output"], { jobId: "bash-missing" })
-    ).rejects.toThrow("unknown job");
+    ).rejects.toThrow("JOB_NOT_FOUND: unknown job");
     await expect(
       call(tools["job-output"], { jobId: foreign.jobId })
-    ).rejects.toThrow("belongs to another session");
+    ).rejects.toThrow(/JOB_FOREIGN_SESSION: .*belongs to another session/);
   });
 });
 
@@ -224,6 +343,17 @@ describe("job-kill", () => {
 });
 
 describe(createJobTools, () => {
+  test("rejects wait bounds that cannot bound anything", () => {
+    const jobs = createRegistry();
+
+    expect(() =>
+      createJobTools({
+        agentContext: createContext(jobs),
+        options: { waitTimeoutMs: 5000, maxWaitTimeoutMs: 1000 },
+      })
+    ).toThrow("exceeds");
+  });
+
   test("refuses to build without a registry", () => {
     const context = {
       sessionId: SESSION,
@@ -235,5 +365,35 @@ describe(createJobTools, () => {
     expect(() => createJobTools({ agentContext: context })).toThrow(
       "agentContext.jobs"
     );
+  });
+});
+
+describe("完成通知与工具", () => {
+  test("job-kill 的结果就是交付，不再另发通知", async () => {
+    const jobs = createRegistry();
+    const { adapter, delivered } = notices();
+    jobs.setNoticeAdapter(adapter);
+    const tools = createJobTools({ agentContext: createContext(jobs) });
+    const job = startJob(jobs);
+
+    await call(tools["job-kill"], { jobId: job.jobId, reason: "done" });
+    await flush();
+
+    expect(delivered).toStrictEqual([]);
+  });
+
+  test("job-output 撤回还没送达的通知", async () => {
+    const jobs = createRegistry();
+    const { adapter, delivered, withdrawn } = notices();
+    jobs.setNoticeAdapter(adapter);
+    const tools = createJobTools({ agentContext: createContext(jobs) });
+    const job = startJob(jobs, { append: "done\n" });
+    job.settle({ status: "completed" });
+    await flush();
+    expect(delivered.map((view) => view.id)).toStrictEqual([job.jobId]);
+
+    await call(tools["job-output"], { jobId: job.jobId });
+
+    expect(withdrawn).toStrictEqual([job.jobId]);
   });
 });

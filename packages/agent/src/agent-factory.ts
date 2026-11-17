@@ -20,6 +20,7 @@ import {
 } from "./extensions/builtin";
 import { EnvironmentExtension } from "./extensions/environment";
 import type { Extension } from "./extensions/types";
+import type { SteeringSignal } from "./inbox/steering";
 import type { JobRegistry } from "./jobs/registry";
 import type { ModelTargetResolver } from "./kernel/model-gateway";
 import type { AgentStore } from "./storage";
@@ -29,6 +30,7 @@ import { appendSubagentPrompt } from "./subagent/definitions";
 import { createSubagentFactory } from "./subagent/factory";
 import type { ToolApprovalPattern } from "./tool-approval";
 import { catalogEntries } from "./tool-catalog/catalog";
+import type { JobToolOptions } from "./tools/jobs";
 import type { AgentToolSet } from "./types";
 
 /** 默认在调用前询问用户的工具。 */
@@ -86,6 +88,10 @@ export interface SessionAgentOptions {
   /** 每个已配置模型的上下文窗口，按供应商和模型两级索引。 */
   modelContextWindows?: ModelContextWindows;
   jobs?: JobRegistry;
+  /** 任务工具的等待上限；省略时用工具里的默认值。 */
+  jobTools?: JobToolOptions;
+  /** 用户插话信号；等待任务的工具用它提前结束阻塞。 */
+  steering?: SteeringSignal;
   /**
    * 工具读写文件和运行命令的环境。必须由宿主决定：这里给默认值等于在装配处
    * 隐式选择适配器，和「选择必须是显式的」相悖（见 docs/adr/0008）。
@@ -124,6 +130,7 @@ export async function createSessionAgent(
     compactionOverrides: options.compactionOverrides,
     modelContextWindows: options.modelContextWindows,
     jobs: options.jobs,
+    steering: options.steering,
     sandbox: options.sandbox,
   });
 
@@ -162,7 +169,14 @@ export async function createSessionAgent(
     await agent.registerExtension(new FileToolsExtension());
     await agent.registerExtension(new ShellToolsExtension());
     await agent.registerExtension(new WebToolsExtension());
-    await agent.registerExtension(new JobsToolsExtension());
+    await agent.registerExtension(
+      new JobsToolsExtension({
+        id: "jobs-tools",
+        ...(options.jobTools === undefined
+          ? {}
+          : { toolOptions: options.jobTools }),
+      })
+    );
     await agent.registerExtension(new QuestionnaireExtension());
     await agent.registerExtension(new SubagentExtension());
     // 宿主扩展（MCP 等）在这一句之后注册，所以 `entries` 读的必须是活的工具集，

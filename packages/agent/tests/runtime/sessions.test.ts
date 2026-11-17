@@ -288,8 +288,11 @@ describe("SessionLifecycle.startFromInbox", () => {
     ]);
   });
 
-  test("把领取到的回合 id 交给事件通道", async () => {
-    const registered: { turnIds?: readonly string[] }[] = [];
+  test("把领取到的回合 id 和内容交给事件通道", async () => {
+    const registered: {
+      turnIds?: readonly string[];
+      turns?: readonly { id: string }[];
+    }[] = [];
 
     const lifecycle = new SessionLifecycle({
       store: asStore({
@@ -304,7 +307,10 @@ describe("SessionLifecycle.startFromInbox", () => {
           _streamId: string,
           _agent: unknown,
           _stream: unknown,
-          options?: { turnIds?: readonly string[] }
+          options?: {
+            turnIds?: readonly string[];
+            turns?: readonly { id: string }[];
+          }
         ) => {
           registered.push(options ?? {});
         },
@@ -325,7 +331,10 @@ describe("SessionLifecycle.startFromInbox", () => {
       items: [inboxItem("s1")],
     });
 
-    expect(registered).toStrictEqual([{ turnIds: ["turn-new"] }]);
+    // 身份与内容一起过去：读者可能既没发过这条回合，也没在收件箱里见过它。
+    expect(registered).toStrictEqual([
+      { turnIds: ["turn-new"], turns: [inboxItem("s1").content] },
+    ]);
   });
 
   test("settled 兑现运行落定的状态", async () => {

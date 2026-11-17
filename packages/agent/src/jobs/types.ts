@@ -19,6 +19,20 @@ export type JobStatus =
 /** 结算的触发方：生产方自己结束、外部 kill、或者所有权/服务销毁。 */
 export type JobSettleCause = "producer" | "kill" | "teardown";
 
+/** 取消请求的来源：人（界面或宿主）还是模型自己的 `job-kill`。 */
+export type JobKillOrigin = "human" | "model";
+
+/**
+ * 完成通知的投递口。注册表在结算时调用它；投递失败只记日志，不影响任务
+ * 已经提交的事实。
+ */
+export type JobNoticeAdapter = {
+  /** 投递一条结算通知；实现必须同步返回，不能抛错。 */
+  deliver(job: JobView): void;
+  /** 撤回某条还没送达的通知；没有时什么也不做。 */
+  withdraw(jobId: JobId): void;
+};
+
 /**
  * 输出块的流标签。`stdout` 和 `stderr` 会进模型的消费式读取；`log` 是生产
  * 方的旁白，只给观察者看。
@@ -126,6 +140,12 @@ export type JobSpec = {
   label: string;
   /** 拥有者会话 id；归属校验以它为界，省略则创建无主任务。 */
   owner?: string;
+  /**
+   * 单次模型侧结果（读取与完成通知）的 UTF-8 字节上限，省略时用工具层的
+   * 默认值。取消确认是固定短文案，且必须以任务 id 开头，不按它裁剪。它只管
+   * 模型看到的正文，不影响输出环的保留量。
+   */
+  outputLimitBytes?: number;
   /** 注册表按自己的节奏泵进输出环的拉取源。 */
   output?: readonly JobOutputSource[];
   /**
@@ -142,6 +162,8 @@ export type JobOutputState = {
   total: number;
   /** 仍然保留着的最早字节偏移；没有保留内容时等于 `total`。 */
   earliest: number;
+  /** 模型游标之后还没读走的字节数；完成通知靠它决定是否内联。 */
+  unreadBytes: number;
   /** 各拉取源当前保留的完整流文件。 */
   spillPaths?: readonly string[];
 };
@@ -158,6 +180,10 @@ export type JobView = {
   progress?: string;
   /** 终态原因；被 kill 时合并取消原因。 */
   detail?: string;
+  /** 生产方声明的模型侧结果上限；省略时由工具层兜底。 */
+  outputLimitBytes?: number;
+  /** `result` 的 UTF-8 字节数；投递通知时用来判断内联是否放得下。 */
+  resultBytes?: number;
   startedAt: number;
   finishedAt?: number;
   output: JobOutputState;
@@ -203,6 +229,11 @@ export type JobEvent =
        * 所以完成通知要跳过它，避免同一件事说两遍。
        */
       awaited: boolean;
+      /**
+       * 终止来自模型自己的 `job-kill`。那个工具结果就是它的交付，通知只会
+       * 重复一遍。
+       */
+      killedByModel: boolean;
     }
   | {
       type: "output";
