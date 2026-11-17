@@ -66,7 +66,7 @@ describe(SessionEventRegistry, () => {
   test("a late reader gets the live run from its start", async () => {
     const events = new SessionEventRegistry<never>();
 
-    events.startRun("session-1", "run-1", { turnId: "turn-1" });
+    events.startRun("session-1", "run-1", { turnIds: ["turn-1"] });
     events.publish("session-1", "run-1", turnStart("turn-1"));
     events.publish("session-1", "run-1", textStart("turn-1", "part-1"));
 
@@ -78,7 +78,7 @@ describe(SessionEventRegistry, () => {
     expect(received[1]).toStrictEqual({
       seq: 1,
       streamId: "run-1",
-      turnId: "turn-1",
+      turnIds: ["turn-1"],
       type: "run.start",
     });
     // 重放的是 buffered 事件的原始序号，读者可以从这里往后接着读。
@@ -120,15 +120,18 @@ describe(SessionEventRegistry, () => {
       ],
     } as unknown as AgentUserTurn;
 
-    events.startRun("session-1", "run-1", { turnId: turn.id, turn });
+    events.startRun("session-1", "run-1", {
+      turnIds: [turn.id],
+      turns: [turn],
+    });
 
     const received = await readEvents(events.subscribe("session-1"), 2);
 
     expect(received[1]).toStrictEqual({
       seq: 1,
       streamId: "run-1",
-      turnId: "turn-notice",
-      turn,
+      turnIds: ["turn-notice"],
+      turns: [turn],
       type: "run.start",
     });
   });

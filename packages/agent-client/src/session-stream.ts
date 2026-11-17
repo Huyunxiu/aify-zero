@@ -25,20 +25,21 @@ export type SessionStreamEvent<TOOLS extends ToolSet> =
       seq: number;
       streamId: string;
       /**
-       * 这一次运行领走的待办项里那条 user 回合的 id。
+       * 这一次运行领走的待办项所对应的 user 回合 id，按它们在记录里的顺序。
        *
        * 页面靠它把「排队中的消息」认成「已经开始的回合」：一条待办项被领走
-       * 时从队列里消失，同时以 user 回合的身份出现在会话记录里。
+       * 时从队列里消失，同时以 user 回合的身份出现在会话记录里。一次运行可以
+       * 领走多条，所以它是数组；没有领待办项的运行没有这个字段。
        */
-      turnId?: string;
+      turnIds?: readonly string[];
       /**
-       * 那条回合的内容。
+       * 那几条回合的内容，和 `turnIds` 一一对应。
        *
        * 会话里的 user 回合不都是读者发的：后台任务的完成通知由运行器自己投递，
        * 读者既没发过它，也来不及在收件箱里看见它。带上内容，读者不必回读会话
        * 记录就能把它接进记录。
        */
-      turn?: AgentUserTurn;
+      turns?: readonly AgentUserTurn[];
     }
   | {
       type: "run.event";

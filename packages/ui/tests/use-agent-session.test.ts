@@ -245,8 +245,8 @@ describe("session events", () => {
     events.send({
       seq: 1,
       streamId: "run-1",
-      turn: notice,
-      turnId: notice.id,
+      turnIds: [notice.id],
+      turns: [notice],
       type: "run.start",
     });
     events.send({

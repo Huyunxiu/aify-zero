@@ -15,10 +15,10 @@ import type { ToolSet } from "ai";
  */
 type RunRecord<TOOLS extends ToolSet> = {
   streamId: string;
-  /** 领走的那条 user 回合的 id；运行不是由待办项发起时没有。 */
-  turnId?: string;
-  /** 那条回合的内容；读者可能既没发过它，也没在收件箱里见过它。 */
-  turn?: AgentUserTurn;
+  /** 领走的那些 user 回合的 id，按记录里的顺序；运行不是由待办项发起时没有。 */
+  turnIds?: readonly string[];
+  /** 那些回合的内容，和 `turnIds` 一一对应；读者可能既没发过它们，也没见过。 */
+  turns?: readonly AgentUserTurn[];
   /** 这条运行的 `run.start` 的序号；重连时先补这一条，再补事件。 */
   startSeq: number;
   events: { seq: number; event: AgentStreamEvent<TOOLS> }[];
@@ -27,14 +27,15 @@ type RunRecord<TOOLS extends ToolSet> = {
 };
 
 /**
- * 一次运行领走的那条 user 回合。
+ * 一次运行领走的那些 user 回合。
  *
- * `turnId` 是它的身份，`turn` 是它的内容。运行器自己发起的回合（例如后台任务
- * 的完成通知）读者手里没有，所以内容随 `run.start` 一起过去。
+ * `turnIds` 是它们的身份，按记录里的顺序；`turns` 是内容，两者一一对应。运行器
+ * 自己发起的回合（例如后台任务的完成通知）读者手里没有，所以内容随
+ * `run.start` 一起过去。
  */
-export type StartedTurn = {
-  turnId?: string;
-  turn?: AgentUserTurn;
+export type StartedTurns = {
+  turnIds?: readonly string[];
+  turns?: readonly AgentUserTurn[];
 };
 
 type Subscriber<TOOLS extends ToolSet> = {
@@ -72,7 +73,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
     return idle && this.#subscribers.size === 0;
   }
 
-  startRun(streamId: string, started: StartedTurn = {}): void {
+  startRun(streamId: string, started: StartedTurns = {}): void {
     if (this.#run && !this.#run.done) {
       // 一个会话一次只该跑一次运行。真撞上了，说明前一次的读者再也等不到
       // 它的结尾；把它标成结束，别让它在通道里悬着。
@@ -89,8 +90,8 @@ class SessionEventChannel<TOOLS extends ToolSet> {
       events: [],
       startSeq: seq,
       streamId,
-      ...(started.turnId === undefined ? {} : { turnId: started.turnId }),
-      ...(started.turn === undefined ? {} : { turn: started.turn }),
+      ...(started.turnIds === undefined ? {} : { turnIds: started.turnIds }),
+      ...(started.turns === undefined ? {} : { turns: started.turns }),
     };
     this.#broadcast(this.#runStart({ ...this.#run }));
   }
@@ -211,8 +212,8 @@ class SessionEventChannel<TOOLS extends ToolSet> {
       seq: run.startSeq,
       streamId: run.streamId,
       type: "run.start",
-      ...(run.turnId === undefined ? {} : { turnId: run.turnId }),
-      ...(run.turn === undefined ? {} : { turn: run.turn }),
+      ...(run.turnIds === undefined ? {} : { turnIds: run.turnIds }),
+      ...(run.turns === undefined ? {} : { turns: run.turns }),
     };
   }
 
@@ -240,7 +241,7 @@ export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
   startRun(
     sessionId: string,
     streamId: string,
-    started: StartedTurn = {}
+    started: StartedTurns = {}
   ): void {
     this.#channelFor(sessionId).startRun(streamId, started);
   }

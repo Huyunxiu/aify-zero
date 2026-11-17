@@ -197,10 +197,12 @@ const seedProvider = async (input: {
 
 /**
  * 起一整套现场，等它真的能服务请求。
- * @param options - 现场选项；`scenario` 是假供应商的场景名，缺省是主流程那条。
+ *
+ * `scenario` 换假供应商的剧本：主流程要工具，批处理用例要一段够长的流，
+ * 好让后两条消息在第一次运行还没结束时排进队列。
  */
 export async function startStack(
-  options: { readonly scenario?: string } = {}
+  input: { readonly scenario?: string } = {}
 ): Promise<Stack> {
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
   const runDir = join(REPO_ROOT, ".e2e", "runs", stamp);
@@ -237,7 +239,7 @@ export async function startStack(
   };
 
   const fake = await startFakeProvider({
-    scenario: options.scenario ?? "edit-then-answer",
+    scenario: input.scenario ?? "edit-then-answer",
   });
   // 先起页面，等它真能服务请求，再起 API：链接里的源是确定的，页面也早就绪。
   const web = startChild({

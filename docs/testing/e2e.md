@@ -29,6 +29,10 @@ vp exec playwright install --with-deps chromium
 
 `--with-deps` 要 root。装在别处就设 `PLAYWRIGHT_BROWSERS_PATH` 指过去；没有 root
 时也可以用 `apt-get download` 把缺的库解到本地，再用 `LD_LIBRARY_PATH` 指过去。
+把浏览器装进仓库的做法：`PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers` 跑
+`vp exec playwright install chromium`；缺的包用 `apt-get download` 取下来，
+`dpkg-deb -x` 解到 `.e2e/sysroot`，运行时把 `LD_LIBRARY_PATH` 指到它的
+`usr/lib/x86_64-linux-gnu`。两者都在 `.e2e/` 下，不会进版本库。
 
 热的一次约 15 秒，其中大半是 Vite 冷启动。
 
@@ -53,6 +57,17 @@ context，`localStorage` 是空的。
 `Finished`。
 
 请求序列也是一条断言：恰好 1 次非流式的标题请求、2 次流式的正文请求（先要工具、再回答）。标题和主回合并发，所以只数次数，不咬死顺序。
+
+### 排队的两条消息由一次运行回答（`batching.e2e.ts`）
+
+用户在一次运行里把两条消息排进队列，运行器下一次一起领走，只回答一条。
+
+它必须先制造一个「运行还没结束」的窗口。没有静默窗口，第一条消息会立刻起跑，后两条
+只有在第一次运行还在跑时选中「排队」，才会落在同一次领取里。所以现场的剧本是
+`slow-answer`：首块延迟 3 秒，够输两条消息。
+
+断言分两层：界面上是三条用户消息、两个 `Finished`、队列清空；假供应商那边是两次流式
+请求。只看界面只能证明用户看到一条回复，数请求才证明只跑了一次模型循环。
 
 ### 完成通知（`job-notice.e2e.ts`）
 
@@ -111,14 +126,17 @@ E2E_KEEP_ARTIFACTS=1 vp run e2e
 3. **假供应商的 `toolCall` 只是「能被客户端解析回同一个工具调用」。** 协议级测试
    （`packages/agent/tests/testing/tool-call.test.ts`）证明的是这一点，它不证明假
    供应商与真供应商同形——那种漂移要靠录制回放（`replay`）才发现。
+4. **假供应商的 `answer` 一律按 SSE 写。** 非流式的标题请求会拿到 SSE、解析失败进
+   日志，会话标题因此一直是空的，每个运行都会再请求一次标题。数标题请求会在多运行的
+   用例里翻倍，要数就数流式请求。
 
 ## 加一条用例
 
-现在的门禁有两条：主流程和完成通知。要加审批路径（`write-file`、MCP 工具）时：
+现在有三条：主流程、队列领取、完成通知。要加审批路径（`write-file`、MCP 工具）时：
 
 1. 在 `packages/agent/scenarios/` 加一个场景，用 `toolCall` 要那个会询问的工具
-2. 在 `e2e/` 加一个 `*.e2e.ts`，点 `Approve` 后继续断言
-3. 用例自己的场景用 `startStack({ scenario: "<名字>" })` 选，缺省仍是 `edit-then-answer`
-4. 用例预算仍是 120 秒，仍然不重试
+2. 在 `e2e/` 加一个 `*.e2e.ts`，用 `startStack({ scenario: "..." })` 换剧本，
+   点 `Approve` 后继续断言
+3. 用例预算仍是 120 秒，仍然不重试
 
 它不进 `vp run ready`：那是「提交前几秒跑完」的东西，端到端是三分钟的东西，混在一起两个都会坏。

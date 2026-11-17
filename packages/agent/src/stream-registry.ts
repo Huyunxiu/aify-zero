@@ -4,7 +4,7 @@ import type { ToolSet } from "ai";
 
 import type { Agent } from "./agents";
 import { SESSION_EVENTS } from "./session-events";
-import type { SessionEventRegistry, StartedTurn } from "./session-events";
+import type { SessionEventRegistry, StartedTurns } from "./session-events";
 
 export class StreamEventRegistry<TOOLS extends ToolSet> {
   readonly #store = new Map<string, StreamEventEntry<TOOLS>>();
@@ -29,7 +29,7 @@ export class StreamEventRegistry<TOOLS extends ToolSet> {
     streamId: string,
     agent: Agent,
     stream: ReadableStream<AgentStreamEvent<TOOLS>>,
-    options: StartedTurn = {}
+    options: StartedTurns = {}
   ): StreamEventEntry<TOOLS> {
     const entry = new StreamEventEntry(
       streamId,

@@ -188,8 +188,10 @@ const inboxItem = (sessionId: string): InboxItem => ({
 });
 
 type StreamOptions = {
-  inboxId?: string;
+  claims?: readonly { inboxId: string; turn: { id: string } }[];
+  model: { providerId: string; modelId: string };
   turns: { id: string }[];
+  onClaimed?: (turnIds: readonly string[]) => void;
   onFinish: (status: SessionEndStatus) => Promise<void>;
 };
 
@@ -238,16 +240,101 @@ describe("SessionLifecycle.startFromInbox", () => {
 
     await lifecycle.startFromInbox({
       sessionId: "s1",
-      item: inboxItem("s1"),
+      items: [inboxItem("s1")],
     });
 
     expect({
-      inboxId: seen[0]?.inboxId,
+      claims: seen[0]?.claims?.map((claim) => [claim.inboxId, claim.turn.id]),
       turnIds: seen[0]?.turns.map((turn) => turn.id),
     }).toStrictEqual({
-      inboxId: "item-1",
-      turnIds: ["turn-1", "turn-2", "turn-new"],
+      claims: [["item-1", "turn-new"]],
+      turnIds: ["turn-1", "turn-2"],
     });
+  });
+
+  test("一次运行领走全部待办项，模型取最后一条", async () => {
+    const { agent, seen } = fakeAgent();
+    const lifecycle = make({
+      agent,
+      branch: [userTurn("turn-1", "hi"), assistantTurn("turn-2", [])],
+    });
+
+    await lifecycle.startFromInbox({
+      sessionId: "s1",
+      items: [
+        inboxItem("s1"),
+        {
+          ...inboxItem("s1"),
+          id: "item-2",
+          seq: 1,
+          content: userTurn("turn-new-2", "and this"),
+          payload: { model: { providerId: "test", modelId: "second" } },
+        },
+      ],
+    });
+
+    expect(seen[0]?.claims?.map((claim) => claim.inboxId)).toStrictEqual([
+      "item-1",
+      "item-2",
+    ]);
+    expect(seen[0]?.model).toStrictEqual({
+      providerId: "test",
+      modelId: "second",
+    });
+    // 待办项不进 `turns`：它们由运行在领取之后接进历史。
+    expect(seen[0]?.turns.map((turn) => turn.id)).toStrictEqual([
+      "turn-1",
+      "turn-2",
+    ]);
+  });
+
+  test("把领取到的回合 id 和内容交给事件通道", async () => {
+    const registered: {
+      turnIds?: readonly string[];
+      turns?: readonly { id: string }[];
+    }[] = [];
+
+    const lifecycle = new SessionLifecycle({
+      store: asStore({
+        getSessionById: () => Promise.resolve(sessionRow()),
+        getBranchTurns: () => Promise.resolve([]),
+        setActiveStream: () => Promise.resolve(1),
+        clearActiveStream: () => Promise.resolve(1),
+      }),
+      registry: {
+        getStreamEntryBySession: () => null,
+        registerStream: (
+          _streamId: string,
+          _agent: unknown,
+          _stream: unknown,
+          options?: {
+            turnIds?: readonly string[];
+            turns?: readonly { id: string }[];
+          }
+        ) => {
+          registered.push(options ?? {});
+        },
+        unregisterStream: () => Promise.resolve(true),
+      } as never,
+      buildAgent: () =>
+        Promise.resolve({
+          stream: (options: StreamOptions) => {
+            options.onClaimed?.(["turn-new"]);
+            return Promise.resolve(new ReadableStream());
+          },
+          dispose: () => Promise.resolve(),
+        } as never),
+    });
+
+    await lifecycle.startFromInbox({
+      sessionId: "s1",
+      items: [inboxItem("s1")],
+    });
+
+    // 身份与内容一起过去：读者可能既没发过这条回合，也没在收件箱里见过它。
+    expect(registered).toStrictEqual([
+      { turnIds: ["turn-new"], turns: [inboxItem("s1").content] },
+    ]);
   });
 
   test("settled 兑现运行落定的状态", async () => {
@@ -256,7 +343,7 @@ describe("SessionLifecycle.startFromInbox", () => {
 
     const { settled } = await lifecycle.startFromInbox({
       sessionId: "s1",
-      item: inboxItem("s1"),
+      items: [inboxItem("s1")],
     });
 
     await seen[0]?.onFinish("wait_review");
@@ -278,7 +365,7 @@ describe("SessionLifecycle startFromInbox guards", () => {
     });
 
     await expect(
-      lifecycle.startFromInbox({ sessionId: "s1", item: inboxItem("s1") })
+      lifecycle.startFromInbox({ sessionId: "s1", items: [inboxItem("s1")] })
     ).rejects.toMatchObject({
       name: "AgentRunnerError",
       code: "SESSION_NOT_RUNNABLE",

@@ -497,7 +497,7 @@ export class AgentRunner {
   }
 
   /**
-   * 一条会话的循环：取一条、跑完、再看一眼。
+   * 一条会话的循环：取一批、跑完、再看一眼。
    *
    * 只有 `done` 会继续；`error` 和 `canceled` 停下来并记住原因，`wait_review`
    * 直接停——历史里有一条工具调用没有结果，结构上不该推进。
@@ -509,12 +509,17 @@ export class AgentRunner {
       }
 
       // 运行起点不看交付边界：残留的 step-boundary 项也在这一次领走。
-      const [item] = await this.#store.listInboxItems(sessionId);
-      if (!item) {
+      const items = await this.#store.listInboxItems(sessionId);
+      if (items.length === 0) {
         return;
       }
+      if (items.length > 1) {
+        this.#logger.warn(
+          `[runner] claiming ${items.length} pending items in one run for ${sessionId}`
+        );
+      }
 
-      const started = await this.#start(sessionId, item);
+      const started = await this.#start(sessionId, items);
       if (started === "claimed") {
         continue;
       }
@@ -568,23 +573,30 @@ export class AgentRunner {
   }
 
   /**
-   * 起跑一条待办项。
+   * 起跑一批待办项。
    *
    * 起不来时停下这一轮的循环——待办项还在收件箱里，用户看得见，可以取消或
    * 重发。继续转只会用同一个错误反复敲库。
    */
-  async #start(sessionId: string, item: InboxItem): Promise<StartOutcome> {
-    this.#rememberPayload(sessionId, {
-      model: item.payload.model,
-      ...(typeof item.payload.modelEffort === "string"
-        ? { effort: item.payload.modelEffort as ModelEffort }
-        : {}),
-      ...(item.payload.projectId === undefined
-        ? {}
-        : { projectId: item.payload.projectId }),
-    });
+  async #start(
+    sessionId: string,
+    items: readonly InboxItem[]
+  ): Promise<StartOutcome> {
+    // 模型配置取这一批里最新的那条：`startFromInbox` 也按它起跑。
+    const latest = items.at(-1);
+    if (latest !== undefined) {
+      this.#rememberPayload(sessionId, {
+        model: latest.payload.model,
+        ...(typeof latest.payload.modelEffort === "string"
+          ? { effort: latest.payload.modelEffort as ModelEffort }
+          : {}),
+        ...(latest.payload.projectId === undefined
+          ? {}
+          : { projectId: latest.payload.projectId }),
+      });
+    }
     try {
-      return await this.#sessions.startFromInbox({ sessionId, item });
+      return await this.#sessions.startFromInbox({ sessionId, items });
     } catch (error) {
       if (isClaimedElsewhere(error)) {
         return "claimed";

@@ -57,6 +57,32 @@ describe(findPreTurnPlacement, () => {
     expect(placement).toStrictEqual({ turnId: "a1", stepIndex: 0 });
   });
 
+  test("steps back over several trailing user turns", () => {
+    const placement = findPreTurnPlacement(
+      asTurns(
+        userTurn("u1", "one"),
+        assistantTurn("a1", []),
+        userTurn("u2", "two"),
+        userTurn("u3", "three"),
+        userTurn("u4", "four")
+      )
+    );
+    expect(placement).toStrictEqual({ turnId: "a1", stepIndex: 0 });
+  });
+
+  test("skips when a compaction turn sits between the marker and the head", () => {
+    expect(
+      findPreTurnPlacement(
+        asTurns(
+          userTurn("u1", "one"),
+          assistantTurn("a1", []),
+          compactionTurn(record()),
+          userTurn("u2", "two")
+        )
+      )
+    ).toBeUndefined();
+  });
+
   test("skips a head that is a compaction turn", () => {
     expect(
       findPreTurnPlacement(

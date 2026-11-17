@@ -48,7 +48,7 @@ const inboxMessage = (
 /**
  * 会话事件流的测试替身。
  *
- * 服务端在一次运行开始时说它领走了哪条 user 回合（`turnId`），这里照做：
+ * 服务端在一次运行开始时说它领走了哪几条 user 回合（`turnIds`），这里照做：
  * 测试用它模拟「排队的那条轮到了」。
  */
 const sessionEvents = () => {
@@ -66,12 +66,12 @@ const sessionEvents = () => {
       controller.enqueue({ seq, streamId, type: "run.end" }),
     runEvent: (streamId: string, seq: number, event: AgentStreamEvent<never>) =>
       controller.enqueue({ event, seq, streamId, type: "run.event" }),
-    runStart: (streamId: string, seq: number, turnId?: string) =>
+    runStart: (streamId: string, seq: number, turnIds?: readonly string[]) =>
       controller.enqueue({
         seq,
         streamId,
         type: "run.start",
-        ...(turnId === undefined ? {} : { turnId }),
+        ...(turnIds === undefined ? {} : { turnIds }),
       }),
     send: (event: SessionStreamEvent<never>) => controller.enqueue(event),
     stream,
@@ -180,7 +180,7 @@ describe("createAgentSessionStore queue", () => {
     });
     await flush();
 
-    events.runStart("run-1", 1, "u1");
+    events.runStart("run-1", 1, ["u1"]);
     events.runEvent("run-1", 2, {
       type: "turn.start",
       turnId: "turn-1",
@@ -207,7 +207,7 @@ describe("createAgentSessionStore queue", () => {
     events.runEnd("run-1", 3);
     await vi.waitFor(() => expect(store.getStatus()).toBe("ready"));
 
-    events.runStart("run-2", 4, "u2");
+    events.runStart("run-2", 4, ["u2"]);
     events.runEvent("run-2", 5, {
       type: "turn.start",
       turnId: "turn-2",
@@ -221,6 +221,68 @@ describe("createAgentSessionStore queue", () => {
         "u1",
         "turn-1",
         "u2",
+        "turn-2",
+      ])
+    );
+
+    events.close();
+  });
+
+  test("one run adopts every queued message it claims", async () => {
+    const events = sessionEvents();
+    const inbox = createInbox();
+    const store = storeOf({
+      apiInbox: inbox.api,
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => Promise.resolve(),
+    });
+
+    await store.submit({
+      turn: userTurn("u1", "Start"),
+      payload: { model: TEST_MODEL },
+    });
+    await flush();
+
+    events.runStart("run-1", 1, ["u1"]);
+    events.runEvent("run-1", 2, {
+      type: "turn.start",
+      turnId: "turn-1",
+      turnType: "assistant",
+      createdAt: 1,
+    });
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+
+    await store.submit({
+      turn: userTurn("u2", "One"),
+      mode: "followup",
+      payload: { model: TEST_MODEL },
+    });
+    await store.submit({
+      turn: userTurn("u3", "Two"),
+      mode: "followup",
+      payload: { model: TEST_MODEL },
+    });
+    expect(store.getInbox()).toHaveLength(2);
+
+    events.runEnd("run-1", 3);
+    await vi.waitFor(() => expect(store.getStatus()).toBe("ready"));
+
+    // 第二次运行一次领走两条：队列同时清空，两条按顺序进记录。
+    events.runStart("run-2", 4, ["u2", "u3"]);
+    events.runEvent("run-2", 5, {
+      type: "turn.start",
+      turnId: "turn-2",
+      turnType: "assistant",
+      createdAt: 1,
+    });
+
+    await vi.waitFor(() => expect(store.getInbox()).toHaveLength(0));
+    await vi.waitFor(() =>
+      expect(store.getTurns().map((turn) => turn.id)).toStrictEqual([
+        "u1",
+        "turn-1",
+        "u2",
+        "u3",
         "turn-2",
       ])
     );
@@ -284,7 +346,7 @@ describe("createAgentSessionStore queue", () => {
     });
     await flush();
 
-    events.runStart("run-1", 1, "u1");
+    events.runStart("run-1", 1, ["u1"]);
     events.runEvent("run-1", 2, {
       type: "turn.start",
       turnId: "turn-1",
@@ -343,7 +405,7 @@ describe("createAgentSessionStore queue", () => {
     });
     await flush();
 
-    events.runStart("run-1", 1, "u1");
+    events.runStart("run-1", 1, ["u1"]);
     await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
 
     await store.submit({
@@ -380,7 +442,7 @@ describe("createAgentSessionStore queue", () => {
     });
     await flush();
 
-    events.runStart("run-1", 1, "u1");
+    events.runStart("run-1", 1, ["u1"]);
     await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
 
     await store.submit({

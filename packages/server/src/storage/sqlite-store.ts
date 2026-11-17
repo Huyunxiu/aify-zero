@@ -131,14 +131,49 @@ function toInboxItem(row: InboxItemModel): InboxItem {
   };
 }
 
+/**
+ * 写一条 turn 行和它的全部 step。
+ *
+ * 冲突时只更新可变列：`parentId` 和 `createdAt` 保持这条 turn 原来的 branch
+ * 位置。两条写入路径（单条与批量领取）共用它，免得列集各写一遍。
+ */
+async function upsertTurnRow(
+  handle: Transaction,
+  turn: TurnWrite
+): Promise<void> {
+  const row = toTurnRow(turn);
+  await handle
+    .insert(turn_table)
+    .values(row)
+    .onConflictDoUpdate({
+      target: [turn_table.sessionId, turn_table.turnId],
+      set: {
+        type: row.type,
+        metadata: row.metadata,
+        status: row.status,
+        detail: row.detail,
+        completedAt: row.completedAt,
+        updatedAt: row.updatedAt,
+      },
+    });
+  await upsertStepRows(
+    handle,
+    toStepRows({
+      turnId: turn.id,
+      sessionId: turn.sessionId,
+      content: turn.content,
+    })
+  );
+}
+
 /** 能执行 delete 的句柄：`db` 和事务句柄都满足它。 */
 type Deleter = Pick<Transaction, "delete">;
 
 /**
  * 删除会话里的收件箱行；`ids` 省略时删除全部。
  *
- * 返回被删的行。领取路径（`saveTurn` / `applySteeringSteps`）靠返回的行判断
- * 待办项是否还没被领走：取消或并发领走的行不在其中。
+ * 返回被删的行。领取路径（`saveClaimedTurns` / `applySteeringSteps`）靠返回的
+ * 行判断待办项是否还没被领走：取消或并发领走的行不在其中。
  */
 async function deleteInboxRows(
   handle: Deleter,
@@ -318,45 +353,12 @@ export class SQLiteStore implements AgentStore {
 
   async saveTurn(
     turn: TurnWrite,
-    options?: { inboxId?: string; head?: boolean }
+    options?: { head?: boolean }
   ): Promise<number> {
     // Upsert: client resends existing message ids on regenerate. 只改可变行字段，
     // parentId 和 createdAt 保持它原来的 branch 位置。
-    const row = toTurnRow(turn);
-    const steps = toStepRows({
-      turnId: turn.id,
-      sessionId: turn.sessionId,
-      content: turn.content,
-    });
-
     await db.transaction(async (tx) => {
-      // 认领和写入必须同成同败：删不到行说明消息已经被另一个调用者领走，
-      // 这时不能再写一条重复的 user turn。
-      if (options?.inboxId) {
-        const claimed = await deleteInboxRows(tx, turn.sessionId, [
-          options.inboxId,
-        ]);
-
-        if (claimed.length === 0) {
-          throw new InboxItemNotFoundError(options.inboxId);
-        }
-      }
-
-      await tx
-        .insert(turn_table)
-        .values(row)
-        .onConflictDoUpdate({
-          target: [turn_table.sessionId, turn_table.turnId],
-          set: {
-            type: row.type,
-            metadata: row.metadata,
-            status: row.status,
-            detail: row.detail,
-            completedAt: row.completedAt,
-            updatedAt: row.updatedAt,
-          },
-        });
-      await upsertStepRows(tx, steps);
+      await upsertTurnRow(tx, turn);
 
       // head 和写入同成同败：失败不会留下悬空的行，也不会留下指向空处的 head。
       if (options?.head) {
@@ -365,6 +367,75 @@ export class SQLiteStore implements AgentStore {
     });
 
     return 1;
+  }
+
+  async saveClaimedTurns({
+    sessionId,
+    parentTurnId,
+    claims,
+    head,
+  }: {
+    sessionId: string;
+    parentTurnId?: string | null;
+    claims: readonly { inboxId: string; turn: TurnWrite }[];
+    head?: boolean;
+  }): Promise<readonly string[]> {
+    const [firstClaim] = claims;
+    if (!firstClaim) {
+      return [];
+    }
+
+    const byInboxId = new Map<string, TurnWrite>();
+    for (const claim of claims) {
+      if (claim.turn.sessionId !== sessionId) {
+        throw new Error(
+          `claim ${claim.inboxId} belongs to another session ${claim.turn.sessionId}`
+        );
+      }
+      byInboxId.set(claim.inboxId, claim.turn);
+    }
+
+    return await db.transaction(async (tx) => {
+      // 认领和写入必须同成同败：删不到任何一行说明整批已经被别人领走，这时
+      // 不能写 turn。删到一部分说明其余的被取消了，按剩下的写就好。
+      const claimed = await deleteInboxRows(
+        tx,
+        sessionId,
+        claims.map((claim) => claim.inboxId)
+      );
+
+      if (claimed.length === 0) {
+        throw new InboxItemNotFoundError(firstClaim.inboxId);
+      }
+
+      // 父链按真正领到的那几条重算：没领到的行不占位置，链也不会指向它。
+      let parentId = parentTurnId ?? null;
+      const written: string[] = [];
+
+      for (const inboxRow of claimed.toSorted(
+        (left, right) => left.seq - right.seq
+      )) {
+        const turn = byInboxId.get(inboxRow.id);
+        if (!turn) {
+          throw new Error(
+            `claimed inbox row ${inboxRow.id} has no turn to write`
+          );
+        }
+
+        const write: TurnWrite = { ...turn, parentId };
+        await upsertTurnRow(tx, write);
+
+        parentId = write.id;
+        written.push(write.id);
+      }
+
+      const last = written.at(-1);
+      if (head && last !== undefined) {
+        await setHeadIn(tx, sessionId, last);
+      }
+
+      return written;
+    });
   }
 
   async saveTurns(turns: TurnWrite[]): Promise<number> {
