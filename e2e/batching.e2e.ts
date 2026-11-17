@@ -88,12 +88,12 @@ test("Queued messages are answered by one run", async ({ page }) => {
     // 队列已经空了，不再有等待提示。
     await expect(page.getByText("2 pending", { exact: true })).toHaveCount(0);
 
-    // 这一层唯一的硬证据：每次运行一次流式请求，标题只生成一次。
-    // 这一层唯一的硬证据：每次运行恰好一次流式请求。标题请求不参与断言——
-    // 假供应商的 answer 规则一律按 SSE 写，非流式的标题请求会解析失败，所以
-    // 每个运行都会再请求一次标题。那是替身的缺口，不是这次改动的行为。
+    // 这一层唯一的硬证据：每次运行恰好一次流式请求，标题只生成一次。第二次
+    // 运行不再问标题，说明第一次运行把标题写进了会话行。
     const streams = stack.fake.requests.filter((request) => request.stream);
+    const titles = stack.fake.requests.filter((request) => !request.stream);
     expect(streams).toHaveLength(2);
+    expect(titles).toHaveLength(1);
   } catch (error) {
     failed = true;
     throw error;

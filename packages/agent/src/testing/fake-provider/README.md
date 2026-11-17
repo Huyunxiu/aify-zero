@@ -34,7 +34,7 @@ const provider = await startFakeProvider({ scenario: "retry-then-succeed" });
 
 | 结果            | 线上发生什么                                           |
 | --------------- | ------------------------------------------------------ |
-| `answer`        | 正常流式回答，按字符分块                               |
+| `answer`        | 流式请求按字符分块发；非流式请求回一条 JSON completion |
 | `fail`          | 回状态码，可带 `retryAfter` / `retryAfterMs`           |
 | `failMidStream` | 先发 `text`，再发 `{"error":{...}}`                    |
 | `replay`        | 从录制里取下一条响应，原样写出；可反复用，直到录制用完 |
@@ -44,7 +44,8 @@ const provider = await startFakeProvider({ scenario: "retry-then-succeed" });
 
 `toolCall` 只在流式请求上表达得出来：`arguments` 会按 8 个字符一段发出去，客户端
 拼回 JSON。把这条规则留给非流式请求时，写手回 500 说明不支持，不做静默降级。工具
-的结果作为下一次请求的一部分回来，下一条规则接着走。
+的结果作为下一次请求的一部分回来，下一条规则接着走。`failMidStream` 同样只在流上
+成形，非流式请求拿到 500。
 
 修饰：`slow.firstChunkMs`、`slow.chunkMs`、`when.stream`、`when.model`。
 
