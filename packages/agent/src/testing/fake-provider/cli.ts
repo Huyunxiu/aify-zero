@@ -76,6 +76,9 @@ const provider = await startFakeProvider({
           ...(valueOf("speed") === undefined
             ? {}
             : { speed: Number(valueOf("speed")) }),
+          ...(valueOf("pause-at") === undefined
+            ? {}
+            : { pauseAt: Number(valueOf("pause-at")) }),
         },
       }),
   port,
@@ -95,7 +98,10 @@ if (tapeOut !== undefined) {
   parts.push(`tape -> ${tapeOut}${has("redact") ? " (redacted)" : ""}`);
 }
 if (playPath !== undefined) {
-  parts.push(`playing ${playPath}`);
+  const pauseAt = valueOf("pause-at");
+  parts.push(
+    `playing ${playPath}${pauseAt === undefined ? "" : ` (pause at frame ${pauseAt})`}`
+  );
 }
 process.stdout.write(`${parts.join("  ")}\n`);
 

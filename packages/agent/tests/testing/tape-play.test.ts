@@ -17,6 +17,24 @@ import {
 const tempTape = (): string =>
   join(mkdtempSync(join(tmpdir(), "tape-play-")), "session.jsonl");
 
+/** 轮询一个状态，直到它成立；超时就算失败。 */
+const waitFor = async (
+  check: () => boolean,
+  timeoutMs = 2000
+): Promise<void> => {
+  const deadline = Date.now() + timeoutMs;
+
+  while (!check()) {
+    if (Date.now() > deadline) {
+      throw new Error("timed out waiting for the condition");
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 5);
+    });
+  }
+};
+
 type Entry = {
   readonly stream?: boolean;
   readonly frames: readonly { at: number; text: string }[];
@@ -153,5 +171,37 @@ describe("tape player", () => {
     const { text } = await post(provider.baseURL, { stream: false });
 
     expect(text).toBe('{"object":"chat.completion"}');
+  });
+
+  test("holds at the given frame until resumed", async () => {
+    const out = tempTape();
+    await writeTape(out, [
+      {
+        frames: [
+          { at: 0, text: "data: a\n\n" },
+          { at: 0, text: "data: b\n\n" },
+          { at: 0, text: "data: c\n\n" },
+        ],
+      },
+    ]);
+
+    const provider = await startProvider({ play: { path: out, pauseAt: 2 } });
+
+    const pending = post(provider.baseURL, { stream: true });
+    await waitFor(() => provider.tape?.paused === true);
+
+    // 挂起时前两帧已经发出，第三帧还没写。
+    expect(provider.tape?.frames).toBe(2);
+
+    const resumed = await fetch(new URL("/__tape/resume", provider.baseURL), {
+      method: "POST",
+    });
+
+    expect(resumed.status).toBe(204);
+
+    const { text } = await pending;
+
+    expect(text).toBe("data: a\n\ndata: b\n\ndata: c\n\n");
+    expect(provider.tape?.paused).toBeFalsy();
   });
 });

@@ -29,6 +29,8 @@ export type FakeProvider = {
   readonly baseURL: string;
   /** 到目前为止收到的请求，按顺序。断言「真的发了几次」用。 */
   readonly requests: readonly FakeProviderRequest[];
+  /** 播放器状态；没开 `play` 就是 undefined。 */
+  readonly tape?: TapePlaybackState;
   close(): Promise<void>;
 };
 
@@ -50,6 +52,14 @@ export type FakeProviderPlaybackOptions = {
   readonly speed?: number;
   /** 相邻帧的最大等待；空闲超过它就截断。 */
   readonly capMs?: number;
+  /** 播到第几帧就挂起；0 基。`POST /__tape/resume` 放行。 */
+  readonly pauseAt?: number;
+};
+
+/** 播放器的状态；没开播放时 `FakeProvider.tape` 是 undefined。 */
+export type TapePlaybackState = {
+  readonly paused: boolean;
+  readonly frames: number;
 };
 
 export type FakeProviderOptions = {
@@ -118,6 +128,12 @@ export async function startFakeProvider(
               ? {}
               : { capMs: options.play.capMs }),
           }),
+          ...(options.play.pauseAt === undefined
+            ? {}
+            : { pauseAt: options.play.pauseAt }),
+          onHold: (frame) => {
+            options.log?.(`paused at frame ${String(frame)}`);
+          },
         });
   const requests: FakeProviderRequest[] = [];
   const fallbackModel = scenario?.models?.[0] ?? scenario?.name ?? "fake-model";
@@ -151,6 +167,20 @@ export async function startFakeProvider(
     response: ServerResponse
   ): Promise<void> => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (request.method === "POST" && url.pathname === "/__tape/resume") {
+      if (player === undefined) {
+        response.writeHead(404, { "content-type": "application/json" });
+        response.end(JSON.stringify({ error: { message: "no tape" } }));
+        return;
+      }
+
+      player.release();
+      options.log?.("resumed");
+      response.writeHead(204);
+      response.end();
+      return;
+    }
 
     if (request.method === "POST" && url.pathname === "/__tape/input") {
       if (tape === undefined) {
@@ -333,6 +363,18 @@ export async function startFakeProvider(
   return {
     baseURL: `http://127.0.0.1:${port}/v1`,
     requests,
+    ...(player === undefined
+      ? {}
+      : {
+          tape: {
+            get paused() {
+              return player.paused;
+            },
+            get frames() {
+              return player.frames;
+            },
+          },
+        }),
     close: async () => {
       await new Promise<void>((resolve) => {
         server.close(() => resolve());

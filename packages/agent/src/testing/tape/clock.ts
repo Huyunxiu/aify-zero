@@ -41,3 +41,38 @@ export const wallClock = (options: WallClockOptions = {}): Clock => {
     },
   };
 };
+
+/**
+ * 挂起闸门：播放器停在某一帧，等一个外部信号才继续。
+ *
+ * 连接保持打开、不发数据；客户端看到的是「还在生成」，这正是要停住的那一刻。
+ */
+export class TapeGate {
+  #paused = false;
+  readonly #waiters: (() => void)[] = [];
+
+  get paused(): boolean {
+    return this.#paused;
+  }
+
+  hold(): void {
+    this.#paused = true;
+  }
+
+  release(): void {
+    this.#paused = false;
+    for (const resolve of this.#waiters.splice(0)) {
+      resolve();
+    }
+  }
+
+  async wait(): Promise<void> {
+    if (!this.#paused) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      this.#waiters.push(resolve);
+    });
+  }
+}

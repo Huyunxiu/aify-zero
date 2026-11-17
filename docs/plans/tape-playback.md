@@ -202,6 +202,18 @@ vp run fake:provider -- \
 `--play` 与 `--record` 互斥。带到头之后再来的请求回一条供应商错误，和旧的 `replay`
 动作一致。
 
+要让它在某一帧停住，加 `--pause-at`：
+
+```bash
+vp run fake:provider -- \
+  --play packages/agent/scenarios/tapes/my-session.jsonl \
+  --pause-at 2
+```
+
+`--pause-at` 是 0 基，指的是已经发出的帧数：`2` 表示前两帧写完、第三帧之前停下。
+连接保持打开、不发数据，所以客户端看到的是「还在生成」。日志打
+`paused at frame 2`，`POST /__tape/resume` 放行。
+
 ## 控制面
 
 和数据面同端口：
