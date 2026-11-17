@@ -313,16 +313,7 @@ export class JobRegistry {
    * @param caller - 读取方会话，校验归属。
    */
   peek(id: JobId, caller?: string): JobRead {
-    const job = this.#expect(id, caller);
-    const read = job.ring.readFrom(job.modelCursor);
-    const result =
-      isTerminal(job.status) && !job.resultDelivered ? job.result : undefined;
-    return {
-      chunks: read.chunks,
-      lossy: read.lossy,
-      ...(result === undefined ? {} : { result }),
-      job: this.#view(job),
-    };
+    return this.#preview(this.#expect(id, caller));
   }
 
   /**
@@ -551,16 +542,27 @@ export class JobRegistry {
    * 结算保留量的那个点——结算时留着模型没读走的全部字节，就为这一次读取。
    */
   #readJob(job: TrackedJob): JobRead {
-    const read = job.ring.readFrom(job.modelCursor);
+    const read = this.#preview(job);
     job.modelCursor = job.ring.total;
-    const result =
-      isTerminal(job.status) && !job.resultDelivered ? job.result : undefined;
-    if (result !== undefined) {
+    if (read.result !== undefined) {
       job.resultDelivered = true;
     }
     if (isTerminal(job.status)) {
       job.ring.trim(this.#settledRetainBytes);
     }
+    return read;
+  }
+
+  /**
+   * 一次读取会交出的内容，不动游标，也不动结果水位。
+   *
+   * 消费和预看共用这一段：交出去的形状只有一个地方说了算。归属检查在两者的
+   * 入口各做一次，这里只认已经校验过的记录。
+   */
+  #preview(job: TrackedJob): JobRead {
+    const read = job.ring.readFrom(job.modelCursor);
+    const result =
+      isTerminal(job.status) && !job.resultDelivered ? job.result : undefined;
     return {
       chunks: read.chunks,
       lossy: read.lossy,

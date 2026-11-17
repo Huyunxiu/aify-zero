@@ -2,6 +2,7 @@ import { composeJobNotice } from "@workspace/agent";
 import type {
   AgentRunner,
   JobId,
+  JobNotice,
   JobNoticeAdapter,
   JobRegistry,
 } from "@workspace/agent";
@@ -69,7 +70,7 @@ export const createJobNoticeAdapter = ({
         return;
       }
 
-      let notice: ReturnType<typeof composeJobNotice>;
+      let notice: JobNotice;
       try {
         const preview = registry.peek(job.id, sessionId);
         notice = composeJobNotice({ job, readOutput: () => preview });
