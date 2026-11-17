@@ -1,0 +1,107 @@
+import { readFile } from "node:fs/promises";
+import type { ServerResponse } from "node:http";
+
+import { wallClock } from "./clock.js";
+import type { Clock } from "./clock.js";
+import { decodeFrameBytes, parseTapeLine, TAPE_VERSION } from "./format.js";
+import type { TapeEntry, TapeItem } from "./format.js";
+
+/** 读一份录制带；头不对就拒绝，不做静默降级。 */
+export const loadTape = async (path: string): Promise<TapeItem[]> => {
+  const text = await readFile(path, "utf-8");
+  const items = text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line) => parseTapeLine(line));
+  const [header] = items;
+
+  if (header?.kind !== "header") {
+    throw new Error(`tape ${path}: first line is not a header`);
+  }
+
+  if (header.version !== TAPE_VERSION) {
+    throw new Error(
+      `tape ${path}: unsupported version ${String(header.version)}`
+    );
+  }
+
+  return items;
+};
+
+export type TapePlayerOptions = {
+  /** 录制带路径。 */
+  readonly path: string;
+  /** 时间源；缺省是原速。 */
+  readonly clock?: Clock;
+};
+
+/**
+ * 按顺序把录制带里的响应放出去。
+ *
+ * 不按请求内容匹配：一次带工具的回合会发多次请求，顺序本身就是那次交互的
+ * 形状；匹配规则只会带来新的复杂度，换不来更真实的行为。
+ */
+export class TapePlayer {
+  readonly #path: string;
+  readonly #entries: readonly TapeEntry[];
+  readonly #clock: Clock;
+  #cursor = 0;
+
+  private constructor(
+    path: string,
+    entries: readonly TapeEntry[],
+    clock: Clock
+  ) {
+    this.#path = path;
+    this.#entries = entries;
+    this.#clock = clock;
+  }
+
+  static async load(options: TapePlayerOptions): Promise<TapePlayer> {
+    const items = await loadTape(options.path);
+    const entries = items.flatMap((item) =>
+      item.kind === "request" ? [item.entry] : []
+    );
+
+    return new TapePlayer(options.path, entries, options.clock ?? wallClock());
+  }
+
+  /** 还有几条没放。 */
+  get remaining(): number {
+    return this.#entries.length - this.#cursor;
+  }
+
+  /** 已经放到第几条。 */
+  get position(): number {
+    return this.#cursor;
+  }
+
+  /**
+   * 放一条。录制带用完时回一条供应商错误，和旧的 `replay` 动作保持一致。
+   */
+  async play(response: ServerResponse): Promise<void> {
+    const entry = this.#entries[this.#cursor];
+
+    if (entry === undefined) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            message: `fake provider: tape ${this.#path} is used up`,
+          },
+        })
+      );
+      return;
+    }
+
+    this.#cursor += 1;
+    response.writeHead(entry.response.status, entry.response.headers);
+
+    for (const [index, frame] of entry.response.frames.entries()) {
+      await this.#clock.next(index, frame);
+      response.write(decodeFrameBytes(frame.bytes));
+    }
+
+    response.end();
+  }
+}

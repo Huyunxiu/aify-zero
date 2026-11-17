@@ -4,8 +4,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { TapeFrame, TapeRecorderOptions } from "../tape/index.js";
 import {
   encodeFrameBytes,
+  TapePlayer,
   TapeRecorder,
   tapeInputSchema,
+  wallClock,
 } from "../tape/index.js";
 import { withoutHopByHop } from "./headers.js";
 import { Recorder, ReplayBook } from "./record.js";
@@ -41,6 +43,15 @@ export type FakeProviderRecordOptions = {
   readonly headers?: Readonly<Record<string, string>>;
 };
 
+export type FakeProviderPlaybackOptions = {
+  /** 录制带路径。 */
+  readonly path: string;
+  /** 播放倍速；2 就是两倍速。 */
+  readonly speed?: number;
+  /** 相邻帧的最大等待；空闲超过它就截断。 */
+  readonly capMs?: number;
+};
+
 export type FakeProviderOptions = {
   /** 场景对象，或包根 `scenarios/` 里的名字 / 一个路径。 */
   readonly scenario?: Scenario | string;
@@ -52,6 +63,12 @@ export type FakeProviderOptions = {
    * 只在代理模式里有内容。P0 不录场景模式生成的流。
    */
   readonly tape?: TapeRecorderOptions;
+  /**
+   * 播放录制带：请求按顺序换回录制里的响应。
+   *
+   * 与 `record` 互斥：一个回放，一个录制。
+   */
+  readonly play?: FakeProviderPlaybackOptions;
   /** 端口；缺省是 0，由系统挑一个。 */
   readonly port?: number;
   /**
@@ -88,6 +105,20 @@ export async function startFakeProvider(
             : new Recorder(options.record.out, options.record.append),
       }
     : undefined;
+  const player =
+    options.play === undefined
+      ? undefined
+      : await TapePlayer.load({
+          path: options.play.path,
+          clock: wallClock({
+            ...(options.play.speed === undefined
+              ? {}
+              : { speed: options.play.speed }),
+            ...(options.play.capMs === undefined
+              ? {}
+              : { capMs: options.play.capMs }),
+          }),
+        });
   const requests: FakeProviderRequest[] = [];
   const fallbackModel = scenario?.models?.[0] ?? scenario?.name ?? "fake-model";
 
@@ -174,6 +205,11 @@ export async function startFakeProvider(
     options.log?.(
       `${seen.method} ${seen.path} stream=${seen.stream} model=${seen.model ?? "-"}`
     );
+
+    if (player !== undefined) {
+      await player.play(response);
+      return;
+    }
 
     if (recording) {
       await proxy(

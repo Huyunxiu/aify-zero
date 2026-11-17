@@ -31,11 +31,18 @@ const scenario = valueOf("scenario");
 const recordUrl = valueOf("record");
 const out = valueOf("out");
 const tapeOut = valueOf("tape");
+const playPath = valueOf("play");
 const port = Number(valueOf("port") ?? 0);
 
 // 录制带只在代理模式里有内容：没有上游，就没有帧可记。
 if (tapeOut !== undefined && recordUrl === undefined) {
   process.stderr.write("[fake] --tape needs --record\n");
+  process.exit(1);
+}
+
+// 一个回放，一个录制，不能同时开。
+if (playPath !== undefined && recordUrl !== undefined) {
+  process.stderr.write("[fake] use either --play or --record\n");
   process.exit(1);
 }
 
@@ -61,6 +68,16 @@ const provider = await startFakeProvider({
   ...(tapeOut === undefined
     ? {}
     : { tape: { out: tapeOut, redact: has("redact") } }),
+  ...(playPath === undefined
+    ? {}
+    : {
+        play: {
+          path: playPath,
+          ...(valueOf("speed") === undefined
+            ? {}
+            : { speed: Number(valueOf("speed")) }),
+        },
+      }),
   port,
   log: (message) => {
     process.stdout.write(`[fake] ${message}\n`);
@@ -76,6 +93,9 @@ if (recordUrl) {
 }
 if (tapeOut !== undefined) {
   parts.push(`tape -> ${tapeOut}${has("redact") ? " (redacted)" : ""}`);
+}
+if (playPath !== undefined) {
+  parts.push(`playing ${playPath}`);
 }
 process.stdout.write(`${parts.join("  ")}\n`);
 

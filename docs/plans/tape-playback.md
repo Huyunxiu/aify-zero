@@ -191,6 +191,17 @@ undici 都忽略内容，只重置 `bodyTimeout`。挂起超过 30 分钟直接�
 
 现有的 `slow.firstChunkMs` / `chunkMs` 退化成 `wallClock` 的参数，不保留两套。
 
+播放一份带：
+
+```bash
+vp run fake:provider -- \
+  --play packages/agent/scenarios/tapes/my-session.jsonl \
+  --speed 2
+```
+
+`--play` 与 `--record` 互斥。带到头之后再来的请求回一条供应商错误，和旧的 `replay`
+动作一致。
+
 ## 控制面
 
 和数据面同端口：
@@ -255,7 +266,7 @@ Server（重放器）                 Provider
 | P3   | 保活 + 空闲压缩 + 接管        | 挂起 10 分钟不断          |
 | P4   | e2e 迁移                      | 删掉 `slow-answer` 的三秒 |
 
-P0 与 P1 可以一起发。P2 之后才有日常价值。
+P0 与 P1 已经落地。P2 之后才有日常价值：只有控制面存在，播放才能被停住。
 
 ## 风险
 
