@@ -28,7 +28,7 @@ export type CreateInput = {
   model: ModelRef;
   effort?: ModelEffort;
   projectId?: string;
-  inboxId?: string;
+  inboxIds?: readonly string[];
 };
 
 export type StartFromInboxResult = StartedRun;
@@ -73,7 +73,7 @@ export class SessionLifecycle {
    * 数量，不启动新的流。
    */
   async create(input: CreateInput): Promise<RunStart> {
-    const { sessionId, turns, approvals, model, effort, inboxId } = input;
+    const { sessionId, turns, approvals, model, effort, inboxIds } = input;
     const { store } = this.#deps;
 
     const mostRecentTurn = turns.at(-1);
@@ -121,7 +121,7 @@ export class SessionLifecycle {
       ...(sessionProjectId === undefined
         ? {}
         : { projectId: sessionProjectId }),
-      ...(inboxId === undefined ? {} : { inboxId }),
+      ...(inboxIds === undefined ? {} : { inboxIds }),
     });
 
     return { status: "running", activeStreamId, settled };
@@ -146,19 +146,24 @@ export class SessionLifecycle {
   }
 
   /**
-   * 从收件箱领一条待办项，开一次运行。
+   * 从收件箱领走一批待办项，开一次运行。
    *
-   * 领取和写 turn 在同一个事务里完成（`inboxId` 一路传给 store）：领不到这条
-   * 就抛 `InboxItemNotFoundError`，调用方据此知道它已经被别人领走了。
+   * 领取和写 turn 在同一个事务里完成（`inboxIds` 一路传给 store）：一条都没
+   * 领到就抛 `InboxItemNotFoundError`，调用方据此知道整批已经被别人领走。
+   * 模型与 effort 取批里最后一条，那是最新的意图。
    */
   async startFromInbox({
     sessionId,
-    item,
+    items,
   }: {
     sessionId: string;
-    item: InboxItem;
+    items: readonly InboxItem[];
   }): Promise<StartedRun> {
     const { store } = this.#deps;
+    const latest = items.at(-1);
+    if (!latest) {
+      throw new Error("startFromInbox needs at least one item");
+    }
 
     const session = await store.getSessionById(sessionId);
     if (!session) {
@@ -179,19 +184,22 @@ export class SessionLifecycle {
     });
 
     const effort =
-      typeof item.payload.modelEffort === "string"
-        ? (item.payload.modelEffort as ModelEffort)
+      typeof latest.payload.modelEffort === "string"
+        ? (latest.payload.modelEffort as ModelEffort)
         : undefined;
-    const projectId = item.payload.projectId ?? session.projectId ?? undefined;
+    const projectId =
+      latest.payload.projectId ?? session.projectId ?? undefined;
 
     return await this.#startRun({
       sessionId,
-      turns: [...AgentSession.toAgentTurns(branch), item.content],
-      model: item.payload.model,
+      turns: [
+        ...AgentSession.toAgentTurns(branch),
+        ...items.map((item) => item.content),
+      ],
+      model: latest.payload.model,
       ...(effort === undefined ? {} : { effort }),
       ...(projectId === undefined ? {} : { projectId }),
-      inboxId: item.id,
-      turnId: item.content.id,
+      inboxIds: items.map((item) => item.id),
     });
   }
 
@@ -207,11 +215,9 @@ export class SessionLifecycle {
     model: ModelRef;
     effort?: ModelEffort;
     projectId?: string;
-    inboxId?: string;
-    turnId?: string;
+    inboxIds?: readonly string[];
   }): Promise<StartedRun> {
-    const { sessionId, turns, model, effort, projectId, inboxId, turnId } =
-      input;
+    const { sessionId, turns, model, effort, projectId, inboxIds } = input;
     const { store, registry, buildAgent } = this.#deps;
 
     const agent = await buildAgent({
@@ -232,13 +238,17 @@ export class SessionLifecycle {
     });
 
     let stream: Awaited<ReturnType<Agent["stream"]>>;
+    let claimedTurnIds: readonly string[] = [];
     try {
       stream = await agent.stream({
         turns,
         model,
         streamId: activeStreamId,
         signal: { type: "turn" },
-        ...(inboxId === undefined ? {} : { inboxId }),
+        ...(inboxIds === undefined ? {} : { inboxIds }),
+        onClaimed: (turnIds) => {
+          claimedTurnIds = turnIds;
+        },
         onFinish: async (status) => {
           // 收件箱不用在这里收尾：下一次运行开始时领全部待办项，残留的
           // step-boundary 项自然落到那一次。
@@ -255,11 +265,12 @@ export class SessionLifecycle {
       throw error;
     }
 
+    // 压缩运行没有领待办项：不写这个字段，事件里就不会出现空数组。
     registry.registerStream(
       activeStreamId,
       agent,
       stream,
-      turnId === undefined ? {} : { turnId }
+      claimedTurnIds.length === 0 ? {} : { turnIds: claimedTurnIds }
     );
     await store.setActiveStream(sessionId, activeStreamId);
 

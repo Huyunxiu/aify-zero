@@ -25,12 +25,13 @@ export type SessionStreamEvent<TOOLS extends ToolSet> =
       seq: number;
       streamId: string;
       /**
-       * 这一次运行领走的待办项里那条 user 回合的 id。
+       * 这一次运行领走的待办项所对应的 user 回合 id，按它们在记录里的顺序。
        *
        * 页面靠它把「排队中的消息」认成「已经开始的回合」：一条待办项被领走
-       * 时从队列里消失，同时以 user 回合的身份出现在会话记录里。
+       * 时从队列里消失，同时以 user 回合的身份出现在会话记录里。一次运行可以
+       * 领走多条，所以它是数组；没有领待办项的运行没有这个字段。
        */
-      turnId?: string;
+      turnIds?: readonly string[];
     }
   | {
       type: "run.event";

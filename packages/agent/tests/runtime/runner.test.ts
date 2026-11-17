@@ -238,6 +238,39 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
+  test("一次运行领走队列里的全部待办项", async () => {
+    const store = new FakeStore([session("s1")]);
+    const seen: AgentTurn<never>[][] = [];
+    const agent = fakeAgent((options) => {
+      seen.push(options.turns);
+      void options.onFinish("done");
+    });
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: fakeBuildAgent(agent).build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    // 三条都在运行器醒来之前到齐：一次运行应当把它们一起领走。
+    for (const id of ["t1", "t2", "t3"]) {
+      await store.insertInboxItem({
+        sessionId: "s1",
+        kind: "user-message",
+        dedupeKey: id,
+        deliverAt: "run-boundary",
+        content: userTurn(id),
+        payload: { model },
+      });
+    }
+    runner.wake("s1");
+
+    await vi.waitFor(() => expect(seen).toHaveLength(1));
+    expect(seen[0]?.map((turn) => turn.id)).toStrictEqual(["t1", "t2", "t3"]);
+    expect(store.items).toHaveLength(0);
+
+    await runner.shutdown();
+  });
+
   test("起不来时暂停，并保留待办项", async () => {
     const store = new FakeStore([session("s1")]);
     store.claimOnRead = false;

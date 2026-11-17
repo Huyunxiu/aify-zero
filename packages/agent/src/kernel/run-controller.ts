@@ -1,6 +1,7 @@
 import type {
   AgentCompactionTurn,
   AgentStreamEvent,
+  AgentTurn,
   AgentTurnStatus,
   CompactionRecord,
 } from "@workspace/agent-client";
@@ -19,7 +20,7 @@ import type {
   StepStartEvent,
 } from "../hooks-manager";
 import { applyRuntimeSettingsPatches } from "../hooks-manager";
-import type { AgentStore, SessionEndStatus } from "../storage";
+import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
 import type { AgentToolSet } from "../types";
 import {
   generateEventId,
@@ -137,6 +138,48 @@ export class RunController {
   }
 
   /**
+   * 把这次运行领走的待办项写成 user 回合。
+   *
+   * `inboxIds` 与 `turns` 末尾的条目按位置对应：`SessionLifecycle` 用同一份
+   * 待办项构造这两样东西，位置就是它们的到达顺序。父链由 store 按真正领到
+   * 的那几条重算，所以这里不传 parentId。
+   */
+  async #claimInboxTurns(
+    turns: readonly AgentTurn<AgentToolSet>[],
+    inboxIds: readonly string[]
+  ): Promise<readonly string[]> {
+    const claimed = turns.slice(-inboxIds.length);
+    const parentTurnId = turns.at(-inboxIds.length - 1)?.id ?? null;
+    const claims: { inboxId: string; turn: TurnWrite }[] = [];
+
+    for (const [index, inboxId] of inboxIds.entries()) {
+      const turn = claimed[index];
+      if (turn?.type !== "user") {
+        throw new Error("inboxIds do not name the trailing user turns");
+      }
+
+      claims.push({
+        inboxId,
+        turn: {
+          id: turn.id,
+          sessionId: this.#deps.sessionId,
+          type: "user",
+          metadata: {},
+          content: turn,
+          createdAt: new Date(),
+        },
+      });
+    }
+
+    return await this.#deps.store.saveClaimedTurns({
+      sessionId: this.#deps.sessionId,
+      parentTurnId,
+      claims,
+      head: true,
+    });
+  }
+
+  /**
    * Builds the stream a run produces into, with the writes the run needs.
    *
    * `start` runs synchronously when the stream is constructed, so `write` is
@@ -196,7 +239,8 @@ export class RunController {
     turns,
     model,
     onFinish,
-    inboxId,
+    inboxIds,
+    onClaimed,
   }: AgentStreamOptions) {
     const {
       session,
@@ -257,7 +301,14 @@ export class RunController {
     const originalTurns = turns;
     let lastTurnId = turns.at(-2)?.id;
 
-    if (mostRecentTurn?.type === "user") {
+    if (inboxIds?.length) {
+      // 一次运行可以领走多条待办项。它们按位置对应 `turns` 末尾的那几条，
+      // 父链和 head 由 store 按真正领到的那几条重算。
+      const written = await this.#claimInboxTurns(turns, inboxIds);
+      onClaimed?.(written);
+      lastTurnId = written.at(-1) ?? lastTurnId;
+    } else if (mostRecentTurn?.type === "user") {
+      // 没有收件行的调用方（测试、宿主自己的回合）仍然直接写一条。
       await store.saveTurn(
         {
           id: mostRecentTurn.id,
@@ -268,7 +319,7 @@ export class RunController {
           content: mostRecentTurn,
           createdAt: new Date(),
         },
-        { inboxId, head: true }
+        { head: true }
       );
       lastTurnId = mostRecentTurn.id;
     }

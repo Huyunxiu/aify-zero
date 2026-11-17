@@ -36,12 +36,20 @@ export type AgentStreamOptions = {
    */
   onFinish: (status: SessionEndStatus) => Promise<void>;
   /**
-   * 这条 user turn 来自 Inbox 的哪一行。
+   * 这次运行要领的待办项，按到达顺序；`turns` 末尾的同等数量条目就是它们。
    *
-   * 给了就要求保存 turn 时原子删除该行；行不存在说明已经被另一个调用者领走，
-   * 本次启动会失败，而不是写出一条重复的 user turn。
+   * 给了就要求保存 turn 时原子删除这些行；一条都删不到说明整批已被另一个
+   * 调用者领走，本次启动会失败，而不是写出重复的 user 回合。删到一部分说明
+   * 其余被取消了，按剩下的写。
    */
-  inboxId?: string;
+  inboxIds?: readonly string[];
+  /**
+   * 这次运行真正写下的 user 回合 id，顺序即记录里的顺序。
+   *
+   * 领到之后、`stream()` 兑现之前调用一次；没有领待办项时不调用。会话事件
+   * 通道用它填 `run.start`，所以值必须来自领取结果，而不是调用方的猜测。
+   */
+  onClaimed?: (turnIds: readonly string[]) => void;
 };
 
 /** 手工压缩被要求压缩一段没有可压缩内容的历史。 */

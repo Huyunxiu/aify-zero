@@ -188,7 +188,8 @@ const inboxItem = (sessionId: string): InboxItem => ({
 });
 
 type StreamOptions = {
-  inboxId?: string;
+  inboxIds?: readonly string[];
+  model: { providerId: string; modelId: string };
   turns: { id: string }[];
   onFinish: (status: SessionEndStatus) => Promise<void>;
 };
@@ -238,16 +239,50 @@ describe("SessionLifecycle.startFromInbox", () => {
 
     await lifecycle.startFromInbox({
       sessionId: "s1",
-      item: inboxItem("s1"),
+      items: [inboxItem("s1")],
     });
 
     expect({
-      inboxId: seen[0]?.inboxId,
+      inboxIds: seen[0]?.inboxIds,
       turnIds: seen[0]?.turns.map((turn) => turn.id),
     }).toStrictEqual({
-      inboxId: "item-1",
+      inboxIds: ["item-1"],
       turnIds: ["turn-1", "turn-2", "turn-new"],
     });
+  });
+
+  test("一次运行领走全部待办项，模型取最后一条", async () => {
+    const { agent, seen } = fakeAgent();
+    const lifecycle = make({
+      agent,
+      branch: [userTurn("turn-1", "hi"), assistantTurn("turn-2", [])],
+    });
+
+    await lifecycle.startFromInbox({
+      sessionId: "s1",
+      items: [
+        inboxItem("s1"),
+        {
+          ...inboxItem("s1"),
+          id: "item-2",
+          seq: 1,
+          content: userTurn("turn-new-2", "and this"),
+          payload: { model: { providerId: "test", modelId: "second" } },
+        },
+      ],
+    });
+
+    expect(seen[0]?.inboxIds).toStrictEqual(["item-1", "item-2"]);
+    expect(seen[0]?.model).toStrictEqual({
+      providerId: "test",
+      modelId: "second",
+    });
+    expect(seen[0]?.turns.map((turn) => turn.id)).toStrictEqual([
+      "turn-1",
+      "turn-2",
+      "turn-new",
+      "turn-new-2",
+    ]);
   });
 
   test("settled 兑现运行落定的状态", async () => {
@@ -256,7 +291,7 @@ describe("SessionLifecycle.startFromInbox", () => {
 
     const { settled } = await lifecycle.startFromInbox({
       sessionId: "s1",
-      item: inboxItem("s1"),
+      items: [inboxItem("s1")],
     });
 
     await seen[0]?.onFinish("wait_review");
@@ -278,7 +313,7 @@ describe("SessionLifecycle startFromInbox guards", () => {
     });
 
     await expect(
-      lifecycle.startFromInbox({ sessionId: "s1", item: inboxItem("s1") })
+      lifecycle.startFromInbox({ sessionId: "s1", items: [inboxItem("s1")] })
     ).rejects.toMatchObject({
       name: "AgentRunnerError",
       code: "SESSION_NOT_RUNNABLE",
