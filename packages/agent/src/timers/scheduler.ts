@@ -105,12 +105,12 @@ export class TimerScheduler {
    * 总数说不清。
    */
   async state(): Promise<TimerSchedulerState> {
-    const counts = await this.#store.countTimers();
+    const counts = await this.#store.timerCounts();
 
     return {
       intervalMs: this.#intervalMs,
       pending: counts.pending,
-      pendingSchedules: counts.schedules,
+      pendingSchedules: counts.pendingSchedules,
       lastScanAt: this.#lastScanAt,
       lastFired: this.#lastFired,
     };

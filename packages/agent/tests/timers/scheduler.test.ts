@@ -40,8 +40,8 @@ const createStore = (due: Timer[] = []): FakeStore => {
     insertTimer: () => Promise.reject(new Error("not used")),
     listTimers: () => Promise.resolve([]),
     cancelTimer: () => Promise.resolve(false),
-    countTimers: () =>
-      Promise.resolve({ pending: store.pending, schedules: 0 }),
+    timerCounts: () =>
+      Promise.resolve({ pending: store.pending, pendingSchedules: 0 }),
     fireDueTimers: (now) => {
       store.scans += 1;
       store.times.push(now);

@@ -55,7 +55,7 @@ export type TimerCounts = {
   /** 还挂着的定时器条数，两类之和。 */
   pending: number;
   /** 其中日程的条数。 */
-  schedules: number;
+  pendingSchedules: number;
 };
 
 /**
@@ -90,7 +90,7 @@ export interface TimerStore {
   fireDueTimers(now: number): Promise<FiredTimer[]>;
 
   /** 全库挂着的定时器数；扫描循环的状态用。 */
-  countTimers(): Promise<TimerCounts>;
+  timerCounts(): Promise<TimerCounts>;
 }
 
 /**

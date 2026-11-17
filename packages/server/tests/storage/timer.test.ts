@@ -192,26 +192,26 @@ describe("timer storage", () => {
   });
 
   test("counts every pending timer across sessions", async () => {
-    const before = await store.countTimers();
+    const before = await store.timerCounts();
     await set({ sessionId: "session-count", toolCallId: "call-count" });
 
-    await expect(store.countTimers()).resolves.toMatchObject({
+    await expect(store.timerCounts()).resolves.toMatchObject({
       pending: before.pending + 1,
-      schedules: before.schedules,
+      pendingSchedules: before.pendingSchedules,
     });
   });
 
   test("counts schedules inside the same budget", async () => {
-    const before = await store.countTimers();
+    const before = await store.timerCounts();
     await set({
       sessionId: "session-count-schedule",
       toolCallId: "call-count-schedule",
       recurrence: DAILY,
     });
 
-    await expect(store.countTimers()).resolves.toMatchObject({
+    await expect(store.timerCounts()).resolves.toMatchObject({
       pending: before.pending + 1,
-      schedules: before.schedules + 1,
+      pendingSchedules: before.pendingSchedules + 1,
     });
   });
 });

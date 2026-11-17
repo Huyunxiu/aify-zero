@@ -137,7 +137,7 @@ describe("timer-set", () => {
       afterSeconds: 60,
     });
 
-    expect(result.output).toContain("up to one minute late");
+    expect(result.output).toContain("up to 60 seconds late");
   });
 
   test("surfaces the limit as a typed failure", async () => {
@@ -256,7 +256,7 @@ describe("schedule-set", () => {
     const result = await call(tools(createTimers())["schedule-set"], daily);
 
     expect(result.code).toBe("ok");
-    expect(result.output).toContain("up to one minute late");
+    expect(result.output).toContain("up to 60 seconds late");
   });
 
   test("keeps an explicit time zone", async () => {

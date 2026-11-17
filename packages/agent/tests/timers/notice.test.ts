@@ -5,9 +5,15 @@ import {
   composeTimerTurn,
   formatAge,
 } from "../../src/timers/notice.js";
-import type { Timer } from "../../src/timers/types.js";
+import type { FiredTimer } from "../../src/timers/types.js";
 
-const timer = (overrides: Partial<Timer> = {}): Timer => ({
+/**
+ * 一条已经到点的定时器。
+ *
+ * 两个 composer 都收这一条：`firedAt` 和 `nextDueAt` 本来就跟着它走，拆成三个
+ * 参数只是把同一个东西说三遍。
+ */
+const fired = (overrides: Partial<FiredTimer> = {}): FiredTimer => ({
   id: "timer-1",
   sessionId: "session-1",
   toolCallId: "call-1",
@@ -16,6 +22,8 @@ const timer = (overrides: Partial<Timer> = {}): Timer => ({
   recurrence: null,
   payload: { model: { providerId: "p", modelId: "m" } },
   createdAt: 0,
+  firedAt: 12 * 60_000,
+  nextDueAt: null,
   ...overrides,
 });
 
@@ -45,11 +53,7 @@ describe(formatAge, () => {
 
 describe(composeTimerNotice, () => {
   test("carries the id, the age and the note", () => {
-    const { text } = composeTimerNotice({
-      timer: timer(),
-      firedAt: 12 * 60_000,
-      nextDueAt: null,
-    });
+    const { text } = composeTimerNotice(fired());
 
     expect(text).toContain("timer timer-1 fired");
     expect(text).toContain("You set it 12 minutes ago");
@@ -57,11 +61,9 @@ describe(composeTimerNotice, () => {
   });
 
   test("does not leave a double period when the note ends with one", () => {
-    const { text } = composeTimerNotice({
-      timer: timer({ note: "check the deploy." }),
-      firedAt: 60_000,
-      nextDueAt: null,
-    });
+    const { text } = composeTimerNotice(
+      fired({ note: "check the deploy.", firedAt: 60_000 })
+    );
 
     expect(text).not.toContain("..");
   });
@@ -70,7 +72,7 @@ describe(composeTimerNotice, () => {
 describe(composeTimerTurn, () => {
   test("is a done user turn whose step carries the timer source", () => {
     const firedAt = 12 * 60_000;
-    const turn = composeTimerTurn({ timer: timer(), firedAt, nextDueAt: null });
+    const turn = composeTimerTurn(fired());
 
     expect(turn).toMatchObject({
       type: "user",
@@ -88,22 +90,20 @@ describe(composeTimerTurn, () => {
 });
 
 /** 一条日程：到点之后还会再来。 */
-const schedule = (overrides: Partial<Timer> = {}): Timer =>
-  timer({
+const schedule = (overrides: Partial<FiredTimer> = {}): FiredTimer =>
+  fired({
     id: "schedule-1",
     note: "write the daily report",
     dueAt: 600_000,
     recurrence: { type: "daily", at: "09:00", timeZone: "Asia/Shanghai" },
+    firedAt: 660_000,
+    nextDueAt: 600_000 + 23 * 60 * 60_000,
     ...overrides,
   });
 
 describe("schedule notice", () => {
   test("names the rule so the model knows it is a schedule", () => {
-    const { text } = composeTimerNotice({
-      timer: schedule(),
-      firedAt: 660_000,
-      nextDueAt: 600_000 + 23 * 60 * 60_000,
-    });
+    const { text } = composeTimerNotice(schedule());
 
     expect(text).toContain("schedule schedule-1 fired");
     expect(text).toContain("daily 09:00 Asia/Shanghai");
@@ -111,41 +111,42 @@ describe("schedule notice", () => {
   });
 
   test("says when it fires again, so the model does not treat it as one-shot", () => {
-    const { text } = composeTimerNotice({
-      timer: schedule(),
-      firedAt: 660_000,
-      nextDueAt: 660_000 + 23 * 60 * 60_000,
-    });
+    const { text } = composeTimerNotice(
+      schedule({ nextDueAt: 660_000 + 23 * 60 * 60_000 })
+    );
 
     expect(text).toContain("Next: in 23 hours.");
   });
 
   test("keeps a normal delay out of the text", () => {
-    const { text } = composeTimerNotice({
-      timer: schedule(),
-      firedAt: 600_000 + 30_000,
-      nextDueAt: 600_000 + 24 * 60 * 60_000,
-    });
+    const { text } = composeTimerNotice(
+      schedule({
+        firedAt: 600_000 + 30_000,
+        nextDueAt: 600_000 + 24 * 60 * 60_000,
+      })
+    );
 
     expect(text).not.toContain("It was due");
   });
 
   test("says how late it was after downtime", () => {
-    const { text } = composeTimerNotice({
-      timer: schedule(),
-      firedAt: 600_000 + 4 * 60 * 60_000,
-      nextDueAt: 600_000 + 28 * 60 * 60_000,
-    });
+    const { text } = composeTimerNotice(
+      schedule({
+        firedAt: 600_000 + 4 * 60 * 60_000,
+        nextDueAt: 600_000 + 28 * 60 * 60_000,
+      })
+    );
 
     expect(text).toContain("It was due 4 hours ago.");
   });
 
   test("renders the interval rule in plain words", () => {
-    const { text } = composeTimerNotice({
-      timer: schedule({ recurrence: { type: "interval", everySeconds: 7200 } }),
-      firedAt: 660_000,
-      nextDueAt: 660_000 + 2 * 60 * 60_000,
-    });
+    const { text } = composeTimerNotice(
+      schedule({
+        recurrence: { type: "interval", everySeconds: 7200 },
+        nextDueAt: 660_000 + 2 * 60 * 60_000,
+      })
+    );
 
     expect(text).toContain("(every 2 hours)");
   });

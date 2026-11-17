@@ -11,19 +11,19 @@ import { isTimeZone } from "../utils/time-zone";
  */
 
 /** 当地墙上时间，`09:00`。 */
-export const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
  * 固定间隔的下限，秒。
  *
  * 扫描 60 秒一轮，比这更密的日程换不来更多精度，只是每分钟起一次运行。
  */
-export const MIN_INTERVAL_SECONDS = 300;
+const MIN_INTERVAL_SECONDS = 300;
 
 /** 星期的编号和 ISO 一致：1 是周一，7 是周日。 */
-export const weekdaySchema = z.number().int().min(1).max(7);
+const weekdaySchema = z.number().int().min(1).max(7);
 
-export const clockTimeSchema = z
+const clockTimeSchema = z
   .string()
   .regex(CLOCK_TIME_PATTERN, 'expected a local time like "09:00"');
 
@@ -63,7 +63,7 @@ const intervalRuleSchema = z
  * 日历规则一定带时区：写入时把解析后的值固化下来，之后这一行的含义不再随设置
  * 漂移（ADR 0018）。
  */
-export const recurrenceRuleSchema = z.discriminatedUnion("type", [
+const recurrenceRuleSchema = z.discriminatedUnion("type", [
   dailyRuleSchema,
   weeklyRuleSchema,
   intervalRuleSchema,

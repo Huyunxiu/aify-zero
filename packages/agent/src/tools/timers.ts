@@ -7,6 +7,7 @@ import { TimerError } from "../timers/error";
 import { formatAge } from "../timers/notice";
 import { recurrenceDraftSchema, renderRecurrence } from "../timers/recurrence";
 import type { RecurrenceRule } from "../timers/recurrence";
+import { DEFAULT_SCAN_INTERVAL_MS } from "../timers/scheduler";
 import type { SessionTimers, Timer } from "../timers/types";
 import type { ToolOutput } from "./types";
 
@@ -19,10 +20,18 @@ const MAX_AFTER_SECONDS = 86_400;
 /** 备注的字符上限；它要到点原样回到模型手里，不能无限长。 */
 const MAX_NOTE_CHARS = 200;
 
+/**
+ * 迟到上限的写法。
+ *
+ * 那个数是扫描间隔的属性，不归工具所有。抄一句「一分钟」进说明，默认间隔一改
+ * 就是第二份真相；由常量生成，跟着它一起变。
+ */
+const LATE_TEXT = `up to ${DEFAULT_SCAN_INTERVAL_MS / 1000} seconds late`;
+
 const TIMER_SET_DESCRIPTION = `
 Set a one-shot timer that wakes this session later.
 
-- It fires once, at least \`afterSeconds\` from now and up to one minute late. It is not a precise alarm.
+- It fires once, at least \`afterSeconds\` from now and ${LATE_TEXT}. It is not a precise alarm.
 - When it fires, a new message arrives in this session carrying your \`note\`. Do not sleep or poll for it: end the turn, or keep working on something else.
 - Write the note for your future self — what you intend to check, and what to do with the result.
 `;
@@ -48,7 +57,7 @@ Wake this session on a cadence, until you cancel it.
 - \`daily\` and \`weekly\` take a local time and an IANA time zone. Omit the time zone to use the user's own.
 - \`weekly\` takes ISO weekdays; \`[1,2,3,4,5]\` is every weekday.
 - \`interval\` repeats on an absolute cadence. It does not follow the wall clock, so a daylight-saving change moves it.
-- It fires on time and up to one minute late. After downtime, missed firings collapse into one.
+- It fires on time and ${LATE_TEXT}. After downtime, missed firings collapse into one.
 - Write the note for your future self — what this schedule is for.
 `;
 
@@ -108,7 +117,7 @@ const TIMER_SET_INPUT = z.object({
     .min(MIN_AFTER_SECONDS)
     .max(MAX_AFTER_SECONDS)
     .describe(
-      `Delay in seconds, from ${MIN_AFTER_SECONDS} to ${MAX_AFTER_SECONDS} (one day). It fires up to 60 seconds late.`
+      `Delay in seconds, from ${MIN_AFTER_SECONDS} to ${MAX_AFTER_SECONDS} (one day). It fires ${LATE_TEXT}.`
     ),
 });
 
@@ -166,7 +175,7 @@ const createTimerSetTool = ({ agentContext }: TimerToolDeps) => {
         return {
           output: `timer ${timer.id} will fire in ${formatAge(
             timer.dueAt - Date.now()
-          )}, up to one minute late.`,
+          )}, ${LATE_TEXT}.`,
           code: "ok" as const,
           metadata: { timer: publicTimer(timer) },
         };
@@ -208,7 +217,7 @@ const createScheduleSetTool = ({ agentContext }: TimerToolDeps) => {
             schedule.recurrence
           )}). First firing in ${formatAge(
             schedule.dueAt - Date.now()
-          )}, up to one minute late.`,
+          )}, ${LATE_TEXT}.`,
           code: "ok" as const,
           metadata: { schedule: publicTimer(schedule) },
         };

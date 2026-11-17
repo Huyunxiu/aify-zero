@@ -887,18 +887,22 @@ export class SQLiteStore implements AgentStore, TimerStore {
         .where(lte(timer_table.dueAt, new Date(now)))
         .orderBy(asc(timer_table.dueAt));
 
-      const fired: FiredTimer[] = [];
+      const firedTimers: FiredTimer[] = [];
 
       for (const row of due) {
         const timer = toTimer(row);
         // 下一次在写正文之前算：正文要说「下一次是什么时候」。用 `now` 而不是
         // `dueAt` 往后找，停机期间错过的多次就只投这一次。
-        const nextDueAt = this.#nextDueAfter(timer, now);
+        const fired: FiredTimer = {
+          ...timer,
+          firedAt: now,
+          nextDueAt: this.#nextDueAfter(timer, now),
+        };
         // 一条日程的两次触发之间，前一条还没被领走时不该各落一行：一次运行会把
         // 它们一起领走，模型就收到 N 条说同一件事的通知。所以键只认 id，冲突时
         // 把正文换成这一次的——待办项仍然只有一条，说的仍然是最新的那一次。
         const dedupeKey = `${TIMER_INBOX_KIND}:${timer.id}`;
-        const content = composeTimerTurn({ timer, firedAt: now, nextDueAt });
+        const content = composeTimerTurn(fired);
 
         await tx
           .insert(inbox_item_table)
@@ -916,31 +920,31 @@ export class SQLiteStore implements AgentStore, TimerStore {
             set: { dedupeKey, content },
           });
 
-        if (nextDueAt === null) {
+        if (fired.nextDueAt === null) {
           await tx.delete(timer_table).where(eq(timer_table.id, timer.id));
         } else {
           await tx
             .update(timer_table)
-            .set({ dueAt: new Date(nextDueAt) })
+            .set({ dueAt: new Date(fired.nextDueAt) })
             .where(eq(timer_table.id, timer.id));
         }
 
-        fired.push({ ...timer, firedAt: now, nextDueAt });
+        firedTimers.push(fired);
       }
 
-      return fired;
+      return firedTimers;
     });
   }
 
   /** 挂着的定时器数；日程是其中的子集，预算按总数算。 */
-  async countTimers(): Promise<TimerCounts> {
+  async timerCounts(): Promise<TimerCounts> {
     const rows = await db
       .select({ id: timer_table.id, recurrence: timer_table.recurrence })
       .from(timer_table);
 
     return {
       pending: rows.length,
-      schedules: rows.filter((row) => row.recurrence !== null).length,
+      pendingSchedules: rows.filter((row) => row.recurrence !== null).length,
     };
   }
 }

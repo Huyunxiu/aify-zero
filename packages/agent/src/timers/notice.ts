@@ -4,7 +4,7 @@ import type { AgentUserTurn } from "@workspace/agent-client";
 import { generateStepId, generateTurnId } from "../utils/id-util";
 import { renderRecurrence } from "./recurrence";
 import { DEFAULT_SCAN_INTERVAL_MS } from "./scheduler";
-import type { Timer } from "./types";
+import type { FiredTimer, Timer } from "./types";
 
 /** 一条定时器到点的通知正文；和完成通知一样自带来源，模型不必猜是谁在说话。 */
 export type TimerNotice = {
@@ -49,7 +49,7 @@ export const formatAge = (elapsedMs: number): string => {
  * 正常迟到由扫描间隔决定（默认 60 秒），那点误差对模型没有信息量；停机之后补投
  * 的那种迟到要说出来，模型才判断得出这次唤醒还成不成立。
  */
-export const LATE_AFTER_MS = 2 * DEFAULT_SCAN_INTERVAL_MS;
+const LATE_AFTER_MS = 2 * DEFAULT_SCAN_INTERVAL_MS;
 
 /** 去掉结尾的句号，免得正文出现两个连着的句号。 */
 const trimPeriod = (text: string): string => text.trim().replace(/\.+$/, "");
@@ -93,46 +93,31 @@ const scheduleText = (
  * 正文自己说明它不是用户说的话：只靠 step 上的 `source` 标记不够，模型读到的
  * 是文本。跟进和日程是两种正文：日程必须说出「下一次」，否则模型会把一次触发
  * 当成一次性跟进。
- * @param input.timer - 到点的定时器。
- * @param input.firedAt - 这次扫描认定它到点的时刻。
- * @param input.nextDueAt - 日程推进到的下一次；跟进是 null。
+ * @param fired - 到点的那一条，连同它被认定到点的时刻。
  * @returns 通知正文。
  */
-export const composeTimerNotice = ({
-  timer,
-  firedAt,
-  nextDueAt,
-}: {
-  timer: Timer;
-  firedAt: number;
-  nextDueAt: number | null;
-}): TimerNotice => ({
-  text:
-    timer.recurrence === null
-      ? followUpText(timer, firedAt)
-      : scheduleText(timer, firedAt, nextDueAt),
-});
+export const composeTimerNotice = (fired: FiredTimer): TimerNotice => {
+  const { firedAt, nextDueAt, recurrence } = fired;
+
+  return {
+    text:
+      recurrence === null
+        ? followUpText(fired, firedAt)
+        : scheduleText(fired, firedAt, nextDueAt),
+  };
+};
 
 /**
  * 把一条到点的定时器组成交给收件箱的用户回合。
  *
  * 形状和用户消息、完成通知一致：模型不需要第二种消息形状。step 上带
  * `source`，界面和「用户插话」判定据此知道它不是用户输入。
- * @param input.timer - 到点的定时器。
- * @param input.firedAt - 这次扫描认定它到点的时刻。
- * @param input.nextDueAt - 日程推进到的下一次；跟进是 null。
+ * @param fired - 到点的那一条，连同它被认定到点的时刻。
  * @returns 写进收件箱的回合。
  */
-export const composeTimerTurn = ({
-  timer,
-  firedAt,
-  nextDueAt,
-}: {
-  timer: Timer;
-  firedAt: number;
-  nextDueAt: number | null;
-}): AgentUserTurn => {
-  const { text } = composeTimerNotice({ timer, firedAt, nextDueAt });
+export const composeTimerTurn = (fired: FiredTimer): AgentUserTurn => {
+  const { firedAt } = fired;
+  const { text } = composeTimerNotice(fired);
 
   return {
     id: generateTurnId(),

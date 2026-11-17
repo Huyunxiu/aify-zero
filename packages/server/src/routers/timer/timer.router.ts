@@ -10,7 +10,8 @@ import { resolveTimeZone } from "../settings/settings.service";
  * 定时器数回答第一种，`lastScanAt` 回答第二种，`lastFired` 回答第三种。
  *
  * 还回一个生效时区：日历规则缺省就按它写。宿主跑在 UTC 而用户不在时，这个数
- * 是唯一能让错误显形的地方。
+ * 是唯一能让错误显形的地方。它只描述日历规则——`interval` 是绝对节拍，不跟墙钟，
+ * 也不看这个时区。
  */
 export const getTimerState = publicProcedure
   .route({ method: "GET", path: "/timer/state" })

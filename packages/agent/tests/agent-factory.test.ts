@@ -46,7 +46,7 @@ const idleTimerStore = (): TimerStore => ({
   listTimers: () => Promise.resolve([]),
   cancelTimer: () => Promise.resolve(false),
   fireDueTimers: () => Promise.resolve([]),
-  countTimers: () => Promise.resolve({ pending: 0, schedules: 0 }),
+  timerCounts: () => Promise.resolve({ pending: 0, pendingSchedules: 0 }),
 });
 
 /** 一个只注册工具的宿主扩展。 */
