@@ -29,23 +29,51 @@ const readTape = (path: string): TapeItem[] =>
     .split("\n")
     .map((line) => parseTapeLine(line));
 
+/** 轮询一个状态，直到它成立；超时就算失败。 */
+const waitFor = async (check: () => boolean): Promise<void> => {
+  const deadline = Date.now() + 2000;
+
+  while (!check()) {
+    if (Date.now() > deadline) {
+      throw new Error("timed out waiting for the condition");
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 5);
+    });
+  }
+};
+
 const frame = (text: string): TapeFrame => ({
   at: 0,
   bytes: encodeFrameBytes(Buffer.from(text)),
 });
 
-/** 一个只发两段 SSE 的上游；它替的是真供应商。 */
-const startUpstream = async (): Promise<{
+/**
+ * 一个只发两段 SSE 的上游；它替的是真供应商。
+ *
+ * `delays` 按第几次请求决定「首块之前等多久」，用来制造「先发后到」的形状。
+ */
+const startUpstream = async (
+  delays: readonly number[] = [0]
+): Promise<{
   url: string;
   close: () => Promise<void>;
 }> => {
+  let count = 0;
+
   const server = createServer((_request, response) => {
-    response.writeHead(200, { "content-type": "text/event-stream" });
-    response.write("data: a\n\n");
+    const delay = delays[Math.min(count, delays.length - 1)] ?? 0;
+    count += 1;
+
     setTimeout(() => {
-      response.write("data: b\n\n");
-      response.end();
-    }, 10);
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.write("data: a\n\n");
+      setTimeout(() => {
+        response.write("data: b\n\n");
+        response.end();
+      }, 10);
+    }, delay);
   });
 
   await new Promise<void>((resolve) => {
@@ -202,7 +230,69 @@ describe("tape over the proxy", () => {
       expect(joined).toBe("data: a\n\ndata: b\n\n");
       expect(request.entry.response.eventFrames).toHaveLength(2);
       expect(request.entry.response.eventFrames.at(-1)).toBe(frames.length - 1);
-      expect(frames[0]?.at).toBe(0);
+      // 首帧紧跟请求到达，只差处理时间；它不该是负的，也不该等很久。
+      expect(frames[0]?.at).toBeLessThan(100);
+    } finally {
+      await upstream.close();
+    }
+  });
+
+  test("orders entries by arrival, not by completion", async () => {
+    // 第一个请求慢，第二个快；按「完成时刻」排会把它俩的顺序弄反。
+    const upstream = await startUpstream([150, 0]);
+
+    try {
+      const out = tempTape();
+      const provider = await startProvider({
+        record: { url: upstream.url },
+        tape: { out },
+      });
+
+      const slow = post(provider.baseURL, { stream: true, model: "slow" });
+      // 等它真的到达，别靠时间差猜：首次建连比复用连接慢。
+      await waitFor(() => provider.requests.length === 1);
+
+      const fast = post(provider.baseURL, { stream: true, model: "fast" });
+
+      await Promise.all([slow, fast]);
+
+      const entries = readTape(out).flatMap((item) =>
+        item.kind === "request"
+          ? [{ model: item.entry.request.model, at: item.at }]
+          : []
+      );
+      const slowAt = entries.find((entry) => entry.model === "slow")?.at;
+      const fastAt = entries.find((entry) => entry.model === "fast")?.at;
+
+      expect(slowAt).toBeDefined();
+      expect(fastAt).toBeDefined();
+      expect(slowAt!).toBeLessThan(fastAt!);
+    } finally {
+      await upstream.close();
+    }
+  });
+
+  test("keeps the wait before the first chunk", async () => {
+    // 慢模型的首块延迟是体验的一部分，回放不能把它抹掉。
+    const upstream = await startUpstream([120]);
+
+    try {
+      const out = tempTape();
+      const provider = await startProvider({
+        record: { url: upstream.url },
+        tape: { out },
+      });
+
+      await post(provider.baseURL, { stream: true });
+
+      const items = readTape(out);
+      const request = items.find((item) => item.kind === "request");
+
+      if (request?.kind !== "request") {
+        throw new Error("expected a request item");
+      }
+
+      expect(request.entry.response.frames[0]?.at).toBeGreaterThanOrEqual(80);
     } finally {
       await upstream.close();
     }

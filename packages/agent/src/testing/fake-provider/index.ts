@@ -316,6 +316,8 @@ export async function startFakeProvider(
     const body = (await readBody(request)) ?? "";
     const parsed =
       body === "" ? {} : (JSON.parse(body) as Record<string, unknown>);
+    // 时间轴按请求到达排，不按响应结束排：长请求不能被排到后发的短请求后面。
+    const requestAt = tape?.at() ?? 0;
     const seen: FakeProviderRequest = {
       method: request.method,
       path: url.pathname,
@@ -334,7 +336,7 @@ export async function startFakeProvider(
 
     if (recording) {
       await proxy(
-        { response, body, seen, url },
+        { response, body, seen, url, at: requestAt },
         recording.record,
         recording.recorder
       );
@@ -359,6 +361,8 @@ export async function startFakeProvider(
       body: string;
       seen: FakeProviderRequest;
       url: URL;
+      /** 请求到达的时刻；时间轴按它排序。 */
+      at: number;
     },
     record: FakeProviderRecordOptions,
     recorder: Recorder | undefined
@@ -381,30 +385,30 @@ export async function startFakeProvider(
 
     input.response.writeHead(upstream.status, headers);
 
-    const startedAt = performance.now();
     const captured: Buffer[] = [];
     const frames: TapeFrame[] = [];
+    // 帧的时刻相对请求到达，不相对响应开始：首块之前那段等待也是时间轴的一部分，
+    // 否则慢模型回放时会凭空变快。
+    const frameAt = (): number => (tape?.at() ?? 0) - input.at;
+
     for await (const piece of upstream.body ?? []) {
       const bytes = Buffer.from(piece);
       captured.push(bytes);
       frames.push({
-        at: Math.round(performance.now() - startedAt),
+        at: frameAt(),
         bytes: encodeFrameBytes(bytes),
       });
       input.response.write(piece);
     }
 
     const lastAt = frames.at(-1)?.at ?? 0;
-    const tailMs = Math.max(
-      0,
-      Math.round(performance.now() - startedAt) - lastAt
-    );
+    const tailMs = Math.max(0, frameAt() - lastAt);
 
     // 客户端读到响应结束时就会返回，之后可能立刻读录制文件；所以先落盘，再结束响应。
     try {
       if (tape !== undefined) {
         await tape.recordRequest({
-          at: tape.at(),
+          at: input.at,
           method: input.seen.method,
           path: input.seen.path,
           stream: input.seen.stream,
