@@ -628,7 +628,8 @@ export function Session({
   // - 转录的种子要重取。`SessionContainer` 只在挂载时把这份缓存交给 store，之后
   //   屏幕上的副本由 store 自己维护；种子不跟着记录走，切回这个会话时新建的
   //   store 就从一个空列表开始。服务端先把回合写进记录、再结束这次运行，所以
-  //   `ready` 这一刻取到的已经是新的。
+  //   这一刻取到的已经是新的。运行开始那一刻不失效：那时取到的是带着未落定回
+  //   合的快照，把它当种子比没有种子更糟。
   // - 回合出错时也收尾了，但上面那个 effect 只认 `ready`：这里补上 `error`。
   //   成功和取消都走 `ready`，侧栏已经有失效，不再重复刷。
   const previousStatus = React.useRef(status);
@@ -639,7 +640,8 @@ export function Session({
 
     const wasRunning = previous === "submitted" || previous === "streaming";
 
-    if (!wasRunning) {
+    // 只认收尾：`submitted → streaming` 是运行开始，不是落定。
+    if (!wasRunning || status === "streaming") {
       return;
     }
 
