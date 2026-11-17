@@ -28,6 +28,15 @@ export const loadTape = async (path: string): Promise<TapeItem[]> => {
   return items;
 };
 
+/** 挂起时多久发一次保活注释；缺省 15 秒。 */
+const DEFAULT_KEEPALIVE_MS = 15_000;
+
+/** 一次挂起最多等多久；超了就结束响应。缺省 30 分钟。 */
+const DEFAULT_HOLD_LIMIT_MS = 30 * 60_000;
+
+/** SSE 注释行：客户端忽略内容，但会重置 undici 的 bodyTimeout。 */
+const KEEPALIVE = ": keepalive\n\n";
+
 /** 一条响应，连同它在时间轴上的位置。 */
 type ScheduledEntry = {
   readonly at: number;
@@ -43,6 +52,10 @@ export type TapePlayerOptions = {
   readonly holdAt?: number;
   /** 挂起时喊一声。 */
   readonly onHold?: (frame: number) => void;
+  /** 挂起时多久发一次保活注释。 */
+  readonly keepaliveMs?: number;
+  /** 一次挂起的上限；超了就结束响应。 */
+  readonly holdLimitMs?: number;
 };
 
 /** 播放器的当前状态；给控制面与测试看。 */
@@ -68,6 +81,8 @@ export class TapePlayer {
   readonly #gate = new TapeGate();
   readonly #holdAt: number | undefined;
   readonly #onHold: ((frame: number) => void) | undefined;
+  readonly #keepaliveMs: number;
+  readonly #holdLimitMs: number;
   #cursor = 0;
   #frames = 0;
   #busy = false;
@@ -76,13 +91,18 @@ export class TapePlayer {
     path: string,
     entries: readonly ScheduledEntry[],
     clock: Clock,
-    options: Pick<TapePlayerOptions, "holdAt" | "onHold">
+    options: Pick<
+      TapePlayerOptions,
+      "holdAt" | "onHold" | "keepaliveMs" | "holdLimitMs"
+    >
   ) {
     this.#path = path;
     this.#entries = entries;
     this.#clock = clock;
     this.#holdAt = options.holdAt;
     this.#onHold = options.onHold;
+    this.#keepaliveMs = options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS;
+    this.#holdLimitMs = options.holdLimitMs ?? DEFAULT_HOLD_LIMIT_MS;
   }
 
   static async load(options: TapePlayerOptions): Promise<TapePlayer> {
@@ -98,6 +118,12 @@ export class TapePlayer {
     return new TapePlayer(options.path, entries, options.clock ?? wallClock(), {
       ...(options.holdAt === undefined ? {} : { holdAt: options.holdAt }),
       ...(options.onHold === undefined ? {} : { onHold: options.onHold }),
+      ...(options.keepaliveMs === undefined
+        ? {}
+        : { keepaliveMs: options.keepaliveMs }),
+      ...(options.holdLimitMs === undefined
+        ? {}
+        : { holdLimitMs: options.holdLimitMs }),
     });
   }
 
@@ -159,6 +185,39 @@ export class TapePlayer {
   }
 
   /**
+   * 等挂起结束。挂起期间定期发注释保活，超过上限就报超时。
+   *
+   * 连接一直开着、客户端看到的是「还在生成」；注释行让 undici 的 bodyTimeout
+   * 不断重置，否则挂到 5 分钟就被断开。
+   */
+  async #hold(response: ServerResponse): Promise<"released" | "timeout"> {
+    if (!this.#gate.held) {
+      return "released";
+    }
+
+    const startedAt = performance.now();
+    // 同一个 wait 反复 race：保活赢了也不能把等待者丢掉，否则它会泄漏。
+    const waiting = this.#gate.wait();
+
+    for (;;) {
+      const result = await Promise.race([
+        waiting.then(() => "released" as const),
+        sleep(this.#keepaliveMs).then(() => "tick" as const),
+      ]);
+
+      if (result === "released") {
+        return "released";
+      }
+
+      if (performance.now() - startedAt >= this.#holdLimitMs) {
+        return "timeout";
+      }
+
+      response.write(KEEPALIVE);
+    }
+  }
+
+  /**
    * 放一条。录制带用完时回一条供应商错误，和旧的 `replay` 动作保持一致。
    */
   async play(response: ServerResponse): Promise<void> {
@@ -194,7 +253,11 @@ export class TapePlayer {
           this.#onHold?.(this.#frames);
         }
 
-        await this.#gate.wait();
+        if ((await this.#hold(response)) === "timeout") {
+          response.end();
+          return;
+        }
+
         await this.#clock.next(index, frame);
         response.write(decodeFrameBytes(frame.bytes));
         this.#frames += 1;

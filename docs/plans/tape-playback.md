@@ -190,6 +190,9 @@ for (const [index, frame] of entry.response.frames.entries()) {
 保活：每 15 秒发一次 `: keepalive\n\n`。SSE 规范里 `:` 开头的行是注释，AI SDK 与
 undici 都忽略内容，只重置 `bodyTimeout`。挂起超过 30 分钟直接结束响应。
 
+实现用同一个 gate wait 反复 race：保活赢了也不能丢掉等待者，否则每发一次注释就
+泄漏一个 promise。
+
 现有的 `slow.firstChunkMs` / `chunkMs` 退化成 `wallClock` 的参数，不保留两套。
 
 播放一份带：

@@ -321,6 +321,47 @@ describe("tape player", () => {
     expect(text).toBe("data: 二\n\n");
   });
 
+  test("keeps the connection alive while held", async () => {
+    const out = tempTape();
+    await writeTape(out, [{ frames: [{ at: 0, text: "data: a\n\n" }] }]);
+
+    const provider = await startProvider({
+      play: { path: out, holdAt: 0, keepaliveMs: 40, holdLimitMs: 5000 },
+    });
+
+    const pending = post(provider.baseURL, { stream: true });
+    await waitFor(() => provider.tape?.held === true);
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 110);
+    });
+
+    await fetch(new URL("/__tape/resume", provider.baseURL), {
+      method: "POST",
+    });
+
+    const { text } = await pending;
+
+    // 注释行是给 undici 的：客户端忽略它，但 bodyTimeout 会因此重置。
+    expect(text).toContain(": keepalive");
+    expect(text).toContain("data: a");
+  });
+
+  test("ends the response when a hold runs too long", async () => {
+    const out = tempTape();
+    await writeTape(out, [{ frames: [{ at: 0, text: "data: a\n\n" }] }]);
+
+    const provider = await startProvider({
+      play: { path: out, holdAt: 0, keepaliveMs: 20, holdLimitMs: 60 },
+    });
+
+    const { text } = await post(provider.baseURL, { stream: true });
+
+    // 超时就不放这一帧了；连接照常收尾，客户端不会一直挂着。
+    expect(text).not.toContain("data: a");
+    expect(provider.tape?.held).toBeTruthy();
+  });
+
   test("serves the playback panel", async () => {
     const out = tempTape();
     await writeTape(out, [{ frames: [{ at: 0, text: "data: a\n\n" }] }]);

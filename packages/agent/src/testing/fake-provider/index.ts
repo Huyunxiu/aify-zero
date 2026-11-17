@@ -59,6 +59,10 @@ export type FakeProviderPlaybackOptions = {
   readonly capMs?: number;
   /** 播到第几帧就挂起；0 基。`POST /__tape/resume` 放行。 */
   readonly holdAt?: number;
+  /** 挂起时多久发一次保活注释。 */
+  readonly keepaliveMs?: number;
+  /** 一次挂起的上限；超了就结束响应。 */
+  readonly holdLimitMs?: number;
 };
 
 /** 播放器的状态；没开播放时 `FakeProvider.tape` 是 undefined。 */
@@ -127,6 +131,12 @@ export async function startFakeProvider(
         ...(play.capMs === undefined ? {} : { capMs: play.capMs }),
       }),
       ...(play.holdAt === undefined ? {} : { holdAt: play.holdAt }),
+      ...(play.keepaliveMs === undefined
+        ? {}
+        : { keepaliveMs: play.keepaliveMs }),
+      ...(play.holdLimitMs === undefined
+        ? {}
+        : { holdLimitMs: play.holdLimitMs }),
       onHold: (frame) => {
         options.log?.(`held at frame ${String(frame)}`);
       },
