@@ -44,6 +44,58 @@ describe("fake provider", () => {
     ]);
   });
 
+  test("answers a non-streaming request with a JSON completion", async () => {
+    const provider = await start({
+      scenario: { name: "title", rules: [{ answer: "假标题" }] },
+    });
+
+    const { response, text } = await post(provider.baseURL, { stream: false });
+
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(text).not.toContain("data:");
+    expect(JSON.parse(text)).toMatchObject({
+      object: "chat.completion",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: "假标题" },
+          finish_reason: "stop",
+        },
+      ],
+      // 真供应商都带 `usage`；这里跟着写，形状才对得上。
+      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    });
+  });
+
+  test("writes malformed JSON when a non-streaming request is told corrupt", async () => {
+    const provider = await start({
+      scenario: { name: "corrupt-title", rules: [{ corrupt: true }] },
+    });
+
+    const { response, text } = await post(provider.baseURL, { stream: false });
+
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(text).not.toContain("data:");
+    // 半截 JSON：客户端解析时会报错，这不是一条供应商错误。
+    expect(() => {
+      JSON.parse(text);
+    }).toThrow(/Unexpected|JSON/u);
+  });
+
+  test("refuses a failMidStream rule on a non-streaming request", async () => {
+    const provider = await start({
+      scenario: {
+        name: "mid-title",
+        rules: [{ failMidStream: { text: "半句" } }],
+      },
+    });
+
+    const { response, text } = await post(provider.baseURL, { stream: false });
+
+    expect(response.status).toBe(500);
+    expect(text).toContain("needs a streaming request");
+  });
+
   test("fails with a status and the Retry-After header it was told", async () => {
     const provider = await start({
       scenario: {

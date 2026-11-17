@@ -28,6 +28,24 @@ const chunk = (
     choices: [{ index: 0, delta, finish_reason: finishReason }],
   })}\n\n`;
 
+/** 一条非流式 chat completion，形状按真供应商。 */
+const completion = (model: string, content: string): string =>
+  JSON.stringify({
+    id: "chatcmpl-fake",
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content },
+        finish_reason: "stop",
+      },
+    ],
+    // 真供应商都带这个字段；客户端不强制要它，但形状要对得上。
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  });
+
 const startStream = (response: ServerResponse): void => {
   response.writeHead(200, {
     "content-type": "text/event-stream",
@@ -123,12 +141,19 @@ export async function writeChatCompletions(options: {
     return;
   }
 
+  // `corrupt` 在两种传输上都成立：流式断在 `data:` 帧中间，非流式断在半截 JSON 上。
+  // 解析器两种都会报错，而这条路径的错误不是供应商错误。
   if (rule.corrupt) {
-    startStream(response);
-    // 半截 JSON：解析器会报错，而这条路径的错误不是供应商错误。
-    response.end(
-      'data: {"id":"chatcmpl-fake","object":"chat.completion.chunk"\n\n'
-    );
+    if (stream) {
+      startStream(response);
+      response.end(
+        'data: {"id":"chatcmpl-fake","object":"chat.completion.chunk"\n\n'
+      );
+      return;
+    }
+
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end('{"id":"chatcmpl-fake","object":"chat.completion"');
     return;
   }
 
@@ -149,6 +174,29 @@ export async function writeChatCompletions(options: {
     const headers = withoutHopByHop(entry.response.headers);
     response.writeHead(entry.response.status, headers);
     response.end(entry.response.body);
+    return;
+  }
+
+  // 非流式请求（会话标题就是）要一条 JSON，不是 `data:` 帧：把 SSE 塞进去，客户端
+  // 只会当成一条坏响应。`failMidStream` 要靠流的分帧才成形，写手照 ADR-0011 报
+  // 「不支持」，不悄悄换成一个空回答。
+  if (!stream) {
+    if (rule.failMidStream) {
+      response.writeHead(500, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            message:
+              "fake provider: a failMidStream rule needs a streaming request",
+          },
+        })
+      );
+      return;
+    }
+
+    response.writeHead(200, { "content-type": "application/json" });
+    await wait(rule.slow?.firstChunkMs);
+    response.end(completion(model, rule.answer ?? ""));
     return;
   }
 
