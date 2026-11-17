@@ -11,6 +11,7 @@ import type {
 import type { InstructionsSection } from "./extensions/types";
 import type { SteeringSignal } from "./inbox/steering";
 import type { JobRegistry } from "./jobs/registry";
+import type { SessionTimers } from "./timers/types";
 import type { AgentToolSet } from "./types";
 
 /** 供应商 id → 模型 id → 上下文窗口。不拼字符串：模型 id 可以自带 `/`。 */
@@ -86,6 +87,11 @@ export type AgentContextOptions = AgentStateOptions & {
   jobs?: JobRegistry;
   /** 用户插话信号；等待任务的工具用它提前结束阻塞。 */
   steering?: SteeringSignal;
+  /**
+   * 绑到这个会话上的定时器视图，会话身份和起跑配置已经绑好。装配处建它；
+   * 省略时定时器工具不注册，会话也排不了定时器。
+   */
+  timers?: SessionTimers;
   controller?: AgentStreamEventController;
   /**
    * 工具在其中读写文件和运行命令的环境。工具只认这个面，不认具体实现；
@@ -110,6 +116,7 @@ export class AgentContext extends AgentState {
   jobs?: JobRegistry;
   /** 用户插话信号；等待任务的工具用它提前结束阻塞。 */
   steering?: SteeringSignal;
+  timers?: SessionTimers;
   controller?: AgentStreamEventController;
   /** 工具读写文件和运行命令的环境；会话内不变。 */
   readonly sandbox: Sandbox;
@@ -134,6 +141,7 @@ export class AgentContext extends AgentState {
     this.modelContextWindows = options.modelContextWindows;
     this.jobs = options.jobs;
     this.steering = options.steering;
+    this.timers = options.timers;
     this.controller = options.controller;
     this.sandbox = options.sandbox;
   }

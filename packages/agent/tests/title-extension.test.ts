@@ -1,4 +1,4 @@
-import type { AgentStreamEvent } from "@workspace/agent-client";
+import type { AgentStreamEvent, AgentUserTurn } from "@workspace/agent-client";
 import { describe, expect, test, vi } from "vitest";
 
 import { TitleExtension } from "../src/extensions/builtin/title.js";
@@ -21,6 +21,18 @@ const generated = (text: string): GeneratedText => ({
 });
 
 const userTurns = () => asTurns(userTurn("u1", "what is the weather in NYC"));
+
+/** 一条定时器到点的回合：它是 user turn，但 step 上带着系统来源。 */
+const timerTurn = (id: string): AgentUserTurn => {
+  const turn = userTurn(id, "timer fired");
+  return {
+    ...turn,
+    content: turn.content.map((step) => ({
+      ...step,
+      source: "timer" as const,
+    })),
+  };
+};
 
 /** turn_created 事件的替身；标题任务只读 sessionId、turnId 和 model。 */
 const turnCreatedEvent = {
@@ -106,6 +118,50 @@ describe(TitleExtension, () => {
       "session.title.end",
       "step.finish",
     ]);
+  });
+
+  test("skips a timer notice and takes the earlier user turn", async () => {
+    const { store } = makeStore("");
+    const prompts: string[] = [];
+    const model: ModelGateway = {
+      languageModel: () => {
+        throw new Error("the title task does not stream");
+      },
+      generateText: (_ref, request) => {
+        prompts.push(request.prompt);
+        return Promise.resolve(generated("Weather in NYC"));
+      },
+    };
+
+    const handlers = await install(
+      new TitleExtension({ id: "title" }),
+      new Map<string, unknown>([
+        [Capabilities.model.id, model],
+        [Capabilities.store.id, store],
+        [Capabilities.events.id, { write: () => Promise.resolve() }],
+        [Capabilities.hooks.id, new HooksManager()],
+        [
+          Capabilities.transcript.id,
+          {
+            turns: () =>
+              asTurns(
+                userTurn("u1", "what is the weather in NYC"),
+                timerTurn("u2")
+              ),
+          },
+        ],
+        [Capabilities.abortSignal.id, () => {}],
+      ])
+    );
+
+    handlers.get("turn_created")?.(turnCreatedEvent, {});
+
+    // 定时器到点不是用户说的话：取样的仍是 u1 的正文，不是 timer 那一行。
+    await vi.waitFor(() => {
+      expect(prompts).toHaveLength(1);
+    });
+    expect(prompts[0]).toContain("what is the weather in NYC");
+    expect(prompts[0]).not.toContain("timer fired");
   });
 
   test("keeps an existing title", async () => {

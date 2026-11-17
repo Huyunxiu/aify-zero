@@ -6,23 +6,28 @@ import type {
   DeliverAt,
   InboxItem,
   InboxPayload,
+  StepSource,
 } from "@workspace/agent-client";
+import { isSystemStepSource, TIMER_INBOX_KIND } from "@workspace/agent-client";
 import {
-  JOB_NOTICE_INBOX_KIND,
-  JOB_NOTICE_STEP_SOURCE,
-} from "@workspace/agent-client";
-import {
+  composeTimerTurn,
   hydrateTurn,
   InboxItemNotFoundError,
+  TIMER_LIMIT_PER_SESSION,
+  TimerError,
   toStepRows,
   toTurnRow,
   turnDetailOf,
 } from "@workspace/agent/store";
 import type {
   AgentStore,
+  FiredTimer,
   SessionEndStatus,
   StepRow,
   StepWrite,
+  Timer,
+  TimerInsert,
+  TimerStore,
   TurnRecord,
   TurnWrite,
 } from "@workspace/agent/store";
@@ -31,6 +36,7 @@ import {
   session_table,
   db,
   step_table,
+  timer_table,
   turn_table,
 } from "@workspace/db";
 import type {
@@ -38,6 +44,7 @@ import type {
   SessionInsertModel,
   SessionModel,
   StepModel,
+  TimerModel,
   TurnModel,
 } from "@workspace/db";
 import {
@@ -49,6 +56,7 @@ import {
   inArray,
   isNotNull,
   lt,
+  lte,
   max,
 } from "drizzle-orm";
 
@@ -132,6 +140,37 @@ function toInboxItem(row: InboxItemModel): InboxItem {
 }
 
 /**
+ * 一条待办项内容里带的系统来源。
+ *
+ * 收件箱行本身已经带着完整回合，来源就在回合的 step 上；用户消息没有来源，
+ * 这里返回空对象，不伪造 `"user"`。
+ * @param turn - 收件箱行里的回合。
+ * @returns 可以展开进 steering step 的来源字段。
+ */
+function systemSourceOf(turn: AgentUserTurn): { source?: StepSource } {
+  const source = turn.content[0]?.source;
+  return isSystemStepSource(source) ? { source } : {};
+}
+
+/**
+ * 把定时器行映射成 wire 类型。
+ *
+ * `payload` 在 schema 里是 JSON 列；写入时来自 `InboxPayload`，读取时在这里
+ * 收窄回会话类型。`dueAt` 存的是时间戳，运行时用毫秒数。
+ */
+function toTimer(row: TimerModel): Timer {
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    toolCallId: row.toolCallId,
+    note: row.note,
+    dueAt: row.dueAt.getTime(),
+    payload: row.payload as InboxPayload,
+    createdAt: row.createdAt.getTime(),
+  };
+}
+
+/**
  * 写一条 turn 行和它的全部 step。
  *
  * 冲突时只更新可变列：`parentId` 和 `createdAt` 保持这条 turn 原来的 branch
@@ -196,7 +235,7 @@ async function deleteInboxRows(
     .returning();
 }
 
-export class SQLiteStore implements AgentStore {
+export class SQLiteStore implements AgentStore, TimerStore {
   async listSessions({
     cursor,
     limit,
@@ -613,10 +652,9 @@ export class SQLiteStore implements AgentStore {
           createdAt,
           completedAt: createdAt,
           status: "done",
-          // 完成通知插进来时仍然是通知，不是用户说的话。
-          ...(row.kind === JOB_NOTICE_INBOX_KIND
-            ? { source: JOB_NOTICE_STEP_SOURCE }
-            : {}),
+          // 系统写进来的行仍然是系统消息，不是用户说的话。来源从行内容里取，
+          // 不按 kind 再列一遍：多一种来源时这里不必改。
+          ...systemSourceOf(turn),
           content: turn.content.flatMap((userStep) => userStep.content),
         };
 
@@ -727,5 +765,128 @@ export class SQLiteStore implements AgentStore {
 
       return header.rowsAffected;
     });
+  }
+
+  async insertTimer({
+    sessionId,
+    toolCallId,
+    note,
+    dueAt,
+    payload,
+  }: TimerInsert): Promise<Timer> {
+    return await db.transaction(async (tx) => {
+      // 先看这个工具调用有没有排过：重试同一步时返回原来那条，不排第二个。
+      const [existing] = await tx
+        .select()
+        .from(timer_table)
+        .where(
+          and(
+            eq(timer_table.sessionId, sessionId),
+            eq(timer_table.toolCallId, toolCallId)
+          )
+        );
+
+      if (existing) {
+        return toTimer(existing);
+      }
+
+      // 上限检查和插入在同一个事务里：两个并发的工具调用不能都看到「还差一个」。
+      const owned = await tx
+        .select({ id: timer_table.id })
+        .from(timer_table)
+        .where(eq(timer_table.sessionId, sessionId));
+
+      if (owned.length >= TIMER_LIMIT_PER_SESSION) {
+        throw new TimerError(
+          `session ${sessionId} already has ${owned.length} pending timers; cancel one before setting another`,
+          "TIMER_LIMIT_REACHED"
+        );
+      }
+
+      const [row] = await tx
+        .insert(timer_table)
+        .values({
+          sessionId,
+          toolCallId,
+          note,
+          dueAt: new Date(dueAt),
+          payload,
+        })
+        .returning();
+
+      if (!row) {
+        throw new Error("timer insert did not produce a row");
+      }
+
+      return toTimer(row);
+    });
+  }
+
+  async listTimers(sessionId: string): Promise<Timer[]> {
+    const rows = await db
+      .select()
+      .from(timer_table)
+      .where(eq(timer_table.sessionId, sessionId))
+      .orderBy(asc(timer_table.dueAt));
+
+    return rows.map(toTimer);
+  }
+
+  async cancelTimer(sessionId: string, id: string): Promise<boolean> {
+    const result = await db
+      .delete(timer_table)
+      .where(and(eq(timer_table.sessionId, sessionId), eq(timer_table.id, id)));
+
+    return result.rowsAffected > 0;
+  }
+
+  /**
+   * 取走全部到点的定时器。
+   *
+   * 写收件箱行和删定时器行在同一个事务里：待办项落地和「这一行不再存在」是
+   * 同一次提交，所以不存在投了两次或者丢了没投。唤醒由扫描循环在提交之后做。
+   */
+  async fireDueTimers(now: number): Promise<FiredTimer[]> {
+    return await db.transaction(async (tx) => {
+      const due = await tx
+        .select()
+        .from(timer_table)
+        .where(lte(timer_table.dueAt, new Date(now)))
+        .orderBy(asc(timer_table.dueAt));
+
+      const fired: FiredTimer[] = [];
+
+      for (const row of due) {
+        const timer = toTimer(row);
+        const dedupeKey = `${TIMER_INBOX_KIND}:${timer.id}`;
+
+        await tx
+          .insert(inbox_item_table)
+          .values({
+            sessionId: timer.sessionId,
+            kind: TIMER_INBOX_KIND,
+            dedupeKey,
+            // 到点不是用户插话：排在这次运行之后，不打断正在跑的回合。
+            deliverAt: "run-boundary",
+            content: composeTimerTurn({ timer, firedAt: now }),
+            payload: timer.payload,
+          })
+          .onConflictDoUpdate({
+            target: [inbox_item_table.sessionId, inbox_item_table.dedupeKey],
+            set: { dedupeKey },
+          });
+
+        await tx.delete(timer_table).where(eq(timer_table.id, timer.id));
+
+        fired.push({ ...timer, firedAt: now });
+      }
+
+      return fired;
+    });
+  }
+
+  async countTimers(): Promise<number> {
+    const rows = await db.select({ id: timer_table.id }).from(timer_table);
+    return rows.length;
   }
 }

@@ -1,4 +1,4 @@
-import { createAgentRunner } from "@workspace/agent";
+import { createAgentRunner, createTimerScheduler } from "@workspace/agent";
 
 import { createJobNoticeAdapter } from "./job-notices";
 import { JOB_REGISTRY } from "./jobs";
@@ -48,3 +48,16 @@ export const agentRunner = createAgentRunner({
 JOB_REGISTRY.setNoticeAdapter(
   createJobNoticeAdapter({ registry: JOB_REGISTRY, runner: agentRunner, store })
 );
+
+/**
+ * 进程里唯一的那一个扫描循环；`serve.ts` 启动和关停它。
+ *
+ * 它只把到点的定时器换成收件箱里的待办项，起跑仍然是运行器的事。所以唤醒
+ * 走的是运行器的公开入口，而不是另开一条起跑路径（ADR 0012）。
+ */
+export const timerScheduler = createTimerScheduler({
+  store,
+  wake: (sessionId) => {
+    agentRunner.wake(sessionId);
+  },
+});

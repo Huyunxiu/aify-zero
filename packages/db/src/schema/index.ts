@@ -251,7 +251,8 @@ export type StepInsertModel = InferInsertModel<typeof step_table>;
 /**
  * 会话的收件箱：已经到达、还没进入模型循环的东西。
  *
- * `kind` 说明这一行是什么：用户消息，或者后台任务结算后的完成通知。
+ * `kind` 说明这一行是什么：用户消息、后台任务结算后的完成通知，或者定时器
+ * 到点后调度器投的待办项。
  * `deliver-at` 是它最早能交进去的边界：`step-boundary` 表示正在跑的回合可以在下
  * 一个模型步领走它，`run-boundary` 表示要等下一次运行。领取成功就删除这一行，
  * 内容随后写进 `turn` / `step`。
@@ -268,9 +269,9 @@ export const inbox_item_table = sqliteTable(
       .unique()
       .$defaultFn(() => randomUUID()),
     sessionId: text("session_id").notNull(),
-    // `job-notice` 与 @workspace/agent-client 的 JOB_NOTICE_INBOX_KIND 对应；
+    // `job-notice` / `timer` 与 @workspace/agent-client 的同名常量对应；
     // 数据库层不依赖协议包，这里保留字面量。
-    kind: text("kind", { enum: ["user-message", "job-notice"] })
+    kind: text("kind", { enum: ["user-message", "job-notice", "timer"] })
       .notNull()
       .default("user-message"),
     dedupeKey: text("dedupe_key").notNull(),
@@ -298,6 +299,48 @@ export const inbox_item_table = sqliteTable(
 
 export type InboxItemModel = InferSelectModel<typeof inbox_item_table>;
 export type InboxItemInsertModel = InferInsertModel<typeof inbox_item_table>;
+
+/**
+ * 会话的定时器：到点之后往收件箱写一条待办项，会话因此可能被唤醒。
+ *
+ * 这张表只存**还没到点**的定时器。到点时调度器在同一个事务里写收件箱行、
+ * 删这一行，所以没有状态列——行在，就是还没触发。
+ *
+ * `payload` 和 `inbox_item.payload` 同形（`model` / `modelEffort` /
+ * `projectId`）：进程重启之后内存里没有模型配置，到点那次运行只能靠这份快照。
+ * `(session_id, tool_call_id)` 唯一，重试同一步不会排两个定时器。
+ */
+export const timer_table = sqliteTable(
+  "timer",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    sessionId: text("session_id").notNull(),
+    /** 设定它的那次工具调用；同一个调用重试时挡住重复的定时器。 */
+    toolCallId: text("tool_call_id").notNull(),
+    /** 模型写下的「为什么要醒」，到点原样带回去。 */
+    note: text("note").notNull(),
+    dueAt: integer("due_at", { mode: "timestamp_ms" }).notNull(),
+    payload: text("payload", { mode: "json" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    uniqueIndex("idx_timer_session_tool_call").on(
+      table.sessionId,
+      table.toolCallId
+    ),
+    // 扫描热路径：按到期时刻取。
+    index("idx_timer_due").on(table.dueAt),
+    // 每会话的上限检查与列表。
+    index("idx_timer_session_due").on(table.sessionId, table.dueAt),
+  ]
+);
+
+export type TimerModel = InferSelectModel<typeof timer_table>;
+export type TimerInsertModel = InferInsertModel<typeof timer_table>;
 
 export const dict_table = sqliteTable("dict", {
   code: text("code").primaryKey(),

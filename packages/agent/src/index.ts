@@ -21,6 +21,7 @@ export type * from "./types";
 export * from "./stream-registry";
 export * from "./session-events";
 export * from "./subagent";
+export * from "./timers";
 export * from "./tool-approval";
 export * from "./runtime";
 export type * from "./storage";

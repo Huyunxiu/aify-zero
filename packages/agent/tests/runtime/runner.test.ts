@@ -349,6 +349,35 @@ describe("AgentRunner", () => {
     expect(report.woken).toStrictEqual([]);
   });
 
+  test("start 留下定时器投的待办项，并唤醒会话", async () => {
+    const store = new FakeStore([session("s1")]);
+    store.claimOnRead = false;
+    store.items.push({
+      seq: 0,
+      id: "timer-item-1",
+      sessionId: "s1",
+      kind: "timer",
+      dedupeKey: "timer:timer-1",
+      deliverAt: "run-boundary",
+      content: userTurn("turn-1"),
+      payload: { model },
+      createdAt: 1,
+    });
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: () => Promise.reject(new Error("must not build")),
+      logger: { warn: () => {} },
+    });
+
+    const report = await runner.start();
+
+    // 完成通知指向的任务活不过进程，定时器不是：它到点了就该被领走。
+    expect(store.items.map((item) => item.id)).toStrictEqual(["timer-item-1"]);
+    expect(report.woken).toStrictEqual(["s1"]);
+
+    await runner.shutdown();
+  });
+
   test("一次运行领走队列里的全部待办项", async () => {
     const store = new FakeStore([session("s1")]);
     const seen: AgentTurn<never>[][] = [];

@@ -12,6 +12,7 @@ import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { ModelGateway } from "../kernel/model-gateway";
 import type { AgentStore } from "../storage";
 import type { SubagentDefinition } from "../subagent/definitions";
+import type { SessionTimers } from "../timers/types";
 import type { AgentToolSet } from "../types";
 
 /**
@@ -30,6 +31,13 @@ export interface ToolEnvironment {
   readonly projectId?: string;
   /** 后台任务注册表；省略时后台执行和任务控制工具都不可用。 */
   readonly jobs?: JobRegistry;
+  /**
+   * 绑到当前会话上的定时器视图；省略时定时器工具不注册。
+   *
+   * 子会话没有自己的视图，但它继承父会话的工具集，工具闭包里绑的是父的那份：
+   * 子会话排的定时器属于父会话，到点在父会话触发（和后台任务同一条规矩）。
+   */
+  readonly timers?: SessionTimers;
   /** 用户插话信号；省略时等待只能靠中止或超时结束。 */
   readonly steering?: SteeringSignal;
   /** 工具读写文件和运行命令的环境。 */

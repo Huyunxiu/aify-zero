@@ -1,8 +1,13 @@
-import type { AgentUserPart, AgentUserTurn } from "@workspace/agent-client";
+import type {
+  AgentUserPart,
+  AgentUserTurn,
+  StepSource,
+} from "@workspace/agent-client";
 import {
   isAgentFilePart,
   isAgentTextPart,
   JOB_NOTICE_STEP_SOURCE,
+  TIMER_STEP_SOURCE,
 } from "@workspace/agent-client";
 import { nanoid } from "nanoid";
 import { useTranslation } from "react-i18next";
@@ -89,21 +94,46 @@ export const UserMessageText = ({ parts }: { parts: AgentUserPart[] }) => {
   );
 };
 
-/** 后台任务完成通知的展示：它不是用户说的话，不画用户气泡。 */
-export const JobNotice = ({ parts }: { parts: AgentUserPart[] }) => {
-  const { t } = useTranslation();
+/** 系统消息的标题键；每加一种来源，这里多一项。 */
+export type SystemNoticeLabelKey = "jobNotice.marker" | "timerNotice.marker";
 
-  return (
-    <div aria-label={t("jobNotice.marker")} className="w-full py-1" role="note">
-      <div className="rounded-xl border bg-muted/40 px-3 py-2">
-        <div className="mb-1 font-medium text-muted-foreground text-xs">
-          {t("jobNotice.marker")}
-        </div>
-        <UserMessageText parts={parts} />
-      </div>
-    </div>
-  );
+/**
+ * 一条不是用户说的消息，按来源取标题。
+ *
+ * 完成通知和定时器到点都走这条：它们都可能是收件箱里的一行，也都不该画成
+ * 用户气泡。
+ * @param source - step 上的来源标记。
+ * @returns i18n 键；用户自己说的话返回 undefined。
+ */
+export const systemNoticeLabelKey = (
+  source: StepSource | undefined
+): SystemNoticeLabelKey | undefined => {
+  if (source === JOB_NOTICE_STEP_SOURCE) {
+    return "jobNotice.marker";
+  }
+  if (source === TIMER_STEP_SOURCE) {
+    return "timerNotice.marker";
+  }
+  return undefined;
 };
+
+/** 系统消息的展示：它不是用户说的话，不画用户气泡。 */
+export const SystemNotice = ({
+  label,
+  parts,
+}: {
+  label: string;
+  parts: AgentUserPart[];
+}) => (
+  <div aria-label={label} className="w-full py-1" role="note">
+    <div className="rounded-xl border bg-muted/40 px-3 py-2">
+      <div className="mb-1 font-medium text-muted-foreground text-xs">
+        {label}
+      </div>
+      <UserMessageText parts={parts} />
+    </div>
+  </div>
+);
 
 type UserMessageProps = {
   turn: AgentUserTurn;
@@ -111,18 +141,20 @@ type UserMessageProps = {
 };
 
 export const UserMessage = ({ turn }: UserMessageProps) => {
+  const { t } = useTranslation();
   const isTouch = useTouchPrimary();
   // A user turn wraps exactly one user step, so flattening gives back the flat
   // part list the rendering below was written against.
   const parts: AgentUserPart[] = turn.content.flatMap((step) => step.content);
   const text = getUserMessageText(parts);
-  const notice = turn.content.some(
-    (step) => step.source === JOB_NOTICE_STEP_SOURCE
-  );
+  const noticeKey = turn.content
+    .map((step) => systemNoticeLabelKey(step.source))
+    .find((key) => key !== undefined);
 
-  // 完成通知不是用户说的话：不画用户气泡，也不给复制与重新生成的动作。
-  if (notice) {
-    return <JobNotice parts={parts} />;
+  // 完成通知和定时器到点都不是用户说的话：不画用户气泡，也不给复制与重新生成
+  // 的动作。
+  if (noticeKey !== undefined) {
+    return <SystemNotice label={t(noticeKey)} parts={parts} />;
   }
 
   return (

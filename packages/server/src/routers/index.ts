@@ -10,6 +10,7 @@ import { runner } from "./runner/runner.router";
 import { session } from "./session/session.router";
 import { setting } from "./settings/settings.router";
 import { skill } from "./skill/skill.router";
+import { timer } from "./timer/timer.router";
 import { workspace } from "./workspace/workspace.router";
 
 export const appRouter = {
@@ -21,6 +22,7 @@ export const appRouter = {
   skill,
   session,
   setting,
+  timer,
   workspace,
   healthCheck: publicProcedure.handler(() => "OK"),
   // Answers with the name of the language it was asked in — a round trip that
