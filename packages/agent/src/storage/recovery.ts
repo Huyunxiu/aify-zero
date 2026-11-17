@@ -2,7 +2,11 @@ import type { AgentTurn } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 import type { TurnRecord } from "./turn-record";
-import type { SessionEndStatus, SessionRecord } from "./types";
+import type {
+  SessionEndStatus,
+  SessionRecord,
+  StreamActivityOption,
+} from "./types";
 
 /** 崩溃收尾时写进 turn.error 的固定文案。 */
 export const INTERRUPTED_TURN_ERROR =
@@ -21,7 +25,8 @@ export type RecoveryStore = {
   clearActiveStream(
     sessionId: string,
     streamId: string,
-    status: SessionEndStatus
+    status: SessionEndStatus,
+    options: StreamActivityOption
   ): Promise<number>;
 };
 
@@ -85,7 +90,11 @@ export async function recoverInterruptedRuns(
         ? "error"
         : statusOfHead(branch, session.activeHeadId);
 
-      await store.clearActiveStream(session.id, streamId, status);
+      // 开机恢复结算的是上次运行留下的中断，不是现在发生了一次活动：
+      // 不能把久未使用的会话顶到列表最前。
+      await store.clearActiveStream(session.id, streamId, status, {
+        recordActivity: false,
+      });
 
       outcomes.push({
         sessionId: session.id,

@@ -21,6 +21,7 @@ import {
   CollapsibleTrigger,
 } from "./collapsible"
 import { DropdownMenuItem } from "./dropdown-menu"
+import { RelativeTime } from "./relative-time"
 import {
   SessionRenameDialog,
   type RenamableSession,
@@ -53,12 +54,8 @@ export function NavSessions() {
         direction: "desc",
       }),
     initialPageParam: undefined as string | undefined,
-    // The server does not return a next cursor, so derive it from the last
-    // item. A short page means the list is exhausted.
-    getNextPageParam: (lastPage) =>
-      lastPage.sessions.length === SESSION_PAGE_SIZE
-        ? lastPage.sessions.at(-1)?.id
-        : undefined,
+    // 游标由服务端给出：排序键是 (updatedAt, id)，这里拼不出来。
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
   });
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -121,10 +118,17 @@ export function NavSessions() {
                       className="cursor-pointer"
                       render={<div />}
                     >
-                      <span className="inline-flex items-center gap-2">
+                      <span className="inline-flex min-w-0 flex-1 items-center gap-2">
                         <SessionStatus status={item.status} />
-                        {item.title || t("sessions.untitled")}
+                        <span className="min-w-0 truncate">
+                          {item.title || t("sessions.untitled")}
+                        </span>
                       </span>
+                      {/* 行尾的槽位：平时显时间，悬停时让给右边出现的「…」。 */}
+                      <RelativeTime
+                        at={item.updatedAt}
+                        className="transition-opacity duration-150 group-hover/item:opacity-0 group-focus-within/item:opacity-0"
+                      />
                     </SidebarMenuButton>
                     <SidebarRowMenu label={t("sessions.actions")}>
                       <DropdownMenuItem

@@ -622,6 +622,21 @@ export function Session({
     })();
   }, [sessionId, status]);
 
+  // 回合出错时也收尾了，但上面那个 effect 只认 `ready`：这里补上 `error`。
+  // 成功和取消都走 `ready`，已经有失效，不再重复刷。
+  const previousStatus = React.useRef(status);
+
+  React.useEffect(() => {
+    const previous = previousStatus.current;
+    previousStatus.current = status;
+
+    const wasRunning = previous === "submitted" || previous === "streaming";
+
+    if (wasRunning && status === "error") {
+      void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+    }
+  }, [status]);
+
   const finalError =
     sessionError ?? turns.findLast((turn) => turn.status === "error")?.error;
 

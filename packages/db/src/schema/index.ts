@@ -126,12 +126,14 @@ export const session_table = sqliteTable(
       .default(sql`(unixepoch() * 1000)`),
   },
   (table) => [
-    index("idx_session_kind_created").on(table.kind, table.createdAt),
+    // 会话列表按最后活动排序，不按创建时刻：列表上写的是「3 分钟前」，
+    // 顺序和读数必须同源，否则顶部是「2 天前」、底部是「3 分钟前」。
+    index("idx_session_kind_updated").on(table.kind, table.updatedAt),
     // 按项目列会话的热路径：先按项目收窄，再按 kind 排除子 agent，最后排序。
-    index("idx_session_project_kind_created").on(
+    index("idx_session_project_kind_updated").on(
       table.projectId,
       table.kind,
-      table.createdAt
+      table.updatedAt
     ),
     uniqueIndex("idx_session_parent_tool_call").on(
       table.parentSessionId,

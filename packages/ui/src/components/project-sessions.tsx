@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc";
 import { DropdownMenuItem } from "./dropdown-menu";
+import { RelativeTime } from "./relative-time";
 import {
   SessionRenameDialog,
   type RenamableSession,
@@ -41,11 +42,8 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
           projectId,
         }),
       initialPageParam: undefined as string | undefined,
-      // 服务端不返回下一个游标，用最后一项自己推；不足一页说明到底了。
-      getNextPageParam: (lastPage) =>
-        lastPage.sessions.length === SESSION_PAGE_SIZE
-          ? lastPage.sessions.at(-1)?.id
-          : undefined,
+      // 游标由服务端给出：排序键是 (updatedAt, id)，这里拼不出来。
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     });
 
   const sentinelRef = useRef<HTMLLIElement>(null);
@@ -75,9 +73,14 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
               render={<button type="button" />}
             >
               <SessionStatus status={session.status} />
-              <span className="truncate">
+              <span className="min-w-0 flex-1 truncate">
                 {session.title || t("sessions.untitled")}
               </span>
+              {/* 行尾的槽位：平时显时间，悬停时让给右边出现的「…」。 */}
+              <RelativeTime
+                at={session.updatedAt}
+                className="transition-opacity duration-150 group-hover/item:opacity-0 group-focus-within/item:opacity-0"
+              />
             </SidebarMenuSubButton>
             <SidebarRowMenu
               label={t("sessions.actions")}

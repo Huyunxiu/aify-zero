@@ -5,7 +5,11 @@ import z from "zod";
 
 import { ApiError } from "../../errors";
 import { publicProcedure } from "../../index";
-import { SQLiteStore } from "../../storage/sqlite-store";
+import { encodeSessionCursor } from "../../storage/session-cursor";
+import {
+  DEFAULT_SESSION_PAGE_SIZE,
+  SQLiteStore,
+} from "../../storage/sqlite-store";
 import { getPrimaryProjectDir } from "../project/project.service";
 import { listSessionTurnsSchema } from "./session.schema";
 
@@ -43,15 +47,23 @@ export const listSessions = publicProcedure
   )
   .handler(async ({ input }) => {
     const { cursor, limit, direction, projectId } = input;
+    const pageSize = limit ?? DEFAULT_SESSION_PAGE_SIZE;
     const store = new SQLiteStore();
     const sessions = await store.listSessions({
       cursor,
-      limit,
+      limit: pageSize,
       direction,
       kind: "main",
       projectId,
     });
-    return { sessions };
+    // 游标由服务端给出，不由客户端从最后一行反推：排序键是 (updatedAt, id)，
+    // 客户端只拿到行、拼不出这个键。不足一页说明到底了，就不发游标。
+    const last = sessions.at(-1);
+    const nextCursor =
+      sessions.length < pageSize || last === undefined
+        ? undefined
+        : encodeSessionCursor(last);
+    return { sessions, nextCursor };
   });
 
 export const getSession = publicProcedure

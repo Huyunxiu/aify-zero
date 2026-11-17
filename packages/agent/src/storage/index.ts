@@ -12,6 +12,7 @@ import type {
   SessionRecord,
   SessionWrite,
   StepWrite,
+  StreamActivityOption,
   TurnRecord,
   TurnWrite,
 } from "./types";
@@ -24,6 +25,7 @@ export type {
   SessionWrite,
   StepRow,
   StepWrite,
+  StreamActivityOption,
   TurnRecord,
   TurnRow,
   TurnStatus,
@@ -108,7 +110,11 @@ export interface AgentStore {
    * `activeStreamId != null` exactly when the status is a live one — which is
    * why neither is ever written without the other.
    */
-  setActiveStream(sessionId: string, streamId: string): Promise<number>;
+  setActiveStream(
+    sessionId: string,
+    streamId: string,
+    options: StreamActivityOption
+  ): Promise<number>;
 
   /**
    * Clears the marker only while it still names this `streamId`, and settles
@@ -119,7 +125,8 @@ export interface AgentStore {
   clearActiveStream(
     sessionId: string,
     streamId: string,
-    status: SessionEndStatus
+    status: SessionEndStatus,
+    options: StreamActivityOption
   ): Promise<number>;
 
   /**
