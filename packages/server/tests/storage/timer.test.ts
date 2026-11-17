@@ -178,7 +178,7 @@ describe("timer storage", () => {
     await store.insertInboxItem({
       sessionId: session,
       kind: "timer",
-      dedupeKey: `timer:${timer.id}:${timer.dueAt}`,
+      dedupeKey: `timer:${timer.id}`,
       deliverAt: "run-boundary",
       content: userTurn("turn-dup", "timer fired"),
       payload,
@@ -282,6 +282,27 @@ describe("schedule storage", () => {
     expect(part).toMatchObject({
       text: expect.stringContaining("write the report"),
     });
+  });
+
+  test("folds a second firing into the notice that is still queued", async () => {
+    // 会话闲置（或正在跑）时，前一条通知还没被领走。两次触发不能各落一行：一次
+    // 运行会把它们一起领走，模型就收到两条说同一件事的通知。
+    const session = "session-schedule-fold";
+    const timer = await set({
+      sessionId: session,
+      dueAt: NOW - 1,
+      recurrence: DAILY,
+    });
+
+    await store.fireDueTimers(NOW);
+    await expect(store.listInboxItems(session)).resolves.toHaveLength(1);
+
+    const [advanced] = await store.listTimers(session);
+    await store.fireDueTimers((advanced?.dueAt ?? 0) + 60_000);
+
+    const items = await store.listInboxItems(session);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.dedupeKey).toBe(`timer:${timer.id}`);
   });
 
   test("drops a schedule whose rule cannot advance instead of jamming the scan", async () => {

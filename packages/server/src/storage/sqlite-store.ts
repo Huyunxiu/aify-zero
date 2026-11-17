@@ -894,9 +894,11 @@ export class SQLiteStore implements AgentStore, TimerStore {
         // 下一次在写正文之前算：正文要说「下一次是什么时候」。用 `now` 而不是
         // `dueAt` 往后找，停机期间错过的多次就只投这一次。
         const nextDueAt = this.#nextDueAfter(timer, now);
-        // 去重键带到期时刻：日程的同一个 id 会触发很多次，只按 id 去重时，上一次
-        // 那条还没被领走就会让这一次被冲突分支吞掉。
-        const dedupeKey = `${TIMER_INBOX_KIND}:${timer.id}:${timer.dueAt}`;
+        // 一条日程的两次触发之间，前一条还没被领走时不该各落一行：一次运行会把
+        // 它们一起领走，模型就收到 N 条说同一件事的通知。所以键只认 id，冲突时
+        // 把正文换成这一次的——待办项仍然只有一条，说的仍然是最新的那一次。
+        const dedupeKey = `${TIMER_INBOX_KIND}:${timer.id}`;
+        const content = composeTimerTurn({ timer, firedAt: now, nextDueAt });
 
         await tx
           .insert(inbox_item_table)
@@ -906,12 +908,12 @@ export class SQLiteStore implements AgentStore, TimerStore {
             dedupeKey,
             // 到点不是用户插话：排在这次运行之后，不打断正在跑的回合。
             deliverAt: "run-boundary",
-            content: composeTimerTurn({ timer, firedAt: now, nextDueAt }),
+            content,
             payload: timer.payload,
           })
           .onConflictDoUpdate({
             target: [inbox_item_table.sessionId, inbox_item_table.dedupeKey],
-            set: { dedupeKey },
+            set: { dedupeKey, content },
           });
 
         if (nextDueAt === null) {
