@@ -25,6 +25,8 @@
 - **packages/db ← packages/server**：server 启动时应用迁移，失败就不提供服务；「迁移」
   「迁移历史」只按 `packages/db/GLOSSARY.md` 的说法用，「基线」在数据库语境下也按它、
   在改动对比语境下按 `packages/ui/GLOSSARY.md` 的说法用。
+- **packages/server → packages/agent**：「时区」只在 `packages/server/GLOSSARY.md` 里定义；
+  日程的规则带一份副本，写进去之后不再跟着设置走。
 - **packages/agent → packages/sandbox**：工具只认沙箱，不认具体环境；沙箱缺少某项能力时，
   对应的工具不注册，而不是注册了再报错。
 - **packages/sandbox ↔ packages/server**：server 决定一个会话用哪个适配器、什么时候复用；
