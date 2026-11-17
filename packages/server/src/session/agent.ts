@@ -97,6 +97,8 @@ export async function buildSessionAgent({
     compactionOverrides: settings.compaction,
     modelContextWindows: modelContextWindows(settings),
     jobs: jobs ?? JOB_REGISTRY,
+    // 定时器和收件箱共用同一个库：会话排的定时器就落在它自己的存储上。
+    timers: store,
     steering,
     sandbox,
     // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。

@@ -236,6 +236,9 @@ export async function startStack(
     // 显式给出页面的源：server 就不必在启动时探测 Vite 在不在，登录链接也不会
     // 因为「探测超时」而指回 API 自己。
     AIFY_WEB_ORIGIN: webUrl,
+    // 定时器用例要在一分钟内看到一次到点：扫描间隔降到 1 秒，而定时器本身的
+    // 60 秒下限不动——那是契约的一部分，用例就该真的等满一分钟。
+    AIFY_TIMER_SCAN_MS: "1000",
   };
 
   const fake = await startFakeProvider({

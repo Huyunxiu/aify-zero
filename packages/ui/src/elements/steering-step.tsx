@@ -1,10 +1,10 @@
 import type { AgentSteeringStep } from "@workspace/agent-client";
-import { JOB_NOTICE_STEP_SOURCE } from "@workspace/agent-client";
 import { useTranslation } from "react-i18next";
 
 import { Bubble, BubbleContent } from "../components/bubble";
 import {
-  JobNotice,
+  systemNoticeLabelKey,
+  SystemNotice,
   UserMessageAttachments,
   UserMessageText,
 } from "./user-message";
@@ -18,10 +18,11 @@ import {
  */
 export const SteeringStep = ({ step }: { step: AgentSteeringStep }) => {
   const { t } = useTranslation();
+  const noticeKey = systemNoticeLabelKey(step.source);
 
   // 完成通知可以插进正在跑的回合，但它不是用户说的：不画引导气泡。
-  if (step.source === JOB_NOTICE_STEP_SOURCE) {
-    return <JobNotice parts={step.content} />;
+  if (noticeKey !== undefined) {
+    return <SystemNotice label={t(noticeKey)} parts={step.content} />;
   }
 
   return (

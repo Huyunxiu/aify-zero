@@ -14,6 +14,7 @@ import {
   QuestionnaireExtension,
   ShellToolsExtension,
   SubagentExtension,
+  TimersToolsExtension,
   TitleExtension,
   ToolCatalogExtension,
   WebToolsExtension,
@@ -28,6 +29,8 @@ import type { StreamEventRegistry } from "./stream-registry";
 import { STREAM_REGISTRY } from "./stream-registry";
 import { appendSubagentPrompt } from "./subagent/definitions";
 import { createSubagentFactory } from "./subagent/factory";
+import { bindSessionTimers } from "./timers/session-timers";
+import type { TimerStore } from "./timers/types";
 import type { ToolApprovalPattern } from "./tool-approval";
 import { catalogEntries } from "./tool-catalog/catalog";
 import type { JobToolOptions } from "./tools/jobs";
@@ -90,6 +93,10 @@ export interface SessionAgentOptions {
   jobs?: JobRegistry;
   /** 任务工具的等待上限；省略时用工具里的默认值。 */
   jobTools?: JobToolOptions;
+  /**
+   * 定时器的存储面。省略时定时器工具不注册：这个会话排不了定时器。
+   */
+  timers?: TimerStore;
   /** 用户插话信号；等待任务的工具用它提前结束阻塞。 */
   steering?: SteeringSignal;
   /**
@@ -120,6 +127,25 @@ export interface SessionAgentOptions {
 export async function createSessionAgent(
   options: SessionAgentOptions
 ): Promise<Agent> {
+  // 定时器的视图在这里绑死：会话 id 和起跑配置由装配处决定，工具拿不到它们，
+  // 也就排不出属于别的会话、用别的模型的定时器。到期那次运行用的是**设定时器
+  // 时**的模型——进程重启之后内存里没有别的来源（ADR 0016）。
+  const timers =
+    options.timers === undefined
+      ? undefined
+      : bindSessionTimers(options.timers, {
+          sessionId: options.sessionId,
+          payload: {
+            model: options.model.ref,
+            ...(options.model.effort === undefined
+              ? {}
+              : { modelEffort: options.model.effort }),
+            ...(options.projectId === undefined
+              ? {}
+              : { projectId: options.projectId }),
+          },
+        });
+
   const context = new AgentContext({
     sessionId: options.sessionId,
     projectDirs: options.projectDirs,
@@ -130,6 +156,7 @@ export async function createSessionAgent(
     compactionOverrides: options.compactionOverrides,
     modelContextWindows: options.modelContextWindows,
     jobs: options.jobs,
+    timers,
     steering: options.steering,
     sandbox: options.sandbox,
   });
@@ -176,6 +203,9 @@ export async function createSessionAgent(
           ? {}
           : { toolOptions: options.jobTools }),
       })
+    );
+    await agent.registerExtension(
+      new TimersToolsExtension({ id: "timers-tools" })
     );
     await agent.registerExtension(new QuestionnaireExtension());
     await agent.registerExtension(new SubagentExtension());

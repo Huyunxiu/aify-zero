@@ -32,7 +32,7 @@ import { createAuthStore } from "./auth-store";
 import { issueLoginLink, resolveLoginWebOrigin } from "./login-link";
 import { setMcpOAuthRedirectUrl } from "./mcp/oauth";
 import { shutdownMcp } from "./mcp/registry";
-import { agentRunner } from "./runtime";
+import { agentRunner, timerScheduler } from "./runtime";
 import { attachWebSocket } from "./ws";
 
 /** 监听地址：显式参数优先，其次环境变量，最后回落到 loopback + 18086。 */
@@ -130,6 +130,10 @@ export async function startServer(
     logger.warn("[startup] agent runner recovery failed", failure.error);
   }
 
+  // 运行器起来之后再开扫描：补发的待办项要有运行器才叫得醒。启动那次扫描
+  // 会立刻把停机期间到点的定时器投出去，不等第一个周期。
+  timerScheduler.start();
+
   // 浏览器登录态和访问令牌共用同一套来源白名单；放进 `createApp` 和
   // `attachWebSocket`，HTTP 与升级两条路的判断才一致。
   const authStore = createAuthStore();
@@ -183,7 +187,10 @@ export async function startServer(
   const close = async (): Promise<void> => {
     const http = server as unknown as Server;
 
-    // 先停止取件：正在跑的运行让它跑完，队列留给下一次启动。
+    // 先停扫描再停取件：扫描停下来就不会再往收件箱里写新的待办项，正在跑的
+    // 那次让它跑完。半路投出去的项留着，下一次启动会照常领取。
+    await timerScheduler.stop();
+    // 再停止取件：正在跑的运行让它跑完，队列留给下一次启动。
     await agentRunner.shutdown();
 
     // WebSocket 要先退干净：它自己会等连接收起，而 closeAllConnections() 是硬断。

@@ -1,4 +1,4 @@
-import { JOB_NOTICE_STEP_SOURCE } from "@workspace/agent-client";
+import { isSystemStepSource } from "@workspace/agent-client";
 import type { AgentTurn } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 import type { StepResultPerformance } from "ai";
@@ -77,13 +77,13 @@ export class TitleExtension extends Extension {
       return;
     }
 
-    // 完成通知不是用户说的话，不能拿来给会话起标题。
+    // 系统写进来的步骤不是用户说的话，不能拿来给会话起标题。
     const userTurn = deps
       .turns()
       .findLast(
         (turn) =>
           turn.type === "user" &&
-          !turn.content.some((step) => step.source === JOB_NOTICE_STEP_SOURCE)
+          !turn.content.some((step) => isSystemStepSource(step.source))
       );
     if (!userTurn) {
       return;

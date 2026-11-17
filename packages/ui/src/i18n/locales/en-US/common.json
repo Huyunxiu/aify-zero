@@ -296,6 +296,7 @@
     "title": "{{count}} pending",
     "steering": "Steering",
     "notice": "Job finished",
+    "timer": "Timer",
     "queued": "Waiting",
     "sendNow": "Send now",
     "remove": "Remove",
@@ -304,6 +305,9 @@
   },
   "jobNotice": {
     "marker": "Background job finished"
+  },
+  "timerNotice": {
+    "marker": "Timer fired"
   },
   "steering": {
     "marker": "Steering message"

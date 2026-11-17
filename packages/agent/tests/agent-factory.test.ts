@@ -12,6 +12,7 @@ import { Extension } from "../src/extensions/types.js";
 import type { ToolCallHookEvent } from "../src/hooks-manager.js";
 import type { CompactionStrategy } from "../src/kernel/compaction-strategy.js";
 import type { AgentStore } from "../src/storage/index.js";
+import type { TimerStore } from "../src/timers/types.js";
 import { evaluateToolApproval } from "../src/tool-approval.js";
 import { catalogEntries } from "../src/tool-catalog/catalog.js";
 import { testModel, testResolveModel } from "./helpers/model-target.js";
@@ -38,6 +39,15 @@ const markerTool = (): Tool =>
     inputSchema: z.object({}),
     execute: () => ({ ok: true }),
   });
+
+/** 一个没有内容的定时器存储面：这里只关心工具是否注册。 */
+const idleTimerStore = (): TimerStore => ({
+  insertTimer: () => Promise.reject(new Error("not used")),
+  listTimers: () => Promise.resolve([]),
+  cancelTimer: () => Promise.resolve(false),
+  fireDueTimers: () => Promise.resolve([]),
+  countTimers: () => Promise.resolve(0),
+});
 
 /** 一个只注册工具的宿主扩展。 */
 class HostExtension extends Extension {
@@ -102,6 +112,17 @@ describe(createSessionAgent, () => {
       decision: "ask",
     });
     await expect(decide(agent, "read-file")).resolves.toBeUndefined();
+  });
+
+  test("registers the timer tools only when the session has timers", async () => {
+    const without = await makeAgent();
+    expect(Object.keys(without.tools)).not.toContain("timer-set");
+
+    const withTimers = await makeAgent({ timers: idleTimerStore() });
+
+    expect(Object.keys(withTimers.tools)).toStrictEqual(
+      expect.arrayContaining(["timer-set", "timer-list", "timer-cancel"])
+    );
   });
 
   test("asks the host function before the default rule", async () => {

@@ -863,8 +863,27 @@ export type StepMetadata = Record<string, any> & {
 /** 完成通知专用的步骤来源。 */
 export const JOB_NOTICE_STEP_SOURCE = "job-notice";
 
+/** 定时器到点专用的步骤来源。 */
+export const TIMER_STEP_SOURCE = "timer";
+
 /** 一条用户侧步骤的来源。 */
-export type StepSource = "user" | typeof JOB_NOTICE_STEP_SOURCE;
+export type StepSource =
+  | "user"
+  | typeof JOB_NOTICE_STEP_SOURCE
+  | typeof TIMER_STEP_SOURCE;
+
+/**
+ * 这一步是不是系统写进来的，而不是用户说的话。
+ *
+ * 凡是「要不要把这一步当成用户输入」的判断都走这里：会话标题的取样、引导步骤
+ * 的来源、界面的气泡。每加一种来源只改这个函数，不要在调用点各自列举。
+ * @param source - step 上的来源标记。
+ * @returns 系统来源为 true；用户说的话和没有标记的都是 false。
+ */
+export const isSystemStepSource = (
+  source?: StepSource
+): source is Exclude<StepSource, "user"> =>
+  source === JOB_NOTICE_STEP_SOURCE || source === TIMER_STEP_SOURCE;
 
 export type AgentStepBase = AgentStepStatus & {
   /**

@@ -296,6 +296,7 @@
     "title": "{{count}} 条待办",
     "steering": "引导中",
     "notice": "任务完成",
+    "timer": "定时器",
     "queued": "等待中",
     "sendNow": "立即发送",
     "remove": "移除",
@@ -304,6 +305,9 @@
   },
   "jobNotice": {
     "marker": "后台任务完成"
+  },
+  "timerNotice": {
+    "marker": "定时器到点"
   },
   "steering": {
     "marker": "引导消息"
