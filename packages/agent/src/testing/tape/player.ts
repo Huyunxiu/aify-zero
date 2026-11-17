@@ -56,6 +56,13 @@ export type TapePlayerOptions = {
   readonly keepaliveMs?: number;
   /** 一次挂起的上限；超了就结束响应。 */
   readonly holdLimitMs?: number;
+  /**
+   * 怎么从带里挑下一条。
+   *
+   * `order`（默认）按时间轴顺序取，适合一次会话的原样回放。`stream` 按请求是不是
+   * 流式取——真实应用会并发发一条非流式的标题请求，顺序会漂。
+   */
+  readonly match?: "order" | "stream";
 };
 
 /** 播放器的当前状态；给控制面与测试看。 */
@@ -83,6 +90,8 @@ export class TapePlayer {
   readonly #onHold: ((frame: number) => void) | undefined;
   readonly #keepaliveMs: number;
   readonly #holdLimitMs: number;
+  readonly #match: "order" | "stream";
+  readonly #used = new Set<number>();
   #cursor = 0;
   #frames = 0;
   #busy = false;
@@ -94,7 +103,7 @@ export class TapePlayer {
     clock: Clock,
     options: Pick<
       TapePlayerOptions,
-      "holdAt" | "onHold" | "keepaliveMs" | "holdLimitMs"
+      "holdAt" | "onHold" | "keepaliveMs" | "holdLimitMs" | "match"
     >
   ) {
     this.#path = path;
@@ -104,6 +113,7 @@ export class TapePlayer {
     this.#onHold = options.onHold;
     this.#keepaliveMs = options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS;
     this.#holdLimitMs = options.holdLimitMs ?? DEFAULT_HOLD_LIMIT_MS;
+    this.#match = options.match ?? "order";
   }
 
   static async load(options: TapePlayerOptions): Promise<TapePlayer> {
@@ -125,6 +135,7 @@ export class TapePlayer {
       ...(options.holdLimitMs === undefined
         ? {}
         : { holdLimitMs: options.holdLimitMs }),
+      ...(options.match === undefined ? {} : { match: options.match }),
     });
   }
 
@@ -233,11 +244,38 @@ export class TapePlayer {
     }
   }
 
+  /** 取下一条；`stream` 只在 `match: "stream"` 时有意义。 */
+  #take(stream: boolean): ScheduledEntry | undefined {
+    if (this.#match === "order") {
+      const entry = this.#entries[this.#cursor];
+
+      if (entry !== undefined) {
+        this.#cursor += 1;
+      }
+
+      return entry;
+    }
+
+    const index = this.#entries.findIndex(
+      (candidate, position) =>
+        !this.#used.has(position) && candidate.entry.request.stream === stream
+    );
+
+    if (index === -1) {
+      return undefined;
+    }
+
+    this.#used.add(index);
+    this.#cursor += 1;
+
+    return this.#entries[index];
+  }
+
   /**
    * 放一条。录制带用完时回一条供应商错误，和旧的 `replay` 动作保持一致。
    */
-  async play(response: ServerResponse): Promise<void> {
-    const scheduled = this.#entries[this.#cursor];
+  async play(response: ServerResponse, stream = true): Promise<void> {
+    const scheduled = this.#take(stream);
 
     if (scheduled === undefined) {
       response.writeHead(500, { "content-type": "application/json" });
@@ -251,7 +289,6 @@ export class TapePlayer {
       return;
     }
 
-    this.#cursor += 1;
     this.#busy = true;
     response.writeHead(
       scheduled.entry.response.status,

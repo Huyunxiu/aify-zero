@@ -65,6 +65,8 @@ export type FakeProviderPlaybackOptions = {
   readonly holdLimitMs?: number;
   /** 接管之后把请求转给谁；不给就回 501。 */
   readonly takeoverUrl?: string;
+  /** 怎么从带里挑下一条：按顺序，还是按流式与否。 */
+  readonly match?: "order" | "stream";
 };
 
 /** 播放器的状态；没开播放时 `FakeProvider.tape` 是 undefined。 */
@@ -139,6 +141,7 @@ export async function startFakeProvider(
       ...(play.holdLimitMs === undefined
         ? {}
         : { holdLimitMs: play.holdLimitMs }),
+      ...(play.match === undefined ? {} : { match: play.match }),
       onHold: (frame) => {
         options.log?.(`held at frame ${String(frame)}`);
       },
@@ -382,7 +385,7 @@ export async function startFakeProvider(
         return;
       }
 
-      await player.play(response);
+      await player.play(response, seen.stream);
       return;
     }
 

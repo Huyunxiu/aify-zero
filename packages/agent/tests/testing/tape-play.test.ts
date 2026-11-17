@@ -430,6 +430,28 @@ describe("tape player", () => {
     }
   });
 
+  test("matches entries by stream when asked", async () => {
+    const out = tempTape();
+    await writeTape(out, [
+      { frames: [{ at: 0, text: "data: 流式\n\n" }] },
+      {
+        stream: false,
+        frames: [{ at: 0, text: '{"object":"chat.completion"}' }],
+      },
+    ]);
+
+    const provider = await startProvider({
+      play: { path: out, match: "stream" },
+    });
+
+    // 真实应用会并发发一条非流式的标题请求，顺序会漂；按流式与否分流才稳。
+    const title = await post(provider.baseURL, { stream: false });
+    const chat = await post(provider.baseURL, { stream: true });
+
+    expect(title.text).toBe('{"object":"chat.completion"}');
+    expect(chat.text).toBe("data: 流式\n\n");
+  });
+
   test("serves the playback panel", async () => {
     const out = tempTape();
     await writeTape(out, [{ frames: [{ at: 0, text: "data: a\n\n" }] }]);
