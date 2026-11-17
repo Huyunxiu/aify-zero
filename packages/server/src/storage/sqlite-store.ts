@@ -27,6 +27,7 @@ import type {
   SessionEndStatus,
   StepRow,
   StepWrite,
+  StreamActivityOption,
   Timer,
   TimerCounts,
   TimerInsert,
@@ -62,7 +63,13 @@ import {
   lt,
   lte,
   max,
+  or,
 } from "drizzle-orm";
+
+import { parseSessionCursor } from "./session-cursor";
+
+/** 会话列表一页的默认条数。翻页的路由和 store 用同一个数。 */
+export const DEFAULT_SESSION_PAGE_SIZE = 20;
 
 /** drizzle 事务回调拿到的句柄；批量写 step 的辅助函数需要它。 */
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -256,13 +263,28 @@ export class SQLiteStore implements AgentStore, TimerStore {
     projectId?: string;
   }): Promise<SessionModel[]> {
     const isDesc = direction === "desc";
+    const keyset =
+      cursor === undefined ? undefined : parseSessionCursor(cursor);
     // kind 是常驻条件，游标是附加的：少了 kind，子 agent 的行会挤进分页结果，
-    // 调用方按"返回条数 == pageSize"推下一页时跟着一起错。
+    // 翻页时把子 agent 也一起带出来。
     const conditions = [
       eq(session_table.kind, kind),
       ...(projectId ? [eq(session_table.projectId, projectId)] : []),
-      ...(cursor
-        ? [isDesc ? lt(session_table.id, cursor) : gt(session_table.id, cursor)]
+      ...(keyset
+        ? [
+            // 两列的 keyset：先比 updatedAt，相等的那一批再按 id 继续往下切。
+            or(
+              isDesc
+                ? lt(session_table.updatedAt, keyset.updatedAt)
+                : gt(session_table.updatedAt, keyset.updatedAt),
+              and(
+                eq(session_table.updatedAt, keyset.updatedAt),
+                isDesc
+                  ? lt(session_table.id, keyset.id)
+                  : gt(session_table.id, keyset.id)
+              )
+            ),
+          ]
         : []),
     ];
 
@@ -271,9 +293,10 @@ export class SQLiteStore implements AgentStore, TimerStore {
       .from(session_table)
       .where(and(...conditions))
       .orderBy(
-        isDesc ? desc(session_table.createdAt) : asc(session_table.createdAt)
+        isDesc ? desc(session_table.updatedAt) : asc(session_table.updatedAt),
+        isDesc ? desc(session_table.id) : asc(session_table.id)
       )
-      .limit(limit ?? 20);
+      .limit(limit ?? DEFAULT_SESSION_PAGE_SIZE);
 
     return sessions;
   }
@@ -501,10 +524,18 @@ export class SQLiteStore implements AgentStore, TimerStore {
     return turns.length;
   }
 
-  async setActiveStream(sessionId: string, streamId: string): Promise<number> {
+  async setActiveStream(
+    sessionId: string,
+    streamId: string,
+    { recordActivity }: StreamActivityOption
+  ): Promise<number> {
     const result = await db
       .update(session_table)
-      .set({ activeStreamId: streamId, status: "running" })
+      .set({
+        activeStreamId: streamId,
+        status: "running",
+        ...(recordActivity ? { updatedAt: new Date() } : {}),
+      })
       .where(eq(session_table.id, sessionId));
     return result.rowsAffected;
   }
@@ -512,13 +543,18 @@ export class SQLiteStore implements AgentStore, TimerStore {
   async clearActiveStream(
     sessionId: string,
     streamId: string,
-    status: SessionEndStatus
+    status: SessionEndStatus,
+    { recordActivity }: StreamActivityOption
   ): Promise<number> {
     // Compare-and-clear: a stream that has already been superseded leaves the
     // newer stream's marker alone.
     const result = await db
       .update(session_table)
-      .set({ activeStreamId: null, status })
+      .set({
+        activeStreamId: null,
+        status,
+        ...(recordActivity ? { updatedAt: new Date() } : {}),
+      })
       .where(
         and(
           eq(session_table.id, sessionId),

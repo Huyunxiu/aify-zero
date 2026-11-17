@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "801a03b0-324c-41fb-a3d7-3d0934e6c5d7",
+  "id": "e40363ed-d796-448d-9237-9cf773513db1",
   "prevId": "2ac02946-268c-4924-9945-a5e590d9d33e",
   "tables": {
     "agent": {
@@ -664,20 +664,20 @@
         }
       },
       "indexes": {
-        "idx_session_kind_created": {
-          "name": "idx_session_kind_created",
+        "idx_session_kind_updated": {
+          "name": "idx_session_kind_updated",
           "columns": [
             "kind",
-            "created_at"
+            "updated_at"
           ],
           "isUnique": false
         },
-        "idx_session_project_kind_created": {
-          "name": "idx_session_project_kind_created",
+        "idx_session_project_kind_updated": {
+          "name": "idx_session_project_kind_updated",
           "columns": [
             "project_id",
             "kind",
-            "created_at"
+            "updated_at"
           ],
           "isUnique": false
         },
@@ -853,13 +853,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "recurrence": {
-          "name": "recurrence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         },
         "created_at": {

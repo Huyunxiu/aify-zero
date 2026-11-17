@@ -14,6 +14,16 @@ export type SessionStatus =
 
 export type SessionEndStatus = Exclude<SessionStatus, "running">;
 
+/**
+ * 这次流标记的写入算不算会话的「最后活动」。
+ *
+ * 只有回合的开始和结束算：侧边栏按最后活动排序，并把它显示成「3 分钟前」。
+ * 开机恢复、清理残留标记、压缩、子会话的收尾都不属于回合，必须传 `false`——
+ * 否则一次启动就能把久未使用的会话顶到列表最前。做成必填而不是默认值，是为了
+ * 让每个调用点当场表态。
+ */
+export type StreamActivityOption = { recordActivity: boolean };
+
 /** 一条会话行；字段与持久化层的列一一对应，但不依赖数据库包。 */
 export type SessionRecord = {
   id: string;

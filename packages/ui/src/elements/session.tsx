@@ -622,6 +622,40 @@ export function Session({
     })();
   }, [sessionId, status]);
 
+  // 一次运行落定（成功、取消、出错都算）之后，记录里多了回合，侧栏的最后活动与
+  // 未读标记也变了。除上面那个 effect 刷的侧栏，这里补两件事：
+  //
+  // - 转录的种子要重取。`SessionContainer` 只在挂载时把这份缓存交给 store，之后
+  //   屏幕上的副本由 store 自己维护；种子不跟着记录走，切回这个会话时新建的
+  //   store 就从一个空列表开始。服务端先把回合写进记录、再结束这次运行，所以
+  //   这一刻取到的已经是新的。运行开始那一刻不失效：那时取到的是带着未落定回
+  //   合的快照，把它当种子比没有种子更糟。
+  // - 回合出错时也收尾了，但上面那个 effect 只认 `ready`：这里补上 `error`。
+  //   成功和取消都走 `ready`，侧栏已经有失效，不再重复刷。
+  const previousStatus = React.useRef(status);
+
+  React.useEffect(() => {
+    const previous = previousStatus.current;
+    previousStatus.current = status;
+
+    const wasRunning = previous === "submitted" || previous === "streaming";
+
+    // 只认收尾：`submitted → streaming` 是运行开始，不是落定。
+    if (!wasRunning || status === "streaming") {
+      return;
+    }
+
+    if (sessionId) {
+      void queryClient.invalidateQueries({
+        queryKey: ["listSessionTurns", sessionId],
+      });
+    }
+
+    if (status === "error") {
+      void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+    }
+  }, [sessionId, status]);
+
   const finalError =
     sessionError ?? turns.findLast((turn) => turn.status === "error")?.error;
 

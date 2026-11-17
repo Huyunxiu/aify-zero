@@ -7,6 +7,7 @@ import { InboxItemNotFoundError } from "@workspace/agent/store";
 import type { AgentStore, TurnWrite } from "@workspace/agent/store";
 import { beforeAll, describe, expect, test } from "vitest";
 
+import { encodeSessionCursor } from "../../src/storage/session-cursor.js";
 import {
   assistantStep,
   assistantTurn,
@@ -342,15 +343,158 @@ describe("SQLiteStore", () => {
 
       await opened.promise;
 
-      const write = store.setActiveStream("session-busy", "stream-1").then(
-        (rowsAffected) => ({ ok: true as const, rowsAffected }),
-        (error: unknown) => ({ ok: false as const, error })
-      );
+      const write = store
+        .setActiveStream("session-busy", "stream-1", { recordActivity: true })
+        .then(
+          (rowsAffected) => ({ ok: true as const, rowsAffected }),
+          (error: unknown) => ({ ok: false as const, error })
+        );
 
       finish.resolve();
       await transaction;
 
       await expect(write).resolves.toStrictEqual({ ok: true, rowsAffected: 1 });
+    });
+  });
+
+  describe("listSessions", () => {
+    // 每个用例用自己的 projectId 隔离：整份文件共用一个临时库，前面的用例
+    // 已经建过会话。
+    /** `saveSession` 只给 `updatedAt` 默认值，改不了它，所以建完再写一遍。 */
+    async function seed(
+      projectId: string,
+      rows: { id: string; updatedAt: number }[]
+    ) {
+      const { db, session_table } = await import("@workspace/db");
+      const { eq } = await import("drizzle-orm");
+
+      for (const row of rows) {
+        await store.saveSession({
+          id: row.id,
+          title: row.id,
+          metadata: {},
+          projectId,
+        });
+        await db
+          .update(session_table)
+          .set({ updatedAt: new Date(row.updatedAt) })
+          .where(eq(session_table.id, row.id));
+      }
+    }
+
+    test("按最后活动排序，不按 id 或创建顺序", async () => {
+      // id 的大小顺序与最后活动的顺序相反：排序看的是 `updatedAt`。
+      await seed("project-order", [
+        { id: "s-a", updatedAt: 3000 },
+        { id: "s-b", updatedAt: 1000 },
+        { id: "s-c", updatedAt: 2000 },
+      ]);
+
+      const sessions = await store.listSessions({
+        kind: "main",
+        direction: "desc",
+        projectId: "project-order",
+      });
+
+      expect(sessions.map((session) => session.id)).toStrictEqual([
+        "s-a",
+        "s-c",
+        "s-b",
+      ]);
+    });
+
+    test("游标翻页跨过重复的 updatedAt 也不丢行、不重复", async () => {
+      // `s-tie-a` 与 `s-tie-b` 的最后活动落在同一毫秒：单靠 `updatedAt` 翻页
+      // 会在这一对上丢行或重行，所以游标带上了 id 做决胜列。
+      await seed("project-page", [
+        { id: "s-tie-a", updatedAt: 5000 },
+        { id: "s-tie-b", updatedAt: 5000 },
+        { id: "s-oldest", updatedAt: 1000 },
+      ]);
+
+      const seen: string[] = [];
+      let cursor: string | undefined;
+
+      for (let page = 0; page < 4; page += 1) {
+        const sessions = await store.listSessions({
+          kind: "main",
+          direction: "desc",
+          limit: 1,
+          projectId: "project-page",
+          cursor,
+        });
+
+        seen.push(...sessions.map((session) => session.id));
+
+        const last = sessions.at(-1);
+        if (last === undefined) {
+          break;
+        }
+
+        cursor = encodeSessionCursor(last);
+      }
+
+      expect(seen).toStrictEqual(["s-tie-b", "s-tie-a", "s-oldest"]);
+    });
+
+    test("回合开始与结束写最后活动，改名与清理不写", async () => {
+      const { db, session_table } = await import("@workspace/db");
+      const { eq } = await import("drizzle-orm");
+
+      await store.saveSession({
+        id: "s-activity",
+        title: "",
+        metadata: {},
+        projectId: "project-activity",
+      });
+      await db
+        .update(session_table)
+        .set({ createdAt: new Date(1000), updatedAt: new Date(1000) })
+        .where(eq(session_table.id, "s-activity"));
+
+      const read = async () => {
+        const [row] = await db
+          .select()
+          .from(session_table)
+          .where(eq(session_table.id, "s-activity"));
+        return row?.updatedAt.getTime();
+      };
+
+      // 改名只是给这一行换个标题，不是会话被用过。
+      await store.updateSessionById("s-activity", "renamed");
+      await expect(read()).resolves.toBe(1000);
+
+      // 不属于回合的写入：开机恢复、清理残留标记、压缩都走这条路。
+      await store.setActiveStream("s-activity", "stream-cleanup", {
+        recordActivity: false,
+      });
+      await expect(read()).resolves.toBe(1000);
+      await store.clearActiveStream(
+        "s-activity",
+        "stream-cleanup",
+        "canceled",
+        {
+          recordActivity: false,
+        }
+      );
+      await expect(read()).resolves.toBe(1000);
+
+      await store.setActiveStream("s-activity", "stream-activity", {
+        recordActivity: true,
+      });
+      await expect(read()).resolves.toBeGreaterThan(1000);
+
+      // 压回同一起点再收尾：两次写各断言一次「推到了现在」，而不是比较先后
+      // ——同一个毫秒里跑完的两条写入，先后比不出来。
+      await db
+        .update(session_table)
+        .set({ updatedAt: new Date(1000) })
+        .where(eq(session_table.id, "s-activity"));
+
+      await store.clearActiveStream("s-activity", "stream-activity", "done", {
+        recordActivity: true,
+      });
+      await expect(read()).resolves.toBeGreaterThan(1000);
     });
   });
 });
