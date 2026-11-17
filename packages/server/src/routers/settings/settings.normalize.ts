@@ -1,3 +1,4 @@
+import { isTimeZone } from "@workspace/agent";
 import { slugifyProviderId } from "@workspace/shared/model";
 import type { ModelProtocol } from "@workspace/shared/model";
 import z from "zod";
@@ -187,6 +188,11 @@ function normalizeDefaultModel(
   return parsed.success && has(parsed.data) ? parsed.data : null;
 }
 
+/** 时区：不是可用的 IANA 名字就当作没配，回落宿主。 */
+function normalizeTimeZone(input: unknown): string | null {
+  return typeof input === "string" && isTimeZone(input) ? input : null;
+}
+
 /**
  * 把存下来的设置收敛成当前形状。
  *
@@ -213,5 +219,6 @@ export function normalizeUserSettings(
     ...merged,
     providers,
     defaultModel: normalizeDefaultModel(merged.defaultModel, providers),
+    timeZone: normalizeTimeZone(merged.timeZone),
   });
 }

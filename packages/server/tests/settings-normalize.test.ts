@@ -202,3 +202,29 @@ describe("旧设置归一化", () => {
     ]);
   });
 });
+
+describe("时区", () => {
+  test("留下的必须是可用的 IANA 名字", () => {
+    const settings = normalizeUserSettings(
+      { timeZone: "Europe/Berlin" },
+      USER_SETTINGS_DEFAULTS
+    );
+
+    expect(settings.timeZone).toBe("Europe/Berlin");
+  });
+
+  test("读不懂的值当作没配，回落宿主", () => {
+    const settings = normalizeUserSettings(
+      { timeZone: "Mars/Olympus" },
+      USER_SETTINGS_DEFAULTS
+    );
+
+    expect(settings.timeZone).toBeNull();
+  });
+
+  test("缺字段的旧设置补成 null", () => {
+    const settings = normalizeUserSettings({}, USER_SETTINGS_DEFAULTS);
+
+    expect(settings.timeZone).toBeNull();
+  });
+});
