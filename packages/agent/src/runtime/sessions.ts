@@ -257,7 +257,9 @@ export class SessionLifecycle {
           // step-boundary 项自然落到那一次。
           try {
             await registry.unregisterStream(activeStreamId);
-            await store.clearActiveStream(sessionId, activeStreamId, status);
+            await store.clearActiveStream(sessionId, activeStreamId, status, {
+              recordActivity: true,
+            });
           } finally {
             settleRun(status);
           }
@@ -286,7 +288,10 @@ export class SessionLifecycle {
               .filter((turn): turn is AgentUserTurn => turn !== undefined),
           }
     );
-    await store.setActiveStream(sessionId, activeStreamId);
+    // 回合开始即「最后活动」：侧边栏按它排序。
+    await store.setActiveStream(sessionId, activeStreamId, {
+      recordActivity: true,
+    });
 
     return { status: "running", activeStreamId, settled };
   }
@@ -314,10 +319,12 @@ export class SessionLifecycle {
     if (!streamEntry || streamEntry.isDone()) {
       const session = await store.getSessionById(sessionId);
       if (session?.activeStreamId) {
+        // 残留标记没有对应的运行，清它是修正而不是回合收尾。
         await store.clearActiveStream(
           sessionId,
           session.activeStreamId,
-          "canceled"
+          "canceled",
+          { recordActivity: false }
         );
       }
       await this.#clearChildSessions(sessionId);
@@ -326,7 +333,9 @@ export class SessionLifecycle {
 
     streamEntry.agent.abort();
     await streamEntry.whenFinished();
-    await store.clearActiveStream(sessionId, streamEntry.streamId, "canceled");
+    await store.clearActiveStream(sessionId, streamEntry.streamId, "canceled", {
+      recordActivity: true,
+    });
     await this.#clearChildSessions(sessionId);
 
     return { aborted: true };
@@ -387,7 +396,10 @@ export class SessionLifecycle {
     // onFinish 的 compare-and-clear 必须能找到自己这一行。
     const previousStatus =
       session.status === "running" ? "error" : session.status;
-    await store.setActiveStream(sessionId, activeStreamId);
+    // 压缩不是回合：它不动「最后活动」，也不改会话状态。
+    await store.setActiveStream(sessionId, activeStreamId, {
+      recordActivity: false,
+    });
 
     let stream;
     try {
@@ -403,13 +415,16 @@ export class SessionLifecycle {
           await store.clearActiveStream(
             sessionId,
             activeStreamId,
-            previousStatus
+            previousStatus,
+            { recordActivity: false }
           );
           onSettled?.();
         },
       });
     } catch (error) {
-      await store.clearActiveStream(sessionId, activeStreamId, previousStatus);
+      await store.clearActiveStream(sessionId, activeStreamId, previousStatus, {
+        recordActivity: false,
+      });
       await agent.dispose();
       throw error;
     }
@@ -488,7 +503,8 @@ export class SessionLifecycle {
         await this.#deps.store.clearActiveStream(
           child.id,
           child.activeStreamId,
-          "canceled"
+          "canceled",
+          { recordActivity: false }
         );
       }
     }

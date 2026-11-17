@@ -71,6 +71,7 @@ class FakeStore implements RecoveryStore {
     sessionId: string;
     streamId: string;
     status: SessionEndStatus;
+    recordActivity: boolean;
   }[] = [];
 
   private readonly options: {
@@ -108,9 +109,10 @@ class FakeStore implements RecoveryStore {
   clearActiveStream(
     sessionId: string,
     streamId: string,
-    status: SessionEndStatus
+    status: SessionEndStatus,
+    options: { recordActivity: boolean }
   ): Promise<number> {
-    this.clears.push({ sessionId, streamId, status });
+    this.clears.push({ sessionId, streamId, status, ...options });
     return Promise.resolve(1);
   }
 }
@@ -131,7 +133,12 @@ describe(recoverInterruptedRuns, () => {
       completedAt: 500,
     });
     expect(store.clears).toStrictEqual([
-      { sessionId: "session-1", streamId: "stream-1", status: "error" },
+      {
+        sessionId: "session-1",
+        streamId: "stream-1",
+        status: "error",
+        recordActivity: false,
+      },
     ]);
     // 上个进程没领走的 next-step 消息要提升为下一回合。
     expect(outcomes).toStrictEqual([
@@ -149,7 +156,12 @@ describe(recoverInterruptedRuns, () => {
 
     expect(store.updates).toHaveLength(0);
     expect(store.clears).toStrictEqual([
-      { sessionId: "session-1", streamId: "stream-1", status: "done" },
+      {
+        sessionId: "session-1",
+        streamId: "stream-1",
+        status: "done",
+        recordActivity: false,
+      },
     ]);
   });
 
@@ -162,7 +174,12 @@ describe(recoverInterruptedRuns, () => {
     await recoverInterruptedRuns(store);
 
     expect(store.clears).toStrictEqual([
-      { sessionId: "session-1", streamId: "stream-1", status: "error" },
+      {
+        sessionId: "session-1",
+        streamId: "stream-1",
+        status: "error",
+        recordActivity: false,
+      },
     ]);
   });
 
@@ -176,7 +193,12 @@ describe(recoverInterruptedRuns, () => {
     await recoverInterruptedRuns(store);
 
     expect(store.clears).toStrictEqual([
-      { sessionId: "session-1", streamId: "stream-1", status: "idle" },
+      {
+        sessionId: "session-1",
+        streamId: "stream-1",
+        status: "idle",
+        recordActivity: false,
+      },
     ]);
   });
 

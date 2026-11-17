@@ -70,7 +70,9 @@ async function startSubagent(
   // 子会话的行和父会话一样要维护状态。这一笔写在 stream 之前：子流可能
   // 在 setActiveStream 落库之前就跑完，那时 onFinish 里的 clearActiveStream
   // 会认不出自己的 streamId 而直接返回，行就永远卡在 running。
-  await store.setActiveStream(subagent.sessionId, activeStreamId);
+  await store.setActiveStream(subagent.sessionId, activeStreamId, {
+    recordActivity: true,
+  });
 
   try {
     const stream = await subagent.stream({
@@ -83,7 +85,8 @@ async function startSubagent(
         await store.clearActiveStream(
           subagent.sessionId,
           activeStreamId,
-          status
+          status,
+          { recordActivity: true }
         );
       },
     });
@@ -109,7 +112,8 @@ async function startSubagent(
       await store.clearActiveStream(
         subagent.sessionId,
         activeStreamId,
-        "error"
+        "error",
+        { recordActivity: true }
       );
     } catch (clearError) {
       logger.warn("[subagent] failed to clear the active stream", clearError);
