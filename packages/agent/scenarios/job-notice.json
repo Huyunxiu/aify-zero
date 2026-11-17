@@ -1,0 +1,21 @@
+{
+  "name": "job-notice",
+  "models": ["fake-fast"],
+  "rules": [
+    { "when": { "stream": false }, "answer": "后台跑一条命令" },
+    {
+      "when": { "stream": true },
+      "toolCall": {
+        "name": "bash",
+        "args": {
+          "command": "sleep 5; echo done",
+          "description": "Wait five seconds then print done",
+          "run_in_background": true
+        }
+      }
+    },
+    { "when": { "stream": true }, "answer": "已经在后台跑起来了。" },
+    { "when": { "stream": true }, "answer": "后台任务跑完了。" },
+    { "when": { "stream": false }, "answer": "后台任务" }
+  ]
+}

@@ -195,8 +195,13 @@ const seedProvider = async (input: {
   }
 };
 
-/** 起一整套现场，等它真的能服务请求。 */
-export async function startStack(): Promise<Stack> {
+/**
+ * 起一整套现场，等它真的能服务请求。
+ * @param options - 现场选项；`scenario` 是假供应商的场景名，缺省是主流程那条。
+ */
+export async function startStack(
+  options: { readonly scenario?: string } = {}
+): Promise<Stack> {
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
   const runDir = join(REPO_ROOT, ".e2e", "runs", stamp);
   const projectDir = join(runDir, "project");
@@ -231,7 +236,9 @@ export async function startStack(): Promise<Stack> {
     AIFY_WEB_ORIGIN: webUrl,
   };
 
-  const fake = await startFakeProvider({ scenario: "edit-then-answer" });
+  const fake = await startFakeProvider({
+    scenario: options.scenario ?? "edit-then-answer",
+  });
   // 先起页面，等它真能服务请求，再起 API：链接里的源是确定的，页面也早就绪。
   const web = startChild({
     args: ["run", "web#dev"],
@@ -242,10 +249,10 @@ export async function startStack(): Promise<Stack> {
 
   let api: Child | undefined;
 
-  const stop = async (options: { readonly keep?: boolean } = {}) => {
+  const stop = async (stopOptions: { readonly keep?: boolean } = {}) => {
     await Promise.all([api?.stop(), web.stop()]);
     await fake.close();
-    if (!options.keep) {
+    if (!stopOptions.keep) {
       rmSync(runDir, { recursive: true, force: true });
     }
   };
