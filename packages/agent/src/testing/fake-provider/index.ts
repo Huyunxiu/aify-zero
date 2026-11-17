@@ -183,8 +183,8 @@ export async function startFakeProvider(
       captured.push(Buffer.from(piece));
       input.response.write(piece);
     }
-    input.response.end();
 
+    // 先落盘，再结束响应。客户端读到响应结束就返回，它下一步读盘必须已经看到这一条。
     // 一条一条落盘：录制进程可能在审批暂停里挂很久。
     await recorder?.add({
       request: {
@@ -199,6 +199,8 @@ export async function startFakeProvider(
         body: Buffer.concat(captured).toString("utf-8"),
       },
     });
+
+    input.response.end();
   };
 
   await new Promise<void>((resolve) => {
