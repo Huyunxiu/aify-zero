@@ -52,11 +52,9 @@ test("Session list: the session used last comes first and shows when it was used
     // 3. 回到甲再跑一个回合。现在甲更早创建、却更晚活动：按创建时刻排它该在下面，
     //    按最后活动排它必须回到第一。
     //
-    //    先刷新一次再点：同一个页面会话里，一个新建会话的转录只被取过一次，那时它
-    //    还没有回合，缓存就一直是空的。刷新之后重新取，历史才是真的——顺带也让这
-    //    一步成为「回到旧会话继续用」这个真实动作。
-    await page.reload();
-    await expect(page.getByText(SECOND, { exact: true })).toBeVisible();
+    //    这一步同时是「回到旧会话继续用」这个真实动作：切回来时，甲的第一个回合
+    //    必须已经在屏幕上，不需要刷新。
+    await expect(page.getByText(FIRST, { exact: true })).toBeVisible();
     await page.getByText(FIRST, { exact: true }).click();
     await expect(page.getByText("第一句", { exact: true })).toBeVisible();
     await sendAndSettle(page, "第三句");
