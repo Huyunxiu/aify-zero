@@ -13,6 +13,7 @@ import {
   composeTimerTurn,
   hydrateTurn,
   InboxItemNotFoundError,
+  nextOccurrence,
   TIMER_LIMIT_PER_SESSION,
   TimerError,
   toStepRows,
@@ -22,10 +23,12 @@ import {
 import type {
   AgentStore,
   FiredTimer,
+  RecurrenceRule,
   SessionEndStatus,
   StepRow,
   StepWrite,
   Timer,
+  TimerCounts,
   TimerInsert,
   TimerStore,
   TurnRecord,
@@ -47,6 +50,7 @@ import type {
   TimerModel,
   TurnModel,
 } from "@workspace/db";
+import { logger } from "@workspace/shared/logger";
 import {
   and,
   asc,
@@ -165,6 +169,8 @@ function toTimer(row: TimerModel): Timer {
     toolCallId: row.toolCallId,
     note: row.note,
     dueAt: row.dueAt.getTime(),
+    // 数据库层不依赖 agent 的规则类型，只存 JSON；在这里收敛回规则。
+    recurrence: (row.recurrence as RecurrenceRule | null) ?? null,
     payload: row.payload as InboxPayload,
     createdAt: row.createdAt.getTime(),
   };
@@ -772,6 +778,7 @@ export class SQLiteStore implements AgentStore, TimerStore {
     toolCallId,
     note,
     dueAt,
+    recurrence,
     payload,
   }: TimerInsert): Promise<Timer> {
     return await db.transaction(async (tx) => {
@@ -810,6 +817,7 @@ export class SQLiteStore implements AgentStore, TimerStore {
           toolCallId,
           note,
           dueAt: new Date(dueAt),
+          recurrence,
           payload,
         })
         .returning();
@@ -841,10 +849,35 @@ export class SQLiteStore implements AgentStore, TimerStore {
   }
 
   /**
+   * 日程的下一次；算不出来就当作没有下一次。
+   *
+   * 规则只由写入路径产生，所以这里本该算得出来。但一条算不出来的行会每次落回
+   * 同一条、每次让事务回滚，所有定时器都不再触发——这是最坏的失败。宁可丢掉这
+   * 一条并留下日志，也不让整个扫描循环停摆。
+   */
+  #nextDueAfter(timer: Timer, now: number): number | null {
+    if (timer.recurrence === null) {
+      return null;
+    }
+
+    try {
+      return nextOccurrence(timer.recurrence, {
+        from: timer.dueAt,
+        after: now,
+      });
+    } catch (error) {
+      logger.warn("[timers] dropping a schedule that cannot advance", error);
+      return null;
+    }
+  }
+
+  /**
    * 取走全部到点的定时器。
    *
-   * 写收件箱行和删定时器行在同一个事务里：待办项落地和「这一行不再存在」是
-   * 同一次提交，所以不存在投了两次或者丢了没投。唤醒由扫描循环在提交之后做。
+   * 写收件箱行和给这一行收尾在同一个事务里：待办项落地和「这一行不再挂在这里」
+   * 是同一次提交，所以不存在投了两次或者丢了没投。收尾分两种——跟进用完就删，
+   * 日程把 `dueAt` 推到下一次；对日程来说，这条待办项落地和「下一次已经排好」
+   * 也是同一次提交。唤醒由扫描循环在提交之后做。
    */
   async fireDueTimers(now: number): Promise<FiredTimer[]> {
     return await db.transaction(async (tx) => {
@@ -858,7 +891,12 @@ export class SQLiteStore implements AgentStore, TimerStore {
 
       for (const row of due) {
         const timer = toTimer(row);
-        const dedupeKey = `${TIMER_INBOX_KIND}:${timer.id}`;
+        // 下一次在写正文之前算：正文要说「下一次是什么时候」。用 `now` 而不是
+        // `dueAt` 往后找，停机期间错过的多次就只投这一次。
+        const nextDueAt = this.#nextDueAfter(timer, now);
+        // 去重键带到期时刻：日程的同一个 id 会触发很多次，只按 id 去重时，上一次
+        // 那条还没被领走就会让这一次被冲突分支吞掉。
+        const dedupeKey = `${TIMER_INBOX_KIND}:${timer.id}:${timer.dueAt}`;
 
         await tx
           .insert(inbox_item_table)
@@ -868,7 +906,7 @@ export class SQLiteStore implements AgentStore, TimerStore {
             dedupeKey,
             // 到点不是用户插话：排在这次运行之后，不打断正在跑的回合。
             deliverAt: "run-boundary",
-            content: composeTimerTurn({ timer, firedAt: now }),
+            content: composeTimerTurn({ timer, firedAt: now, nextDueAt }),
             payload: timer.payload,
           })
           .onConflictDoUpdate({
@@ -876,17 +914,31 @@ export class SQLiteStore implements AgentStore, TimerStore {
             set: { dedupeKey },
           });
 
-        await tx.delete(timer_table).where(eq(timer_table.id, timer.id));
+        if (nextDueAt === null) {
+          await tx.delete(timer_table).where(eq(timer_table.id, timer.id));
+        } else {
+          await tx
+            .update(timer_table)
+            .set({ dueAt: new Date(nextDueAt) })
+            .where(eq(timer_table.id, timer.id));
+        }
 
-        fired.push({ ...timer, firedAt: now });
+        fired.push({ ...timer, firedAt: now, nextDueAt });
       }
 
       return fired;
     });
   }
 
-  async countTimers(): Promise<number> {
-    const rows = await db.select({ id: timer_table.id }).from(timer_table);
-    return rows.length;
+  /** 挂着的定时器数；日程是其中的子集，预算按总数算。 */
+  async countTimers(): Promise<TimerCounts> {
+    const rows = await db
+      .select({ id: timer_table.id, recurrence: timer_table.recurrence })
+      .from(timer_table);
+
+    return {
+      pending: rows.length,
+      schedules: rows.filter((row) => row.recurrence !== null).length,
+    };
   }
 }

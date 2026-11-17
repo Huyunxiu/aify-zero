@@ -2,6 +2,8 @@ import { TIMER_STEP_SOURCE } from "@workspace/agent-client";
 import type { AgentUserTurn } from "@workspace/agent-client";
 
 import { generateStepId, generateTurnId } from "../utils/id-util";
+import { renderRecurrence } from "./recurrence";
+import { DEFAULT_SCAN_INTERVAL_MS } from "./scheduler";
 import type { Timer } from "./types";
 
 /** 一条定时器到点的通知正文；和完成通知一样自带来源，模型不必猜是谁在说话。 */
@@ -41,28 +43,74 @@ export const formatAge = (elapsedMs: number): string => {
   return plural(Math.floor(elapsed / DAY_MS), "day");
 };
 
+/**
+ * 迟到的判定线：超过两个扫描间隔才值得写进正文。
+ *
+ * 正常迟到由扫描间隔决定（默认 60 秒），那点误差对模型没有信息量；停机之后补投
+ * 的那种迟到要说出来，模型才判断得出这次唤醒还成不成立。
+ */
+export const LATE_AFTER_MS = 2 * DEFAULT_SCAN_INTERVAL_MS;
+
 /** 去掉结尾的句号，免得正文出现两个连着的句号。 */
 const trimPeriod = (text: string): string => text.trim().replace(/\.+$/, "");
+
+/** 跟进那条正文；和一期完全一致，模型已经按这个形状理解。 */
+const followUpText = (timer: Timer, firedAt: number): string =>
+  `timer ${timer.id} fired. You set it ${formatAge(
+    firedAt - timer.createdAt
+  )} ago: ${trimPeriod(timer.note)}. Continue the work it was set for.`;
+
+/**
+ * 日程那条正文：规则、下一次、迟到。
+ *
+ * 三样都要说。规则让模型认出这是周期；下一次让它知道还会再来，不会把这次当成
+ * 一次性跟进做完就收工；迟到只在明显迟到时出现，正常误差不占正文。
+ */
+const scheduleText = (
+  timer: Timer,
+  firedAt: number,
+  nextDueAt: number | null
+): string => {
+  const rule =
+    timer.recurrence === null ? "" : renderRecurrence(timer.recurrence);
+  const lateMs = firedAt - timer.dueAt;
+  const parts = [
+    `schedule ${timer.id} fired (${rule}).`,
+    nextDueAt === null ? "" : `Next: in ${formatAge(nextDueAt - firedAt)}.`,
+    lateMs > LATE_AFTER_MS ? `It was due ${formatAge(lateMs)} ago.` : "",
+    `You set it ${formatAge(firedAt - timer.createdAt)} ago: ${trimPeriod(
+      timer.note
+    )}.`,
+    "Continue the work it was set for.",
+  ];
+
+  return parts.filter((part) => part !== "").join(" ");
+};
 
 /**
  * 组一条到点通知。
  *
  * 正文自己说明它不是用户说的话：只靠 step 上的 `source` 标记不够，模型读到的
- * 是文本。
+ * 是文本。跟进和日程是两种正文：日程必须说出「下一次」，否则模型会把一次触发
+ * 当成一次性跟进。
  * @param input.timer - 到点的定时器。
  * @param input.firedAt - 这次扫描认定它到点的时刻。
+ * @param input.nextDueAt - 日程推进到的下一次；跟进是 null。
  * @returns 通知正文。
  */
 export const composeTimerNotice = ({
   timer,
   firedAt,
+  nextDueAt,
 }: {
   timer: Timer;
   firedAt: number;
+  nextDueAt: number | null;
 }): TimerNotice => ({
-  text: `timer ${timer.id} fired. You set it ${formatAge(
-    firedAt - timer.createdAt
-  )} ago: ${trimPeriod(timer.note)}. Continue the work it was set for.`,
+  text:
+    timer.recurrence === null
+      ? followUpText(timer, firedAt)
+      : scheduleText(timer, firedAt, nextDueAt),
 });
 
 /**
@@ -72,16 +120,19 @@ export const composeTimerNotice = ({
  * `source`，界面和「用户插话」判定据此知道它不是用户输入。
  * @param input.timer - 到点的定时器。
  * @param input.firedAt - 这次扫描认定它到点的时刻。
+ * @param input.nextDueAt - 日程推进到的下一次；跟进是 null。
  * @returns 写进收件箱的回合。
  */
 export const composeTimerTurn = ({
   timer,
   firedAt,
+  nextDueAt,
 }: {
   timer: Timer;
   firedAt: number;
+  nextDueAt: number | null;
 }): AgentUserTurn => {
-  const { text } = composeTimerNotice({ timer, firedAt });
+  const { text } = composeTimerNotice({ timer, firedAt, nextDueAt });
 
   return {
     id: generateTurnId(),

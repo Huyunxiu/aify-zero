@@ -5,12 +5,12 @@ import { Extension } from "../types";
 const DEFAULT_OPTIONS: ExtensionOptions = { id: "timers-tools" };
 
 /** 定时器的使用说明；只在绑定了会话定时器时出现。 */
-const TIMERS_GUIDANCE = `A timer wakes this session once, later. Set one with timer-set when the next step depends on something that has not happened yet — a deploy, a build, a reply. Do not sleep or poll waiting for it: end the turn and the timer brings you back.`;
+const TIMERS_GUIDANCE = `A timer wakes this session later. Set one with timer-set when the next step depends on something that has not happened yet — a deploy, a build, a reply. Set a schedule with schedule-set when the user wants to be woken on a cadence, such as every day at nine. Do not sleep or poll waiting for either: end the turn and it brings you back.`;
 
 /**
  * 定时器控制扩展。
  *
- * 没有绑定会话定时器就没有可排的定时器，所以这三个工具一起缺席，而不是注册成
+ * 没有绑定会话定时器就没有可排的定时器，所以这几个工具一起缺席，而不是注册成
  * 一个永远失败的工具。子会话属于这一类：它没有收件箱，排了也不会触发。
  */
 export class TimersToolsExtension extends Extension {

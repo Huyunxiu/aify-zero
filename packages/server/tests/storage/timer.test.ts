@@ -2,6 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import type { RecurrenceRule } from "@workspace/agent/store";
 import { beforeAll, describe, expect, test } from "vitest";
 
 import type { SQLiteStore } from "../../src/storage/sqlite-store.js";
@@ -24,14 +25,23 @@ const set = async (overrides: {
   toolCallId?: string;
   dueAt?: number;
   note?: string;
+  recurrence?: RecurrenceRule | null;
 }) =>
   await store.insertTimer({
     sessionId: overrides.sessionId ?? SESSION,
     toolCallId: overrides.toolCallId ?? "call-1",
     note: overrides.note ?? "check the deploy",
     dueAt: overrides.dueAt ?? NOW + 60_000,
+    recurrence: overrides.recurrence ?? null,
     payload,
   });
+
+/** 一条每天九点的日程。 */
+const DAILY: RecurrenceRule = {
+  type: "daily",
+  at: "09:00",
+  timeZone: "UTC",
+};
 
 describe("timer storage", () => {
   beforeAll(async () => {
@@ -168,7 +178,7 @@ describe("timer storage", () => {
     await store.insertInboxItem({
       sessionId: session,
       kind: "timer",
-      dedupeKey: `timer:${timer.id}`,
+      dedupeKey: `timer:${timer.id}:${timer.dueAt}`,
       deliverAt: "run-boundary",
       content: userTurn("turn-dup", "timer fired"),
       payload,
@@ -185,6 +195,126 @@ describe("timer storage", () => {
     const before = await store.countTimers();
     await set({ sessionId: "session-count", toolCallId: "call-count" });
 
-    await expect(store.countTimers()).resolves.toBe(before + 1);
+    await expect(store.countTimers()).resolves.toMatchObject({
+      pending: before.pending + 1,
+      schedules: before.schedules,
+    });
+  });
+
+  test("counts schedules inside the same budget", async () => {
+    const before = await store.countTimers();
+    await set({
+      sessionId: "session-count-schedule",
+      toolCallId: "call-count-schedule",
+      recurrence: DAILY,
+    });
+
+    await expect(store.countTimers()).resolves.toMatchObject({
+      pending: before.pending + 1,
+      schedules: before.schedules + 1,
+    });
+  });
+});
+
+describe("schedule storage", () => {
+  test("advances a due schedule instead of dropping it", async () => {
+    const session = "session-schedule-advance";
+    const timer = await set({
+      sessionId: session,
+      dueAt: NOW - 1,
+      note: "write the report",
+      recurrence: DAILY,
+    });
+
+    const fired = await store.fireDueTimers(NOW);
+
+    expect(fired).toHaveLength(1);
+    await expect(store.listInboxItems(session)).resolves.toHaveLength(1);
+
+    const [kept] = await store.listTimers(session);
+    expect(kept?.id).toBe(timer.id);
+    expect(kept?.dueAt).toBe(fired[0]?.nextDueAt);
+    expect(kept?.dueAt).toBeGreaterThan(NOW);
+  });
+
+  test("collapses missed firings into one and keeps the phase", async () => {
+    // 停机三天：只投一次，下一次仍然落在原来的节拍上。
+    const session = "session-schedule-catchup";
+    const everySeconds = 3600;
+    const dueAt = NOW - 3 * 24 * 60 * 60_000;
+    await set({
+      sessionId: session,
+      dueAt,
+      recurrence: { type: "interval", everySeconds },
+    });
+
+    const fired = await store.fireDueTimers(NOW);
+
+    expect(fired).toHaveLength(1);
+    await expect(store.listInboxItems(session)).resolves.toHaveLength(1);
+
+    const [kept] = await store.listTimers(session);
+    const next = kept?.dueAt ?? 0;
+    expect(next).toBeGreaterThan(NOW);
+    expect((next - dueAt) % (everySeconds * 1000)).toBe(0);
+  });
+
+  test("writes the next firing into the notice", async () => {
+    const session = "session-schedule-notice";
+    await set({
+      sessionId: session,
+      dueAt: NOW - 1,
+      note: "write the report",
+      recurrence: DAILY,
+    });
+
+    await store.fireDueTimers(NOW);
+
+    const [item] = await store.listInboxItems(session);
+    const [step] = item?.content.content ?? [];
+    const [part] = step?.content ?? [];
+
+    expect(part).toMatchObject({ type: "text" });
+    expect(part).toMatchObject({
+      text: expect.stringContaining("daily 09:00 UTC"),
+    });
+    expect(part).toMatchObject({ text: expect.stringContaining("Next:") });
+    expect(part).toMatchObject({
+      text: expect.stringContaining("write the report"),
+    });
+  });
+
+  test("drops a schedule whose rule cannot advance instead of jamming the scan", async () => {
+    // 旧版本或手改的库可能留下这个版本读不懂的规则。它每次都会算失败；不处理的话
+    // 事务每次回滚，所有定时器都不再触发。
+    const session = "session-schedule-broken";
+    await set({
+      sessionId: session,
+      dueAt: NOW - 1,
+      recurrence: { type: "monthly", at: "09:00" } as unknown as RecurrenceRule,
+    });
+    const followUp = await set({
+      sessionId: "session-schedule-broken-other",
+      toolCallId: "call-other",
+      dueAt: NOW - 1,
+    });
+
+    const fired = await store.fireDueTimers(NOW);
+
+    expect(fired.map((entry) => entry.id)).toContain(followUp.id);
+    await expect(store.listTimers(session)).resolves.toHaveLength(0);
+    await expect(store.listInboxItems(session)).resolves.toHaveLength(1);
+  });
+
+  test("cancels a schedule so it never fires again", async () => {
+    const session = "session-schedule-cancel";
+    const timer = await set({
+      sessionId: session,
+      dueAt: NOW - 1,
+      recurrence: DAILY,
+    });
+
+    await expect(store.cancelTimer(session, timer.id)).resolves.toBeTruthy();
+    await expect(store.fireDueTimers(NOW)).resolves.toHaveLength(0);
   });
 });
