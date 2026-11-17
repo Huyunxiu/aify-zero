@@ -52,9 +52,8 @@ test("Session list: the session used last comes first and shows when it was used
     // 3. 回到甲再跑一个回合。现在甲更早创建、却更晚活动：按创建时刻排它该在下面，
     //    按最后活动排它必须回到第一。
     //
-    //    这一步同时是「回到旧会话继续用」这个真实动作：切回来时，甲的第一个回合
-    //    必须已经在屏幕上，不需要刷新。
-    await expect(page.getByText(FIRST, { exact: true })).toBeVisible();
+    //    这一步同时是「回到旧会话继续用」这个真实动作：切回来时不需要刷新，甲的
+    //    第一个回合就该在屏幕上。
     await page.getByText(FIRST, { exact: true }).click();
     await expect(page.getByText("第一句", { exact: true })).toBeVisible();
     await sendAndSettle(page, "第三句");
