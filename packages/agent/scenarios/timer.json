@@ -1,0 +1,20 @@
+{
+  "name": "timer",
+  "models": ["fake-fast"],
+  "rules": [
+    { "when": { "stream": false }, "answer": "定时器" },
+    {
+      "when": { "stream": true },
+      "toolCall": {
+        "name": "timer-set",
+        "args": {
+          "note": "看看部署好了没有",
+          "afterSeconds": 60
+        }
+      }
+    },
+    { "when": { "stream": true }, "answer": "定时器设好了，我先停在这里。" },
+    { "when": { "stream": true }, "answer": "到点了，我接着看。" },
+    { "when": { "stream": false }, "answer": "定时器跟进" }
+  ]
+}
