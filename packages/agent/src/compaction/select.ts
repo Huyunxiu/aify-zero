@@ -48,11 +48,15 @@ export interface StepPlacement {
 }
 
 /**
- * 最新 user turn 之前的那条 assistant turn。
+ * 最新 user 回合之前的那条 assistant turn。
  *
- * 回合开始前的压缩把标记放在这条 turn 末尾，让新的用户请求保持原文。若前一条
- * 不是 assistant turn（手工压缩 turn、崩溃后残留的 user turn），则跳过：
- * 把更旧的标记追加在后面会被更新的标记覆盖，或者根本没有地方可放。
+ * 回合开始前的压缩把标记放在这条 turn 末尾，让新的用户请求保持原文。末尾可能
+ * 是连续的几条 user 回合（一次运行领取一批待办项），所以向前找最后一条
+ * assistant turn，而不是只看倒数第二条。
+ *
+ * 标记不能越过一条 compaction turn：标记之后还有压缩记录时，投影会从那条记录
+ * 的 checkpoint 重新开始，刚写下的标记被丢掉，这次压缩等于没做。所以找不到
+ * 可放的位置就跳过。
  */
 export function findPreTurnPlacement<TOOLS extends ToolSet>(
   turns: readonly AgentTurn<TOOLS>[]
@@ -61,8 +65,16 @@ export function findPreTurnPlacement<TOOLS extends ToolSet>(
     return undefined;
   }
 
-  const previous = turns.at(-2);
-  if (!previous || previous.type !== "assistant") {
+  const index = turns.findLastIndex((turn) => turn.type === "assistant");
+  const previous = index === -1 ? undefined : turns.at(index);
+  if (!previous || index === turns.length - 1) {
+    return undefined;
+  }
+
+  const crossed = turns
+    .slice(index + 1)
+    .some((turn) => turn.type === "compaction");
+  if (crossed) {
     return undefined;
   }
 

@@ -262,7 +262,7 @@ describe("SessionEventRegistry wiring", () => {
 
     const producer = source();
     registry.registerStream("stream-a", agentOf("session-1"), producer.stream, {
-      turnId: "turn-1",
+      turnIds: ["turn-1"],
     });
 
     producer.push(turnStart("turn-1"));
@@ -286,7 +286,7 @@ describe("SessionEventRegistry wiring", () => {
     ]);
     expect(received[1]).toMatchObject({
       streamId: "stream-a",
-      turnId: "turn-1",
+      turnIds: ["turn-1"],
     });
   });
 

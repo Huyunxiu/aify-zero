@@ -14,8 +14,8 @@ import type { ToolSet } from "ai";
  */
 type RunRecord<TOOLS extends ToolSet> = {
   streamId: string;
-  /** 领走的那条 user 回合的 id；运行不是由待办项发起时没有。 */
-  turnId?: string;
+  /** 领走的那些 user 回合的 id，按记录里的顺序；运行不是由待办项发起时没有。 */
+  turnIds?: readonly string[];
   /** 这条运行的 `run.start` 的序号；重连时先补这一条，再补事件。 */
   startSeq: number;
   events: { seq: number; event: AgentStreamEvent<TOOLS> }[];
@@ -58,7 +58,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
     return idle && this.#subscribers.size === 0;
   }
 
-  startRun(streamId: string, turnId?: string): void {
+  startRun(streamId: string, turnIds?: readonly string[]): void {
     if (this.#run && !this.#run.done) {
       // 一个会话一次只该跑一次运行。真撞上了，说明前一次的读者再也等不到
       // 它的结尾；把它标成结束，别让它在通道里悬着。
@@ -75,7 +75,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
       events: [],
       startSeq: seq,
       streamId,
-      ...(turnId === undefined ? {} : { turnId }),
+      ...(turnIds === undefined ? {} : { turnIds }),
     };
     this.#broadcast(this.#runStart({ ...this.#run }));
   }
@@ -196,7 +196,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
       seq: run.startSeq,
       streamId: run.streamId,
       type: "run.start",
-      ...(run.turnId === undefined ? {} : { turnId: run.turnId }),
+      ...(run.turnIds === undefined ? {} : { turnIds: run.turnIds }),
     };
   }
 
@@ -221,8 +221,12 @@ class SessionEventChannel<TOOLS extends ToolSet> {
 export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
   readonly #channels = new Map<string, SessionEventChannel<TOOLS>>();
 
-  startRun(sessionId: string, streamId: string, turnId?: string): void {
-    this.#channelFor(sessionId).startRun(streamId, turnId);
+  startRun(
+    sessionId: string,
+    streamId: string,
+    turnIds?: readonly string[]
+  ): void {
+    this.#channelFor(sessionId).startRun(streamId, turnIds);
   }
 
   publish(

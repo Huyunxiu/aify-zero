@@ -20,6 +20,16 @@ process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
 
 let store: AgentStore;
 
+/** 一条由收件箱行写成的 user turn；`owner` 必须和领取的会话一致。 */
+const claimedTurn = (id: string, text: string, owner: string): TurnWrite => ({
+  id,
+  sessionId: owner,
+  type: "user",
+  metadata: {},
+  content: userTurn(id, text),
+  createdAt: new Date(1),
+});
+
 describe("SQLiteStore", () => {
   beforeAll(async () => {
     const { migrateDb } = await import("@workspace/db");
@@ -207,27 +217,100 @@ describe("SQLiteStore", () => {
       await expect(store.listInboxItems(sessionId)).resolves.toHaveLength(0);
     });
 
-    test("saveTurn 带 inboxId 时认领消息；重复领取抛错", async () => {
-      const message = await store.insertInboxItem(
-        inboxInput("req-4", "claim me")
-      );
-      const turn: TurnWrite = {
-        id: "turn-claim",
-        sessionId,
-        type: "user",
+    test("saveClaimedTurns 认领整批并串起父链；重复领取抛错", async () => {
+      await store.saveSession({
+        id: sessionId,
+        title: "",
         metadata: {},
-        content: userTurn("turn-claim", "claim me"),
-        createdAt: new Date(1),
-      };
+        projectId: null,
+      });
+      const first = await store.insertInboxItem(inboxInput("req-4", "first"));
+      const second = await store.insertInboxItem(inboxInput("req-5", "second"));
 
-      await expect(store.saveTurn(turn, { inboxId: message.id })).resolves.toBe(
-        1
-      );
+      const written = await store.saveClaimedTurns({
+        sessionId,
+        claims: [
+          {
+            inboxId: first.id,
+            turn: claimedTurn("turn-claim-1", "first", sessionId),
+          },
+          {
+            inboxId: second.id,
+            turn: claimedTurn("turn-claim-2", "second", sessionId),
+          },
+        ],
+        head: true,
+      });
+
+      expect(written).toStrictEqual(["turn-claim-1", "turn-claim-2"]);
       await expect(store.listInboxItems(sessionId)).resolves.toHaveLength(0);
 
+      const branch = await store.getBranchTurns(sessionId);
+      expect(branch.map((turn) => turn.id)).toStrictEqual([
+        "turn-claim-1",
+        "turn-claim-2",
+      ]);
+      expect(branch[1]?.parentId).toBe("turn-claim-1");
+
       await expect(
-        store.saveTurn(turn, { inboxId: message.id })
+        store.saveClaimedTurns({
+          sessionId,
+          claims: [
+            {
+              inboxId: first.id,
+              turn: claimedTurn("turn-claim-3", "again", sessionId),
+            },
+          ],
+        })
       ).rejects.toBeInstanceOf(InboxItemNotFoundError);
+    });
+
+    test("saveClaimedTurns 只写还存在的行，父链从剩下的重算", async () => {
+      const owner = "session-inbox-partial";
+      await store.saveSession({
+        id: owner,
+        title: "",
+        metadata: {},
+        projectId: null,
+      });
+      const inbox = (key: string, text: string): EnqueueInboxInput => ({
+        ...inboxInput(key, text),
+        sessionId: owner,
+      });
+
+      const first = await store.insertInboxItem(inbox("req-6", "first"));
+      const second = await store.insertInboxItem(inbox("req-7", "second"));
+      const third = await store.insertInboxItem(inbox("req-8", "third"));
+
+      await store.deleteInboxItems(owner, [second.id]);
+
+      const written = await store.saveClaimedTurns({
+        sessionId: owner,
+        claims: [
+          {
+            inboxId: first.id,
+            turn: claimedTurn("turn-part-1", "first", owner),
+          },
+          {
+            inboxId: second.id,
+            turn: claimedTurn("turn-part-2", "second", owner),
+          },
+          {
+            inboxId: third.id,
+            turn: claimedTurn("turn-part-3", "third", owner),
+          },
+        ],
+        head: true,
+      });
+
+      expect(written).toStrictEqual(["turn-part-1", "turn-part-3"]);
+
+      const branch = await store.getBranchTurns(owner);
+      expect(branch.map((turn) => turn.id)).toStrictEqual([
+        "turn-part-1",
+        "turn-part-3",
+      ]);
+      expect(branch[1]?.parentId).toBe("turn-part-1");
     });
   });
 

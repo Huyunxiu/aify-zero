@@ -138,22 +138,37 @@ export interface AgentStore {
   /**
    * 写一条完整 turn：turn 行 + 它的全部 step。
    *
-   * 用于新的 user turn，也用于兜底写入一条还没落库的 turn。upsert 时只更新
-   * 可变的行字段，保留原有 parentId 和 createdAt。
-   *
-   * 带 `inboxId` 时，删除收件箱行和写入 turn 在同一个事务里完成：删除 0 行
-   * 说明这条待办项已被另一个调用者领走，抛 `InboxItemNotFoundError`。
+   * 用于兜底写入一条还没落库的 turn。upsert 时只更新可变的行字段，保留原有
+   * parentId 和 createdAt。
    *
    * 带 `head` 时，同一事务里把这条 turn 设为 branch 的新 head。turn 只追加，
    * 压缩记录切点而不把自己插进 branch 中间，所以 head 永远指向末尾的那条。
    */
-  saveTurn(
-    turn: TurnWrite,
-    options?: { inboxId?: string; head?: boolean }
-  ): Promise<number>;
+  saveTurn(turn: TurnWrite, options?: { head?: boolean }): Promise<number>;
 
   /** fork 专用：批量写入 turn 行和 step 行。 */
   saveTurns(turns: TurnWrite[]): Promise<number>;
+
+  /**
+   * 把一批由收件箱领取的 turn 追加进 branch。
+   *
+   * 删除收件箱行、写 turn、串父链和设 head 在同一个事务里完成。领取以删除的
+   * 结果为准：被取消或并发领走的行退出这一批，其余照常写。一条都没领到时抛
+   * `InboxItemNotFoundError`，调用方据此知道整批已被别人领走。
+   *
+   * 父链由这里按领取顺序重算，忽略 `claims[].turn.parentId`：批次里的某一条
+   * 被取消时，调用方预先算好的链会指向没写进去的 turn，branch 会从此断掉。
+   *
+   * @returns 实际写入的 turn id，顺序就是它们在 branch 里的顺序。
+   */
+  saveClaimedTurns(input: {
+    sessionId: string;
+    /** 这一批追加到哪条之后；省略表示接在 branch 开头。 */
+    parentTurnId?: string | null;
+    claims: readonly { inboxId: string; turn: TurnWrite }[];
+    /** 写完后把 head 设到最后一条写入的 turn。 */
+    head?: boolean;
+  }): Promise<readonly string[]>;
 
   /**
    * 写一个已经到达 `step.finish` 的 step。
