@@ -1,7 +1,11 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import type { TapeFrame, TapeRecorderOptions } from "../tape/index.js";
+import type {
+  TapeFrame,
+  TapePlayerState,
+  TapeRecorderOptions,
+} from "../tape/index.js";
 import {
   encodeFrameBytes,
   PANEL_HTML,
@@ -54,17 +58,11 @@ export type FakeProviderPlaybackOptions = {
   /** 相邻帧的最大等待；空闲超过它就截断。 */
   readonly capMs?: number;
   /** 播到第几帧就挂起；0 基。`POST /__tape/resume` 放行。 */
-  readonly pauseAt?: number;
+  readonly holdAt?: number;
 };
 
 /** 播放器的状态；没开播放时 `FakeProvider.tape` 是 undefined。 */
-export type TapePlaybackState = {
-  readonly paused: boolean;
-  readonly frames: number;
-  readonly position: number;
-  readonly remaining: number;
-  readonly mode: "run" | "hold" | "step";
-};
+export type TapePlaybackState = TapePlayerState;
 
 export type FakeProviderOptions = {
   /** 场景对象，或包根 `scenarios/` 里的名字 / 一个路径。 */
@@ -128,9 +126,9 @@ export async function startFakeProvider(
         ...(play.speed === undefined ? {} : { speed: play.speed }),
         ...(play.capMs === undefined ? {} : { capMs: play.capMs }),
       }),
-      ...(play.pauseAt === undefined ? {} : { pauseAt: play.pauseAt }),
+      ...(play.holdAt === undefined ? {} : { holdAt: play.holdAt }),
       onHold: (frame) => {
-        options.log?.(`paused at frame ${String(frame)}`);
+        options.log?.(`held at frame ${String(frame)}`);
       },
     });
 
@@ -215,7 +213,7 @@ export async function startFakeProvider(
       player = await loadPlayer({
         ...options.play,
         path: parsed.path,
-        pauseAt: undefined,
+        holdAt: undefined,
       });
       options.log?.(`loaded tape ${parsed.path}`);
       response.writeHead(204);
@@ -230,16 +228,7 @@ export async function startFakeProvider(
       }
 
       response.writeHead(200, { "content-type": "application/json" });
-      response.end(
-        JSON.stringify({
-          tape: player.path,
-          position: player.position,
-          remaining: player.remaining,
-          frames: player.frames,
-          mode: player.mode,
-          paused: player.paused,
-        })
-      );
+      response.end(JSON.stringify(player.state()));
       return;
     }
 
@@ -249,8 +238,8 @@ export async function startFakeProvider(
     }
 
     switch (action) {
-      case "pause": {
-        player.pause();
+      case "hold": {
+        player.hold();
         break;
       }
       case "step": {
@@ -459,17 +448,7 @@ export async function startFakeProvider(
     baseURL: `http://127.0.0.1:${port}/v1`,
     requests,
     get tape(): TapePlaybackState | undefined {
-      if (player === undefined) {
-        return undefined;
-      }
-
-      return {
-        paused: player.paused,
-        frames: player.frames,
-        position: player.position,
-        remaining: player.remaining,
-        mode: player.mode,
-      };
+      return player?.state();
     },
     close: async () => {
       await new Promise<void>((resolve) => {

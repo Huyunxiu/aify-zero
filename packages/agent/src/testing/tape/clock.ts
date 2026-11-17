@@ -3,6 +3,8 @@ import type { TapeFrame } from "./format.js";
 /** 一次播放的时间源：决定第 index 帧何时允许发出。 */
 export type Clock = {
   next(index: number, frame: TapeFrame): Promise<void>;
+  /** 一条新响应开始：时间基准回到零。帧的 `at` 相对各自的请求。 */
+  reset?(): void;
 };
 
 export type WallClockOptions = {
@@ -12,7 +14,7 @@ export type WallClockOptions = {
   readonly speed?: number;
 };
 
-const sleep = async (ms: number): Promise<void> => {
+export const sleep = async (ms: number): Promise<void> => {
   if (ms <= 0) {
     return;
   }
@@ -34,6 +36,9 @@ export const wallClock = (options: WallClockOptions = {}): Clock => {
   let previous = 0;
 
   return {
+    reset() {
+      previous = 0;
+    },
     async next(_index, frame) {
       const gap = Math.max(0, Math.min(frame.at - previous, capMs));
       previous = frame.at;
@@ -58,7 +63,7 @@ export class TapeGate {
     return this.#mode;
   }
 
-  get paused(): boolean {
+  get held(): boolean {
     return this.#mode !== "run";
   }
 

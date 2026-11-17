@@ -4,7 +4,7 @@ import { z } from "zod";
 export const TAPE_VERSION = 1;
 
 const frameSchema = z.object({
-  /** 相对本条响应开始。 */
+  /** 相对本条请求到达；首块之前那段等待也算在内。 */
   at: z.number().nonnegative(),
   /** base64 编码的原始字节。 */
   bytes: z.string(),

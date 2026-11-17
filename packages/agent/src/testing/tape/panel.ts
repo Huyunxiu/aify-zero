@@ -61,7 +61,7 @@ export const PANEL_HTML = `<!doctype html>
     <h1>tape</h1>
     <pre id="state">loading…</pre>
     <div class="row">
-      <button data-action="pause">pause</button>
+      <button data-action="hold">hold</button>
       <button data-action="step">step</button>
       <button data-action="resume">resume</button>
     </div>

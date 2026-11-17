@@ -76,9 +76,9 @@ const provider = await startFakeProvider({
           ...(valueOf("speed") === undefined
             ? {}
             : { speed: Number(valueOf("speed")) }),
-          ...(valueOf("pause-at") === undefined
+          ...(valueOf("hold-at") === undefined
             ? {}
-            : { pauseAt: Number(valueOf("pause-at")) }),
+            : { holdAt: Number(valueOf("hold-at")) }),
         },
       }),
   port,
@@ -98,9 +98,9 @@ if (tapeOut !== undefined) {
   parts.push(`tape -> ${tapeOut}${has("redact") ? " (redacted)" : ""}`);
 }
 if (playPath !== undefined) {
-  const pauseAt = valueOf("pause-at");
+  const holdAt = valueOf("hold-at");
   parts.push(
-    `playing ${playPath}${pauseAt === undefined ? "" : ` (pause at frame ${pauseAt})`}`
+    `playing ${playPath}${holdAt === undefined ? "" : ` (hold at frame ${holdAt})`}`
   );
   parts.push(`panel ${provider.baseURL.replace(/\/v1$/, "")}/__tape/panel`);
 }

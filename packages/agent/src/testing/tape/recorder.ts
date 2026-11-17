@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { eventFrameIndexes, TAPE_VERSION } from "./format.js";
@@ -46,11 +46,6 @@ export class TapeRecorder {
   /** 相对录制开始的毫秒。 */
   at(): number {
     return Math.round(performance.now() - this.#startedAt);
-  }
-
-  /** 写头。第一次写带时自动调用，已有文件就接着写。 */
-  async header(): Promise<void> {
-    await this.#ensure();
   }
 
   /** 记一条往返。 */
@@ -133,14 +128,5 @@ const exists = async (path: string): Promise<boolean> => {
     return true;
   } catch {
     return false;
-  }
-};
-
-/** 删掉一条录制带。测试与「重录」用。 */
-export const removeTape = async (path: string): Promise<void> => {
-  try {
-    await unlink(path);
-  } catch {
-    // 本来就不存在，目的已经达到。
   }
 };

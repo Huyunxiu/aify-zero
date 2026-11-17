@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { ServerResponse } from "node:http";
 
-import { TapeGate, wallClock } from "./clock.js";
+import { sleep, TapeGate, wallClock } from "./clock.js";
 import type { Clock, GateMode } from "./clock.js";
 import { decodeFrameBytes, parseTapeLine, TAPE_VERSION } from "./format.js";
 import type { TapeEntry, TapeItem } from "./format.js";
@@ -28,15 +28,31 @@ export const loadTape = async (path: string): Promise<TapeItem[]> => {
   return items;
 };
 
+/** 一条响应，连同它在时间轴上的位置。 */
+type ScheduledEntry = {
+  readonly at: number;
+  readonly entry: TapeEntry;
+};
+
 export type TapePlayerOptions = {
   /** 录制带路径。 */
   readonly path: string;
   /** 时间源；缺省是原速。 */
   readonly clock?: Clock;
   /** 播到第几帧就挂起；0 基，指的是已经发出的帧数。 */
-  readonly pauseAt?: number;
+  readonly holdAt?: number;
   /** 挂起时喊一声。 */
   readonly onHold?: (frame: number) => void;
+};
+
+/** 播放器的当前状态；给控制面与测试看。 */
+export type TapePlayerState = {
+  readonly tape: string;
+  readonly position: number;
+  readonly remaining: number;
+  readonly frames: number;
+  readonly mode: GateMode;
+  readonly held: boolean;
 };
 
 /**
@@ -47,10 +63,10 @@ export type TapePlayerOptions = {
  */
 export class TapePlayer {
   readonly #path: string;
-  readonly #entries: readonly TapeEntry[];
+  readonly #entries: readonly ScheduledEntry[];
   readonly #clock: Clock;
   readonly #gate = new TapeGate();
-  readonly #pauseAt: number | undefined;
+  readonly #holdAt: number | undefined;
   readonly #onHold: ((frame: number) => void) | undefined;
   #cursor = 0;
   #frames = 0;
@@ -58,25 +74,29 @@ export class TapePlayer {
 
   private constructor(
     path: string,
-    entries: readonly TapeEntry[],
+    entries: readonly ScheduledEntry[],
     clock: Clock,
-    options: Pick<TapePlayerOptions, "pauseAt" | "onHold">
+    options: Pick<TapePlayerOptions, "holdAt" | "onHold">
   ) {
     this.#path = path;
     this.#entries = entries;
     this.#clock = clock;
-    this.#pauseAt = options.pauseAt;
+    this.#holdAt = options.holdAt;
     this.#onHold = options.onHold;
   }
 
   static async load(options: TapePlayerOptions): Promise<TapePlayer> {
     const items = await loadTape(options.path);
-    const entries = items.flatMap((item) =>
-      item.kind === "request" ? [item.entry] : []
-    );
+    const entries = items
+      .flatMap((item) =>
+        item.kind === "request" ? [{ at: item.at, entry: item.entry }] : []
+      )
+      // 文件是追加写的，行序等于「响应完成的顺序」。时间轴按到达排，所以这里
+      // 必须重排一次，否则先完成的短请求会抢到长请求的位置。
+      .toSorted((left, right) => left.at - right.at);
 
     return new TapePlayer(options.path, entries, options.clock ?? wallClock(), {
-      ...(options.pauseAt === undefined ? {} : { pauseAt: options.pauseAt }),
+      ...(options.holdAt === undefined ? {} : { holdAt: options.holdAt }),
       ...(options.onHold === undefined ? {} : { onHold: options.onHold }),
     });
   }
@@ -102,13 +122,8 @@ export class TapePlayer {
   }
 
   /** 现在挂着没有。 */
-  get paused(): boolean {
-    return this.#gate.paused;
-  }
-
-  /** 闸门现在是什么状态。 */
-  get mode(): GateMode {
-    return this.#gate.mode;
+  get held(): boolean {
+    return this.#gate.held;
   }
 
   /** 有没有一条响应正在往外写。 */
@@ -116,8 +131,20 @@ export class TapePlayer {
     return this.#busy;
   }
 
+  /** 控制面要的那几个数。 */
+  state(): TapePlayerState {
+    return {
+      tape: this.#path,
+      position: this.#cursor,
+      remaining: this.remaining,
+      frames: this.#frames,
+      mode: this.#gate.mode,
+      held: this.#gate.held,
+    };
+  }
+
   /** 挂起：下一帧起都等。 */
-  pause(): void {
+  hold(): void {
     this.#gate.hold();
   }
 
@@ -135,9 +162,9 @@ export class TapePlayer {
    * 放一条。录制带用完时回一条供应商错误，和旧的 `replay` 动作保持一致。
    */
   async play(response: ServerResponse): Promise<void> {
-    const entry = this.#entries[this.#cursor];
+    const scheduled = this.#entries[this.#cursor];
 
-    if (entry === undefined) {
+    if (scheduled === undefined) {
       response.writeHead(500, { "content-type": "application/json" });
       response.end(
         JSON.stringify({
@@ -151,12 +178,18 @@ export class TapePlayer {
 
     this.#cursor += 1;
     this.#busy = true;
-    response.writeHead(entry.response.status, entry.response.headers);
+    response.writeHead(
+      scheduled.entry.response.status,
+      scheduled.entry.response.headers
+    );
 
     try {
-      for (const [index, frame] of entry.response.frames.entries()) {
+      // 帧的时刻相对各自的请求，所以每换一条响应，时间基准都要归零。
+      this.#clock.reset?.();
+
+      for (const [index, frame] of scheduled.entry.response.frames.entries()) {
         // 挂起的判据是「已经发出多少帧」，所以自增放在写之后。
-        if (this.#pauseAt !== undefined && this.#frames === this.#pauseAt) {
+        if (this.#holdAt !== undefined && this.#frames === this.#holdAt) {
           this.#gate.hold();
           this.#onHold?.(this.#frames);
         }
@@ -166,6 +199,9 @@ export class TapePlayer {
         response.write(decodeFrameBytes(frame.bytes));
         this.#frames += 1;
       }
+
+      // 最后一帧到响应结束之间也可能有间隔，照录制的来。
+      await sleep(scheduled.entry.response.tailMs);
     } finally {
       this.#busy = false;
     }

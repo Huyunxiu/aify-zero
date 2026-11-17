@@ -1,7 +1,5 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 import { describe, expect, test } from "vitest";
 
@@ -16,33 +14,16 @@ import type { TapeFrame, TapeItem } from "../../src/testing/tape/index.js";
 import {
   postChatCompletions as post,
   startProvider,
+  tempTape,
   useStartedProviders,
+  waitFor,
 } from "./helpers.js";
-
-/** 一份临时录制带；每次 test 一个目录。 */
-const tempTape = (): string =>
-  join(mkdtempSync(join(tmpdir(), "tape-")), "session.jsonl");
 
 const readTape = (path: string): TapeItem[] =>
   readFileSync(path, "utf-8")
     .trimEnd()
     .split("\n")
     .map((line) => parseTapeLine(line));
-
-/** 轮询一个状态，直到它成立；超时就算失败。 */
-const waitFor = async (check: () => boolean): Promise<void> => {
-  const deadline = Date.now() + 2000;
-
-  while (!check()) {
-    if (Date.now() > deadline) {
-      throw new Error("timed out waiting for the condition");
-    }
-
-    await new Promise((resolve) => {
-      setTimeout(resolve, 5);
-    });
-  }
-};
 
 const frame = (text: string): TapeFrame => ({
   at: 0,

@@ -1,7 +1,3 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 import { describe, expect, test } from "vitest";
 
 import {
@@ -11,32 +7,15 @@ import {
 import {
   postChatCompletions as post,
   startProvider,
+  tempTape,
   useStartedProviders,
+  waitFor,
 } from "./helpers.js";
-
-const tempTape = (): string =>
-  join(mkdtempSync(join(tmpdir(), "tape-play-")), "session.jsonl");
-
-/** 轮询一个状态，直到它成立；超时就算失败。 */
-const waitFor = async (
-  check: () => boolean,
-  timeoutMs = 2000
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs;
-
-  while (!check()) {
-    if (Date.now() > deadline) {
-      throw new Error("timed out waiting for the condition");
-    }
-
-    await new Promise((resolve) => {
-      setTimeout(resolve, 5);
-    });
-  }
-};
 
 type Entry = {
   readonly stream?: boolean;
+  /** 在时间轴上的位置；缺省是 0。 */
+  readonly at?: number;
   readonly frames: readonly { at: number; text: string }[];
 };
 
@@ -50,7 +29,7 @@ const writeTape = async (
 
   for (const entry of entries) {
     await recorder.recordRequest({
-      at: 0,
+      at: entry.at ?? 0,
       method: "POST",
       path: "/v1/chat/completions",
       stream: entry.stream ?? true,
@@ -185,10 +164,10 @@ describe("tape player", () => {
       },
     ]);
 
-    const provider = await startProvider({ play: { path: out, pauseAt: 2 } });
+    const provider = await startProvider({ play: { path: out, holdAt: 2 } });
 
     const pending = post(provider.baseURL, { stream: true });
-    await waitFor(() => provider.tape?.paused === true);
+    await waitFor(() => provider.tape?.held === true);
 
     // 挂起时前两帧已经发出，第三帧还没写。
     expect(provider.tape?.frames).toBe(2);
@@ -202,7 +181,43 @@ describe("tape player", () => {
     const { text } = await pending;
 
     expect(text).toBe("data: a\n\ndata: b\n\ndata: c\n\n");
-    expect(provider.tape?.paused).toBeFalsy();
+    expect(provider.tape?.held).toBeFalsy();
+  });
+
+  test("resets the clock for each entry", async () => {
+    const out = tempTape();
+    await writeTape(out, [
+      {
+        frames: [
+          { at: 0, text: "data: 一\n\n" },
+          { at: 900, text: "data: 二\n\n" },
+        ],
+      },
+      { frames: [{ at: 300, text: "data: 三\n\n" }] },
+    ]);
+
+    const provider = await startProvider({ play: { path: out } });
+    await post(provider.baseURL, { stream: true });
+
+    const started = performance.now();
+    await post(provider.baseURL, { stream: true });
+    const elapsed = performance.now() - started;
+
+    // 第二条的首帧相对它自己的请求是 300ms；沿用上一条的基准就会变成 0。
+    expect(elapsed).toBeGreaterThanOrEqual(200);
+  });
+
+  test("orders entries by arrival, not by file order", async () => {
+    const out = tempTape();
+    await writeTape(out, [
+      { at: 800, frames: [{ at: 0, text: "data: 后\n\n" }] },
+      { at: 100, frames: [{ at: 0, text: "data: 先\n\n" }] },
+    ]);
+
+    const provider = await startProvider({ play: { path: out } });
+    const { text } = await post(provider.baseURL, { stream: true });
+
+    expect(text).toBe("data: 先\n\n");
   });
 
   test("reports the tape position", async () => {
@@ -226,7 +241,7 @@ describe("tape player", () => {
       remaining: 1,
       frames: 0,
       mode: "run",
-      paused: false,
+      held: false,
     });
   });
 
@@ -241,10 +256,10 @@ describe("tape player", () => {
       },
     ]);
 
-    const provider = await startProvider({ play: { path: out, pauseAt: 0 } });
+    const provider = await startProvider({ play: { path: out, holdAt: 0 } });
     const pending = post(provider.baseURL, { stream: true });
 
-    await waitFor(() => provider.tape?.paused === true);
+    await waitFor(() => provider.tape?.held === true);
 
     await fetch(new URL("/__tape/step", provider.baseURL), { method: "POST" });
     await waitFor(() => provider.tape?.frames === 1);
@@ -265,10 +280,10 @@ describe("tape player", () => {
     const out = tempTape();
     await writeTape(out, [{ frames: [{ at: 0, text: "data: a\n\n" }] }]);
 
-    const provider = await startProvider({ play: { path: out, pauseAt: 0 } });
+    const provider = await startProvider({ play: { path: out, holdAt: 0 } });
     const pending = post(provider.baseURL, { stream: true });
 
-    await waitFor(() => provider.tape?.paused === true);
+    await waitFor(() => provider.tape?.held === true);
 
     const response = await fetch(new URL("/__tape/load", provider.baseURL), {
       method: "POST",
