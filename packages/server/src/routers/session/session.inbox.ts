@@ -8,6 +8,7 @@ import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
 import { agentRunner } from "../../runtime";
 import { acceptedEffort, requestedEffort } from "../../session/model-rules";
+import { notifyTapeTakeover } from "../../session/tape-control";
 import { SQLiteStore } from "../../storage/sqlite-store";
 import { findConfiguredModel } from "../settings/settings.service";
 import { inboxItemIdSchema } from "./session.schema";
@@ -79,6 +80,12 @@ export const enqueueInboxItem = publicProcedure
       mode: input.mode,
       ...(projectId === undefined ? {} : { projectId }),
     });
+
+    // 真正的插话会分叉时间轴：播放器停在这一点，之后的请求转给真供应商。
+    // 运行边界上的消息（空闲、等待审批）不触发。
+    if (item.deliverAt === "step-boundary") {
+      notifyTapeTakeover();
+    }
 
     return { item };
   });
