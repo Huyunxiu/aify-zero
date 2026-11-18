@@ -16,6 +16,8 @@ declare global {
       /** 用户点了发件箱的通知：要切到的会话。 */
       onOpenSession?(listener: (sessionId: string) => void): number;
       offOpenSession?(id: number): void;
+      /** 界面语言；托盘这类原生界面按它换文案。 */
+      setLanguage?(language: string): void;
     };
   }
 }

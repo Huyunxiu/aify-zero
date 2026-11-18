@@ -81,6 +81,8 @@ export const IPC_CHANNELS = {
   TERMINAL_URL: "terminal-url",
   /** 主进程 -> 渲染端：用户点了通知，把界面切到那个会话。 */
   OPEN_SESSION: "open-session",
+  /** 渲染端 -> 主进程：界面语言变了，原生界面跟着换。 */
+  LANGUAGE: "app-language",
 };
 
 /**

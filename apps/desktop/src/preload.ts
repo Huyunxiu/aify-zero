@@ -62,6 +62,10 @@ contextBridge.exposeInMainWorld("aifyDesktop", {
   offOpenSession: (id: number): void => {
     openSessionListeners.delete(id);
   },
+  // 界面语言变了：托盘这类原生界面跟着换。
+  setLanguage: (language: string): void => {
+    ipcRenderer.send(IPC_CHANNELS.LANGUAGE, language);
+  },
   // 应用通道的地址。桌面文档源是 aify-app://，WebSocket 没有对应的 scheme，
   // 所以地址由主进程拼好。地址里不带令牌：升级请求的凭据由主进程在发出前
   // 注入，渲染端拿不到它。

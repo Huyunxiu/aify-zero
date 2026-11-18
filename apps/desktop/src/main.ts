@@ -28,7 +28,9 @@ import { ipcMain } from "electron/main";
 
 import { ipcContext } from "@/ipc/context";
 
-import { createTray, OutboxNotifier } from "./notifications";
+import { resolveDesktopLanguage, setDesktopLanguage } from "./i18n";
+import { createTray, OutboxNotifier, updateTrayMenu } from "./notifications";
+import type { TrayActions } from "./notifications";
 import { createAppProtocolHandler, registerAppScheme } from "./protocol";
 import { DesktopServer } from "./server-manager";
 import { isLoopbackOrigin, normalizeServerOrigin } from "./server-origin";
@@ -363,6 +365,40 @@ const openSession = (sessionId: string): void => {
   } else {
     send();
   }
+};
+
+/** 托盘菜单的两个动作；语言一变，菜单要按新文案重画。 */
+const trayActions: TrayActions = {
+  onOpen: showExistingWindow,
+  onQuit: () => {
+    app.quit();
+  },
+};
+
+/**
+ * 渲染端说界面语言变了：托盘菜单跟着换。
+ *
+ * 语言先按系统给一个默认值（`app.getLocale()`），渲染端加载完再推一次准的；
+ * 两边不一致时以推过来的为准。
+ */
+const installLanguageIpc = (): void => {
+  ipcMain.on(IPC_CHANNELS.LANGUAGE, (event, language: unknown) => {
+    const frame = event.senderFrame;
+
+    if (
+      frame === null ||
+      frame !== event.sender.mainFrame ||
+      typeof language !== "string"
+    ) {
+      return;
+    }
+
+    setDesktopLanguage(language);
+
+    if (tray !== undefined) {
+      updateTrayMenu(tray, trayActions);
+    }
+  });
 };
 
 const setupIpcServer = async () => {
@@ -719,14 +755,15 @@ const onElectronReady = async () => {
   showWindow(mainWindow);
 
   // 托盘是「壳开着就算在线」的落点：没有它，Windows 和 Linux 上关窗就等于退出。
+  // 菜单文案先按系统语言出，渲染端加载完会推准的那一份。
+  setDesktopLanguage(resolveDesktopLanguage(app.getLocale()));
+  installLanguageIpc();
+
   tray = createTray({
+    ...trayActions,
     iconPath: trayIconPath(),
     log: (message) => {
       logger.warn(message);
-    },
-    onOpen: showExistingWindow,
-    onQuit: () => {
-      app.quit();
     },
   });
 

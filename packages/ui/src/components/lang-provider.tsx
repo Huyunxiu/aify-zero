@@ -74,8 +74,11 @@ export function LangProvider({
     [storageKey]
   );
 
+  // 界面语言也是原生界面的语言：桌面壳没有自己的语言设置，托盘菜单跟着这里走。
+  // 浏览器里没有这个桥，所以整句跳过。
   useEffect(() => {
     applyLang(lang);
+    window.aifyDesktop?.setLanguage?.(lang);
   }, [lang]);
 
   // useEffect(() => {
