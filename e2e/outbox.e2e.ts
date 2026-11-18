@@ -9,26 +9,23 @@
  * 会话由接口开、由接口跑：页面一收到 `run.end` 就把会话标成已读，而「有人看
  * 了」正是发件箱不该弹通知的理由。这一条要的是反面——没人在看，才有通知。
  */
-import { createORPCClient } from "@orpc/client";
-import { RPCLink } from "@orpc/client/fetch";
 import { expect, test } from "@playwright/test";
 import type { AgentUserTurn } from "@workspace/agent-client";
-import type { AppRouterClient } from "@workspace/server/routers/index";
-import { frameText } from "@workspace/shared/ws-frame";
 import {
   encodeChannelMessage,
   OUTBOX_ACK_MESSAGE_TYPE,
-  OUTBOX_NOTIFY_MESSAGE_TYPE,
-  OUTBOX_SUBSCRIBE_MESSAGE_TYPE,
-  parseChannelMessage,
-  parseOutboxNotify,
 } from "@workspace/shared/ws-protocol";
-import type { OutboxDelivery } from "@workspace/shared/ws-protocol";
-import NodeWebSocket from "ws";
-import type { RawData } from "ws";
+import type NodeWebSocket from "ws";
 
 import { startStack, waitFor } from "./harness";
 import type { Stack } from "./harness";
+import {
+  collect,
+  OUTBOX_TIMEOUT_MS,
+  readOutboxState,
+  rpcClient,
+  subscribe,
+} from "./outbox-helpers";
 
 /** 用例自己开的会话；没有页面碰它，所以没人会把「刚跑完」改成「已读」。 */
 const SESSION_ID = "e2e-outbox-session";
@@ -42,35 +39,8 @@ const ANSWER = "跑完了，结果在会话里。";
 /** 会话标题：非流式那一次请求的回答。通知带着它，用户才知道是哪条会话。 */
 const TITLE = "发件箱";
 
-/** 竞态余量两秒加一个扫描周期；给到二十秒，坏的时候才像坏。 */
-const NOTIFY_TIMEOUT_MS = 20_000;
-
 /** 同一条只推一次；等三个扫描周期看有没有第二批。 */
 const QUIET_MS = 3000;
-
-/** 投递器的只读状态；和 `/outbox/state` 的响应同形。 */
-type OutboxState = {
-  readonly intervalMs: number;
-  readonly lastScanAt: number | null;
-  readonly lastSent: number;
-  readonly pending: number;
-  readonly pushed: number;
-  readonly subscribed: boolean;
-};
-
-/**
- * 和页面同一个 RPC 客户端，只是地址和凭据换成这一场的。
- *
- * 用例要开一条会话，走的正是页面发那句话的那条路：传输、包封、错误都在
- * oRPC 里，这里不另写一套。
- */
-const rpcClient = (stack: Stack): AppRouterClient =>
-  createORPCClient(
-    new RPCLink({
-      headers: { authorization: `Bearer ${stack.token}` },
-      url: `${stack.apiUrl}/api/rpc`,
-    })
-  );
 
 /** 一条用户回合，形状和页面发的那个一样；类型就是接口收的那个。 */
 const userTurn = (): AgentUserTurn => {
@@ -93,57 +63,6 @@ const userTurn = (): AgentUserTurn => {
   };
 };
 
-/** 连上应用通道并订阅；用例扮演的就是桌面主进程那一条连接。 */
-const subscribe = async (stack: Stack): Promise<NodeWebSocket> => {
-  const websocket = new NodeWebSocket(
-    `${stack.apiUrl.replace("http", "ws")}/api/ws`,
-    { headers: { authorization: `Bearer ${stack.token}` } }
-  );
-
-  await new Promise<void>((resolve, reject) => {
-    websocket.once("open", resolve);
-    websocket.once("error", reject);
-  });
-
-  websocket.send(encodeChannelMessage({ type: OUTBOX_SUBSCRIBE_MESSAGE_TYPE }));
-
-  return websocket;
-};
-
-/** 收到的通知批次，按到达顺序；断言「只推一次」要靠它。 */
-const collect = (websocket: NodeWebSocket): OutboxDelivery[][] => {
-  const batches: OutboxDelivery[][] = [];
-
-  websocket.on("message", (data: RawData, isBinary: boolean) => {
-    if (isBinary) {
-      return;
-    }
-
-    const message = parseChannelMessage(frameText(data));
-
-    if (message.type === OUTBOX_NOTIFY_MESSAGE_TYPE) {
-      batches.push([...parseOutboxNotify(message.data).items]);
-    }
-  });
-
-  return batches;
-};
-
-/** 读投递器的只读状态；排障的人走的也是这条路径。 */
-const readState = async (stack: Stack): Promise<OutboxState> => {
-  const response = await fetch(`${stack.apiUrl}/api/openapi/outbox/state`, {
-    headers: { authorization: `Bearer ${stack.token}` },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `outbox state failed: ${String(response.status)} ${await response.text()}`
-    );
-  }
-
-  return (await response.json()) as OutboxState;
-};
-
 test("Outbox: a run nobody watched → the subscriber is notified → the ack stamps the row", async () => {
   let stack: Stack | undefined;
   let socket: NodeWebSocket | undefined;
@@ -161,12 +80,12 @@ test("Outbox: a run nobody watched → the subscriber is notified → the ack st
     // 2. 订阅要在服务端真的登记上，后面每一步都假定有人在等。
     await waitFor(
       async () => {
-        const current = await readState(live);
+        const current = await readOutboxState(live);
 
         return current.subscribed ? current : undefined;
       },
       "the dispatcher to see the subscriber",
-      NOTIFY_TIMEOUT_MS
+      OUTBOX_TIMEOUT_MS
     );
 
     // 3. 一条没人看着的会话：接口开，接口跑。
@@ -180,7 +99,7 @@ test("Outbox: a run nobody watched → the subscriber is notified → the ack st
     const [delivery] = await waitFor(
       () => batches[0],
       "the outbox notification",
-      NOTIFY_TIMEOUT_MS
+      OUTBOX_TIMEOUT_MS
     );
 
     if (!delivery) {
@@ -205,12 +124,12 @@ test("Outbox: a run nobody watched → the subscriber is notified → the ack st
     // 6. 只读状态把这件事说清楚：没有等着投的行，推过一条，有连接在等。
     const state = await waitFor(
       async () => {
-        const current = await readState(live);
+        const current = await readOutboxState(live);
 
         return current.pending === 0 ? current : undefined;
       },
       "the delivery to be stamped",
-      NOTIFY_TIMEOUT_MS
+      OUTBOX_TIMEOUT_MS
     );
 
     expect(state.pushed).toBe(1);
