@@ -28,9 +28,16 @@ import { ipcMain } from "electron/main";
 
 import { ipcContext } from "@/ipc/context";
 
+import { resolveDesktopLanguage, setDesktopLanguage } from "./i18n";
+import { OutboxConnection } from "./outbox/connection";
 import { createAppProtocolHandler, registerAppScheme } from "./protocol";
 import { DesktopServer } from "./server-manager";
 import { isLoopbackOrigin, normalizeServerOrigin } from "./server-origin";
+import { createTray, updateTrayMenu } from "./tray";
+import type { TrayActions } from "./tray";
+
+/** 退出中：托盘和窗口的关闭处理都看它，别把清理阶段当成用户操作。 */
+let isQuitting = false;
 
 log.initialize();
 log.scope.labelPadding = false;
@@ -267,6 +274,17 @@ const buildWindow = (): BrowserWindow => {
     }
   );
 
+  // 关窗不退出：进程要留在托盘里，定时器和发件箱才继续跑。真正退出走托盘
+  // 菜单或系统的退出命令，那时 `isQuitting` 已经是 true。
+  mainWindow.on("close", (event) => {
+    if (isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
   return mainWindow;
 };
 
@@ -288,6 +306,109 @@ const createWindow = (): BrowserWindow => {
   const mainWindow = buildWindow();
   showWindow(mainWindow);
   return mainWindow;
+};
+
+/** 托盘和通知连接；两者都随应用活到退出。 */
+let tray: ReturnType<typeof createTray> | undefined;
+let notifier: OutboxConnection | undefined;
+
+/**
+ * 一个图标文件的落点。
+ *
+ * 打包后 `__dirname` 在应用目录里，图标在 `resources/icons`；开发期两者都在
+ * 仓库里，图标比 `.vite/build` 高一层。托盘图标和 dock 图标因此共用这一段。
+ *
+ * @param file - `resources/icons` 下的文件名。
+ */
+const iconPath = (file: string): string => {
+  // oxlint-disable-next-line unicorn/prefer-module
+  const dirname = __dirname;
+
+  return app.isPackaged
+    ? path.join(dirname, "../../../resources/icons", file)
+    : path.join(dirname, "../../resources/icons", file);
+};
+
+/** 把一个窗口拿到前台：最小化的先还原，再显示并聚焦。 */
+const focusWindow = (window: BrowserWindow): void => {
+  if (window.isMinimized()) {
+    window.restore();
+  }
+
+  window.show();
+  window.focus();
+};
+
+/** 把主窗口拿出来；托盘点击和 macOS 的 activate 都走它。 */
+const showExistingWindow = (): void => {
+  const [existing] = BrowserWindow.getAllWindows();
+
+  if (existing === undefined) {
+    createWindow();
+
+    return;
+  }
+
+  focusWindow(existing);
+};
+
+/**
+ * 用户点了发件箱的通知：把窗口拿出来，再让界面切到那个会话。
+ *
+ * 窗口可能是刚建的，这时页面还没加载完；等 `did-finish-load` 再送，否则事件
+ * 在渲染端还没有监听者时就丢了。
+ */
+const openSession = (sessionId: string): void => {
+  const [existing] = BrowserWindow.getAllWindows();
+  const window = existing ?? createWindow();
+
+  focusWindow(window);
+
+  const send = (): void => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.OPEN_SESSION, sessionId);
+    }
+  };
+
+  if (window.webContents.isLoading()) {
+    window.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
+};
+
+/** 托盘菜单的两个动作；语言一变，菜单要按新文案重画。 */
+const trayActions: TrayActions = {
+  onOpen: showExistingWindow,
+  onQuit: () => {
+    app.quit();
+  },
+};
+
+/**
+ * 渲染端说界面语言变了：托盘菜单跟着换。
+ *
+ * 语言先按系统给一个默认值（`app.getLocale()`），渲染端加载完再推一次准的；
+ * 两边不一致时以推过来的为准。
+ */
+const installLanguageIpc = (): void => {
+  ipcMain.on(IPC_CHANNELS.LANGUAGE, (event, language: unknown) => {
+    const frame = event.senderFrame;
+
+    if (
+      frame === null ||
+      frame !== event.sender.mainFrame ||
+      typeof language !== "string"
+    ) {
+      return;
+    }
+
+    setDesktopLanguage(language);
+
+    if (tray !== undefined) {
+      updateTrayMenu(tray, trayActions);
+    }
+  });
 };
 
 const setupIpcServer = async () => {
@@ -313,18 +434,11 @@ const setupIpcServer = async () => {
 
 // macOS-only startup step: set dock icon and optional multi-instance badge.
 const setupMacDockIcon = () => {
-  // oxlint-disable-next-line unicorn/prefer-module
-  const dirname = __dirname;
-
   if (process.platform !== "darwin" || !app.dock) {
     return;
   }
 
-  const dockIconPath = app.isPackaged
-    ? path.join(dirname, "../../../resources/icons/icon.png")
-    : path.join(dirname, "../../resources/icons/icon.png");
-
-  app.dock.setIcon(dockIconPath);
+  app.dock.setIcon(iconPath("icon.png"));
 };
 
 // Puts the ripgrep shipped in extraResource ahead of whatever the user has on
@@ -548,6 +662,14 @@ const onElectronReady = async () => {
   setupBundledRipgrep();
   setupMacDockIcon();
 
+  // Windows 的 toast 通知要一个应用身份；不设的话开发期什么都弹不出来。
+  // 打包后这个值应当与安装器写进快捷方式的 AUMID 一致。
+  if (process.platform === "win32") {
+    app.setAppUserModelId(
+      process.env.AIFY_APP_USER_MODEL_ID ?? "com.electron.desktop"
+    );
+  }
+
   // 默认模式下渲染端经主进程转发，内置 server 不需要固定端口：用 0 让系统
   // 分配，避免和 `dev:server`、另一个实例或占端口的进程冲突。显式设置了
   // `AIFY_API_PORT`，或者关掉协议走 Vite 代理时，才需要固定端口。
@@ -634,6 +756,31 @@ const onElectronReady = async () => {
   installServerSelectionIpc();
   installChannelIpc(apiToken, mainWindow, waitForOrigin);
   showWindow(mainWindow);
+
+  // 托盘是「壳开着就算在线」的落点：没有它，Windows 和 Linux 上关窗就等于退出。
+  // 菜单文案先按系统语言出，渲染端加载完会推准的那一份。
+  setDesktopLanguage(resolveDesktopLanguage(app.getLocale()));
+  installLanguageIpc();
+
+  tray = createTray({
+    ...trayActions,
+    iconPath: iconPath("tray.png"),
+    log: (message) => {
+      logger.warn(message);
+    },
+  });
+
+  // 发件箱的通知从主进程弹：窗口关掉了渲染进程就不在了，而通知恰好要在那时出现。
+  notifier = new OutboxConnection({
+    log: (message) => {
+      logger.info(message);
+    },
+    onOpenSession: openSession,
+    origin: () => server.origin,
+    token: () => apiToken,
+  });
+  notifier.start();
+
   logger.info(`[startup] window shown in ${Date.now() - readyStartedAt}ms`);
 
   if (isDev && process.env.AIFY_OPEN_DEVTOOLS !== "0") {
@@ -654,19 +801,10 @@ const onElectronReady = async () => {
 const focusExistingWindow = (): void => {
   const [existing] = BrowserWindow.getAllWindows();
 
-  if (existing === undefined) {
-    return;
+  if (existing !== undefined) {
+    focusWindow(existing);
   }
-
-  if (existing.isMinimized()) {
-    existing.restore();
-  }
-
-  existing.show();
-  existing.focus();
 };
-
-let isQuitting = false;
 
 /**
  * 单实例锁：两个 App 实例同时运行会争抢默认端口和同一个 SQLite 库，而且
@@ -706,11 +844,9 @@ if (!hasSingleInstanceLock) {
     }
   });
 
-  // Quit when all windows are closed, except on macOS. There, it's common
-  // for applications and their menu bar to stay active until the user quits
-  // explicitly with Cmd + Q.
+  // 关窗只隐藏窗口，应用留在托盘里；只有托盘还没建起来时才按老规矩退出。
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
+    if (tray === undefined && process.platform !== "darwin") {
       app.quit();
     }
   });
@@ -725,6 +861,11 @@ if (!hasSingleInstanceLock) {
     isQuitting = true;
     event.preventDefault();
 
+    notifier?.stop();
+    notifier = undefined;
+    tray?.destroy();
+    tray = undefined;
+
     void server
       .stop()
       .catch((error: unknown) => {
@@ -735,11 +876,9 @@ if (!hasSingleInstanceLock) {
       });
   });
 
+  // macOS 上点 dock 图标走这里。窗口通常还在，只是被关进了托盘——关窗不再销毁
+  // 窗口，所以这里不能按「没有窗口才新建」判断，那会让 dock 点了没反应。
   app.on("activate", () => {
-    // On OS X it's common to re-create a window when the dock icon is clicked
-    // and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    showExistingWindow();
   });
 }

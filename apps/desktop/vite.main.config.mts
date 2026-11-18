@@ -12,6 +12,12 @@ export default defineConfig(({ command }) => ({
   // 用 inline 而不是 true，避免 .map 相对路径解析问题。
   build: {
     sourcemap: command === "serve" ? "inline" : false,
+    rollupOptions: {
+      // 发件箱的通知连接用 `ws`（Node 的全局 WebSocket 不能带请求头）和
+      // `partysocket`（重连）。两个都是运行时依赖，留在 node_modules 里，不打包
+      // 进 bundle。
+      external: ["partysocket", "ws"],
+    },
   },
   optimizeDeps: {
     exclude: [

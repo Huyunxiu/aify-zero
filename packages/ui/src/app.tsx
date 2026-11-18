@@ -41,6 +41,27 @@ export default function App() {
     return disconnect;
   }, []);
 
+  // 用户点了发件箱的通知：主进程把会话 id 送进来，这里负责切过去。浏览器里
+  // 没有这个桥，所以整段跳过。
+  useEffect(() => {
+    const desktop = window.aifyDesktop;
+
+    if (desktop?.onOpenSession === undefined) {
+      return;
+    }
+
+    const id = desktop.onOpenSession((sessionId) => {
+      void router.navigate({
+        params: { sessionId },
+        to: "/sessions/$sessionId",
+      });
+    });
+
+    return () => {
+      desktop.offOpenSession?.(id);
+    };
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ServerStatusBanner />

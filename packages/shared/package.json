@@ -32,6 +32,7 @@
     "./model": "./src/model.ts",
     "./server-ready": "./src/server-ready.ts",
     "./terminal-protocol": "./src/terminal-protocol.ts",
+    "./ws-frame": "./src/ws-frame.ts",
     "./ws-protocol": "./src/ws-protocol.ts"
   },
   "publishConfig": {

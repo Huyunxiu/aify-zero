@@ -24,6 +24,112 @@ export const WORLD_MESSAGE_TYPE = "world";
 /** 协议不认识的 `type` 收到的回答，`data.message` 说明原因。 */
 export const ERROR_MESSAGE_TYPE = "error";
 
+/** WebSocket 的 OPEN 状态码。两端都在比较它，所以放协议里，各写一份只会漂。 */
+export const WEBSOCKET_OPEN = 1;
+
+/**
+ * 桌面主进程订阅发件箱。
+ *
+ * 只有会弹系统通知的那条连接才发它；页面自己那条连接永远不发，因此永远不会
+ * 收到通知。
+ */
+export const OUTBOX_SUBSCRIBE_MESSAGE_TYPE = "outbox.subscribe";
+
+/** 服务端推给桌面的通知；`data.items` 是这一批要弹出来的发件项。 */
+export const OUTBOX_NOTIFY_MESSAGE_TYPE = "outbox.notify";
+
+/** 桌面弹完之后的回执；`data.ids` 是这些通知盖住的发件项。 */
+export const OUTBOX_ACK_MESSAGE_TYPE = "outbox.ack";
+
+/** 一次投递的内容：标题、正文，以及它指向的会话与回合。 */
+export type OutboxDelivery = {
+  /** 发件项 id；回执用它。 */
+  readonly id: string;
+  readonly sessionId: string;
+  readonly turnId: string;
+  /** 会话标题。 */
+  readonly title: string;
+  /** 从回合最后一段文本截出来的正文。 */
+  readonly body: string;
+};
+
+export type OutboxDeliveryData = {
+  readonly items: readonly OutboxDelivery[];
+};
+
+export type OutboxAckData = {
+  readonly ids: readonly string[];
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value !== "";
+
+/**
+ * 校验一条 `outbox.notify` 的载荷。
+ *
+ * 只认这些字段：多一个、少一个都按坏帧处理。协议两端都在同一个仓库里，
+ * 宽松解析只会让漂移更晚被发现。
+ *
+ * @param data - 消息里的 `data`。
+ * @returns 校验过的载荷。
+ * @throws {Error} 不是对象，或某一项形状不对。
+ */
+export function parseOutboxNotify(data: unknown): OutboxDeliveryData {
+  if (!isRecord(data) || !Array.isArray(data.items)) {
+    throw new Error("ws: outbox.notify data must hold an items array");
+  }
+
+  const items = data.items.map((item: unknown, index: number) => {
+    if (!isRecord(item)) {
+      throw new Error(
+        `ws: outbox.notify item ${String(index)} is not an object`
+      );
+    }
+
+    const { id, sessionId, turnId, title, body } = item;
+
+    if (
+      !isNonEmptyString(id) ||
+      !isNonEmptyString(sessionId) ||
+      !isNonEmptyString(turnId) ||
+      typeof title !== "string" ||
+      typeof body !== "string"
+    ) {
+      throw new Error(
+        `ws: outbox.notify item ${String(index)} has a bad field`
+      );
+    }
+
+    return { body, id, sessionId, title, turnId };
+  });
+
+  return { items };
+}
+
+/**
+ * 校验一条 `outbox.ack` 的载荷。
+ *
+ * @param data - 消息里的 `data`。
+ * @returns 校验过的载荷。
+ * @throws {Error} 不是对象，或 `ids` 不是非空字符串数组。
+ */
+export function parseOutboxAck(data: unknown): OutboxAckData {
+  if (!isRecord(data) || !Array.isArray(data.ids)) {
+    throw new Error("ws: outbox.ack data must hold an ids array");
+  }
+
+  const ids = data.ids.filter(isNonEmptyString);
+
+  if (ids.length !== data.ids.length) {
+    throw new Error("ws: outbox.ack ids must all be non-empty strings");
+  }
+
+  return { ids };
+}
+
 /**
  * 把一条消息编成可以放进文本帧的 JSON。
  *

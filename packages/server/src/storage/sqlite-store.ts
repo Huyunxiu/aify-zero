@@ -31,12 +31,15 @@ import type {
   Timer,
   TimerCounts,
   TimerInsert,
+  OutboxRecordInput,
+  OutboxRecorder,
   TimerStore,
   TurnRecord,
   TurnWrite,
 } from "@workspace/agent/store";
 import {
   inbox_item_table,
+  outbox_item_table,
   session_table,
   db,
   step_table,
@@ -55,17 +58,21 @@ import { logger } from "@workspace/shared/logger";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   gt,
+  gte,
   inArray,
   isNotNull,
+  isNull,
   lt,
   lte,
   max,
   or,
 } from "drizzle-orm";
 
+import type { OutboxCandidate } from "../outbox/types";
 import { parseSessionCursor } from "./session-cursor";
 
 /** 会话列表一页的默认条数。翻页的路由和 store 用同一个数。 */
@@ -248,7 +255,7 @@ async function deleteInboxRows(
     .returning();
 }
 
-export class SQLiteStore implements AgentStore, TimerStore {
+export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
   async listSessions({
     cursor,
     limit,
@@ -982,5 +989,181 @@ export class SQLiteStore implements AgentStore, TimerStore {
       pending: rows.length,
       pendingSchedules: rows.filter((row) => row.recurrence !== null).length,
     };
+  }
+
+  /**
+   * 记一条发件项。
+   *
+   * 同一个回合重跑时不再写第二行：唯一索引挡下冲突，这里按「已经记过」处理。
+   * 到达时刻显式写毫秒值：列默认的 `unixepoch() * 1000` 只到秒，竞态余量要靠
+   * 它算准。
+   */
+  async recordOutboxItem({
+    sessionId,
+    turnId,
+  }: OutboxRecordInput): Promise<void> {
+    await db
+      .insert(outbox_item_table)
+      .values({ createdAt: new Date(), sessionId, turnId })
+      .onConflictDoNothing();
+  }
+
+  /**
+   * 取一批可以投递的发件项。
+   *
+   * 条件全部写在 SQL 里，投递器不需要二次判断：会话还在 `done`（有人读过就会
+   * 走回 `idle`）、行没过期也没送达、到达时刻已经越过竞态余量、且不早于订阅
+   * 时刻（连接建立时不补发）。
+   */
+  async listOutboxCandidates({
+    since,
+    before,
+    limit,
+  }: {
+    since: number;
+    before: number;
+    limit: number;
+  }): Promise<OutboxCandidate[]> {
+    const rows = await db
+      .select({
+        id: outbox_item_table.id,
+        sessionId: outbox_item_table.sessionId,
+        turnId: outbox_item_table.turnId,
+        title: session_table.title,
+      })
+      .from(outbox_item_table)
+      .innerJoin(
+        session_table,
+        eq(session_table.id, outbox_item_table.sessionId)
+      )
+      .where(
+        and(
+          isNull(outbox_item_table.deliveredAt),
+          isNull(outbox_item_table.expiredAt),
+          lte(outbox_item_table.createdAt, new Date(before)),
+          gte(outbox_item_table.createdAt, new Date(since)),
+          eq(session_table.status, "done")
+        )
+      )
+      .orderBy(asc(outbox_item_table.createdAt))
+      .limit(limit);
+
+    return rows;
+  }
+
+  /** 盖回执：这些发件项已经以系统通知的形式弹出来了。 */
+  async markOutboxDelivered(
+    ids: readonly string[],
+    at: number
+  ): Promise<number> {
+    if (ids.length === 0) {
+      return 0;
+    }
+
+    const result = await db
+      .update(outbox_item_table)
+      .set({ deliveredAt: new Date(at) })
+      .where(
+        and(
+          inArray(outbox_item_table.id, [...ids]),
+          isNull(outbox_item_table.deliveredAt)
+        )
+      );
+
+    return result.rowsAffected;
+  }
+
+  /**
+   * 把等太久还没回执的行标成过期；它们不会再被取走。
+   *
+   * 写进 `expired_at` 的是「决定不再投」的时刻，不是「到达时刻早于它」的那条
+   * 线——两者差着过期窗口，混用会让账本读起来像十分钟前就放弃了。
+   */
+  async expireOutboxBefore({
+    deadline,
+    now,
+  }: {
+    deadline: number;
+    now: number;
+  }): Promise<number> {
+    const result = await db
+      .update(outbox_item_table)
+      .set({ expiredAt: new Date(now) })
+      .where(
+        and(
+          isNull(outbox_item_table.deliveredAt),
+          isNull(outbox_item_table.expiredAt),
+          lt(outbox_item_table.createdAt, new Date(deadline))
+        )
+      );
+
+    return result.rowsAffected;
+  }
+
+  /** 启动时把残留的待投行全部标过期：上一次进程没投出去的，这一次不补投。 */
+  async expirePendingOutbox(at: number): Promise<number> {
+    const result = await db
+      .update(outbox_item_table)
+      .set({ expiredAt: new Date(at) })
+      .where(
+        and(
+          isNull(outbox_item_table.deliveredAt),
+          isNull(outbox_item_table.expiredAt)
+        )
+      );
+
+    return result.rowsAffected;
+  }
+
+  /** 删掉早于 `deadline` 的行：送达和过期都只留一段时间的账。 */
+  async pruneOutbox(deadline: number): Promise<number> {
+    const result = await db
+      .delete(outbox_item_table)
+      .where(lt(outbox_item_table.createdAt, new Date(deadline)));
+
+    return result.rowsAffected;
+  }
+
+  /** 还没送达、也没过期的行数；只读状态用它回答「有没有东西在等」。 */
+  async countPendingOutbox(): Promise<number> {
+    const [row] = await db
+      .select({ pending: count() })
+      .from(outbox_item_table)
+      .where(
+        and(
+          isNull(outbox_item_table.deliveredAt),
+          isNull(outbox_item_table.expiredAt)
+        )
+      );
+
+    return row?.pending ?? 0;
+  }
+
+  /** 读一个回合连同它的 step；发件项的正文从这里取。 */
+  async getTurnRecord(
+    sessionId: string,
+    turnId: string
+  ): Promise<TurnRecord | null> {
+    const [row] = await db
+      .select()
+      .from(turn_table)
+      .where(
+        and(eq(turn_table.sessionId, sessionId), eq(turn_table.turnId, turnId))
+      )
+      .limit(1);
+
+    if (!row) {
+      return null;
+    }
+
+    const steps = await db
+      .select()
+      .from(step_table)
+      .where(
+        and(eq(step_table.sessionId, sessionId), eq(step_table.turnId, turnId))
+      )
+      .orderBy(asc(step_table.seq));
+
+    return hydrateTurn(row, steps as StepRow[]);
   }
 }

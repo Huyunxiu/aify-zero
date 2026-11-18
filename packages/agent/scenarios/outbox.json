@@ -1,0 +1,8 @@
+{
+  "name": "outbox",
+  "models": ["fake-fast"],
+  "rules": [
+    { "when": { "stream": false }, "answer": "发件箱" },
+    { "when": { "stream": true }, "answer": "跑完了，结果在会话里。" }
+  ]
+}
