@@ -3,6 +3,13 @@ import { defineConfig, devices } from "@playwright/test";
 const keepArtifacts = process.env.E2E_KEEP_ARTIFACTS === "1";
 
 /**
+ * 录一份过程。给人看用例到底点了哪儿，默认关：视频大，CI 不需要。
+ *
+ * 用法：`E2E_VIDEO=1 pnpm e2e --grep "Session delete"`。
+ */
+const recordVideo = process.env.E2E_VIDEO === "1";
+
+/**
  * 端到端用例的配置。
  *
  * 只认 `*.e2e.ts`：vitest 扫的是 `*.test.ts` / `*.spec.ts`，两边不抢文件，
@@ -26,6 +33,6 @@ export default defineConfig({
     locale: "en-US",
     trace: keepArtifacts ? "on" : "retain-on-failure",
     screenshot: keepArtifacts ? "on" : "only-on-failure",
-    video: "off",
+    video: recordVideo ? "on" : "off",
   },
 });

@@ -14,8 +14,8 @@ import type { Stack } from "./harness";
 const COMPOSER_NAME = "What would you like to know?";
 
 /** 场景给两次标题生成两个不同的回答，所以这两段文字各自只属于一个会话。 */
-const KEPT = "甲会话";
-const REMOVED = "乙会话";
+const KEPT = "会话甲";
+const REMOVED = "会话乙";
 
 test("Session delete: the removed session leaves the list and the page", async ({
   page,
@@ -60,8 +60,13 @@ test("Session delete: the removed session leaves the list and the page", async (
     await page.getByRole("button", { name: "Delete", exact: true }).click();
 
     // 5. 列表少一行，页面回到空白态，另一个会话还在。
+    //
+    //    空白态认文字，不认地址：新建会话的入口本来就在根路径上，`/sessions`
+    //    也渲染同一个页面。
     await expect(page.getByText(REMOVED, { exact: true })).toHaveCount(0);
-    await expect(page).toHaveURL(/\/sessions$/u);
+    await expect(
+      page.getByText("Start a session", { exact: true })
+    ).toBeVisible();
     await expect(page.getByText(KEPT, { exact: true })).toBeVisible();
 
     // 6. 刷新之后仍然是删掉的状态：藏起来的是服务端，不是缓存。
