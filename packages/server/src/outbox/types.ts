@@ -48,6 +48,13 @@ export interface OutboxStore {
   expirePendingOutbox(at: number): Promise<number>;
   /** 删掉超过保留期的行。 */
   pruneOutbox(deadline: number): Promise<number>;
+  /**
+   * 还没送达、也没过期的行数。
+   *
+   * 只给只读状态用，不参与投递判断——能不能投写在 `listOutboxCandidates` 的
+   * 查询里。它答的是另一个问题：库里还有没有东西在等人来取。
+   */
+  countPendingOutbox(): Promise<number>;
   /** 读一个回合连同它的 step；投递的正文从这里取，解不出正文就不投。 */
   getTurnRecord(sessionId: string, turnId: string): Promise<TurnRecord | null>;
 }

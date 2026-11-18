@@ -35,14 +35,21 @@ export type OutboxDispatcherState = {
   lastScanAt: number | null;
   /** 上一次扫描真的推了几条。 */
   lastSent: number;
+  /**
+   * 库里还等着几行：送达和过期都没有。
+   *
+   * 它可能是下一条通知，也可能是没人来取的行——所以要看 `subscribed`：桌面
+   * 没连上来时，这个数会一直涨，而那不是故障。
+   */
+  pending: number;
 };
 
 /**
  * 发件箱的投递器。
  *
  * 它只做一件事：把到条件的发件项推给在等的连接，收回执，记账。到条件的三条
- * 判断都写在查询里（会话仍是 `done`、过了竞态余量、不早于订阅时刻），所以
- * 这里没有第二套规则。
+ * 判断都写在查询里（会话仍是 `done`、过了竞态余量、不早于连接登记的时刻），
+ * 所以这里没有第二套规则。
  *
  * 它不弹通知：能弹的只有桌面进程。推出去之后这一行就不再推第二次——回执丢了
  * 就丢了，比重复弹一条更让人舒服。
@@ -60,8 +67,6 @@ export class OutboxDispatcher {
   #handle: ReturnType<typeof setInterval> | undefined;
   #scanning: Promise<void> | undefined;
   #stopped = false;
-  /** 订阅从这一刻算起：连接建立之前的行不补发。 */
-  #subscribedAt: number | null = null;
   #lastScanAt: number | null = null;
   #lastSent = 0;
 
@@ -133,14 +138,20 @@ export class OutboxDispatcher {
     await this.#scanning;
   }
 
-  /** 只读状态。 */
-  state(): OutboxDispatcherState {
+  /**
+   * 只读状态。
+   *
+   * `pending` 是库里的数，所以这里是异步的；其余几个字段只说投递器自己活着
+   * 没有，读内存就够。
+   */
+  async state(): Promise<OutboxDispatcherState> {
     return {
       intervalMs: this.#intervalMs,
       lastScanAt: this.#lastScanAt,
       lastSent: this.#lastSent,
+      pending: await this.#store.countPendingOutbox(),
       pushed: this.#pushed.size,
-      subscribed: this.#channels.hasSubscriber(),
+      subscribed: this.#channels.subscribedAt() !== null,
     };
   }
 
@@ -178,19 +189,18 @@ export class OutboxDispatcher {
       this.#lastScanAt = now;
       this.#lastSent = 0;
 
-      if (!this.#channels.hasSubscriber()) {
-        // 没人等的时候，「订阅时刻」不留着：重连之后从重连那一刻算起。
-        this.#subscribedAt = null;
+      // 「从这里起的行才算」由连接自己给出：投递器等到下一次扫描才记下时刻的话，
+      // 这两次扫描之间落定的运行会被当成连接之前的历史，永远不投。
+      const since = this.#channels.subscribedAt();
 
+      if (since === null) {
         return;
       }
-
-      this.#subscribedAt ??= now;
 
       const candidates = await this.#store.listOutboxCandidates({
         before: now - OUTBOX_RACE_MS,
         limit: BATCH_LIMIT,
-        since: this.#subscribedAt,
+        since,
       });
 
       const items = await this.#collect(candidates);

@@ -28,11 +28,14 @@
     "@commitlint/cli": "catalog:",
     "@commitlint/config-conventional": "catalog:",
     "@playwright/test": "catalog:",
+    "@types/ws": "catalog:",
     "@workspace/agent": "workspace:*",
     "@workspace/config": "workspace:*",
+    "@workspace/shared": "workspace:*",
     "ultracite": "catalog:",
     "vite-plus": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "ws": "catalog:"
   },
   "engines": {
     "node": ">=22.12.0"

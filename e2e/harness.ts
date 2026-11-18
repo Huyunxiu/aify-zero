@@ -53,8 +53,12 @@ const freePort = async (): Promise<number> =>
     });
   });
 
-/** 轮询一个可能还没准备好的值；`read` 可以是异步的。 */
-const waitFor = async <T>(
+/**
+ * 轮询一个可能还没准备好的值；`read` 可以是异步的。
+ *
+ * 用例也用同一个：要等的东西大多在另一个进程里，只有「再来一次」这一种问法。
+ */
+export const waitFor = async <T>(
   read: () => Promise<T | undefined> | T | undefined,
   what: string,
   timeoutMs = 60_000

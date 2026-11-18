@@ -3,7 +3,10 @@ import type { OutboxDelivery } from "@workspace/shared/ws-protocol";
 import { describe, expect, test, vi } from "vitest";
 
 import type { OutboxPush } from "../src/outbox/channels";
-import { OutboxDispatcher } from "../src/outbox/dispatcher";
+import {
+  DEFAULT_OUTBOX_SCAN_MS,
+  OutboxDispatcher,
+} from "../src/outbox/dispatcher";
 import { deliveryBody } from "../src/outbox/snippet";
 import type { OutboxCandidate, OutboxStore } from "../src/outbox/types";
 import {
@@ -54,7 +57,7 @@ type Harness = {
   store: OutboxStore;
   channels: {
     add: (push: OutboxPush) => () => void;
-    hasSubscriber: () => boolean;
+    subscribedAt: () => number | null;
     send: (items: readonly OutboxDelivery[]) => void;
     setAckHandler: (handler: (ids: readonly string[]) => void) => void;
     ack: (ids: readonly string[]) => void;
@@ -68,8 +71,11 @@ type Harness = {
 
 const harness = (options: {
   candidates?: OutboxCandidate[];
+  pending?: number;
   turn?: unknown;
   subscribers?: number;
+  /** 连接登记的时刻；缺省是这一次扫描的时刻。 */
+  subscribedAt?: number;
 }): Harness => {
   const sent: OutboxDelivery[][] = [];
   const delivered: string[][] = [];
@@ -79,6 +85,7 @@ const harness = (options: {
   const subscribers = options.subscribers ?? 1;
 
   const store: OutboxStore = {
+    countPendingOutbox: () => Promise.resolve(options.pending ?? 0),
     expireOutboxBefore: (input) => {
       expired.push(input);
 
@@ -106,7 +113,8 @@ const harness = (options: {
   const channels = {
     add: () => () => {},
     ack: (ids: readonly string[]) => ackHandler?.(ids),
-    hasSubscriber: () => subscribers > 0,
+    subscribedAt: () =>
+      subscribers > 0 ? (options.subscribedAt ?? NOW) : null,
     send: (items: readonly OutboxDelivery[]) => {
       sent.push([...items]);
     },
@@ -177,6 +185,27 @@ describe(OutboxDispatcher, () => {
 
     expect(seen[0]?.before).toBe(NOW - OUTBOX_RACE_MS);
     expect(seen[0]?.since).toBe(NOW);
+  });
+
+  test("takes the start of the window from the connection, not from the sweep", async () => {
+    // 连接比这一轮扫描早半分钟：这半分钟里落定的行仍然算「有人在等」。
+    const registeredAt = NOW - 30_000;
+    const h = harness({ subscribedAt: registeredAt });
+    const seen: { since: number; before: number }[] = [];
+    h.store.listOutboxCandidates = (input) => {
+      seen.push(input);
+
+      return Promise.resolve([]);
+    };
+    const dispatcher = new OutboxDispatcher({
+      channels: h.channels,
+      now: () => NOW,
+      store: h.store,
+    });
+
+    await runOnce(dispatcher, () => seen.length > 0);
+
+    expect(seen[0]?.since).toBe(registeredAt);
   });
 
   test("expires and prunes on every sweep", async () => {
@@ -307,6 +336,33 @@ describe(OutboxDispatcher, () => {
     await vi.waitFor(() => {
       expect(h.delivered).toStrictEqual([["outbox-1"]]);
     });
+  });
+
+  test("reports what the sweep did and what is still waiting", async () => {
+    const h = harness({ pending: 3 });
+    const dispatcher = new OutboxDispatcher({
+      channels: h.channels,
+      now: () => NOW,
+      store: h.store,
+    });
+
+    // 一次都没扫过：只有配置、订阅和库里的数，别的一律是零。
+    await expect(dispatcher.state()).resolves.toStrictEqual({
+      intervalMs: DEFAULT_OUTBOX_SCAN_MS,
+      lastScanAt: null,
+      lastSent: 0,
+      pending: 3,
+      pushed: 0,
+      subscribed: true,
+    });
+
+    await runOnce(dispatcher, () => h.sent.length > 0);
+
+    const state = await dispatcher.state();
+
+    expect(state.lastScanAt).toBe(NOW);
+    expect(state.lastSent).toBe(1);
+    expect(state.pushed).toBe(1);
   });
 });
 

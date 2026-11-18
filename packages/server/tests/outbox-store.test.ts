@@ -234,4 +234,33 @@ describe("outbox storage", () => {
 
     expect(rows).toHaveLength(1);
   });
+
+  test("counts the rows that are neither delivered nor expired", async () => {
+    // 前面几条用例各自留了待投的行，所以这里只断言增减，不咬死总数。
+    await seedTurn({
+      sessionId: "session-count",
+      text: "done",
+      turnId: "turn-count",
+    });
+    const before = await store.countPendingOutbox();
+
+    await store.recordOutboxItem({
+      sessionId: "session-count",
+      turnId: "turn-count",
+    });
+    await expect(store.countPendingOutbox()).resolves.toBe(before + 1);
+
+    const [row] = await tables.db
+      .select()
+      .from(tables.outbox_item_table)
+      .where(eq(tables.outbox_item_table.sessionId, "session-count"));
+
+    if (!row) {
+      throw new Error("the row was not recorded");
+    }
+
+    // 盖上回执之后它就不算等着了；只读状态报的就是这个数。
+    await store.markOutboxDelivered([row.id], Date.now());
+    await expect(store.countPendingOutbox()).resolves.toBe(before);
+  });
 });

@@ -4,6 +4,7 @@ import { t } from "../i18n";
 import { publicProcedure } from "../index";
 import { agent } from "./agent/agent.router";
 import { mcp } from "./mcp/mcp.router";
+import { outbox } from "./outbox/outbox.router";
 import { project } from "./project/project.router";
 import { review } from "./review/review.router";
 import { runner } from "./runner/runner.router";
@@ -16,6 +17,7 @@ import { workspace } from "./workspace/workspace.router";
 export const appRouter = {
   agent,
   mcp,
+  outbox,
   project,
   review,
   runner,

@@ -58,6 +58,7 @@ import { logger } from "@workspace/shared/logger";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   gt,
@@ -1121,6 +1122,21 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
       .where(lt(outbox_item_table.createdAt, new Date(deadline)));
 
     return result.rowsAffected;
+  }
+
+  /** 还没送达、也没过期的行数；只读状态用它回答「有没有东西在等」。 */
+  async countPendingOutbox(): Promise<number> {
+    const [row] = await db
+      .select({ pending: count() })
+      .from(outbox_item_table)
+      .where(
+        and(
+          isNull(outbox_item_table.deliveredAt),
+          isNull(outbox_item_table.expiredAt)
+        )
+      );
+
+    return row?.pending ?? 0;
   }
 
   /** 读一个回合连同它的 step；发件项的正文从这里取。 */
