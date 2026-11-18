@@ -2,8 +2,10 @@ import { streamToEventIterator } from "@orpc/server";
 import { parseSessionCursor } from "@workspace/agent-client";
 import z from "zod";
 
+import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
 import { agentRunner } from "../../runtime";
+import { SQLiteStore } from "../../storage/sqlite-store";
 
 /**
  * 读一个会话接下来发生的事。
@@ -14,17 +16,29 @@ import { agentRunner } from "../../runtime";
  *
  * 没有运行的会话不算错误：连接先建立，等它的第一次运行。`since` 是断线重连
  * 的游标，认不出来就当作没有，重连的人多读一遍比少读一段好。
+ *
+ * 已删的会话是另一回事：它不存在，不给它开通道——否则旧标签页会挂着一条永远
+ * 等不到运行的连接（ADR 0020）。
  */
 export const streamSessionEvents = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/events" })
+  .errors({ SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND })
   .input(
     z.object({
       sessionId: z.string(),
       since: z.string().optional(),
     })
   )
-  .handler(({ input }) => {
+  .handler(async ({ input }) => {
     const since = input.since ? parseSessionCursor(input.since) : undefined;
+
+    const store = new SQLiteStore();
+    const session = await store.getSessionById(input.sessionId);
+    if (!session) {
+      throw new ApiError("SESSION_NOT_FOUND", {
+        data: { sessionId: input.sessionId },
+      });
+    }
 
     return streamToEventIterator(agentRunner.subscribe(input.sessionId, since));
   });

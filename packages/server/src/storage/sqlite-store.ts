@@ -228,6 +228,40 @@ async function upsertTurnRow(
 /** 能执行 delete 的句柄：`db` 和事务句柄都满足它。 */
 type Deleter = Pick<Transaction, "delete">;
 
+/** 能执行 select 的句柄：`db` 和事务句柄都满足它。 */
+type Selector = Pick<Transaction, "select">;
+
+/**
+ * 一个会话派生出的全部子会话 id，含它自己。
+ *
+ * 子会话不可见、只能由父找回；父删了它就是孤儿，所以跟着一起删。深度用 `seen`
+ * 挡住环——正常数据里没有环，但一行坏数据不该让删除转不出来。
+ */
+async function collectSessionSubtree(
+  handle: Selector,
+  rootId: string
+): Promise<string[]> {
+  const ids = [rootId];
+  const seen = new Set(ids);
+  let frontier = [rootId];
+
+  while (frontier.length > 0) {
+    const children = await handle
+      .select({ id: session_table.id })
+      .from(session_table)
+      .where(inArray(session_table.parentSessionId, frontier));
+
+    frontier = children.map((child) => child.id).filter((id) => !seen.has(id));
+
+    for (const id of frontier) {
+      seen.add(id);
+      ids.push(id);
+    }
+  }
+
+  return ids;
+}
+
 /**
  * 删除会话里的收件箱行；`ids` 省略时删除全部。
  *
@@ -273,9 +307,11 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
     const keyset =
       cursor === undefined ? undefined : parseSessionCursor(cursor);
     // kind 是常驻条件，游标是附加的：少了 kind，子 agent 的行会挤进分页结果，
-    // 翻页时把子 agent 也一起带出来。
+    // 翻页时把子 agent 也一起带出来。已删会话同样常驻排除：它是「不存在」，
+    // 不是列表上的一个状态。
     const conditions = [
       eq(session_table.kind, kind),
+      isNull(session_table.deletedAt),
       ...(projectId ? [eq(session_table.projectId, projectId)] : []),
       ...(keyset
         ? [
@@ -355,13 +391,74 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
     const [session] = await db
       .select()
       .from(session_table)
-      .where(eq(session_table.id, sessionId))
+      .where(
+        and(eq(session_table.id, sessionId), isNull(session_table.deletedAt))
+      )
       .limit(1);
     if (!session) {
       return null;
     }
 
     return session;
+  }
+
+  async findSessionRow(sessionId: string): Promise<SessionModel | null> {
+    const [session] = await db
+      .select()
+      .from(session_table)
+      .where(eq(session_table.id, sessionId))
+      .limit(1);
+
+    return session ?? null;
+  }
+
+  async listSessionSubtreeIds(sessionId: string): Promise<string[]> {
+    return await collectSessionSubtree(db, sessionId);
+  }
+
+  /**
+   * 软删除：写 `deletedAt`，并清掉名下还没发生的事。
+   *
+   * 先认领再清扫：`UPDATE … WHERE deleted_at IS NULL` 的命中决定这次调用算不算
+   * 删成功，两个窗口同时删时只有一边拿到行。清扫按子树的 id 走，父会话派生出的
+   * 子会话一起处理。
+   */
+  async deleteSession(
+    sessionId: string,
+    deletedAt: Date
+  ): Promise<{ removed: boolean; sessionIds: string[] }> {
+    return await db.transaction(async (tx) => {
+      const sessionIds = await collectSessionSubtree(tx, sessionId);
+
+      const claimed = await tx
+        .update(session_table)
+        .set({ deletedAt })
+        .where(
+          and(
+            inArray(session_table.id, sessionIds),
+            isNull(session_table.deletedAt)
+          )
+        )
+        .returning({ id: session_table.id });
+
+      if (claimed.length === 0) {
+        return { removed: false, sessionIds: [] };
+      }
+
+      // 只删「将来还会发生的事」：发件项、待办项、定时器。回合与步骤留着——
+      // 它们就是回收站要恢复的转录（ADR 0020）。
+      await tx
+        .delete(outbox_item_table)
+        .where(inArray(outbox_item_table.sessionId, sessionIds));
+      await tx
+        .delete(inbox_item_table)
+        .where(inArray(inbox_item_table.sessionId, sessionIds));
+      await tx
+        .delete(timer_table)
+        .where(inArray(timer_table.sessionId, sessionIds));
+
+      return { removed: true, sessionIds };
+    });
   }
 
   async updateSessionById(sessionId: string, title: string): Promise<number> {

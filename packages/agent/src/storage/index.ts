@@ -88,6 +88,34 @@ export interface AgentStore {
   updateSessionById(sessionId: string, title: string): Promise<number>;
 
   /**
+   * 读会话行，不过滤删除。
+   *
+   * 只给两条路径用：建会话（删掉的行不能被当成「已存在」悄悄放行）和删除本身
+   * （判断是不是已经删过）。其余读路径一律走 `getSessionById`。
+   */
+  findSessionRow(sessionId: string): Promise<SessionRecord | null>;
+
+  /**
+   * 软删除一个会话：写上 `deletedAt`，并清掉它名下还没发生的事。
+   *
+   * 按 `parentSessionId` 递归派生子会话，一起处理；全部在一个事务里，要么全成
+   * 要么全不成。`removed: false` 表示这一行已经被删过——两个窗口同时删，只有
+   * 一边为真。
+   */
+  deleteSession(
+    sessionId: string,
+    deletedAt: Date
+  ): Promise<{ removed: boolean; sessionIds: string[] }>;
+
+  /**
+   * 一个会话派生出的全部会话 id，含它自己。
+   *
+   * 删除要在事务之外先停任务：任务还在写的时候删行，删完又会冒出新的。事务里
+   * 会再走一遍同样的子树，以事务里的结果为准。
+   */
+  listSessionSubtreeIds(sessionId: string): Promise<string[]>;
+
+  /**
    * 一条 branch 的完整 turn：turn 行 + step 行拼出的 content。
    *
    * `activeStreamId` 是会话当前正在跑的那次运行。传入后，streaming turn 里

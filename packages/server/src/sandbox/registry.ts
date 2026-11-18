@@ -33,9 +33,9 @@ let selected: { name: string; adapter: SandboxAdapter } | undefined;
 /**
  * 会话 id → 沙箱句柄。
  *
- * 存句柄而不是沙箱：容器这类适配器要留下东西，换适配器时得能释放。没有淘汰：
- * 条目会在进程存活期间跟着跑过回合的会话数增长，但一个条目就是几个字段。等
- * 会话删除的流程出现时再接淘汰。
+ * 存句柄而不是沙箱：容器这类适配器要留下东西，换适配器时得能释放。条目跟着
+ * 跑过回合的会话数增长，只在两种情况消失：换适配器时整表释放，会话删除时由
+ * `releaseSessionSandbox` 单独释放。
  */
 const sandboxes = new Map<string, Promise<SandboxHandle>>();
 
@@ -68,6 +68,16 @@ function createAdapter(name: string): SandboxAdapter {
   }
 }
 
+/** 释放一个句柄；建失败的沙箱没有可释放的东西。 */
+async function disposeHandle(entry: Promise<SandboxHandle>): Promise<void> {
+  try {
+    const handle = await entry;
+    await handle.dispose?.();
+  } catch {
+    // 建失败的沙箱没有可释放的东西。
+  }
+}
+
 /**
  * 释放所有缓存的句柄。
  *
@@ -76,14 +86,23 @@ function createAdapter(name: string): SandboxAdapter {
 async function disposeAll(): Promise<void> {
   const entries = [...sandboxes.values()];
   sandboxes.clear();
-  for (const entry of entries) {
-    try {
-      const handle = await entry;
-      await handle.dispose?.();
-    } catch {
-      // 建失败的沙箱没有可释放的东西。
-    }
+  await Promise.all(entries.map(disposeHandle));
+}
+
+/**
+ * 释放一个会话缓存着的沙箱句柄。
+ *
+ * 会话删掉之后不会再有人装配它，缓存留着就是一个永不释放的容器。同步清表、再
+ * 异步释放：真有人用同一个 id 再来，下一次装配重新建一个。
+ */
+export async function releaseSessionSandbox(sessionId: string): Promise<void> {
+  const entry = sandboxes.get(sessionId);
+  if (entry === undefined) {
+    return;
   }
+
+  sandboxes.delete(sessionId);
+  await disposeHandle(entry);
 }
 
 function getAdapter(): SandboxAdapter {

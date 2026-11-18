@@ -25,6 +25,7 @@ const session = (id: string): SessionRecord => ({
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
+  deletedAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
 });
@@ -67,6 +68,10 @@ class FakeStore {
   }
 
   getSessionById(id: string) {
+    return Promise.resolve(this.sessions.get(id) ?? null);
+  }
+
+  findSessionRow(id: string) {
     return Promise.resolve(this.sessions.get(id) ?? null);
   }
 

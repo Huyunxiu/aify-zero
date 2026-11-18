@@ -237,6 +237,11 @@
     "renamePlaceholder": "会话名称",
     "renameSave": "保存",
     "renameCancel": "取消",
+    "delete": "删除",
+    "deleteTitle": "删除会话",
+    "deleteDescription": "「{{title}}」会从所有列表里消失。",
+    "deleteConfirm": "删除",
+    "deleteCancel": "取消",
     "status": {
       "idle": "待机",
       "running": "运行中",

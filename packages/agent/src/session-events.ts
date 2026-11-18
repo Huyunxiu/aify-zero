@@ -269,6 +269,16 @@ export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
     }
   }
 
+  /**
+   * 忘掉一个会话的通道。
+   *
+   * 删除会话时用：会话不存在了，通道也不该留着等下一次运行。已经挂着的读者不动
+   * ——它们手里那条流会随页面卸载结束，给它一个错误只会让正在离开的页面闪一下。
+   */
+  forget(sessionId: string): void {
+    this.#channels.delete(sessionId);
+  }
+
   subscribe(
     sessionId: string,
     since?: SessionCursor

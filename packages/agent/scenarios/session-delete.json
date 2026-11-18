@@ -1,0 +1,10 @@
+{
+  "name": "session-delete",
+  "models": ["fake-fast"],
+  "rules": [
+    { "when": { "stream": false }, "answer": "甲会话" },
+    { "when": { "stream": true }, "answer": "第一句的回答" },
+    { "when": { "stream": false }, "answer": "乙会话" },
+    { "when": { "stream": true }, "answer": "第二句的回答" }
+  ]
+}

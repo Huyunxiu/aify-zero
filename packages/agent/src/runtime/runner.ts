@@ -149,10 +149,17 @@ export class AgentRunner {
     return { recovered, woken: pending, failures };
   }
 
-  /** 建会话行；已存在时幂等。 */
+  /** 建会话行；已存在时幂等。已删的会话不算「已存在」。 */
   async createSession(input: CreateSessionInput): Promise<void> {
-    const existing = await this.#store.getSessionById(input.sessionId);
+    const existing = await this.#store.findSessionRow(input.sessionId);
     if (existing) {
+      // 行还在、但已经删掉：再插一行会撞主键，放它过去又会让一条旧消息把会话
+      // 唤醒成一次看不见的运行。当成不存在报出去（ADR 0020）。
+      if (existing.deletedAt !== null) {
+        throw new AgentRunnerError("SESSION_NOT_FOUND", {
+          sessionId: input.sessionId,
+        });
+      }
       return;
     }
 
@@ -162,6 +169,32 @@ export class AgentRunner {
       metadata: input.metadata ?? {},
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
     });
+  }
+
+  /**
+   * 删除一个会话。
+   *
+   * 库里的事归生命周期，内存归这里：删成功之后再把按会话 id 键控的状态清掉。
+   * 顺序是先库后内存——库是事实，内存只是它的影子。
+   */
+  async delete(
+    sessionId: string
+  ): Promise<{ removed: boolean; sessionIds: string[] }> {
+    const result = await this.#sessions.delete(sessionId);
+    if (!result.removed) {
+      return { removed: false, sessionIds: [] };
+    }
+
+    for (const id of result.sessionIds) {
+      this.#sessionEvents.forget(id);
+      this.#paused.delete(id);
+      this.#steering.delete(id);
+      this.#lastPayload.delete(id);
+      this.#noticeWakes.delete(id);
+      this.#wakeups.delete(id);
+    }
+
+    return result;
   }
 
   /** 写一条待办项并唤醒；交付边界由当前流决定。 */
