@@ -141,6 +141,9 @@ vp run fake:provider -- \
 入仓的样本放 `scenarios/tapes/`（少量、脱敏）；`scenarios/recorded/` 继续在
 `.gitignore` 里，留给本地录制。
 
+今天有一份 `scenarios/tapes/demo.jsonl`：合成的标题加两段回答，用来手工验证播放、
+挂起与接管，不含任何真实提示词。
+
 ## 播放
 
 时间只由一个东西决定：`Clock`。
