@@ -1,0 +1,1 @@
+ALTER TABLE `timer` ADD `recurrence` text;

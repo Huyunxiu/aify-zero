@@ -8,6 +8,7 @@ import {
   FileSystemSkillSource,
   McpExtension,
   SkillExtension,
+  timeZoneOrHost,
 } from "@workspace/agent";
 import type {
   Agent,
@@ -77,6 +78,9 @@ export async function buildSessionAgent({
   });
 
   const settings = await getUserSettings();
+  // 日历规则的缺省时区：设置里写死的优先，没写就跟随宿主。定下来之后由工具
+  // 写进每一条日程，之后不再跟随（ADR 0018）。设置刚读过，不再查一次库。
+  const timeZone = timeZoneOrHost(settings.timeZone);
 
   // 默认扩展和工具装配由 agent 包的组合根决定；这里只提供宿主才能知道的
   // 东西：目录、模型、设置和文件系统资源。
@@ -99,6 +103,7 @@ export async function buildSessionAgent({
     jobs: jobs ?? JOB_REGISTRY,
     // 定时器和收件箱共用同一个库：会话排的定时器就落在它自己的存储上。
     timers: store,
+    timeZone,
     steering,
     sandbox,
     // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。

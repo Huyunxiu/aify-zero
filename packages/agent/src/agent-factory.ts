@@ -35,6 +35,7 @@ import type { ToolApprovalPattern } from "./tool-approval";
 import { catalogEntries } from "./tool-catalog/catalog";
 import type { JobToolOptions } from "./tools/jobs";
 import type { AgentToolSet } from "./types";
+import { timeZoneOrHost } from "./utils/time-zone";
 
 /** 默认在调用前询问用户的工具。 */
 const DEFAULT_TOOL_APPROVAL_TOOLS = new Set([
@@ -97,6 +98,13 @@ export interface SessionAgentOptions {
    * 定时器的存储面。省略时定时器工具不注册：这个会话排不了定时器。
    */
   timers?: TimerStore;
+  /**
+   * 日历规则缺省使用的 IANA 时区；省略时取宿主。
+   *
+   * 宿主应该传用户设置里的那一个：跑在 UTC 服务器上的时候，宿主时区不是用户
+   * 的时区。
+   */
+  timeZone?: string;
   /** 用户插话信号；等待任务的工具用它提前结束阻塞。 */
   steering?: SteeringSignal;
   /**
@@ -135,6 +143,7 @@ export async function createSessionAgent(
       ? undefined
       : bindSessionTimers(options.timers, {
           sessionId: options.sessionId,
+          timeZone: timeZoneOrHost(options.timeZone),
           payload: {
             model: options.model.ref,
             ...(options.model.effort === undefined

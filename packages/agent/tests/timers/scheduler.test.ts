@@ -11,6 +11,7 @@ const timer = (id: string, sessionId = "session-1"): Timer => ({
   toolCallId: `call-${id}`,
   note: `note ${id}`,
   dueAt: 1000,
+  recurrence: null,
   payload: { model: { providerId: "p", modelId: "m" } },
   createdAt: 0,
 });
@@ -39,7 +40,8 @@ const createStore = (due: Timer[] = []): FakeStore => {
     insertTimer: () => Promise.reject(new Error("not used")),
     listTimers: () => Promise.resolve([]),
     cancelTimer: () => Promise.resolve(false),
-    countTimers: () => Promise.resolve(store.pending),
+    timerCounts: () =>
+      Promise.resolve({ pending: store.pending, pendingSchedules: 0 }),
     fireDueTimers: (now) => {
       store.scans += 1;
       store.times.push(now);
@@ -52,6 +54,7 @@ const createStore = (due: Timer[] = []): FakeStore => {
       const fired: FiredTimer[] = store.due.map((entry) => ({
         ...entry,
         firedAt: now,
+        nextDueAt: null,
       }));
       store.due = [];
       store.pending = 0;
@@ -151,6 +154,7 @@ describe("TimerScheduler", () => {
     await expect(scheduler.state()).resolves.toMatchObject({
       intervalMs: 30_000,
       pending: 1,
+      pendingSchedules: 0,
       lastScanAt: null,
       lastFired: 0,
     });

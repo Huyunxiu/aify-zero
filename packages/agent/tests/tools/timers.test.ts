@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import type { ToolEnvironment } from "../../src/extensions/capabilities.js";
 import { TimerError } from "../../src/timers/error.js";
+import { resolveRecurrence } from "../../src/timers/recurrence.js";
 import type { SessionTimers, Timer } from "../../src/timers/types.js";
 import { createTimerTools } from "../../src/tools/timers.js";
 
@@ -11,6 +12,7 @@ const timer = (overrides: Partial<Timer> = {}): Timer => ({
   toolCallId: "call-1",
   note: "check the deploy",
   dueAt: 600_000,
+  recurrence: null,
   payload: { model: { providerId: "p", modelId: "m" } },
   createdAt: 0,
   ...overrides,
@@ -19,6 +21,12 @@ const timer = (overrides: Partial<Timer> = {}): Timer => ({
 type Timers = SessionTimers & {
   /** 每次 `set` 的入参。 */
   sets: { toolCallId: string; note: string; dueAt: number }[];
+  /** 每次 `setSchedule` 的入参。 */
+  schedules: {
+    toolCallId: string;
+    note: string;
+    recurrence: Parameters<SessionTimers["setSchedule"]>[0]["recurrence"];
+  }[];
   /** `list` 要返回的内容。 */
   pending: Timer[];
   /** `set` 要抛的错。 */
@@ -28,6 +36,7 @@ type Timers = SessionTimers & {
 const createTimers = (pending: Timer[] = []): Timers => {
   const timers: Timers = {
     sets: [],
+    schedules: [],
     pending,
     set: (input) => {
       timers.sets.push(input);
@@ -35,6 +44,22 @@ const createTimers = (pending: Timer[] = []): Timers => {
         return Promise.reject(timers.failure);
       }
       return Promise.resolve(timer({ dueAt: input.dueAt, note: input.note }));
+    },
+    setSchedule: (input) => {
+      timers.schedules.push(input);
+      if (timers.failure !== undefined) {
+        return Promise.reject(timers.failure);
+      }
+      // 绑定处会用装配时区补齐；这里照做，工具拿到的就是能存的那一条。
+      const recurrence = resolveRecurrence(input.recurrence, "Asia/Shanghai");
+      return Promise.resolve(
+        timer({
+          id: "schedule-1",
+          note: input.note,
+          dueAt: Date.now() + 3_600_000,
+          recurrence,
+        })
+      );
     },
     list: () => Promise.resolve(timers.pending),
     cancel: (id) => Promise.resolve(id === "timer-1"),
@@ -112,7 +137,7 @@ describe("timer-set", () => {
       afterSeconds: 60,
     });
 
-    expect(result.output).toContain("up to one minute late");
+    expect(result.output).toContain("up to 60 seconds late");
   });
 
   test("surfaces the limit as a typed failure", async () => {
@@ -199,5 +224,130 @@ describe(createTimerTools, () => {
         agentContext: { sessionId: "s" } as unknown as ToolEnvironment,
       })
     ).toThrow(/session timers/);
+  });
+});
+
+const scheduleSchema = (): Parseable & { shape: unknown } =>
+  tools(createTimers())["schedule-set"].inputSchema as unknown as Parseable & {
+    shape: unknown;
+  };
+
+const parsesSchedule = (input: unknown): boolean =>
+  (scheduleSchema() as unknown as Parseable).safeParse(input).success;
+
+describe("schedule-set", () => {
+  const daily = {
+    note: "write the daily report",
+    recurrence: { type: "daily", at: "09:00" },
+  };
+
+  test("hands the rule to the session view and says what will fire", async () => {
+    const timers = createTimers();
+
+    const result = await call(tools(timers)["schedule-set"], daily);
+
+    expect(timers.schedules).toHaveLength(1);
+    expect(timers.schedules[0]?.toolCallId).toBe("call-1");
+    expect(result.output).toContain("schedule schedule-1 set");
+    expect(result.output).toContain("daily 09:00 Asia/Shanghai");
+  });
+
+  test("says the schedule is not a precise alarm", async () => {
+    const result = await call(tools(createTimers())["schedule-set"], daily);
+
+    expect(result.code).toBe("ok");
+    expect(result.output).toContain("up to 60 seconds late");
+  });
+
+  test("keeps an explicit time zone", async () => {
+    const timers = createTimers();
+
+    await call(tools(timers)["schedule-set"], {
+      note: "standup",
+      recurrence: { type: "daily", at: "09:00", timeZone: "Europe/Berlin" },
+    });
+
+    expect(timers.schedules[0]?.recurrence).toMatchObject({
+      timeZone: "Europe/Berlin",
+    });
+  });
+
+  test("says a weekday set in plain words", async () => {
+    const result = await call(tools(createTimers())["schedule-set"], {
+      note: "standup",
+      recurrence: { type: "weekly", at: "09:00", weekdays: [1, 2, 3, 4, 5] },
+    });
+
+    expect(result.output).toContain("every weekday 09:00 Asia/Shanghai");
+  });
+
+  test("surfaces the limit as a typed failure", async () => {
+    const timers = createTimers();
+    timers.failure = new TimerError("too many", "TIMER_LIMIT_REACHED");
+
+    await expect(call(tools(timers)["schedule-set"], daily)).rejects.toThrow(
+      /TIMER_LIMIT_REACHED/
+    );
+  });
+
+  test("requires one of the three rule shapes", () => {
+    expect(parsesSchedule(daily)).toBeTruthy();
+    expect(
+      parsesSchedule({
+        note: "x",
+        recurrence: { type: "monthly", at: "09:00" },
+      })
+    ).toBeFalsy();
+  });
+
+  test("rejects an unknown time zone", () => {
+    expect(
+      parsesSchedule({
+        note: "x",
+        recurrence: { type: "daily", at: "09:00", timeZone: "Mars/Olympus" },
+      })
+    ).toBeFalsy();
+  });
+
+  test("keeps the interval at or above the scan floor", () => {
+    expect(
+      parsesSchedule({
+        note: "x",
+        recurrence: { type: "interval", everySeconds: 299 },
+      })
+    ).toBeFalsy();
+    expect(
+      parsesSchedule({
+        note: "x",
+        recurrence: { type: "interval", everySeconds: 300 },
+      })
+    ).toBeTruthy();
+  });
+
+  test("requires at least one weekday", () => {
+    expect(
+      parsesSchedule({
+        note: "x",
+        recurrence: { type: "weekly", at: "09:00", weekdays: [] },
+      })
+    ).toBeFalsy();
+  });
+});
+
+describe("timer-list with schedules", () => {
+  test("shows the rule so two rows are not just ids", () => {
+    const timers = createTimers([
+      timer({
+        id: "schedule-1",
+        note: "write the daily report",
+        dueAt: Date.now() + 3_600_000,
+        recurrence: { type: "daily", at: "09:00", timeZone: "Asia/Shanghai" },
+      }),
+    ]);
+
+    return call(tools(timers)["timer-list"], {}).then((result) => {
+      expect(result.output).toContain("daily 09:00 Asia/Shanghai");
+      expect(result.output).toContain("write the daily report");
+    });
   });
 });

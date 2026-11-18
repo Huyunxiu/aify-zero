@@ -9,6 +9,8 @@ import type { Rule, Scenario } from "./scenario.js";
 import { writeChatCompletions } from "./writers/chat-completions.js";
 
 /** 一次进来的请求里，场景与断言关心的部分。 */
+export type { Rule, Scenario } from "./scenario.js";
+
 export type FakeProviderRequest = {
   readonly method: string;
   readonly path: string;

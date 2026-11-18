@@ -29,9 +29,9 @@ export type TimerSchedulerOptions = {
 /**
  * 定时器的扫描循环。
  *
- * 它只做一件事：把到点的定时器换成收件箱里的待办项，然后叫醒那些会话。它
- * 不跑模型，也不碰运行锁——起跑仍然是运行器的事（ADR 0012）。所以它和运行器
- * 是两个对象：运行器管「取件起跑」，它管「时间」。
+ * 它只做一件事：把到点的定时器换成收件箱里的待办项，然后叫醒那些会话。跟进
+ * 用完就删，日程由存储层在同一事务里推进到下一次——这里不区分两类，只看「投了
+ * 几条、要叫醒谁」。它不跑模型，也不碰运行锁：起跑仍然是运行器的事（ADR 0012）。
  */
 export class TimerScheduler {
   readonly #store: TimerStore;
@@ -98,11 +98,19 @@ export class TimerScheduler {
     await this.#scanning;
   }
 
-  /** 只读状态：挂着的定时器数、上次扫描的时刻、上次投了几条。 */
+  /**
+   * 只读状态：挂着的定时器数、其中日程的条数、上次扫描的时刻、上次投了几条。
+   *
+   * 日程条数是总数的一个子集：预算被长期日程吃满和扫描停了是两种故障，一个
+   * 总数说不清。
+   */
   async state(): Promise<TimerSchedulerState> {
+    const counts = await this.#store.timerCounts();
+
     return {
       intervalMs: this.#intervalMs,
-      pending: await this.#store.countTimers(),
+      pending: counts.pending,
+      pendingSchedules: counts.pendingSchedules,
       lastScanAt: this.#lastScanAt,
       lastFired: this.#lastFired,
     };

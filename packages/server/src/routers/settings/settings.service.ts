@@ -1,3 +1,5 @@
+import { timeZoneOrHost } from "@workspace/agent";
+
 import { publicProcedure } from "../../index";
 import { dropStaleMcpCredentials } from "../../mcp/credentials-cleanup";
 import { mcpAuthorizationFlows } from "../../mcp/oauth";
@@ -94,6 +96,16 @@ export const updateUserSettingsRoute = publicProcedure
 /** The user's settings, created with defaults on first read. */
 export async function getUserSettings(): Promise<UserSettings> {
   return await ensureUserSettings();
+}
+
+/**
+ * 日历规则缺省使用的时区：设置里写了就用写的，没写就跟随宿主。
+ *
+ * 宿主时区在脑子里存着是错的：服务器可能跑在 UTC，而用户不在 UTC。
+ */
+export async function resolveTimeZone(): Promise<string> {
+  const settings = await ensureUserSettings();
+  return timeZoneOrHost(settings.timeZone);
 }
 
 /** 按引用找出一个已配置的模型，连同它所属的供应商。 */

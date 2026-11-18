@@ -305,8 +305,12 @@ export type InboxItemInsertModel = InferInsertModel<typeof inbox_item_table>;
 /**
  * 会话的定时器：到点之后往收件箱写一条待办项，会话因此可能被唤醒。
  *
- * 这张表只存**还没到点**的定时器。到点时调度器在同一个事务里写收件箱行、
- * 删这一行，所以没有状态列——行在，就是还没触发。
+ * 这张表只存**还没到点**的定时器。到点时调度器在同一个事务里写收件箱行，再给
+ * 这一行收尾：跟进用完就删，日程把 `due_at` 推到下一次。所以没有状态列——
+ * 行在，就是还有下一次触发。
+ *
+ * `recurrence` 是可空的周期规则：空就是跟进（一次性），非空就是日程。没有单独的
+ * `kind` 列，类别由这一列派生，免得两列各说一套。
  *
  * `payload` 和 `inbox_item.payload` 同形（`model` / `modelEffort` /
  * `projectId`）：进程重启之后内存里没有模型配置，到点那次运行只能靠这份快照。
@@ -325,6 +329,8 @@ export const timer_table = sqliteTable(
     note: text("note").notNull(),
     dueAt: integer("due_at", { mode: "timestamp_ms" }).notNull(),
     payload: text("payload", { mode: "json" }).notNull(),
+    /** 周期规则；空表示跟进。日历规则在这里固化写入时的时区。 */
+    recurrence: text("recurrence", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

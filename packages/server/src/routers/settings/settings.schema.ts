@@ -110,6 +110,12 @@ export const userSettingsSchema = z.object({
   mcpServers: z.array(mcpServerSchema),
   /** 上下文压缩；默认开启，并使用保守的预算。 */
   compaction: compactionSettingsSchema,
+  /**
+   * 日历规则缺省使用的 IANA 时区；null 表示跟随宿主。
+   *
+   * 跑在 UTC 服务器上时宿主时区不是用户的时区，这里给用户一个能写死的地方。
+   */
+  timeZone: z.string().nullable(),
 });
 
 export type UserSettings = z.infer<typeof userSettingsSchema>;
@@ -129,6 +135,7 @@ export const USER_SETTINGS_DEFAULTS: UserSettings = {
     pruneToolResults: true,
     maxSummaryTokens: 8192,
   },
+  timeZone: null,
 };
 
 /**
