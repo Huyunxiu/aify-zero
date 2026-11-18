@@ -26,7 +26,7 @@ outbox_item(id, session_id, turn_id, created_at, delivered_at, expired_at)
 
 投递器每秒扫一次，取件的条件全写在一条查询里：未送达、未过期、会话仍是 `done`、到达
 时刻已越过两秒的竞态余量、且不早于连接建立时刻。两秒不是产品上的静默窗口：运行先把
-会话写成 `done` 才算落定，而正看着这个会话的页面要等收到 `run.end` 才标读，中间那段
+会话写成 `done` 才算落定，而正看着这个会话的页面要等收到 `run.end` 才标记已读，中间那段
 `done` 说的是「刚跑完」而不是「没人看」。这不是延迟，是让最常见的误投不发生。
 
 桌面主进程是唯一一条订阅发件箱的连接，因为能弹系统通知的只有它：窗口关掉之后渲染
@@ -61,7 +61,8 @@ outbox_item(id, session_id, turn_id, created_at, delivered_at, expired_at)
 ## Consequences
 
 - `delivered_at` 由桌面写下，因此它只回答「弹了没有」。用户看没看见是另一件事，由
-  `session.status` 的 `done → idle` 回答，两者不混用。
+  `session.status` 的 `done → idle` 回答，两者不混用。什么算「看见」见 ADR 0020：
+  页面可见才标记已读。
 - 回执丢失的行在十分钟后转 `expired`，不会重推；一行最多打扰一次。
 - 每行只推一次意味着内存里要记一份「推过」的名单。进程重启会清空它，但启动时把所有
   未盖章的行标过期，所以不会因此重推。

@@ -599,27 +599,41 @@ export function Session({
     [turns, readOnly, questionnairePlacement]
   );
 
-  // Opening a session is reading it. A finished turn leaves the session `done`
-  // — the mark the sidebar draws a check for — and the page showing that
-  // transcript is what retires it: once on arrival, and again whenever a turn
-  // this page watched settles back to `ready`, so a session the user is sitting
-  // in does not report itself as unread.
+  // 看得见才算读过。回合跑完会把会话留成 `done`（侧栏那个勾），打开着的
+  // 页面负责把它抹掉：到达时一次，看着的回合走回 `ready` 时再一次。
+  //
+  // 窗口收进托盘只是 hide，页面还在、状态照样走回 `ready`，但那一刻没人
+  // 看得见屏幕。这时标记已读，发件箱就会以为有人看着，本该在关窗后落定的
+  // 系统通知永远不弹。所以隐藏时不标记，回到前台再补。
   React.useEffect(() => {
-    if (!sessionId || status !== "ready") {
+    if (!sessionId) {
       return;
     }
 
     const id = sessionId;
 
-    void (async () => {
-      try {
-        await client.session.markSessionRead({ sessionId: id });
-        await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
-      } catch {
-        // Marking read is bookkeeping, not the page's work: a session opened
-        // over a broken link still shows its transcript, it just stays marked.
+    const markReadIfVisible = (): void => {
+      if (status !== "ready" || document.visibilityState !== "visible") {
+        return;
       }
-    })();
+
+      void (async () => {
+        try {
+          await client.session.markSessionRead({ sessionId: id });
+          await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+        } catch {
+          // 标记已读是记账，不是页面的正事：链接坏了，转录照样显示，只是
+          // 那个勾留着。
+        }
+      })();
+    };
+
+    markReadIfVisible();
+    document.addEventListener("visibilitychange", markReadIfVisible);
+
+    return () => {
+      document.removeEventListener("visibilitychange", markReadIfVisible);
+    };
   }, [sessionId, status]);
 
   // 一次运行落定（成功、取消、出错都算）之后，记录里多了回合，侧栏的最后活动与
