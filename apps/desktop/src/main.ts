@@ -876,11 +876,9 @@ if (!hasSingleInstanceLock) {
       });
   });
 
+  // macOS 上点 dock 图标走这里。窗口通常还在，只是被关进了托盘——关窗不再销毁
+  // 窗口，所以这里不能按「没有窗口才新建」判断，那会让 dock 点了没反应。
   app.on("activate", () => {
-    // On OS X it's common to re-create a window when the dock icon is clicked
-    // and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    showExistingWindow();
   });
 }
