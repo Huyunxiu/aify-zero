@@ -39,6 +39,29 @@ vp exec playwright install --with-deps chromium
 
 热的一次约 15 秒，其中大半是 Vite 冷启动。
 
+### 跑一条
+
+位置参数按**文件路径**过滤。传名字（`outbox`）不报错，但七条会全部跑一遍：
+
+```bash
+vp exec playwright test --config e2e/playwright.config.ts e2e/outbox.e2e.ts
+```
+
+### 浏览器装在别处
+
+`PLAYWRIGHT_BROWSERS_PATH` 指到那份安装，缺的系统库解包出来的
+`usr/lib/x86_64-linux-gnu` 用 `LD_LIBRARY_PATH` 指过去：
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
+LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
+vp run e2e
+```
+
+worktree 里要注意：harness 把仓库根算成 worktree 自己，所以 `.e2e/` 也是
+worktree 自己的。浏览器可以只装一份，用 `PLAYWRIGHT_BROWSERS_PATH` 指到主
+checkout 的那份。
+
 浏览器的 locale 固定成 `en-US`；应用自己的语言走 i18n 默认值——每个用例都是新的
 context，`localStorage` 是空的。
 
