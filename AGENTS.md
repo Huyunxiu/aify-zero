@@ -40,3 +40,7 @@ Multi-context: a root `GLOSSARY-MAP.md` points at one `GLOSSARY.md` per app and 
 ### Commit messages
 
 Use Conventional Commits. The `commit-msg` hook rejects a message that breaks the rules. Put the Linear key in the `Refs:` footer, not in the subject. Do not use `git commit --no-verify`. See `docs/agents/commit-message.md`.
+
+### Review
+
+Judgement calls only: naming from the glossary, one concept per directory, one authoritative rule, tests against their seam. See `CODING_STANDARDS.md`.

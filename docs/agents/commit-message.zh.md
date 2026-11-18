@@ -5,7 +5,7 @@
 每条提交信息都用 Conventional Commits 1.0.0 的格式。`commit-msg` 钩子会跑 commitlint，不合规则的
 信息会被拦住，提交不会发生。
 
-规则本身在 `commitlint.config.mjs`。本文件说明这些规则的意思。
+规则本身在 `commitlint.config.ts`。本文件说明这些规则的意思。
 
 ## 格式
 

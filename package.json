@@ -17,6 +17,7 @@
     "db:studio": "vp run db#db:studio",
     "db:generate": "vp run db#db:generate",
     "db:migrate": "vp run db#db:migrate",
+    "db:query": "tsx packages/db/src/query.ts",
     "package:desktop": "vp run desktop#package",
     "package:server": "vp run @workspace/server-app#package",
     "prepare": "vp config"

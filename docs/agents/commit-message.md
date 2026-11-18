@@ -3,7 +3,7 @@
 Write every commit message in Conventional Commits 1.0.0 format. The `commit-msg` hook runs
 commitlint. A message that breaks a rule stops the commit.
 
-The rules live in `commitlint.config.mjs`. This file explains them.
+The rules live in `commitlint.config.ts`. This file explains them.
 
 ## Format
 

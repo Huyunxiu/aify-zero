@@ -1,0 +1,83 @@
+name: CI
+
+# 提交时只跑 `vp staged`（格式、lint、类型），单测与端到端没有人跑。这个 workflow
+# 把它们放到每次推送和每个 PR 上：仓库的门是 `vp run ready` 与 `vp run e2e`，
+# 这里只是按时去开门。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一分支的新提交取消上一轮。CI 是门，不是档案。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Format, lint, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # `setup-vp` 装 Vite+、按 `.node-version` 装 Node，并处理依赖缓存；装上之后
+      # 才谈得上 `vp` 的那几个命令。
+      - uses: actions/checkout@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          cache: true
+          node-version-file: .node-version
+          run-install: false
+
+      # 锁文件必须和 `package.json` 一致：CI 不该把新的解析结果写进缓存。
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      # 迁移与 schema 的漂移是这里最容易漏的一环：本地改完 schema 忘记生成迁移，
+      # 应用启动时才会炸。
+      - name: Migrations match the schema
+        run: vp run db#db:check
+
+      - name: Format, lint, types
+        run: vp check
+
+      - name: Unit tests
+        run: vp test
+
+      - name: Build
+        run: vp run -r build
+
+  e2e:
+    # 七条用例跑在真实的 API 进程、真实的浏览器和真实的 ws 连接上。它们不进
+    # `vp run ready`（那是提交前几秒跑完的东西），所以只能在这里跑。
+    name: End to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          cache: true
+          node-version-file: .node-version
+          run-install: false
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      # `--with-deps` 要 root，runner 上有 sudo。浏览器缓存由 setup-vp 管不到，
+      # 所以这一步每次都会装；它的耗时是这套用例的固定成本。
+      - name: Install the browser
+        run: vp exec playwright install --with-deps chromium
+
+      - name: End-to-end cases
+        run: vp run e2e
+
+      # 用例只在失败时留 trace 与截图（见 `e2e/playwright.config.ts`）。把它们
+      # 带出这次运行，失败才有人能查。
+      - name: Upload the failure scene
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-results
+          path: .e2e/results
+          if-no-files-found: ignore
+          retention-days: 7
