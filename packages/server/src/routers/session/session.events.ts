@@ -18,7 +18,8 @@ import { SQLiteStore } from "../../storage/sqlite-store";
  * 的游标，认不出来就当作没有，重连的人多读一遍比少读一段好。
  *
  * 已删的会话是另一回事：它不存在，不给它开通道——否则旧标签页会挂着一条永远
- * 等不到运行的连接（ADR 0020）。
+ * 等不到运行的连接（ADR 0020）。注意「还没有行」不等于「已删」：新会话的页面
+ * 先订阅，第一条消息到了才落行，那种订阅必须放行。
  */
 export const streamSessionEvents = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/events" })
@@ -33,8 +34,8 @@ export const streamSessionEvents = publicProcedure
     const since = input.since ? parseSessionCursor(input.since) : undefined;
 
     const store = new SQLiteStore();
-    const session = await store.getSessionById(input.sessionId);
-    if (!session) {
+    const row = await store.findSessionRow(input.sessionId);
+    if (row !== null && row.deletedAt !== null) {
       throw new ApiError("SESSION_NOT_FOUND", {
         data: { sessionId: input.sessionId },
       });

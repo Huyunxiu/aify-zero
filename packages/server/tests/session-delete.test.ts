@@ -361,6 +361,17 @@ describe("deleting a session", () => {
     ).rejects.toMatchObject({ code: "SESSION_NOT_FOUND" });
   });
 
+  test("should let a brand-new session subscribe before its row exists", async () => {
+    // 页面先订阅、消息到了才落行：那时还没有会话行，但订阅是合法的。
+    const events = await client.session.streamSessionEvents({
+      sessionId: "not-yet-created",
+    });
+    expect(events).toBeDefined();
+
+    const iterator = events[Symbol.asyncIterator]();
+    await iterator.return?.();
+  });
+
   /**
    * 每条带 `sessionId` 的表都得表态：跟着会话一起清，还是留着。
    *
