@@ -14,6 +14,7 @@ import {
   OUTBOX_SUBSCRIBE_MESSAGE_TYPE,
   parseChannelMessage,
   parseOutboxAck,
+  WEBSOCKET_OPEN,
   WORLD_MESSAGE_TYPE,
 } from "@workspace/shared/ws-protocol";
 import type { ChannelMessage } from "@workspace/shared/ws-protocol";
@@ -33,9 +34,6 @@ const rawText = (data: RawData): string => {
 
   return Buffer.from(data).toString("utf-8");
 };
-
-/** `ws` 的 OPEN 状态码；只比较数字，避免在类型层引入运行时值。 */
-const OPEN = 1;
 
 /**
  * 回答一条已经校验过的消息。
@@ -105,7 +103,7 @@ export const upgradeChannel = (websocket: WebSocket): void => {
     if (message.type === OUTBOX_SUBSCRIBE_MESSAGE_TYPE) {
       unsubscribe ??= outboxChannels.add((items) => {
         // 推的时候连接可能刚好在关：丢掉这一条，投递器已经记过账，不会重推。
-        if (websocket.readyState !== OPEN) {
+        if (websocket.readyState !== WEBSOCKET_OPEN) {
           return;
         }
 

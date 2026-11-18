@@ -18,5 +18,5 @@ export type OutboxRecordInput = {
  * 调用方按「尽力而为」处理。
  */
 export interface OutboxRecorder {
-  record(input: OutboxRecordInput): Promise<void>;
+  recordOutboxItem(input: OutboxRecordInput): Promise<void>;
 }

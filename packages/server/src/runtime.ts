@@ -1,5 +1,4 @@
 import { createAgentRunner, createTimerScheduler } from "@workspace/agent";
-import type { OutboxRecorder } from "@workspace/agent";
 
 import { createJobNoticeAdapter } from "./job-notices";
 import { JOB_REGISTRY } from "./jobs";
@@ -11,17 +10,6 @@ import { SQLiteStore } from "./storage/sqlite-store";
 
 /** 进程里唯一的那一个运行器；所有路由和启动/关停都用它。 */
 const store = new SQLiteStore();
-
-/**
- * 运行落定时留一条发件项。
- *
- * 运行器只认「记一条」这个动作；这条记录什么时候变成通知，是投递器的事。
- */
-const outboxRecorder: OutboxRecorder = {
-  record: async (input) => {
-    await store.recordOutboxTurn(input);
-  },
-};
 
 /** 进程里唯一的那一个投递器；`serve.ts` 启动和关停它。 */
 export const outboxDispatcher = createOutboxDispatcher({ store });
@@ -49,7 +37,8 @@ const timerScanMs = (): number | undefined => {
 export const agentRunner = createAgentRunner({
   store,
   jobs: JOB_REGISTRY,
-  outbox: outboxRecorder,
+  // 存储层自己实现发件项的记录端口：运行器只认「记一条」，不认数据库。
+  outbox: store,
   buildAgent: async ({
     sessionId,
     session,

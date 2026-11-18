@@ -24,6 +24,9 @@ export const WORLD_MESSAGE_TYPE = "world";
 /** 协议不认识的 `type` 收到的回答，`data.message` 说明原因。 */
 export const ERROR_MESSAGE_TYPE = "error";
 
+/** WebSocket 的 OPEN 状态码。两端都在比较它，所以放协议里，各写一份只会漂。 */
+export const WEBSOCKET_OPEN = 1;
+
 /**
  * 桌面主进程订阅发件箱。
  *
@@ -38,8 +41,8 @@ export const OUTBOX_NOTIFY_MESSAGE_TYPE = "outbox.notify";
 /** 桌面弹完之后的回执；`data.ids` 是这些通知盖住的发件项。 */
 export const OUTBOX_ACK_MESSAGE_TYPE = "outbox.ack";
 
-/** 一条要弹的通知：标题、正文，以及它指向的会话与回合。 */
-export type OutboxNotification = {
+/** 一次投递的内容：标题、正文，以及它指向的会话与回合。 */
+export type OutboxDelivery = {
   /** 发件项 id；回执用它。 */
   readonly id: string;
   readonly sessionId: string;
@@ -50,8 +53,8 @@ export type OutboxNotification = {
   readonly body: string;
 };
 
-export type OutboxNotifyData = {
-  readonly items: readonly OutboxNotification[];
+export type OutboxDeliveryData = {
+  readonly items: readonly OutboxDelivery[];
 };
 
 export type OutboxAckData = {
@@ -74,7 +77,7 @@ const isNonEmptyString = (value: unknown): value is string =>
  * @returns 校验过的载荷。
  * @throws {Error} 不是对象，或某一项形状不对。
  */
-export function parseOutboxNotify(data: unknown): OutboxNotifyData {
+export function parseOutboxNotify(data: unknown): OutboxDeliveryData {
   if (!isRecord(data) || !Array.isArray(data.items)) {
     throw new Error("ws: outbox.notify data must hold an items array");
   }

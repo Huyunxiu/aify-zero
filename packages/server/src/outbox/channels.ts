@@ -1,7 +1,7 @@
-import type { OutboxNotifications } from "./types";
+import type { OutboxDeliveries } from "./types";
 
 /** 一条会弹系统通知的连接：推给它，它自己决定怎么弹。 */
-export type OutboxPush = (items: OutboxNotifications) => void;
+export type OutboxPush = (items: OutboxDeliveries) => void;
 
 const pushes = new Set<OutboxPush>();
 let ackHandler: ((ids: readonly string[]) => void) | undefined;
@@ -29,7 +29,7 @@ export const outboxChannels = {
   },
 
   /** 推给所有订阅者。 */
-  send(items: OutboxNotifications): void {
+  send(items: OutboxDeliveries): void {
     for (const push of pushes) {
       push(items);
     }

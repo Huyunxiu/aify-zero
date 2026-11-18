@@ -31,6 +31,8 @@ import type {
   Timer,
   TimerCounts,
   TimerInsert,
+  OutboxRecordInput,
+  OutboxRecorder,
   TimerStore,
   TurnRecord,
   TurnWrite,
@@ -252,7 +254,7 @@ async function deleteInboxRows(
     .returning();
 }
 
-export class SQLiteStore implements AgentStore, TimerStore {
+export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
   async listSessions({
     cursor,
     limit,
@@ -992,17 +994,16 @@ export class SQLiteStore implements AgentStore, TimerStore {
    * 记一条发件项。
    *
    * 同一个回合重跑时不再写第二行：唯一索引挡下冲突，这里按「已经记过」处理。
+   * 到达时刻显式写毫秒值：列默认的 `unixepoch() * 1000` 只到秒，竞态余量要靠
+   * 它算准。
    */
-  async recordOutboxTurn({
+  async recordOutboxItem({
     sessionId,
     turnId,
-  }: {
-    sessionId: string;
-    turnId: string;
-  }): Promise<void> {
+  }: OutboxRecordInput): Promise<void> {
     await db
       .insert(outbox_item_table)
-      .values({ sessionId, turnId })
+      .values({ createdAt: new Date(), sessionId, turnId })
       .onConflictDoNothing();
   }
 
@@ -1018,7 +1019,6 @@ export class SQLiteStore implements AgentStore, TimerStore {
     before,
     limit,
   }: {
-    now: number;
     since: number;
     before: number;
     limit: number;
@@ -1072,11 +1072,22 @@ export class SQLiteStore implements AgentStore, TimerStore {
     return result.rowsAffected;
   }
 
-  /** 把等太久还没回执的行标成过期；它们不会再被取走。 */
-  async expireOutboxBefore(deadline: number): Promise<number> {
+  /**
+   * 把等太久还没回执的行标成过期；它们不会再被取走。
+   *
+   * 写进 `expired_at` 的是「决定不再投」的时刻，不是「到达时刻早于它」的那条
+   * 线——两者差着过期窗口，混用会让账本读起来像十分钟前就放弃了。
+   */
+  async expireOutboxBefore({
+    deadline,
+    now,
+  }: {
+    deadline: number;
+    now: number;
+  }): Promise<number> {
     const result = await db
       .update(outbox_item_table)
-      .set({ expiredAt: new Date(deadline) })
+      .set({ expiredAt: new Date(now) })
       .where(
         and(
           isNull(outbox_item_table.deliveredAt),

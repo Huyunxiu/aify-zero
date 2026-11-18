@@ -1,4 +1,5 @@
-import type { OutboxNotification } from "@workspace/shared/ws-protocol";
+import type { TurnRecord } from "@workspace/agent/store";
+import type { OutboxDelivery } from "@workspace/shared/ws-protocol";
 
 /**
  * 落定到投递之间的竞态余量。
@@ -22,32 +23,34 @@ export type OutboxCandidate = {
   id: string;
   sessionId: string;
   turnId: string;
-  /** 会话标题；通知的标题用它。 */
+  /** 会话标题；投递出去的通知用它当标题。 */
   title: string;
 };
 
 /** 投递器要的存储面；和 `TimerStore` 一样按需组合，不进 `AgentStore`。 */
 export interface OutboxStore {
-  /** 记一条发件项；同一个回合只留一行。 */
-  recordOutboxTurn(input: { sessionId: string; turnId: string }): Promise<void>;
   /** 取一批可以投的发件项，条件见实现。 */
   listOutboxCandidates(input: {
-    now: number;
     since: number;
     before: number;
     limit: number;
   }): Promise<OutboxCandidate[]>;
   /** 盖回执；返回真的改了几行。 */
   markOutboxDelivered(ids: readonly string[], at: number): Promise<number>;
-  /** 把等太久还没回执的行标成过期。 */
-  expireOutboxBefore(deadline: number): Promise<number>;
+  /**
+   * 把等太久还没回执的行标成过期。
+   *
+   * `deadline` 是「早于这个时刻到达的算过时」，`now` 是「这一刻决定不再投」。
+   * 两个时刻不能合并：写进 `expired_at` 的必须是后者。
+   */
+  expireOutboxBefore(input: { deadline: number; now: number }): Promise<number>;
   /** 启动时清掉上一次进程留下的待投行。 */
   expirePendingOutbox(at: number): Promise<number>;
   /** 删掉超过保留期的行。 */
   pruneOutbox(deadline: number): Promise<number>;
-  /** 读一个回合连同它的 step；正文从这里取。 */
-  getTurnRecord(sessionId: string, turnId: string): Promise<unknown>;
+  /** 读一个回合连同它的 step；投递的正文从这里取，解不出正文就不投。 */
+  getTurnRecord(sessionId: string, turnId: string): Promise<TurnRecord | null>;
 }
 
-/** 要推送的一批通知。 */
-export type OutboxNotifications = readonly OutboxNotification[];
+/** 要推送的一批投递。 */
+export type OutboxDeliveries = readonly OutboxDelivery[];

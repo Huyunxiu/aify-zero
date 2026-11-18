@@ -518,7 +518,7 @@ export class SessionLifecycle {
     }
 
     try {
-      await outbox.record({
+      await outbox.recordOutboxItem({
         sessionId: input.sessionId,
         turnId: input.turn.id,
       });

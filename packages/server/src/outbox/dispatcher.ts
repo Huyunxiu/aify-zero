@@ -1,12 +1,9 @@
 import { logger } from "@workspace/shared/logger";
+import type { OutboxDelivery } from "@workspace/shared/ws-protocol";
 
 import { outboxChannels } from "./channels";
-import { notificationBody } from "./snippet";
-import type {
-  OutboxCandidate,
-  OutboxNotifications,
-  OutboxStore,
-} from "./types";
+import { deliveryBody } from "./snippet";
+import type { OutboxCandidate, OutboxDeliveries, OutboxStore } from "./types";
 import { OUTBOX_EXPIRE_MS, OUTBOX_RACE_MS, OUTBOX_RETENTION_MS } from "./types";
 
 /** 默认扫描间隔：一秒一次。通知的延迟由竞态余量决定，这里快一点没有代价。 */
@@ -172,7 +169,10 @@ export class OutboxDispatcher {
     try {
       const now = this.#now();
 
-      await this.#store.expireOutboxBefore(now - OUTBOX_EXPIRE_MS);
+      await this.#store.expireOutboxBefore({
+        deadline: now - OUTBOX_EXPIRE_MS,
+        now,
+      });
       await this.#store.pruneOutbox(now - OUTBOX_RETENTION_MS);
 
       this.#lastScanAt = now;
@@ -190,50 +190,60 @@ export class OutboxDispatcher {
       const candidates = await this.#store.listOutboxCandidates({
         before: now - OUTBOX_RACE_MS,
         limit: BATCH_LIMIT,
-        now,
         since: this.#subscribedAt,
       });
 
-      const items = await this.#notifications(candidates);
+      const items = await this.#collect(candidates);
 
       if (items.length === 0) {
         return;
       }
 
+      // 先送出去再记账：推送本身抛错时这些行留着下一轮再试，而不是变成
+      // 「推过但没送到」。
       this.#channels.send(items);
+
+      for (const item of items) {
+        this.#remember(item.id);
+      }
+
       this.#lastSent = items.length;
     } catch (error) {
       this.#warn("[outbox] scan failed", error);
     }
   }
 
-  /** 给候选配上正文；没有正文、或已经推过的，都不进这一批。 */
-  async #notifications(
+  /** 给候选配上正文；读不出来的行留着下一轮再试，没正文的行直接记过。 */
+  async #collect(
     candidates: readonly OutboxCandidate[]
-  ): Promise<OutboxNotifications> {
-    const items: {
-      id: string;
-      sessionId: string;
-      turnId: string;
-      title: string;
-      body: string;
-    }[] = [];
+  ): Promise<OutboxDeliveries> {
+    const items: OutboxDelivery[] = [];
 
     for (const candidate of candidates) {
       if (this.#pushed.has(candidate.id)) {
         continue;
       }
 
-      // 先记住再读：读失败或没有正文时也不再重试，这一行会自然过期。
-      this.#remember(candidate.id);
+      let body: string;
 
-      const turn = await this.#store.getTurnRecord(
-        candidate.sessionId,
-        candidate.turnId
-      );
-      const body = notificationBody(turn);
+      try {
+        const record = await this.#store.getTurnRecord(
+          candidate.sessionId,
+          candidate.turnId
+        );
+
+        body = deliveryBody(record?.content);
+      } catch (error) {
+        // 一条读失败不能连累这一批的其余行，也不能把它记成「推过」。
+        this.#warn(`[outbox] failed to read turn ${candidate.turnId}`, error);
+
+        continue;
+      }
 
       if (body === "") {
+        // 没有正文的行永远不会变得有正文：记过，等它过期。
+        this.#remember(candidate.id);
+
         continue;
       }
 

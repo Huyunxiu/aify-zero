@@ -359,6 +359,9 @@ export type TimerInsertModel = InferInsertModel<typeof timer_table>;
  *
  * `(session_id, turn_id)` 唯一：同一个回合重跑不会多出一行。已送达和已过期
  * 的行留着做账，三十天后由扫描删除。
+ *
+ * `created_at` 的列默认只到秒（`unixepoch() * 1000`）。写入时显式给毫秒时刻：
+ * 竞态余量按毫秒算，靠默认值会把「等两秒」变成等一到两秒之间的任意值。
  */
 export const outbox_item_table = sqliteTable(
   "outbox_item",

@@ -5,20 +5,18 @@ import {
   OUTBOX_SUBSCRIBE_MESSAGE_TYPE,
   parseChannelMessage,
   parseOutboxNotify,
+  WEBSOCKET_OPEN,
 } from "@workspace/shared/ws-protocol";
-import type { OutboxNotification } from "@workspace/shared/ws-protocol";
+import type { OutboxDelivery } from "@workspace/shared/ws-protocol";
 import { Notification } from "electron";
 import WebSocket from "ws";
 import type { RawData } from "ws";
-
-/** `ws` 的 OPEN 状态码；只比较数字，避免在类型层引入运行时值。 */
-const OPEN = 1;
 
 /** 重连的起点与上限：本地 server 通常一秒内就能连上。 */
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 30_000;
 
-export type OutboxNotifierOptions = {
+export type OutboxConnectionOptions = {
   /** 当前 API server 的 origin；还没起来时是 `undefined`，那就等下一轮重试。 */
   origin: () => string | undefined;
   /** 机器级访问令牌。 */
@@ -29,7 +27,7 @@ export type OutboxNotifierOptions = {
 };
 
 /**
- * 桌面主进程的通知连接。
+ * 桌面主进程的发件箱连接。
  *
  * 它是唯一一条订阅发件箱的连接：页面自己那条不订阅，所以窗口开着和收进托盘
  * 不会各弹一次。连接断了就按退避重连；重连之后服务端从重连那一刻算起，不补发
@@ -38,15 +36,15 @@ export type OutboxNotifierOptions = {
  * 通知弹出来之后才回执：`delivered_at` 回答的是「弹了没有」，不是「发出去了
  * 没有」。平台不支持通知时不回执，那一行会自然过期，而不是被记成送达。
  */
-export class OutboxNotifier {
-  readonly #options: OutboxNotifierOptions;
+export class OutboxConnection {
+  readonly #options: OutboxConnectionOptions;
 
   #socket: WebSocket | undefined;
   #retry: ReturnType<typeof setTimeout> | undefined;
   #delay = RECONNECT_MIN_MS;
   #stopped = true;
 
-  constructor(options: OutboxNotifierOptions) {
+  constructor(options: OutboxConnectionOptions) {
     this.#options = options;
   }
 
@@ -103,7 +101,7 @@ export class OutboxNotifier {
     });
 
     socket.on("error", (error: Error) => {
-      this.#options.log(`outbox notifier failed: ${error.message}`);
+      this.#options.log(`outbox connection failed: ${error.message}`);
     });
 
     socket.on("close", () => {
@@ -124,7 +122,7 @@ export class OutboxNotifier {
       );
     } catch (error) {
       this.#options.log(
-        `outbox notifier dropped a bad frame: ${error instanceof Error ? error.message : String(error)}`
+        `outbox connection dropped a bad frame: ${error instanceof Error ? error.message : String(error)}`
       );
 
       return;
@@ -134,13 +132,13 @@ export class OutboxNotifier {
       return;
     }
 
-    let items: readonly OutboxNotification[];
+    let items: readonly OutboxDelivery[];
 
     try {
       ({ items } = parseOutboxNotify(message.data));
     } catch (error) {
       this.#options.log(
-        `outbox notifier dropped a bad notify: ${error instanceof Error ? error.message : String(error)}`
+        `outbox connection dropped a bad delivery: ${error instanceof Error ? error.message : String(error)}`
       );
 
       return;
@@ -148,7 +146,7 @@ export class OutboxNotifier {
 
     const delivered = this.#show(items);
 
-    if (delivered.length > 0 && socket.readyState === OPEN) {
+    if (delivered.length > 0 && socket.readyState === WEBSOCKET_OPEN) {
       socket.send(
         encodeChannelMessage({
           data: { ids: delivered },
@@ -159,10 +157,10 @@ export class OutboxNotifier {
   }
 
   /** 弹一批通知，返回真的弹出来的那些 id。 */
-  #show(items: readonly OutboxNotification[]): string[] {
+  #show(items: readonly OutboxDelivery[]): string[] {
     if (!Notification.isSupported()) {
       this.#options.log(
-        "outbox notifier skipped: notifications are unsupported"
+        "outbox connection skipped: notifications are unsupported"
       );
 
       return [];
@@ -183,7 +181,7 @@ export class OutboxNotifier {
         delivered.push(item.id);
       } catch (error) {
         this.#options.log(
-          `outbox notifier could not show ${item.id}: ${error instanceof Error ? error.message : String(error)}`
+          `outbox connection could not show ${item.id}: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     }

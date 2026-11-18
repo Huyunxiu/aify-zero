@@ -29,11 +29,12 @@ import { ipcMain } from "electron/main";
 import { ipcContext } from "@/ipc/context";
 
 import { resolveDesktopLanguage, setDesktopLanguage } from "./i18n";
-import { createTray, OutboxNotifier, updateTrayMenu } from "./notifications";
-import type { TrayActions } from "./notifications";
+import { OutboxConnection } from "./outbox/connection";
 import { createAppProtocolHandler, registerAppScheme } from "./protocol";
 import { DesktopServer } from "./server-manager";
 import { isLoopbackOrigin, normalizeServerOrigin } from "./server-origin";
+import { createTray, updateTrayMenu } from "./tray";
+import type { TrayActions } from "./tray";
 
 /** 退出中：托盘和窗口的关闭处理都看它，别把清理阶段当成用户操作。 */
 let isQuitting = false;
@@ -309,7 +310,7 @@ const createWindow = (): BrowserWindow => {
 
 /** 托盘和通知连接；两者都随应用活到退出。 */
 let tray: ReturnType<typeof createTray> | undefined;
-let notifier: OutboxNotifier | undefined;
+let notifier: OutboxConnection | undefined;
 
 /** 托盘图标在开发期和打包后的落点不同，和 dock 图标同一套算法。 */
 const trayIconPath = (): string =>
@@ -318,6 +319,16 @@ const trayIconPath = (): string =>
       path.join(__dirname, "../../../resources/icons/tray.png")
     : // oxlint-disable-next-line unicorn/prefer-module
       path.join(__dirname, "../../resources/icons/tray.png");
+
+/** 把一个窗口拿到前台：最小化的先还原，再显示并聚焦。 */
+const focusWindow = (window: BrowserWindow): void => {
+  if (window.isMinimized()) {
+    window.restore();
+  }
+
+  window.show();
+  window.focus();
+};
 
 /** 把主窗口拿出来；托盘点击和 macOS 的 activate 都走它。 */
 const showExistingWindow = (): void => {
@@ -329,12 +340,7 @@ const showExistingWindow = (): void => {
     return;
   }
 
-  if (existing.isMinimized()) {
-    existing.restore();
-  }
-
-  existing.show();
-  existing.focus();
+  focusWindow(existing);
 };
 
 /**
@@ -347,12 +353,7 @@ const openSession = (sessionId: string): void => {
   const [existing] = BrowserWindow.getAllWindows();
   const window = existing ?? createWindow();
 
-  if (window.isMinimized()) {
-    window.restore();
-  }
-
-  window.show();
-  window.focus();
+  focusWindow(window);
 
   const send = (): void => {
     if (!window.isDestroyed()) {
@@ -768,7 +769,7 @@ const onElectronReady = async () => {
   });
 
   // 发件箱的通知从主进程弹：窗口关掉了渲染进程就不在了，而通知恰好要在那时出现。
-  notifier = new OutboxNotifier({
+  notifier = new OutboxConnection({
     log: (message) => {
       logger.info(message);
     },

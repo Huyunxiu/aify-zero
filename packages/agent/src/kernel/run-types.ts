@@ -37,12 +37,10 @@ export type AgentStreamOptions = {
   /** What this stream runs; see {@link AgentStreamSignal}. */
   signal: AgentStreamSignal;
   /**
-   * How the run ended, so the caller can settle the session it belongs to. The
-   * outcome is only known here, once the run has finished.
+   * 运行怎么结束的，好让调用方给会话收尾。结局只有这里知道，运行跑完才知道。
    *
-   * `turn` is the assistant turn this stream drove, when it produced one. The
-   * host needs it to tell a reply that said something from one that only ran
-   * tools; a compaction never has one.
+   * `turn` 是这次运行驱动的那个 assistant 回合；宿主靠它区分「说了话的回复」
+   * 和「只跑了工具的回复」。压缩没有这个回合。
    */
   onFinish: (
     status: SessionEndStatus,

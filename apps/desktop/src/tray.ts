@@ -1,6 +1,6 @@
 import { app, Menu, nativeImage, Tray } from "electron";
 
-import { t } from "../i18n";
+import { t } from "./i18n";
 
 /** 托盘菜单的两件事；语言换了要重画菜单，所以动作单独给出。 */
 export type TrayActions = {

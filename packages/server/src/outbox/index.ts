@@ -9,10 +9,6 @@ export type {
   OutboxDispatcherOptions,
   OutboxDispatcherState,
 } from "./dispatcher";
-export { notificationBody } from "./snippet";
-export type {
-  OutboxCandidate,
-  OutboxNotifications,
-  OutboxStore,
-} from "./types";
+export { deliveryBody } from "./snippet";
+export type { OutboxCandidate, OutboxDeliveries, OutboxStore } from "./types";
 export { OUTBOX_EXPIRE_MS, OUTBOX_RACE_MS, OUTBOX_RETENTION_MS } from "./types";
