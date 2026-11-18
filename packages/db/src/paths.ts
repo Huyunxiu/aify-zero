@@ -6,8 +6,19 @@
  */
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const here = import.meta.dirname;
+/**
+ * 本模块所在的目录。
+ *
+ * 从 `import.meta.url` 算，不用 `import.meta.dirname`：后者是 Node 20.11 才
+ * 加的属性，而 drizzle-kit 加载配置时用的是一个只提供 `url` 的加载器。用它，
+ * `db:generate` / `db:studio` / `db:migrate` 会拿到 `undefined`，`path.resolve`
+ * 当场抛 `The "paths[0]" argument must be of type string`。
+ */
+// 这条规则要求用 `import.meta.dirname`，而 drizzle-kit 的加载器不提供它。
+// oxlint-disable-next-line unicorn/prefer-import-meta-properties
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 /** 仓库根目录。 */
 export const WORKSPACE_ROOT = path.resolve(here, "..", "..", "..");
