@@ -7,6 +7,7 @@
 import type { Server } from "node:http";
 
 import { serve } from "@hono/node-server";
+import { frameText } from "@workspace/shared/ws-frame";
 import { describe, expect, test } from "vitest";
 import NodeWebSocket from "ws";
 
@@ -74,25 +75,12 @@ const connect = (
     websocket.once("error", reject);
   });
 
-/** `ws` 交过来的帧数据可能是 Buffer、ArrayBuffer，也可能是一串 Buffer。 */
-const rawText = (data: NodeWebSocket.RawData): string => {
-  if (Array.isArray(data)) {
-    return Buffer.concat(data).toString("utf-8");
-  }
-
-  if (data instanceof ArrayBuffer) {
-    return Buffer.from(data).toString("utf-8");
-  }
-
-  return data.toString("utf-8");
-};
-
 /** 等下一帧并解析成 JSON。 */
 const nextMessage = (websocket: NodeWebSocket): Promise<unknown> =>
   new Promise((resolve, reject) => {
     websocket.once("message", (data) => {
       try {
-        resolve(JSON.parse(rawText(data)));
+        resolve(JSON.parse(frameText(data)));
       } catch (error) {
         reject(error instanceof Error ? error : new Error(String(error)));
       }

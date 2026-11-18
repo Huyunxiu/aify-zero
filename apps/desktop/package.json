@@ -31,6 +31,7 @@
     "electron-squirrel-startup": "catalog:",
     "i18next": "catalog:",
     "lucide-react": "^1.14.0",
+    "partysocket": "catalog:",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-i18next": "catalog:",

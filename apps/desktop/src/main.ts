@@ -312,13 +312,22 @@ const createWindow = (): BrowserWindow => {
 let tray: ReturnType<typeof createTray> | undefined;
 let notifier: OutboxConnection | undefined;
 
-/** 托盘图标在开发期和打包后的落点不同，和 dock 图标同一套算法。 */
-const trayIconPath = (): string =>
-  app.isPackaged
-    ? // oxlint-disable-next-line unicorn/prefer-module
-      path.join(__dirname, "../../../resources/icons/tray.png")
-    : // oxlint-disable-next-line unicorn/prefer-module
-      path.join(__dirname, "../../resources/icons/tray.png");
+/**
+ * 一个图标文件的落点。
+ *
+ * 打包后 `__dirname` 在应用目录里，图标在 `resources/icons`；开发期两者都在
+ * 仓库里，图标比 `.vite/build` 高一层。托盘图标和 dock 图标因此共用这一段。
+ *
+ * @param file - `resources/icons` 下的文件名。
+ */
+const iconPath = (file: string): string => {
+  // oxlint-disable-next-line unicorn/prefer-module
+  const dirname = __dirname;
+
+  return app.isPackaged
+    ? path.join(dirname, "../../../resources/icons", file)
+    : path.join(dirname, "../../resources/icons", file);
+};
 
 /** 把一个窗口拿到前台：最小化的先还原，再显示并聚焦。 */
 const focusWindow = (window: BrowserWindow): void => {
@@ -425,18 +434,11 @@ const setupIpcServer = async () => {
 
 // macOS-only startup step: set dock icon and optional multi-instance badge.
 const setupMacDockIcon = () => {
-  // oxlint-disable-next-line unicorn/prefer-module
-  const dirname = __dirname;
-
   if (process.platform !== "darwin" || !app.dock) {
     return;
   }
 
-  const dockIconPath = app.isPackaged
-    ? path.join(dirname, "../../../resources/icons/icon.png")
-    : path.join(dirname, "../../resources/icons/icon.png");
-
-  app.dock.setIcon(dockIconPath);
+  app.dock.setIcon(iconPath("icon.png"));
 };
 
 // Puts the ripgrep shipped in extraResource ahead of whatever the user has on
@@ -762,7 +764,7 @@ const onElectronReady = async () => {
 
   tray = createTray({
     ...trayActions,
-    iconPath: trayIconPath(),
+    iconPath: iconPath("tray.png"),
     log: (message) => {
       logger.warn(message);
     },
@@ -799,16 +801,9 @@ const onElectronReady = async () => {
 const focusExistingWindow = (): void => {
   const [existing] = BrowserWindow.getAllWindows();
 
-  if (existing === undefined) {
-    return;
+  if (existing !== undefined) {
+    focusWindow(existing);
   }
-
-  if (existing.isMinimized()) {
-    existing.restore();
-  }
-
-  existing.show();
-  existing.focus();
 };
 
 /**

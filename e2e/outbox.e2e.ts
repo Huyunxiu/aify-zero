@@ -9,7 +9,12 @@
  * 会话由接口开、由接口跑：页面一收到 `run.end` 就把会话标成已读，而「有人看
  * 了」正是发件箱不该弹通知的理由。这一条要的是反面——没人在看，才有通知。
  */
+import { createORPCClient } from "@orpc/client";
+import { RPCLink } from "@orpc/client/fetch";
 import { expect, test } from "@playwright/test";
+import type { AgentUserTurn } from "@workspace/agent-client";
+import type { AppRouterClient } from "@workspace/server/routers/index";
+import { frameText } from "@workspace/shared/ws-frame";
 import {
   encodeChannelMessage,
   OUTBOX_ACK_MESSAGE_TYPE,
@@ -54,41 +59,21 @@ type OutboxState = {
 };
 
 /**
- * 一次 RPC 调用。
+ * 和页面同一个 RPC 客户端，只是地址和凭据换成这一场的。
  *
- * 入参和结果都包在 `json` 里——页面走的是同一条路，所以这里不另开一套。
+ * 用例要开一条会话，走的正是页面发那句话的那条路：传输、包封、错误都在
+ * oRPC 里，这里不另写一套。
  */
-const rpc = async (
-  stack: Stack,
-  path: string,
-  input: unknown
-): Promise<unknown> => {
-  const response = await fetch(`${stack.apiUrl}/api/rpc/${path}`, {
-    body: JSON.stringify({ json: input }),
-    headers: {
-      authorization: `Bearer ${stack.token}`,
-      "content-type": "application/json",
-    },
-    method: "POST",
-  });
+const rpcClient = (stack: Stack): AppRouterClient =>
+  createORPCClient(
+    new RPCLink({
+      headers: { authorization: `Bearer ${stack.token}` },
+      url: `${stack.apiUrl}/api/rpc`,
+    })
+  );
 
-  if (!response.ok) {
-    throw new Error(
-      `rpc ${path} failed: ${String(response.status)} ${await response.text()}`
-    );
-  }
-
-  const body: unknown = await response.json();
-
-  if (typeof body === "object" && body !== null && "json" in body) {
-    return body.json;
-  }
-
-  return body;
-};
-
-/** 一条用户回合，形状和页面发的那个一样。 */
-const userTurn = () => {
+/** 一条用户回合，形状和页面发的那个一样；类型就是接口收的那个。 */
+const userTurn = (): AgentUserTurn => {
   const now = Date.now();
 
   return {
@@ -106,19 +91,6 @@ const userTurn = () => {
     status: "done",
     type: "user",
   };
-};
-
-/** `ws` 交过来的帧数据可能是 Buffer、ArrayBuffer，也可能是一串 Buffer。 */
-const rawText = (data: RawData): string => {
-  if (Array.isArray(data)) {
-    return Buffer.concat(data).toString("utf-8");
-  }
-
-  if (data instanceof ArrayBuffer) {
-    return Buffer.from(data).toString("utf-8");
-  }
-
-  return Buffer.from(data).toString("utf-8");
 };
 
 /** 连上应用通道并订阅；用例扮演的就是桌面主进程那一条连接。 */
@@ -147,7 +119,7 @@ const collect = (websocket: NodeWebSocket): OutboxDelivery[][] => {
       return;
     }
 
-    const message = parseChannelMessage(rawText(data));
+    const message = parseChannelMessage(frameText(data));
 
     if (message.type === OUTBOX_NOTIFY_MESSAGE_TYPE) {
       batches.push([...parseOutboxNotify(message.data).items]);
@@ -198,7 +170,7 @@ test("Outbox: a run nobody watched → the subscriber is notified → the ack st
     );
 
     // 3. 一条没人看着的会话：接口开，接口跑。
-    await rpc(live, "session/createSession", {
+    await rpcClient(live).session.createSession({
       model: { modelId: "fake-fast", providerId: "fake" },
       sessionId: SESSION_ID,
       turns: [userTurn()],

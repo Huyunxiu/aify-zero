@@ -27,10 +27,13 @@
   "devDependencies": {
     "@commitlint/cli": "catalog:",
     "@commitlint/config-conventional": "catalog:",
+    "@orpc/client": "catalog:",
     "@playwright/test": "catalog:",
     "@types/ws": "catalog:",
     "@workspace/agent": "workspace:*",
+    "@workspace/agent-client": "workspace:*",
     "@workspace/config": "workspace:*",
+    "@workspace/server": "workspace:*",
     "@workspace/shared": "workspace:*",
     "ultracite": "catalog:",
     "vite-plus": "catalog:",

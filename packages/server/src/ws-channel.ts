@@ -1,4 +1,5 @@
 import { logger } from "@workspace/shared/logger";
+import { frameText } from "@workspace/shared/ws-frame";
 /**
  * 应用通道：`/api/ws` 上的 type / data 协议。
  *
@@ -18,22 +19,9 @@ import {
   WORLD_MESSAGE_TYPE,
 } from "@workspace/shared/ws-protocol";
 import type { ChannelMessage } from "@workspace/shared/ws-protocol";
-import type { RawData, WebSocket } from "ws";
+import type { WebSocket } from "ws";
 
 import { outboxChannels } from "./outbox/channels";
-
-/** `ws` 交过来的帧数据可能是 Buffer、ArrayBuffer，也可能是一串 Buffer。 */
-const rawText = (data: RawData): string => {
-  if (Array.isArray(data)) {
-    return Buffer.concat(data).toString("utf-8");
-  }
-
-  if (data instanceof ArrayBuffer) {
-    return Buffer.from(data).toString("utf-8");
-  }
-
-  return Buffer.from(data).toString("utf-8");
-};
 
 /**
  * 回答一条已经校验过的消息。
@@ -87,7 +75,7 @@ export const upgradeChannel = (websocket: WebSocket): void => {
     let message: ChannelMessage;
 
     try {
-      message = parseChannelMessage(rawText(data));
+      message = parseChannelMessage(frameText(data));
     } catch (error) {
       // 客户端发错帧是它的错，不是服务的故障：只记一行动作，不打印调用栈。
       logger.warn(
