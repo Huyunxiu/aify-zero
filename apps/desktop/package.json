@@ -34,6 +34,7 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-i18next": "catalog:",
+    "ws": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -52,6 +53,7 @@
     "@types/electron-squirrel-startup": "catalog:",
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
+    "@types/ws": "catalog:",
     "@vitejs/plugin-react": "^6.0.1",
     "@vscode/ripgrep": "catalog:",
     "electron": "catalog:",

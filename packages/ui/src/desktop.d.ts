@@ -13,6 +13,9 @@ declare global {
       channelUrl?(): Promise<string>;
       /** 终端通道的 WebSocket 地址。 */
       terminalUrl?(): Promise<string>;
+      /** 用户点了发件箱的通知：要切到的会话。 */
+      onOpenSession?(listener: (sessionId: string) => void): number;
+      offOpenSession?(id: number): void;
     };
   }
 }

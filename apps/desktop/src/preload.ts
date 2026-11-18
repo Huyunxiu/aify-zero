@@ -23,6 +23,16 @@ ipcRenderer.on(
   }
 );
 
+let nextOpenSessionListenerId = 0;
+const openSessionListeners = new Map<number, (sessionId: string) => void>();
+
+// 用户点了发件箱的通知：主进程把要打开的会话送进来，界面自己决定怎么切。
+ipcRenderer.on(IPC_CHANNELS.OPEN_SESSION, (_event, sessionId: string) => {
+  for (const listener of openSessionListeners.values()) {
+    listener(sessionId);
+  }
+});
+
 // 渲染端用它判断自己是否运行在桌面壳里。只暴露非敏感的静态信息，
 // 真正的原生能力仍然走下面的 message-port IPC。
 contextBridge.exposeInMainWorld("aifyDesktop", {
@@ -41,6 +51,16 @@ contextBridge.exposeInMainWorld("aifyDesktop", {
   },
   offServerStatus: (id: number): void => {
     serverStatusListeners.delete(id);
+  },
+  // 点通知之后要打开的会话。返回 id，渲染端用 offOpenSession 取消订阅。
+  onOpenSession: (listener: (sessionId: string) => void): number => {
+    nextOpenSessionListenerId += 1;
+    openSessionListeners.set(nextOpenSessionListenerId, listener);
+
+    return nextOpenSessionListenerId;
+  },
+  offOpenSession: (id: number): void => {
+    openSessionListeners.delete(id);
   },
   // 应用通道的地址。桌面文档源是 aify-app://，WebSocket 没有对应的 scheme，
   // 所以地址由主进程拼好。地址里不带令牌：升级请求的凭据由主进程在发出前

@@ -79,6 +79,8 @@ export const IPC_CHANNELS = {
   CHANNEL_URL: "channel-url",
   /** 渲染端取终端通道的 WebSocket 地址。 */
   TERMINAL_URL: "terminal-url",
+  /** 主进程 -> 渲染端：用户点了通知，把界面切到那个会话。 */
+  OPEN_SESSION: "open-session",
 };
 
 /**

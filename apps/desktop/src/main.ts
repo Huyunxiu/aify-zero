@@ -28,9 +28,13 @@ import { ipcMain } from "electron/main";
 
 import { ipcContext } from "@/ipc/context";
 
+import { createTray, OutboxNotifier } from "./notifications";
 import { createAppProtocolHandler, registerAppScheme } from "./protocol";
 import { DesktopServer } from "./server-manager";
 import { isLoopbackOrigin, normalizeServerOrigin } from "./server-origin";
+
+/** 退出中：托盘和窗口的关闭处理都看它，别把清理阶段当成用户操作。 */
+let isQuitting = false;
 
 log.initialize();
 log.scope.labelPadding = false;
@@ -267,6 +271,17 @@ const buildWindow = (): BrowserWindow => {
     }
   );
 
+  // 关窗不退出：进程要留在托盘里，定时器和发件箱才继续跑。真正退出走托盘
+  // 菜单或系统的退出命令，那时 `isQuitting` 已经是 true。
+  mainWindow.on("close", (event) => {
+    if (isQuitting) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
   return mainWindow;
 };
 
@@ -288,6 +303,66 @@ const createWindow = (): BrowserWindow => {
   const mainWindow = buildWindow();
   showWindow(mainWindow);
   return mainWindow;
+};
+
+/** 托盘和通知连接；两者都随应用活到退出。 */
+let tray: ReturnType<typeof createTray> | undefined;
+let notifier: OutboxNotifier | undefined;
+
+/** 托盘图标在开发期和打包后的落点不同，和 dock 图标同一套算法。 */
+const trayIconPath = (): string =>
+  app.isPackaged
+    ? // oxlint-disable-next-line unicorn/prefer-module
+      path.join(__dirname, "../../../resources/icons/tray.png")
+    : // oxlint-disable-next-line unicorn/prefer-module
+      path.join(__dirname, "../../resources/icons/tray.png");
+
+/** 把主窗口拿出来；托盘点击和 macOS 的 activate 都走它。 */
+const showExistingWindow = (): void => {
+  const [existing] = BrowserWindow.getAllWindows();
+
+  if (existing === undefined) {
+    createWindow();
+
+    return;
+  }
+
+  if (existing.isMinimized()) {
+    existing.restore();
+  }
+
+  existing.show();
+  existing.focus();
+};
+
+/**
+ * 用户点了发件箱的通知：把窗口拿出来，再让界面切到那个会话。
+ *
+ * 窗口可能是刚建的，这时页面还没加载完；等 `did-finish-load` 再送，否则事件
+ * 在渲染端还没有监听者时就丢了。
+ */
+const openSession = (sessionId: string): void => {
+  const [existing] = BrowserWindow.getAllWindows();
+  const window = existing ?? createWindow();
+
+  if (window.isMinimized()) {
+    window.restore();
+  }
+
+  window.show();
+  window.focus();
+
+  const send = (): void => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.OPEN_SESSION, sessionId);
+    }
+  };
+
+  if (window.webContents.isLoading()) {
+    window.webContents.once("did-finish-load", send);
+  } else {
+    send();
+  }
 };
 
 const setupIpcServer = async () => {
@@ -548,6 +623,14 @@ const onElectronReady = async () => {
   setupBundledRipgrep();
   setupMacDockIcon();
 
+  // Windows 的 toast 通知要一个应用身份；不设的话开发期什么都弹不出来。
+  // 打包后这个值应当与安装器写进快捷方式的 AUMID 一致。
+  if (process.platform === "win32") {
+    app.setAppUserModelId(
+      process.env.AIFY_APP_USER_MODEL_ID ?? "com.electron.desktop"
+    );
+  }
+
   // 默认模式下渲染端经主进程转发，内置 server 不需要固定端口：用 0 让系统
   // 分配，避免和 `dev:server`、另一个实例或占端口的进程冲突。显式设置了
   // `AIFY_API_PORT`，或者关掉协议走 Vite 代理时，才需要固定端口。
@@ -634,6 +717,30 @@ const onElectronReady = async () => {
   installServerSelectionIpc();
   installChannelIpc(apiToken, mainWindow, waitForOrigin);
   showWindow(mainWindow);
+
+  // 托盘是「壳开着就算在线」的落点：没有它，Windows 和 Linux 上关窗就等于退出。
+  tray = createTray({
+    iconPath: trayIconPath(),
+    log: (message) => {
+      logger.warn(message);
+    },
+    onOpen: showExistingWindow,
+    onQuit: () => {
+      app.quit();
+    },
+  });
+
+  // 发件箱的通知从主进程弹：窗口关掉了渲染进程就不在了，而通知恰好要在那时出现。
+  notifier = new OutboxNotifier({
+    log: (message) => {
+      logger.info(message);
+    },
+    onOpenSession: openSession,
+    origin: () => server.origin,
+    token: () => apiToken,
+  });
+  notifier.start();
+
   logger.info(`[startup] window shown in ${Date.now() - readyStartedAt}ms`);
 
   if (isDev && process.env.AIFY_OPEN_DEVTOOLS !== "0") {
@@ -665,8 +772,6 @@ const focusExistingWindow = (): void => {
   existing.show();
   existing.focus();
 };
-
-let isQuitting = false;
 
 /**
  * 单实例锁：两个 App 实例同时运行会争抢默认端口和同一个 SQLite 库，而且
@@ -706,11 +811,9 @@ if (!hasSingleInstanceLock) {
     }
   });
 
-  // Quit when all windows are closed, except on macOS. There, it's common
-  // for applications and their menu bar to stay active until the user quits
-  // explicitly with Cmd + Q.
+  // 关窗只隐藏窗口，应用留在托盘里；只有托盘还没建起来时才按老规矩退出。
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
+    if (tray === undefined && process.platform !== "darwin") {
       app.quit();
     }
   });
@@ -724,6 +827,11 @@ if (!hasSingleInstanceLock) {
 
     isQuitting = true;
     event.preventDefault();
+
+    notifier?.stop();
+    notifier = undefined;
+    tray?.destroy();
+    tray = undefined;
 
     void server
       .stop()
