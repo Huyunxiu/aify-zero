@@ -39,8 +39,15 @@ export type AgentStreamOptions = {
   /**
    * How the run ended, so the caller can settle the session it belongs to. The
    * outcome is only known here, once the run has finished.
+   *
+   * `turn` is the assistant turn this stream drove, when it produced one. The
+   * host needs it to tell a reply that said something from one that only ran
+   * tools; a compaction never has one.
    */
-  onFinish: (status: SessionEndStatus) => Promise<void>;
+  onFinish: (
+    status: SessionEndStatus,
+    turn?: AgentTurn<AgentToolSet>
+  ) => Promise<void>;
   /**
    * 这次运行要领的待办项，以及它们各自的 user 回合。
    *

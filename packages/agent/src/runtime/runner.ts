@@ -18,6 +18,7 @@ import { InboxItemNotFoundError } from "../inbox/errors";
 import type { SteeringSignal } from "../inbox/steering";
 import { createSteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
+import type { OutboxRecorder } from "../outbox/types";
 import { SessionEventRegistry } from "../session-events";
 import type { SessionEndStatus } from "../storage";
 import { recoverInterruptedRuns } from "../storage/recovery";
@@ -47,6 +48,8 @@ export type AgentRunnerOptions = {
   /** 宿主组合：解析设置、建沙箱、装 MCP/skill/context 扩展。 */
   buildAgent: (input: BuildAgentInput) => Promise<Agent>;
   jobs?: JobRegistry;
+  /** 运行落定后留一条发件箱记录；宿主不关心通知时可以不给。 */
+  outbox?: OutboxRecorder;
   logger?: AgentRunnerLogger;
 };
 
@@ -109,6 +112,7 @@ export class AgentRunner {
       registry: this.#streams,
       buildAgent: this.#buildAgent,
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
+      ...(options.outbox === undefined ? {} : { outbox: options.outbox }),
       steering: (sessionId) => this.steeringSignal(sessionId),
     });
   }

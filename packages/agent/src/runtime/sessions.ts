@@ -10,6 +10,7 @@ import type {
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
+import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
 
 import { AgentSession } from "../agent-session";
@@ -17,6 +18,8 @@ import type { Agent } from "../agents";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { InboxClaim } from "../kernel/run-types";
+import { hasVisibleText } from "../outbox/text";
+import type { OutboxRecorder } from "../outbox/types";
 import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
 import type { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
@@ -55,6 +58,8 @@ export interface SessionLifecycleDeps {
   jobs?: JobRegistry;
   /** 按会话取插话信号；没有时等待只能靠中止或超时结束。 */
   steering?: (sessionId: string) => SteeringSignal;
+  /** 一次运行落定、且它确实说了话时留一条发件箱记录；没有就什么都不记。 */
+  outbox?: OutboxRecorder;
 }
 
 /**
@@ -252,7 +257,7 @@ export class SessionLifecycle {
         onClaimed: (turnIds) => {
           claimedTurnIds = turnIds;
         },
-        onFinish: async (status) => {
+        onFinish: async (status, turn) => {
           // 收件箱不用在这里收尾：下一次运行开始时领全部待办项，残留的
           // step-boundary 项自然落到那一次。
           try {
@@ -260,6 +265,7 @@ export class SessionLifecycle {
             await store.clearActiveStream(sessionId, activeStreamId, status, {
               recordActivity: true,
             });
+            await this.#recordOutboxItem({ status, sessionId, turn });
           } finally {
             settleRun(status);
           }
@@ -487,6 +493,38 @@ export class SessionLifecycle {
     await store.saveTurns(copies);
 
     return { sessionId: newSessionId };
+  }
+
+  /**
+   * 一次运行落定时，为它留一条发件箱记录。
+   *
+   * 只有跑成了、并且回合里确实有话说才记：失败、取消、等审批都不算「有事
+   * 要告诉人」，空回合则是做完了但没话。写失败只告警——一条记录不该把一次
+   * 已经落定的运行重新变成错误。
+   */
+  async #recordOutboxItem(input: {
+    status: SessionEndStatus;
+    sessionId: string;
+    turn: AgentTurn<AgentToolSet> | undefined;
+  }): Promise<void> {
+    const { outbox } = this.#deps;
+
+    if (outbox === undefined || input.status !== "done") {
+      return;
+    }
+
+    if (input.turn === undefined || !hasVisibleText(input.turn)) {
+      return;
+    }
+
+    try {
+      await outbox.record({
+        sessionId: input.sessionId,
+        turnId: input.turn.id,
+      });
+    } catch (error) {
+      logger.warn("[outbox] failed to record the settled turn", error);
+    }
   }
 
   /**

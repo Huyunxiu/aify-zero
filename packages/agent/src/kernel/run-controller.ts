@@ -343,6 +343,8 @@ export class RunController {
       // Anything else that ends the turn — a throw out of the turn runner, a
       // turn that never produced a record — is a failure the session should show.
       let outcome: SessionEndStatus = "error";
+      // 交给调用方的落定回合：宿主靠它判断这一次运行说没说话。
+      let endingTurn: AgentTurn<AgentToolSet> | undefined;
 
       try {
         context.controller = {
@@ -367,6 +369,7 @@ export class RunController {
 
         if (turn) {
           outcome = TURN_END_TO_SESSION_STATUS[turn.status];
+          endingTurn = turn;
         }
       } catch (error) {
         // A step reports its own ending through the turn's finish event; this
@@ -383,7 +386,7 @@ export class RunController {
             { sessionId: this.#deps.sessionId },
             extensionApi
           );
-          await onFinish(outcome);
+          await onFinish(outcome, endingTurn);
         } catch (error) {
           logger.warn("[agent] failed to settle the turn", error);
         } finally {

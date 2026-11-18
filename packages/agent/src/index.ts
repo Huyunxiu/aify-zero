@@ -6,6 +6,7 @@ export * from "./compaction";
 export * from "./context-files";
 export * from "./extensions";
 export * from "./inbox";
+export * from "./outbox";
 export * from "./resource-dirs";
 export * from "./resources";
 export * from "./tools";
