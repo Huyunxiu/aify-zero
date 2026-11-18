@@ -31,7 +31,6 @@
   "dependencies": {
     "@ai-sdk/mcp": "catalog:",
     "@ai-sdk/openai": "catalog:",
-    "@js-temporal/polyfill": "catalog:",
     "@workspace/agent-client": "workspace:*",
     "@workspace/sandbox": "workspace:*",
     "@workspace/shared": "workspace:*",
@@ -40,6 +39,7 @@
     "file-type": "catalog:",
     "glob": "catalog:",
     "nanoid": "catalog:",
+    "temporal-polyfill": "catalog:",
     "turndown": "catalog:",
     "zod": "catalog:"
   },

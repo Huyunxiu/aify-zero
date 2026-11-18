@@ -1,4 +1,4 @@
-import { Temporal } from "@js-temporal/polyfill";
+import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 
 import { isTimeZone } from "../utils/time-zone";
