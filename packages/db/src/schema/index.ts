@@ -350,6 +350,44 @@ export const timer_table = sqliteTable(
 export type TimerModel = InferSelectModel<typeof timer_table>;
 export type TimerInsertModel = InferInsertModel<typeof timer_table>;
 
+/**
+ * 会话的发件箱：已经落定、还没送到人的回复。
+ *
+ * 一行指向一个回合，不存正文——正文留在 `step` 行里，复制会随压缩和重生成
+ * 分叉。`delivered_at` 由桌面的回执写下：通知弹出来了才算送达；`expired_at`
+ * 记下「决定不再投」的时刻，包括超过十分钟还没回执、以及进程重启时剩下的行。
+ *
+ * `(session_id, turn_id)` 唯一：同一个回合重跑不会多出一行。已送达和已过期
+ * 的行留着做账，三十天后由扫描删除。
+ */
+export const outbox_item_table = sqliteTable(
+  "outbox_item",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    sessionId: text("session_id").notNull(),
+    turnId: text("turn_id").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    /** 桌面的回执：这条回复已经以系统通知的形式弹出来了。 */
+    deliveredAt: integer("delivered_at", { mode: "timestamp_ms" }),
+    /** 决定不再投的时刻；非空的行不会被扫描取走。 */
+    expiredAt: integer("expired_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    uniqueIndex("idx_outbox_session_turn").on(table.sessionId, table.turnId),
+    // 扫描热路径：未投递的行按到达时刻取。
+    index("idx_outbox_pending").on(table.deliveredAt, table.createdAt),
+    // 保留策略：按创建时刻删。
+    index("idx_outbox_created").on(table.createdAt),
+  ]
+);
+
+export type OutboxItemModel = InferSelectModel<typeof outbox_item_table>;
+export type OutboxItemInsertModel = InferInsertModel<typeof outbox_item_table>;
+
 export const dict_table = sqliteTable("dict", {
   code: text("code").primaryKey(),
   name: text("name").notNull(),
