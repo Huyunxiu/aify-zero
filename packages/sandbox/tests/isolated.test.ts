@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, test } from "vitest";
 
+import { SandboxPathDeniedError } from "../src/errors";
 import {
   createIsolatedSandboxAdapter,
   probeNativeIsolation,
@@ -25,6 +26,25 @@ async function createTempDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "aify-sbx-isolated-"));
   tempDirs.push(dir);
   return dir;
+}
+
+/**
+ * 越界的文件动词必须抛 `SandboxPathDeniedError`。
+ *
+ * 断言的是「哪一次调用被拒」，不是文案：文案归 `errors.ts` 管，测试盯住它会把
+ * 一条措辞改动变成一次红。
+ */
+async function expectPathDenied(
+  call: Promise<unknown>,
+  operation: string
+): Promise<void> {
+  const reason = await call.then(
+    () => null,
+    (error: unknown) => error
+  );
+
+  expect(reason).toBeInstanceOf(SandboxPathDeniedError);
+  expect((reason as SandboxPathDeniedError).operation).toBe(operation);
 }
 
 describe(buildWritePolicy, () => {
@@ -148,6 +168,30 @@ describe(buildBwrapInvocation, () => {
       "echo hi",
     ]);
   });
+
+  test("should not mount a fresh procfs", () => {
+    const invocation = buildBwrapInvocation(["/work/alpha"], "/work/alpha", [
+      "/bin/true",
+    ]);
+
+    // 新挂 procfs 要 pid 命名空间，否则内核拒绝，整条命令以退出码 1 收场；
+    // 读本来就不受限，宿主的 `/proc` 跟着只读挂载进来就够用。
+    expect(invocation.args).not.toContain("--proc");
+  });
+
+  test("should tolerate a writable root that does not exist", () => {
+    const missing = "/work/not-created-yet";
+    const invocation = buildBwrapInvocation([missing], "/work", ["/bin/true"]);
+    const at = invocation.args.indexOf("--bind-try");
+
+    // `--bind` 会让整条命令因为一个不存在的缓存目录而失败。
+    expect(invocation.args).not.toContain("--bind");
+    expect(invocation.args.slice(at, at + 3)).toStrictEqual([
+      "--bind-try",
+      missing,
+      missing,
+    ]);
+  });
 });
 
 describe(detectBackend, () => {
@@ -217,15 +261,9 @@ describe("isolated adapter", () => {
       await sandbox.writeFile(join(project, "inside.txt"), "hello");
 
       const outside = join(homedir(), `.aify-write-probe-${process.pid}`);
-      await expect(sandbox.writeFile(outside, "nope")).rejects.toThrow(
-        "outside the sandbox's writable roots"
-      );
-      await expect(sandbox.mkdir(outside)).rejects.toThrow(
-        "outside the sandbox's writable roots"
-      );
-      await expect(sandbox.rm(outside)).rejects.toThrow(
-        "outside the sandbox's writable roots"
-      );
+      await expectPathDenied(sandbox.writeFile(outside, "nope"), "writeFile");
+      await expectPathDenied(sandbox.mkdir(outside), "mkdir");
+      await expectPathDenied(sandbox.rm(outside), "rm");
     }
   );
 
@@ -247,9 +285,7 @@ describe("isolated adapter", () => {
 
       try {
         // 写会跟随链接，必须被拦；删只动目录项，必须放行。
-        await expect(sandbox.writeFile(link, "nope")).rejects.toThrow(
-          "outside the sandbox's writable roots"
-        );
+        await expectPathDenied(sandbox.writeFile(link, "nope"), "writeFile");
         await sandbox.rm(link);
       } finally {
         await rm(target, { force: true });
@@ -268,8 +304,21 @@ describe("isolated adapter", () => {
         sessionDir: project,
       });
 
-      const inside = await sandbox.exec("touch inside.txt", { cwd: project });
-      expect(inside.exitCode).toBe(0);
+      const errors: string[] = [];
+      const inside = await sandbox.exec("touch inside.txt", {
+        cwd: project,
+        onData: (channel, chunk) => {
+          if (channel === "stderr") {
+            errors.push(chunk.toString());
+          }
+        },
+      });
+      // 命令起不来时退出码是 1，原因只在 stderr 里：失败时把它一起报出来。
+      if (inside.exitCode !== 0) {
+        throw new Error(
+          `touch in a writable root exited with ${String(inside.exitCode)}: ${errors.join("").trim()}`
+        );
+      }
 
       // 家目录不在可写根里：临时目录本来就是可写根，不能拿它当"外面"。
       const outside = join(homedir(), `.aify-sandbox-probe-${process.pid}`);
