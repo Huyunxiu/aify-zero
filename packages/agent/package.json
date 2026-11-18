@@ -25,6 +25,9 @@
     },
     "./testing/fake-provider": {
       "default": "./src/testing/fake-provider/index.ts"
+    },
+    "./testing/tape": {
+      "default": "./src/testing/tape/index.ts"
     }
   },
   "scripts": {},

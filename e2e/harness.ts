@@ -202,7 +202,7 @@ const seedProvider = async (input: {
  * 好让后两条消息在第一次运行还没结束时排进队列。
  */
 export async function startStack(
-  input: { readonly scenario?: string } = {}
+  input: { readonly scenario?: string; readonly tape?: string } = {}
 ): Promise<Stack> {
   const stamp = new Date().toISOString().replace(/[:.]/gu, "-");
   const runDir = join(REPO_ROOT, ".e2e", "runs", stamp);
@@ -241,9 +241,15 @@ export async function startStack(
     AIFY_TIMER_SCAN_MS: "1000",
   };
 
-  const fake = await startFakeProvider({
-    scenario: input.scenario ?? "edit-then-answer",
-  });
+  const fake =
+    input.tape === undefined
+      ? await startFakeProvider({
+          scenario: input.scenario ?? "edit-then-answer",
+        })
+      : await startFakeProvider({
+          // 真实应用会并发发一条非流式的标题请求，顺序会漂，所以按流式与否分流。
+          play: { path: input.tape, match: "stream" },
+        });
   // 先起页面，等它真能服务请求，再起 API：链接里的源是确定的，页面也早就绪。
   const web = startChild({
     args: ["run", "web#dev"],

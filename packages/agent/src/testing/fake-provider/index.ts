@@ -1,6 +1,19 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type {
+  TapeFrame,
+  TapePlayerState,
+  TapeRecorderOptions,
+} from "../tape/index.js";
+import {
+  encodeFrameBytes,
+  PANEL_HTML,
+  TapePlayer,
+  TapeRecorder,
+  tapeInputSchema,
+  wallClock,
+} from "../tape/index.js";
 import { withoutHopByHop } from "./headers.js";
 import { Recorder, ReplayBook } from "./record.js";
 import { RuleBook } from "./rules.js";
@@ -21,25 +34,61 @@ export type FakeProvider = {
   readonly baseURL: string;
   /** 到目前为止收到的请求，按顺序。断言「真的发了几次」用。 */
   readonly requests: readonly FakeProviderRequest[];
+  /** 播放器状态；没开 `play` 就是 undefined。 */
+  readonly tape?: TapePlaybackState;
   close(): Promise<void>;
 };
 
 export type FakeProviderRecordOptions = {
   /** 真供应商的地址，例如 `https://api.deepseek.com/v1`。 */
   readonly url: string;
-  /** 录制文件写到哪。 */
-  readonly out: string;
+  /** 旧格式（整条响应）写到哪；不给就只写录制带。 */
+  readonly out?: string;
   /** 追加到已有文件：跨审批暂停续录时用。 */
   readonly append?: boolean;
   /** 转发时额外带的头，例如 `authorization`。 */
   readonly headers?: Readonly<Record<string, string>>;
 };
 
+export type FakeProviderPlaybackOptions = {
+  /** 录制带路径。 */
+  readonly path: string;
+  /** 播放倍速；2 就是两倍速。 */
+  readonly speed?: number;
+  /** 相邻帧的最大等待；空闲超过它就截断。 */
+  readonly capMs?: number;
+  /** 播到第几帧就挂起；0 基。`POST /__tape/resume` 放行。 */
+  readonly holdAt?: number;
+  /** 挂起时多久发一次保活注释。 */
+  readonly keepaliveMs?: number;
+  /** 一次挂起的上限；超了就结束响应。 */
+  readonly holdLimitMs?: number;
+  /** 接管之后把请求转给谁；不给就回 501。 */
+  readonly takeoverUrl?: string;
+  /** 怎么从带里挑下一条：按顺序，还是按流式与否。 */
+  readonly match?: "order" | "stream";
+};
+
+/** 播放器的状态；没开播放时 `FakeProvider.tape` 是 undefined。 */
+export type TapePlaybackState = TapePlayerState;
+
 export type FakeProviderOptions = {
   /** 场景对象，或包根 `scenarios/` 里的名字 / 一个路径。 */
   readonly scenario?: Scenario | string;
   /** 开了就是代理模式：转发给真供应商，并把响应录下来。 */
   readonly record?: FakeProviderRecordOptions;
+  /**
+   * 录制带：把每条往返按帧写成一个 JSONL 文件。
+   *
+   * 只在代理模式里有内容。P0 不录场景模式生成的流。
+   */
+  readonly tape?: TapeRecorderOptions;
+  /**
+   * 播放录制带：请求按顺序换回录制里的响应。
+   *
+   * 与 `record` 互斥：一个回放，一个录制。
+   */
+  readonly play?: FakeProviderPlaybackOptions;
   /** 端口；缺省是 0，由系统挑一个。 */
   readonly port?: number;
   /**
@@ -65,12 +114,41 @@ export async function startFakeProvider(
       : options.scenario;
   const book = scenario ? new RuleBook(scenario.rules) : undefined;
   const replay = new ReplayBook();
+  const tape =
+    options.tape === undefined ? undefined : new TapeRecorder(options.tape);
   const recording = options.record
     ? {
         record: options.record,
-        recorder: new Recorder(options.record.out, options.record.append),
+        recorder:
+          options.record.out === undefined
+            ? undefined
+            : new Recorder(options.record.out, options.record.append),
       }
     : undefined;
+  const loadPlayer = async (
+    play: FakeProviderPlaybackOptions
+  ): Promise<TapePlayer> =>
+    await TapePlayer.load({
+      path: play.path,
+      clock: wallClock({
+        ...(play.speed === undefined ? {} : { speed: play.speed }),
+        ...(play.capMs === undefined ? {} : { capMs: play.capMs }),
+      }),
+      ...(play.holdAt === undefined ? {} : { holdAt: play.holdAt }),
+      ...(play.keepaliveMs === undefined
+        ? {}
+        : { keepaliveMs: play.keepaliveMs }),
+      ...(play.holdLimitMs === undefined
+        ? {}
+        : { holdLimitMs: play.holdLimitMs }),
+      ...(play.match === undefined ? {} : { match: play.match }),
+      onHold: (frame) => {
+        options.log?.(`held at frame ${String(frame)}`);
+      },
+    });
+
+  let player =
+    options.play === undefined ? undefined : await loadPlayer(options.play);
   const requests: FakeProviderRequest[] = [];
   const fallbackModel = scenario?.models?.[0] ?? scenario?.name ?? "fake-model";
 
@@ -98,11 +176,166 @@ export async function startFakeProvider(
     });
   });
 
+  /** 接管之后的请求：交给真供应商，或者明确拒绝。 */
+  const handOver = async (
+    response: ServerResponse,
+    body: string,
+    url: URL
+  ): Promise<void> => {
+    const target = options.play?.takeoverUrl;
+
+    if (target === undefined) {
+      response.writeHead(501, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          error: {
+            message:
+              "tape: taken over, and no --takeover-url was given to continue with",
+          },
+        })
+      );
+      return;
+    }
+
+    const upstream = await fetch(
+      `${target.replace(/\/$/, "")}${url.pathname}${url.search}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+      }
+    );
+    const headers = withoutHopByHop(
+      Object.fromEntries(upstream.headers.entries())
+    );
+
+    response.writeHead(upstream.status, headers);
+
+    for await (const piece of upstream.body ?? []) {
+      response.write(piece);
+    }
+
+    response.end();
+  };
+
+  /** 控制面：一切 `/__tape/*` 都从这里走。 */
+  const handleTape = async (
+    action: string,
+    request: IncomingMessage,
+    response: ServerResponse
+  ): Promise<void> => {
+    const fail = (status: number, message: string): void => {
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: { message } }));
+    };
+
+    if (action === "panel") {
+      response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      response.end(PANEL_HTML);
+      return;
+    }
+
+    if (action === "input") {
+      if (tape === undefined) {
+        fail(404, "no tape");
+        return;
+      }
+
+      const raw = (await readBody(request)) ?? "{}";
+      await tape.recordInput(tape.at(), tapeInputSchema.parse(JSON.parse(raw)));
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+
+    if (action === "load") {
+      if (options.play === undefined) {
+        fail(404, "no tape");
+        return;
+      }
+
+      if (player?.busy === true) {
+        fail(409, "tape is playing");
+        return;
+      }
+
+      const raw = (await readBody(request)) ?? "{}";
+      const parsed = JSON.parse(raw) as { path?: unknown };
+
+      if (typeof parsed.path !== "string") {
+        fail(400, "path is required");
+        return;
+      }
+
+      player = await loadPlayer({
+        ...options.play,
+        path: parsed.path,
+        holdAt: undefined,
+      });
+      options.log?.(`loaded tape ${parsed.path}`);
+      response.writeHead(204);
+      response.end();
+      return;
+    }
+
+    if (action === "state") {
+      if (player === undefined) {
+        fail(404, "no tape");
+        return;
+      }
+
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify(player.state()));
+      return;
+    }
+
+    if (player === undefined) {
+      fail(404, "no tape");
+      return;
+    }
+
+    switch (action) {
+      case "hold": {
+        player.hold();
+        break;
+      }
+      case "step": {
+        player.step();
+        break;
+      }
+      case "resume": {
+        player.resume();
+        break;
+      }
+      case "takeover": {
+        player.takeover();
+        break;
+      }
+      default: {
+        fail(404, "not found");
+        return;
+      }
+    }
+
+    options.log?.(action);
+    response.writeHead(204);
+    response.end();
+  };
+
   const handle = async (
     request: IncomingMessage,
     response: ServerResponse
   ): Promise<void> => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (url.pathname.startsWith("/__tape/")) {
+      await handleTape(
+        url.pathname.slice("/__tape/".length),
+        request,
+        response
+      );
+      return;
+    }
 
     if (request.method === "GET" && url.pathname.endsWith("/models")) {
       const models = scenario?.models ?? [fallbackModel];
@@ -133,6 +366,8 @@ export async function startFakeProvider(
     const body = (await readBody(request)) ?? "";
     const parsed =
       body === "" ? {} : (JSON.parse(body) as Record<string, unknown>);
+    // 时间轴按请求到达排，不按响应结束排：长请求不能被排到后发的短请求后面。
+    const requestAt = tape?.at() ?? 0;
     const seen: FakeProviderRequest = {
       method: request.method,
       path: url.pathname,
@@ -144,9 +379,19 @@ export async function startFakeProvider(
       `${seen.method} ${seen.path} stream=${seen.stream} model=${seen.model ?? "-"}`
     );
 
+    if (player !== undefined) {
+      if (player.taken) {
+        await handOver(response, body, url);
+        return;
+      }
+
+      await player.play(response, seen.stream);
+      return;
+    }
+
     if (recording) {
       await proxy(
-        { response, body, seen, url },
+        { response, body, seen, url, at: requestAt },
         recording.record,
         recording.recorder
       );
@@ -171,9 +416,11 @@ export async function startFakeProvider(
       body: string;
       seen: FakeProviderRequest;
       url: URL;
+      /** 请求到达的时刻；时间轴按它排序。 */
+      at: number;
     },
     record: FakeProviderRecordOptions,
-    recorder: Recorder
+    recorder: Recorder | undefined
   ): Promise<void> => {
     const target = `${record.url.replace(/\/$/, "")}${input.url.pathname}${input.url.search}`;
     const upstream = await fetch(target, {
@@ -194,26 +441,58 @@ export async function startFakeProvider(
     input.response.writeHead(upstream.status, headers);
 
     const captured: Buffer[] = [];
+    const frames: TapeFrame[] = [];
+    // 帧的时刻相对请求到达，不相对响应开始：首块之前那段等待也是时间轴的一部分，
+    // 否则慢模型回放时会凭空变快。
+    const frameAt = (): number => (tape?.at() ?? 0) - input.at;
+
     for await (const piece of upstream.body ?? []) {
-      captured.push(Buffer.from(piece));
+      const bytes = Buffer.from(piece);
+      captured.push(bytes);
+      frames.push({
+        at: frameAt(),
+        bytes: encodeFrameBytes(bytes),
+      });
       input.response.write(piece);
     }
 
+    const lastAt = frames.at(-1)?.at ?? 0;
+    const tailMs = Math.max(0, frameAt() - lastAt);
+
     // 客户端读到响应结束时就会返回，之后可能立刻读录制文件；所以先落盘，再结束响应。
     try {
-      await recorder.add({
-        request: {
+      if (tape !== undefined) {
+        await tape.recordRequest({
+          at: input.at,
           method: input.seen.method,
           path: input.seen.path,
-          ...(input.seen.stream ? { stream: true } : {}),
-          ...(input.seen.model ? { model: input.seen.model } : {}),
-        },
-        response: {
+          stream: input.seen.stream,
+          ...(input.seen.model === undefined
+            ? {}
+            : { model: input.seen.model }),
+          body: input.body,
           status: upstream.status,
           headers,
-          body: Buffer.concat(captured).toString("utf-8"),
-        },
-      });
+          frames,
+          tailMs,
+        });
+      }
+
+      if (recorder !== undefined) {
+        await recorder.add({
+          request: {
+            method: input.seen.method,
+            path: input.seen.path,
+            ...(input.seen.stream ? { stream: true } : {}),
+            ...(input.seen.model ? { model: input.seen.model } : {}),
+          },
+          response: {
+            status: upstream.status,
+            headers,
+            body: Buffer.concat(captured).toString("utf-8"),
+          },
+        });
+      }
     } catch (error) {
       options.log?.(
         `record failed: ${error instanceof Error ? error.message : String(error)}`
@@ -234,6 +513,9 @@ export async function startFakeProvider(
   return {
     baseURL: `http://127.0.0.1:${port}/v1`,
     requests,
+    get tape(): TapePlaybackState | undefined {
+      return player?.state();
+    },
     close: async () => {
       await new Promise<void>((resolve) => {
         server.close(() => resolve());

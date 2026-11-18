@@ -30,7 +30,28 @@ const headers = (): Record<string, string> => {
 const scenario = valueOf("scenario");
 const recordUrl = valueOf("record");
 const out = valueOf("out");
+const tapeOut = valueOf("tape");
+const playPath = valueOf("play");
 const port = Number(valueOf("port") ?? 0);
+
+// 录制带只在代理模式里有内容：没有上游，就没有帧可记。
+if (tapeOut !== undefined && recordUrl === undefined) {
+  process.stderr.write("[fake] --tape needs --record\n");
+  process.exit(1);
+}
+
+// 一个回放，一个录制，不能同时开。
+if (playPath !== undefined && recordUrl !== undefined) {
+  process.stderr.write("[fake] use either --play or --record\n");
+  process.exit(1);
+}
+
+// 同时给 `--tape` 与 `--record` 时默认不写旧格式；要两份就显式给 `--out`。
+const legacyOut =
+  out ??
+  (tapeOut === undefined && recordUrl !== undefined
+    ? "packages/agent/scenarios/recorded/recording.json"
+    : undefined);
 
 const provider = await startFakeProvider({
   ...(scenario ? { scenario } : {}),
@@ -38,12 +59,35 @@ const provider = await startFakeProvider({
     ? {
         record: {
           url: recordUrl,
-          out: out ?? "packages/agent/scenarios/recorded/recording.json",
+          ...(legacyOut === undefined ? {} : { out: legacyOut }),
           append: has("append"),
           headers: headers(),
         },
       }
     : {}),
+  ...(tapeOut === undefined
+    ? {}
+    : { tape: { out: tapeOut, redact: has("redact") } }),
+  ...(playPath === undefined
+    ? {}
+    : {
+        play: {
+          path: playPath,
+          ...(valueOf("speed") === undefined
+            ? {}
+            : { speed: Number(valueOf("speed")) }),
+          ...(valueOf("hold-at") === undefined
+            ? {}
+            : { holdAt: Number(valueOf("hold-at")) }),
+          ...(valueOf("takeover-url") === undefined
+            ? {}
+            : { takeoverUrl: valueOf("takeover-url") }),
+          // 真实应用会并发发标题请求，顺序会漂；`--match stream` 按流式与否分流。
+          ...(valueOf("match") === "stream"
+            ? { match: "stream" as const }
+            : {}),
+        },
+      }),
   port,
   log: (message) => {
     process.stdout.write(`[fake] ${message}\n`);
@@ -55,9 +99,17 @@ if (scenario) {
   parts.push(`scenario=${scenario}`);
 }
 if (recordUrl) {
+  parts.push(`recording ${recordUrl} -> ${legacyOut ?? "(tape only)"}`);
+}
+if (tapeOut !== undefined) {
+  parts.push(`tape -> ${tapeOut}${has("redact") ? " (redacted)" : ""}`);
+}
+if (playPath !== undefined) {
+  const holdAt = valueOf("hold-at");
   parts.push(
-    `recording ${recordUrl} -> ${out ?? "scenarios/recorded/recording.json"}`
+    `playing ${playPath}${holdAt === undefined ? "" : ` (hold at frame ${holdAt})`}`
   );
+  parts.push(`panel ${provider.baseURL.replace(/\/v1$/, "")}/__tape/panel`);
 }
 process.stdout.write(`${parts.join("  ")}\n`);
 
