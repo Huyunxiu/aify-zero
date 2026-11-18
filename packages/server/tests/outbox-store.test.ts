@@ -41,7 +41,7 @@ const assistantStep = (stepId: string, text: string): AgentStep<AgentToolSet> =>
  */
 const seedTurn = async (input: {
   sessionId: string;
-  status?: "done" | "idle";
+  status?: "done" | "idle" | "running";
   text: string;
   turnId: string;
 }): Promise<void> => {
@@ -149,6 +149,53 @@ describe("outbox storage", () => {
       "session-done",
     ]);
     expect(candidates[0]?.title).toBe("Fix the build");
+  });
+
+  test("marking a session read retires its pending outbox rows", async () => {
+    await seedTurn({
+      sessionId: "session-seen",
+      text: "done",
+      turnId: "turn-seen",
+    });
+    await store.recordOutboxItem({
+      sessionId: "session-seen",
+      turnId: "turn-seen",
+    });
+
+    await store.markSessionRead("session-seen");
+
+    const [row] = await tables.db
+      .select()
+      .from(tables.outbox_item_table)
+      .where(eq(tables.outbox_item_table.sessionId, "session-seen"));
+
+    // 人已经在转录里看到了：这一行不能再弹。回执与过期是两件事，这里只写过期。
+    expect(row?.expiredAt).toBeInstanceOf(Date);
+    expect(row?.deliveredAt).toBeNull();
+  });
+
+  test("a read that changes no status leaves pending rows alone", async () => {
+    await seedTurn({
+      sessionId: "session-running",
+      status: "running",
+      text: "still working",
+      turnId: "turn-running",
+    });
+    await store.recordOutboxItem({
+      sessionId: "session-running",
+      turnId: "turn-running",
+    });
+
+    const updated = await store.markSessionRead("session-running");
+
+    const [row] = await tables.db
+      .select()
+      .from(tables.outbox_item_table)
+      .where(eq(tables.outbox_item_table.sessionId, "session-running"));
+
+    // 没从 `done` 走回 `idle`，就什么都没发生：正在跑的会话不能被读掉。
+    expect(updated).toBe(0);
+    expect(row?.expiredAt).toBeNull();
   });
 
   test("a row inside the race window waits for the next sweep", async () => {

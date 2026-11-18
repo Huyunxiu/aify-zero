@@ -25,14 +25,24 @@ const RECONNECT_MAX_MS = 30_000;
  */
 const UNRECOVERABLE_CLOSE = 1008;
 
+/**
+ * 等平台确认系统通知已经弹出的时限。
+ *
+ * `show()` 没有返回值。macOS 和 Windows 在真的弹出来之后给 `show`，被系统拒绝
+ * 时给 `failed`；两者都没来就不回执——那条行会自然过期，而不是被记成送达。
+ */
+const NOTIFICATION_CONFIRM_MS = 5000;
+
 export type OutboxConnectionOptions = {
   /** 当前 API server 的 origin；还没起来时是 `undefined`，那就等下一轮重试。 */
   origin: () => string | undefined;
   /** 机器级访问令牌。 */
   token: () => string;
-  /** 用户点了通知，要把那个会话打开。 */
+  /** 用户点了系统通知，要把那个会话打开。 */
   onOpenSession: (sessionId: string) => void;
   log: (message: string) => void;
+  /** 等系统确认的时限；省略时 {@link NOTIFICATION_CONFIRM_MS}。测试用它缩短兜底路径。 */
+  confirmMs?: number;
 };
 
 /** partysocket 只按这两个参数构造连接，所以这个类也只收这两个。 */
@@ -67,16 +77,24 @@ const authorizedSocket = (token: () => string): SocketConstructor =>
  * 不会各弹一次。断线与重连交给 partysocket（页面那条通道用的是同一个）：连上
  * 就重新订阅，服务端从重连那一刻算起，不补发断线期间的结果。
  *
- * 通知弹出来之后才回执：`delivered_at` 回答的是「弹了没有」，不是「发出去了
- * 没有」。平台不支持通知时不回执，那一行会自然过期，而不是被记成送达。
+ * 系统通知弹出来之后才回执：`delivered_at` 回答的是「弹了没有」，不是「发出去
+ * 了没有」。平台不支持或拒收时不回执，那一行会自然过期，而不是被记成送达。
  */
 export class OutboxConnection {
   readonly #options: OutboxConnectionOptions;
+  readonly #confirmMs: number;
 
   #socket: ReconnectingWebSocket | undefined;
 
   constructor(options: OutboxConnectionOptions) {
     this.#options = options;
+    this.#confirmMs = options.confirmMs ?? NOTIFICATION_CONFIRM_MS;
+
+    if (!Number.isFinite(this.#confirmMs) || this.#confirmMs <= 0) {
+      throw new Error(
+        `invalid notification confirm timeout: expected a positive finite number of milliseconds, got ${JSON.stringify(this.#confirmMs)}`
+      );
+    }
   }
 
   /** 开始连接；重复调用没有副作用。 */
@@ -107,7 +125,7 @@ export class OutboxConnection {
     });
 
     socket.addEventListener("message", (event) => {
-      this.#handleFrame(socket, frameText(event.data));
+      void this.#handleFrame(socket, frameText(event.data));
     });
 
     socket.addEventListener("error", (event) => {
@@ -154,7 +172,10 @@ export class OutboxConnection {
   }
 
   /** 一条文本帧。坏帧只记一行：连接还能用，让它继续。 */
-  #handleFrame(socket: ReconnectingWebSocket, text: string): void {
+  async #handleFrame(
+    socket: ReconnectingWebSocket,
+    text: string
+  ): Promise<void> {
     let message: ReturnType<typeof parseChannelMessage>;
 
     try {
@@ -183,7 +204,7 @@ export class OutboxConnection {
       return;
     }
 
-    const delivered = this.#show(items);
+    const delivered = await this.#show(items);
 
     if (delivered.length > 0 && socket.readyState === WEBSOCKET_OPEN) {
       socket.send(
@@ -195,8 +216,8 @@ export class OutboxConnection {
     }
   }
 
-  /** 弹一批通知，返回真的弹出来的那些 id。 */
-  #show(items: readonly OutboxDelivery[]): string[] {
+  /** 弹一批系统通知，返回系统确认真的弹出来的那些 id。 */
+  async #show(items: readonly OutboxDelivery[]): Promise<string[]> {
     if (!Notification.isSupported()) {
       this.#options.log(
         "outbox connection skipped: notifications are unsupported"
@@ -205,26 +226,74 @@ export class OutboxConnection {
       return [];
     }
 
-    const delivered: string[] = [];
+    const results = await Promise.all(items.map((item) => this.#showOne(item)));
 
-    for (const item of items) {
-      try {
-        const notification = new Notification({
-          body: item.body,
-          title: item.title,
+    return results.filter((id): id is string => id !== undefined);
+  }
+
+  /**
+   * 弹一条系统通知，等系统回话。
+   *
+   * 只有 `show` 算送达。`failed` 说明平台拒收了这条系统通知（macOS 上是权限
+   * 或签名问题）；此时不回执：回执回答的是「弹了没有」，不是「调过 show 没有」。
+   */
+  async #showOne(item: OutboxDelivery): Promise<string | undefined> {
+    let failure: string | undefined;
+
+    try {
+      const notification = new Notification({
+        body: item.body,
+        title: item.title,
+      });
+      notification.on("click", () => {
+        this.#options.onOpenSession(item.sessionId);
+      });
+
+      const confirmed = new Promise<boolean>((resolve) => {
+        let settled = false;
+
+        const finish = (shown: boolean): void => {
+          if (settled) {
+            return;
+          }
+
+          settled = true;
+          resolve(shown);
+        };
+
+        // 超时只是兜底：先到的一方定结果，后到的被 `settled` 挡掉。计时器
+        // 不拖住进程退出，剩下的几秒空转没有代价。
+        const timer = setTimeout(() => {
+          finish(false);
+        }, this.#confirmMs);
+        timer.unref?.();
+
+        notification.once("show", () => {
+          finish(true);
         });
-        notification.on("click", () => {
-          this.#options.onOpenSession(item.sessionId);
+        notification.once("failed", (_event, error) => {
+          failure = error;
+          finish(false);
         });
-        notification.show();
-        delivered.push(item.id);
-      } catch (error) {
-        this.#options.log(
-          `outbox connection could not show ${item.id}: ${error instanceof Error ? error.message : String(error)}`
-        );
+      });
+
+      notification.show();
+
+      if (!(await confirmed)) {
+        failure ??= "the platform did not confirm it";
       }
+    } catch (error) {
+      failure = error instanceof Error ? error.message : String(error);
     }
 
-    return delivered;
+    if (failure !== undefined) {
+      this.#options.log(
+        `outbox connection could not show ${item.id}: ${failure}`
+      );
+
+      return undefined;
+    }
+
+    return item.id;
   }
 }

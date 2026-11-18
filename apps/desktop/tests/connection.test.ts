@@ -2,8 +2,8 @@
  * 桌面那条发件箱连接：拿到的帧怎么变成通知，通知弹出来之后怎么回执。
  *
  * 重连由 partysocket 负责，所以这里不重测它的退避；测的是它留给我们的那几件
- * 事：令牌进没进升级请求、连上就订阅、一次通知一次回执、平台不支持通知时不
- * 回执，以及服务端说读不懂我们的帧时不再重连。
+ * 事：令牌进没进升级请求、连上就订阅、一次通知一次回执、平台不支持或拒收通
+ * 知时不回执，以及服务端说读不懂我们的帧时不再重连。
  *
  * 两个替身：`electron` 的 Notification（主进程里没有窗口也弹不出来），`ws` 的
  * 连接（真的 TCP 连接只是让测试慢）。partysocket 是真的，所以「断线之后重新
@@ -22,11 +22,19 @@ const electron = vi.hoisted(() => {
     click: (() => void) | undefined;
   };
 
+  type Outcome =
+    | { kind: "show" }
+    | { kind: "failed"; error: string }
+    | { kind: "silent" };
+
   const shown: Shown[] = [];
   let supported = true;
+  /** 平台回哪一句：`show`、`failed`，还是什么都不回。 */
+  let outcome: Outcome = { kind: "show" };
 
   class Notification {
     readonly #options: { body?: string; title?: string };
+    readonly #once = new Map<string, ((...args: unknown[]) => void)[]>();
     #click: (() => void) | undefined;
 
     static isSupported(): boolean {
@@ -43,11 +51,34 @@ const electron = vi.hoisted(() => {
       }
     }
 
+    once(event: string, listener: (...args: unknown[]) => void): void {
+      const listeners = this.#once.get(event) ?? [];
+      listeners.push(listener);
+      this.#once.set(event, listeners);
+    }
+
     show(): void {
       shown.push({
         body: this.#options.body ?? "",
         title: this.#options.title ?? "",
         click: this.#click,
+      });
+
+      if (outcome.kind === "silent") {
+        return;
+      }
+
+      const event = outcome.kind === "failed" ? "failed" : "show";
+      const listeners = this.#once.get(event) ?? [];
+
+      // 真实实现里事件晚一拍到；回执必须等它。
+      queueMicrotask(() => {
+        for (const listener of listeners) {
+          listener(
+            undefined,
+            outcome.kind === "failed" ? outcome.error : undefined
+          );
+        }
       });
     }
   }
@@ -57,6 +88,13 @@ const electron = vi.hoisted(() => {
     reset: () => {
       shown.length = 0;
       supported = true;
+      outcome = { kind: "show" };
+    },
+    setFailure: (error: string) => {
+      outcome = { error, kind: "failed" };
+    },
+    setSilent: () => {
+      outcome = { kind: "silent" };
     },
     setSupported: (value: boolean) => {
       supported = value;
@@ -176,6 +214,7 @@ const create = (
     origin?: () => string | undefined;
     logs?: string[];
     opened?: string[];
+    confirmMs?: number;
   } = {}
 ): { connection: { stop(): void }; logs: string[]; opened: string[] } => {
   const logs = options.logs ?? [];
@@ -185,6 +224,9 @@ const create = (
     onOpenSession: (sessionId) => opened.push(sessionId),
     origin: options.origin ?? (() => "http://127.0.0.1:18086"),
     token: () => "token-1",
+    ...(options.confirmMs === undefined
+      ? {}
+      : { confirmMs: options.confirmMs }),
   });
 
   connections.push(connection);
@@ -276,6 +318,45 @@ describe(OutboxConnection, () => {
 
     expect(electron.shown).toHaveLength(0);
     // 只发出过订阅那一帧：没弹出来就不盖章，那一行会自己过期。
+    expect(socket.sent).toHaveLength(1);
+  });
+
+  it("does not acknowledge a notification the platform rejected", async () => {
+    electron.setFailure(
+      "The operation couldn't be completed. (UNErrorDomain error 1.)"
+    );
+    const { logs } = create();
+
+    const socket = await waitForSocket(0);
+    socket.accept();
+    socket.receive(notify([DELIVERY]));
+
+    await vi.waitFor(() => {
+      expect(
+        logs.some((line) => line.includes("could not show outbox-1"))
+      ).toBeTruthy();
+    });
+
+    // 系统拒收不算送达：只有订阅那一帧，没有回执。
+    expect(socket.sent).toHaveLength(1);
+    expect(logs.at(-1)).toContain("UNErrorDomain");
+  });
+
+  it("does not acknowledge when the platform never confirms", async () => {
+    electron.setSilent();
+    const { logs } = create({ confirmMs: 20 });
+
+    const socket = await waitForSocket(0);
+    socket.accept();
+    socket.receive(notify([DELIVERY]));
+
+    await vi.waitFor(() => {
+      expect(
+        logs.some((line) => line.includes("did not confirm"))
+      ).toBeTruthy();
+    });
+
+    // 沉默不等于送达：只发出过订阅那一帧。
     expect(socket.sent).toHaveLength(1);
   });
 

@@ -41,7 +41,7 @@ vp exec playwright install --with-deps chromium
 
 ### 跑一条
 
-位置参数按**文件路径**过滤。传名字（`outbox`）不报错，但七条会全部跑一遍：
+位置参数按**文件路径**过滤。传名字（`outbox`）不报错，但八条会全部跑一遍：
 
 ```bash
 vp exec playwright test --config e2e/playwright.config.ts e2e/outbox.e2e.ts
@@ -155,6 +155,19 @@ context，`localStorage` 是空的。
 桌面进程跑不进 Playwright，所以第 1、3、4 步由用例自己做。它说的是同一份协议
 （`@workspace/shared/ws-protocol`），协议一改，它和桌面一起红。
 
+### 隐藏窗口（`outbox-hidden.e2e.ts`）
+
+桌面「关窗」只是 `hide()`，页面还在，也会收到 `run.end`。这条用例补上
+`outbox.e2e.ts` 不看页面所覆盖不到的那一半：
+
+1. 页面建项目、开会话、发一句话；场景是 `slow-answer`，首块延迟三秒
+2. 运行落定前把文档切到 hidden——Electron 隐藏窗口时 Chromium 给的就是这个状态
+3. 回合落定后通知仍推过来，会话还是 `done`
+4. 恢复可见后页面补做标记已读，会话变 `idle`
+
+隐藏时标记已读，投递器就会以为有人看过，系统通知永远不弹。标记已读因此以页面
+可见为准，不是以页面存在为准。
+
 ## 查看现场
 
 默认情况下，成功后会清理临时现场；失败时会保留现场：
@@ -202,7 +215,8 @@ E2E_KEEP_ARTIFACTS=1 vp run e2e
 
 ## 加一条用例
 
-现在有六条：主流程、队列领取、完成通知、定时器、日程、发件箱。要加审批路径
+现在有八条：主流程、队列领取、完成通知、定时器、日程、发件箱、隐藏窗口、会话排序。
+要加审批路径
 （`write-file`、MCP 工具）时：
 
 1. 在 `packages/agent/scenarios/` 加一个场景，用 `toolCall` 要那个会询问的工具

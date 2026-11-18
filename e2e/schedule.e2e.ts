@@ -127,10 +127,10 @@ test("Schedule: a daily rule fires → the notice wakes the idle session → the
     await expect(notice).toContainText("Next:");
 
     // 7. 那一行还在：日程推进了到期时刻，没有像跟进那样删掉。
-    const state: unknown = await fetch(
-      `${stack.apiUrl}/api/openapi/timer/state`,
-      { headers: { authorization: `Bearer ${stack.token}` } }
-    ).then(async (response) => await response.json());
+    const response = await fetch(`${stack.apiUrl}/api/openapi/timer/state`, {
+      headers: { authorization: `Bearer ${stack.token}` },
+    });
+    const state: unknown = await response.json();
 
     if (typeof state !== "object" || state === null) {
       throw new TypeError("timer state is not an object");

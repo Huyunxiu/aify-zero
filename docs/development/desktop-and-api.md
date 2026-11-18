@@ -32,6 +32,28 @@ API 请求挂起，等 server ready 后再转发；确实不可用时才返回�
 瞬时 503 会被 query client 重试几秒。主进程还向渲染端推送 `server-status`，
 启动/重连期间显示一个小状态条。
 
+## 系统通知（macOS 开发期）
+
+开发期用的是 `node_modules/electron/dist/Electron.app`。有些镜像给出的这个
+bundle 没有有效的签名（`_CodeSignature` 缺失，`Info.plist` 未绑定）；macOS 会
+拒收它的系统通知，`Notification` 给 `failed`，错误是
+`UNErrorDomain error 1`，屏幕上什么都不会出现。桌面只在系统确认 `show` 之后
+回执，所以这种行会留在发件箱里，不会被记成送达。
+
+Forge 的 `preStart` 钩子（`apps/desktop/forge.config.ts`）会在每次
+`electron-forge start` 之前调用 `scripts/ensure-electron-signature.ts`：校验失败
+就自动重签成 ad-hoc，macOS 之外直接跳过。要手动检查或修复，还是同样的两条命令：
+
+```bash
+codesign --verify --deep --strict node_modules/electron/dist/Electron.app
+codesign --force --deep --sign - node_modules/electron/dist/Electron.app
+```
+
+重装依赖会把签名覆盖掉；下一次 `vp run dev:desktop` 会自动再签一次。签名修好
+之后，先在 **系统设置 → 通知** 里确认 **Electron** 被允许，再重新触发一次运行：
+被拒收的行不会补弹，启动时会被标成过期。打包后的应用用的是自己的 bundle 与
+签名，不走这条路。
+
 ## 登录与凭据
 
 浏览器用链接登录。server 每次启动都会打印

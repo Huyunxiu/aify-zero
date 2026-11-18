@@ -11,6 +11,7 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 
+import { ensureElectronSignature } from "../../scripts/ensure-electron-signature";
 import { stageRipgrep } from "../../scripts/stage-ripgrep";
 
 // Stages the ripgrep binary into resources/, which packagerConfig.extraResource
@@ -88,7 +89,12 @@ const config: ForgeConfig = {
   rebuildConfig: {},
   hooks: {
     prePackage: copyRipgrep,
-    preStart: copyRipgrep,
+    async preStart() {
+      await copyRipgrep();
+      // 开发期用的 Electron.app 可能没有有效签名；macOS 会因此丢掉系统
+      // 通知。每次 start 之前修一次，重装依赖之后也能自愈。
+      ensureElectronSignature();
+    },
     async packageAfterCopy(_forgeConfig, buildPath) {
       const requiredNativePackages = ["@libsql", "@lydell"];
       const sourceNodeModulesPath = path.resolve(

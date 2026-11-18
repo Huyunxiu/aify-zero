@@ -572,15 +572,37 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
   }
 
   async markSessionRead(sessionId: string): Promise<number> {
-    // Guarded on `done`: a session that started a newer turn, or that settled
-    // into `canceled`/`error`, must not be walked back to `idle` by a read.
-    const result = await db
-      .update(session_table)
-      .set({ status: "idle" })
-      .where(
-        and(eq(session_table.id, sessionId), eq(session_table.status, "done"))
-      );
-    return result.rowsAffected;
+    return await db.transaction(async (tx) => {
+      // 只认 `done`：已经起了新回合的会话，或落在 `canceled`/`error` 的会话，
+      // 不能被一次读回退成 `idle`。
+      const result = await tx
+        .update(session_table)
+        .set({ status: "idle" })
+        .where(
+          and(eq(session_table.id, sessionId), eq(session_table.status, "done"))
+        );
+
+      // 状态没变就什么都没发生：正在跑或已经出错的会话，即使页面调了这里，
+      // 也不该丢掉它待投的行。
+      if (result.rowsAffected === 0) {
+        return 0;
+      }
+
+      // 标记已读也算看过这条会话待投的系统通知：这些行指向的回合就在转录里。
+      // 留着它们，下一次运行把会话重新写成 `done` 时，旧行会和新行一起弹出来。
+      await tx
+        .update(outbox_item_table)
+        .set({ expiredAt: new Date() })
+        .where(
+          and(
+            eq(outbox_item_table.sessionId, sessionId),
+            isNull(outbox_item_table.deliveredAt),
+            isNull(outbox_item_table.expiredAt)
+          )
+        );
+
+      return result.rowsAffected;
+    });
   }
 
   async saveStep(step: StepWrite): Promise<number> {
