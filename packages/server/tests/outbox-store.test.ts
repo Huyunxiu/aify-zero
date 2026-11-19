@@ -169,7 +169,7 @@ describe("outbox storage", () => {
       .from(tables.outbox_item_table)
       .where(eq(tables.outbox_item_table.sessionId, "session-seen"));
 
-    // 人已经在转录里看到了：这一行不能再弹。回执与过期是两件事，这里只写过期。
+    // 人已经在会话记录里看到了：这一行不能再弹。回执与过期是两件事，这里只写过期。
     expect(row?.expiredAt).toBeInstanceOf(Date);
     expect(row?.deliveredAt).toBeNull();
   });

@@ -446,7 +446,7 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
       }
 
       // 只删「将来还会发生的事」：发件项、待办项、定时器。回合与步骤留着——
-      // 它们就是回收站要恢复的转录（ADR 0020）。
+      // 它们就是回收站要恢复的会话记录（ADR 0020）。
       await tx
         .delete(outbox_item_table)
         .where(inArray(outbox_item_table.sessionId, sessionIds));
@@ -685,7 +685,7 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
         return 0;
       }
 
-      // 标记已读也算看过这条会话待投的系统通知：这些行指向的回合就在转录里。
+      // 标记已读也算看过这条会话待投的系统通知：这些行指向的回合就在会话记录里。
       // 留着它们，下一次运行把会话重新写成 `done` 时，旧行会和新行一起弹出来。
       await tx
         .update(outbox_item_table)

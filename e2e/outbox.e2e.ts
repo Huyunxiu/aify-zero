@@ -42,7 +42,7 @@ const TITLE = "发件箱";
 /** 同一条只推一次；等三个扫描周期看有没有第二批。 */
 const QUIET_MS = 3000;
 
-/** 一条用户回合，形状和页面发的那个一样；类型就是接口收的那个。 */
+/** 一条 user 回合，形状和页面发的那个一样；类型就是接口收的那个。 */
 const userTurn = (): AgentUserTurn => {
   const now = Date.now();
 

@@ -101,7 +101,7 @@ test("Session list: the session used last comes first and shows when it was used
  * 发一句，等这个页面多出一个收尾的回合。
  *
  * 按「现在有几个 `Finished`」加一等，而不是等一个绝对数：同一条用例里有的会话是从
- * 空转录开始的，有的是回访后才取到历史的，各自渲染出来的份数不同。
+ * 空会话记录开始的，有的是回访后才取到历史的，各自渲染出来的份数不同。
  */
 async function sendAndSettle(page: Page, message: string) {
   const finished = page.getByText("Finished", { exact: true });

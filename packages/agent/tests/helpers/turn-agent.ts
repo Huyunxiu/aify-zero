@@ -90,7 +90,7 @@ export const asStore = (store: FakeStore): AgentStore =>
   store as unknown as AgentStore;
 
 /**
- * 造一个只跑回合循环的 Agent；会话由调用方持有，便于事后检查转录。
+ * 造一个只跑回合循环的 Agent；会话由调用方持有，便于事后检查会话记录。
  *
  * 额外工具用 `agent.registerTool` 加：构造函数只收内置工具集。
  */

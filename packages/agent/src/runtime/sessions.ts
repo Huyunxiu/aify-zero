@@ -320,7 +320,7 @@ export class SessionLifecycle {
    * 删除是幂等的，调用方要的是「它不在了」，而这个事实已经成立。
    *
    * 忙判定只拦活跃流。真正的运行在内存里，它在跑就不能删；`wait_review` 不是
-   * 运行，待审批住在转录里，删掉之后恢复出来还能回答（ADR 0020）。
+   * 运行，待审批住在会话记录里，删掉之后恢复出来还能回答（ADR 0020）。
    */
   async delete(
     sessionId: string

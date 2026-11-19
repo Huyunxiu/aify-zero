@@ -622,7 +622,7 @@ export function Session({
           await client.session.markSessionRead({ sessionId: id });
           await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
         } catch {
-          // 标记已读是记账，不是页面的正事：链接坏了，转录照样显示，只是
+          // 标记已读是记账，不是页面的正事：链接坏了，会话记录照样显示，只是
           // 那个勾留着。
         }
       })();
@@ -639,7 +639,7 @@ export function Session({
   // 一次运行落定（成功、取消、出错都算）之后，记录里多了回合，侧栏的最后活动与
   // 未读标记也变了。除上面那个 effect 刷的侧栏，这里补两件事：
   //
-  // - 转录的种子要重取。`SessionContainer` 只在挂载时把这份缓存交给 store，之后
+  // - 会话记录的种子要重取。`SessionContainer` 只在挂载时把这份缓存交给 store，之后
   //   屏幕上的副本由 store 自己维护；种子不跟着记录走，切回这个会话时新建的
   //   store 就从一个空列表开始。服务端先把回合写进记录、再结束这次运行，所以
   //   这一刻取到的已经是新的。运行开始那一刻不失效：那时取到的是带着未落定回

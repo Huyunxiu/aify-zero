@@ -108,7 +108,7 @@ export const composeTimerNotice = (fired: FiredTimer): TimerNotice => {
 };
 
 /**
- * 把一条到点的定时器组成交给收件箱的用户回合。
+ * 把一条到点的定时器组成交给收件箱的 user 回合。
  *
  * 形状和用户消息、完成通知一致：模型不需要第二种消息形状。step 上带
  * `source`，界面和「用户插话」判定据此知道它不是用户输入。

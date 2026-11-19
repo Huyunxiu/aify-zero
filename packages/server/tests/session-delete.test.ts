@@ -310,7 +310,7 @@ describe("deleting a session", () => {
   });
 
   test("should take a session that waits for review", async () => {
-    // 待审批不是运行：审批住在转录里，恢复之后还能回答，所以删除不该被它挡住。
+    // 待审批不是运行：审批住在会话记录里，恢复之后还能回答，所以删除不该被它挡住。
     await seedSession("reviewing", "辛", { status: "wait_review" });
 
     await expect(
@@ -392,7 +392,7 @@ describe("deleting a session", () => {
 
     // 跟着会话一起清：这些都是「将来还会发生的事」。
     const purged = new Set(["inbox_item", "outbox_item", "timer"]);
-    // 留着：转录本身，回收站要恢复的就是它。
+    // 留着：会话记录本身，回收站要恢复的就是它。
     const kept = new Set(["turn", "step"]);
 
     expect(new Set(sessionScoped)).toStrictEqual(new Set([...purged, ...kept]));
