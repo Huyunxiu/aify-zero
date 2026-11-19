@@ -31,7 +31,7 @@ type SessionDeleteDialogProps = {
  * 会话行菜单里的「删除」：一次确认，然后把这个会话从所有列表里拿走。
  *
  * 删掉的是「将来还会发生的事」——定时器、待办项、发件项；会话记录留在库里，等回收站
- * 那期（ADR 0020）。所以文案不说「永久删除」。
+ * 那期（ADR 0022）。所以文案不说「永久删除」。
  */
 export function SessionDeleteDialog({
   session,

@@ -22,7 +22,7 @@ type SessionRowMenuItemsProps = {
  *
  * 两条列表（全局与项目内）用的是同一套：删掉其中一处的按钮却不改另一处，用户会
  * 以为功能时有时无。运行中的会话不能删——一次正在花钱的运行不该被一条删除请求
- * 带走（ADR 0020）。
+ * 带走（ADR 0022）。
  */
 export function SessionRowMenuItems({
   session,

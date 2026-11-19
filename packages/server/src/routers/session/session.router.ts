@@ -160,7 +160,7 @@ const createSession = publicProcedure
     }
 
     // 会话行先落库：收件箱按会话归属，运行器也要靠这一行看项目和状态。
-    // 已删的会话不是「已存在」，这里会报 SESSION_NOT_FOUND（ADR 0020）。
+    // 已删的会话不是「已存在」，这里会报 SESSION_NOT_FOUND（ADR 0022）。
     try {
       await agentRunner.createSession({
         sessionId,
@@ -289,7 +289,7 @@ export const compactSession = publicProcedure
  *
  * 幂等：不存在或已经删过都返回 `removed: false`，不报未找到——调用方要的是
  * 「它不在了」，而这个事实已经成立。运行中的会话报 `SESSION_BUSY`：一次正在
- * 花钱的运行不该被一条删除请求带走（ADR 0020）。
+ * 花钱的运行不该被一条删除请求带走（ADR 0022）。
  */
 export const deleteSession = publicProcedure
   .route({ method: "DELETE", path: "/sessions/{sessionId}" })

@@ -446,7 +446,7 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
       }
 
       // 只删「将来还会发生的事」：发件项、待办项、定时器。回合与步骤留着——
-      // 它们就是回收站要恢复的会话记录（ADR 0020）。
+      // 它们就是回收站要恢复的会话记录（ADR 0022）。
       await tx
         .delete(outbox_item_table)
         .where(inArray(outbox_item_table.sessionId, sessionIds));

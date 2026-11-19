@@ -154,7 +154,7 @@ export class AgentRunner {
     const existing = await this.#store.findSessionRow(input.sessionId);
     if (existing) {
       // 行还在、但已经删掉：再插一行会撞主键，放它过去又会让一条旧消息把会话
-      // 唤醒成一次看不见的运行。当成不存在报出去（ADR 0020）。
+      // 唤醒成一次看不见的运行。当成不存在报出去（ADR 0022）。
       if (existing.deletedAt !== null) {
         throw new AgentRunnerError("SESSION_NOT_FOUND", {
           sessionId: input.sessionId,
