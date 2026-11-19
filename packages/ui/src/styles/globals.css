@@ -124,29 +124,37 @@
     cubic-bezier(0.5, 1, 0.89, 1);
   --color-destructive-foreground: var(--destructive-foreground);
 
-  --shadow-color: rgb(0 0 0 / 0.06);
-  --shadow-2xs: 0 0 0 1px var(--shadow-color);
+  /* 抬升（elevation）：影子按半径分工。edge 是轮廓，contact 贴住边缘，
+     mid / ambient / deep 负责高度。每一层的透明度随半径递减——层叠起来
+     才是灰的，分开才是柔的。 */
+  --shadow-2xs: 0 0 0 1px var(--elevation-edge);
   --shadow-xs:
-    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color);
+    0 0 0 1px var(--elevation-edge), 0 1px 2px -1px var(--elevation-contact);
   --shadow-sm:
-    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
-    0 3px 3px -1.5px var(--shadow-color);
+    0 0 0 1px var(--elevation-edge), 0 1px 2px -1px var(--elevation-contact),
+    0 3px 8px -3px var(--elevation-mid);
   --shadow-md:
-    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
-    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color);
+    0 0 0 1px var(--elevation-edge), 0 1px 2px -1px var(--elevation-contact),
+    0 3px 8px -3px var(--elevation-mid),
+    0 10px 20px -10px var(--elevation-ambient);
   --shadow-lg:
-    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
-    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color),
-    0 12px 12px -6px var(--shadow-color);
+    0 0 0 1px var(--elevation-edge), 0 1px 2px -1px var(--elevation-contact),
+    0 3px 8px -3px var(--elevation-mid),
+    0 10px 20px -10px var(--elevation-ambient),
+    0 24px 40px -20px var(--elevation-deep);
   --shadow-xl:
-    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
-    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color),
-    0 12px 12px -6px var(--shadow-color), 0 24px 24px -12px var(--shadow-color);
+    0 0 0 1px var(--elevation-edge), 0 1px 2px -1px var(--elevation-contact),
+    0 3px 8px -3px var(--elevation-mid),
+    0 10px 20px -10px var(--elevation-ambient),
+    0 24px 40px -20px var(--elevation-deep),
+    0 40px 64px -32px var(--elevation-far);
   --shadow-2xl:
-    0 0 0 1px var(--shadow-color), 0 1px 1px -0.5px var(--shadow-color),
-    0 3px 3px -1.5px var(--shadow-color), 0 6px 6px -3px var(--shadow-color),
-    0 12px 12px -6px var(--shadow-color), 0 24px 24px -12px var(--shadow-color),
-    0 48px 48px -24px var(--shadow-color);
+    0 0 0 1px var(--elevation-edge), 0 1px 2px -1px var(--elevation-contact),
+    0 3px 8px -3px var(--elevation-mid),
+    0 10px 20px -10px var(--elevation-ambient),
+    0 24px 40px -20px var(--elevation-deep),
+    0 40px 64px -32px var(--elevation-far),
+    0 64px 96px -48px var(--elevation-farther);
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
   --color-info-foreground: var(--info-foreground);
@@ -220,6 +228,16 @@
   --extreme: oklch(1 0 0);
   --background: oklch(0.9823 0.0013 282.73);
   --foreground: oklch(0.2223 0 0);
+
+  /* 阴影的颜色带背景的色相（hue 283），不用纯黑；每一层各带一份透明度，
+     越远越淡。亮色下靠色相，暗色下靠透明度。 */
+  --elevation-edge: oklch(0.25 0.012 283 / 0.05);
+  --elevation-contact: oklch(0.25 0.012 283 / 0.085);
+  --elevation-mid: oklch(0.25 0.012 283 / 0.06);
+  --elevation-ambient: oklch(0.25 0.012 283 / 0.045);
+  --elevation-deep: oklch(0.25 0.012 283 / 0.03);
+  --elevation-far: oklch(0.25 0.012 283 / 0.02);
+  --elevation-farther: oklch(0.25 0.012 283 / 0.015);
 
   --neutral-0: var(--extreme);
   --neutral-1: color-mix(in oklch, var(--background) 10%, var(--extreme) 90%);
@@ -368,6 +386,15 @@
   --extreme: oklch(0 0 0);
   --background: oklch(0.2438 0.0059 271.17);
   --foreground: oklch(1 0 0);
+
+  /* 暗色下 6% 的黑几乎看不见：轮廓改用一点白，其余靠更高的黑。 */
+  --elevation-edge: oklch(1 0 0 / 0.07);
+  --elevation-contact: oklch(0 0 0 / 0.5);
+  --elevation-mid: oklch(0 0 0 / 0.4);
+  --elevation-ambient: oklch(0 0 0 / 0.3);
+  --elevation-deep: oklch(0 0 0 / 0.22);
+  --elevation-far: oklch(0 0 0 / 0.16);
+  --elevation-farther: oklch(0 0 0 / 0.12);
 
   --neutral-0: var(--extreme);
   --neutral-1: color-mix(in oklch, var(--background) 10%, var(--extreme) 90%);
