@@ -1,10 +1,9 @@
 # Guidelines
 
 1. Always respond in Chinese.
-2. Write code comments in Chinese too, but keep log messages in English.
-3. Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
-4. Fix a bug at its cause, reasoning from first principles and established best practice. Do not patch over the symptom.
-5. Always talk in ASD-STE100 Simplified Technical English. Always read GLOSSARY.md files, and use their ubiquitous language.
+2. Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
+3. Fix a bug at its cause, reasoning from first principles and established best practice. Do not patch over the symptom.
+4. Always talk in ASD-STE100 Simplified Technical English. Always read GLOSSARY.md files, and use their ubiquitous language.
 
 <!--VITE PLUS START-->
 
@@ -40,6 +39,10 @@ Multi-context: a root `GLOSSARY-MAP.md` points at one `GLOSSARY.md` per app and 
 ### Commit messages
 
 Use Conventional Commits. The `commit-msg` hook rejects a message that breaks the rules. Put the Linear key in the `Refs:` footer, not in the subject. Do not use `git commit --no-verify`. See `docs/agents/commit-message.md`.
+
+### Language
+
+Every repository text is English, and every document has a Chinese copy. See `docs/agents/language.md`.
 
 ### Review
 

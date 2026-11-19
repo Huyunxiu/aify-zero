@@ -26,8 +26,7 @@ Refs: AIFY0-78
 - **footer**: optional. Put the Linear key on a `Refs:` line: `Refs: AIFY0-78`. Linear links the
   commit to the issue from this line.
 
-`type` and `scope` are English. The subject can be English or Chinese. Use one language in one
-message.
+`type` and `scope` are English. So is every other part of the message. See `language.md`.
 
 ## Scopes
 
