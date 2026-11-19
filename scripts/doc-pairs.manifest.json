@@ -37,7 +37,6 @@
     "docs/plans/tool-catalog.md",
     "docs/development/desktop-and-api.md",
     "docs/development/packaging.md",
-    "docs/testing/e2e.md",
     "docs/testing/fake-provider.md",
     "packages/agent-client/README.md",
     "packages/agent/src/compaction/README.md",

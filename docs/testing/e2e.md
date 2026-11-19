@@ -1,56 +1,62 @@
-# 端到端测试
+# End-to-end tests
 
-要验「整套东西还串得起来」时看这一页。每个用例一套现场：一个浏览器、一个真实的 API 进程，跑完就拆。
+Read this page when you must prove that the whole stack still connects. Each case gets its
+own scene: one browser and one real API process. The case tears the scene down when it ends.
 
-它管的是接缝，不是逻辑：
+The page covers the seams, not the logic:
 
-| 接缝                | 用例怎么碰到它                                    |
-| ------------------- | ------------------------------------------------- |
-| 浏览器 ↔ 本机 API   | 用 server 打印的登录链接换 cookie，页面自己发请求 |
-| HTTP ↔ 运行器       | 发一句话，等运行器把这个回合跑完                  |
-| 运行器 ↔ 沙箱       | 模型要一次 `edit-file`，工具真的落在磁盘上        |
-| 磁盘 ↔ 改动视图     | 会话面板用基线比较，列出被改的那个文件            |
-| 任务注册表 ↔ 收件箱 | 后台命令结算后投一条完成通知，空闲会话因此被唤醒  |
-| 定时器 ↔ 收件箱     | 定时器到点后投一条待办项，空闲会话因此被唤醒      |
-| 日程 ↔ 收件箱与库   | 日程到点后投一条待办项，那一行推进而不是删除      |
-| 通知 ↔ 会话记录     | 那条回合出现在会话里，形状是通知块而不是用户气泡  |
-| 发件箱 ↔ 应用通道   | 订阅那条通道，运行落定后收到通知，回执后状态归零  |
+| Seam                                   | How a case reaches it                                                                                                        |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Browser ↔ local API                    | The case exchanges the login link that the server prints for a cookie. The page sends its own requests.                      |
+| HTTP ↔ runner                          | The case sends one message. It waits until the runner completes the turn.                                                    |
+| Runner ↔ sandbox                       | The model asks for one `edit-file`. The tool writes to the disk.                                                             |
+| Disk ↔ review view                     | The session panel compares against the baseline. It lists the file that changed.                                             |
+| Job registry ↔ inbox                   | A background command settles and writes one completion notice. The idle session then wakes up.                               |
+| Timer ↔ inbox                          | A timer comes due and writes one inbox item. The idle session then wakes up.                                                 |
+| Schedule ↔ inbox and store             | A schedule comes due and writes one inbox item. That row advances. It does not delete.                                       |
+| Notice ↔ transcript                    | The turn appears in the transcript as a notice block, not as a user bubble.                                                  |
+| Outbox ↔ app channel                   | The case subscribes to the channel. After the run settles, the notice arrives. After the receipt, the state returns to zero. |
+| Approval policy ↔ runner and interface | The policy that the session stores goes into the run. That policy decides if the card appears.                               |
 
-模型侧由[假供应商](fake-provider.md)应答。它替的是供应商，所以这些用例不联网、不花钱、结果确定。
+The [fake provider](fake-provider.md) answers for the model side. It replaces the provider,
+so these cases use no network, spend no money, and give the same result each time.
 
-## 跑
+## Run
 
 ```bash
 vp run e2e
 ```
 
-第一次要装浏览器与它的系统库：
+The first run installs the browser and its system libraries:
 
 ```bash
 vp exec playwright install --with-deps chromium
 ```
 
-`--with-deps` 要 root。装在别处就设 `PLAYWRIGHT_BROWSERS_PATH` 指过去；没有 root
-时也可以用 `apt-get download` 把缺的库解到本地，再用 `LD_LIBRARY_PATH` 指过去。
-把浏览器装进仓库的做法：`PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers` 跑
-`vp exec playwright install chromium`；缺的包用 `apt-get download` 取下来，
-`dpkg-deb -x` 解到 `.e2e/sysroot`，运行时把 `LD_LIBRARY_PATH` 指到它的
-`usr/lib/x86_64-linux-gnu`。两者都在 `.e2e/` 下，不会进版本库。
+`--with-deps` needs root. If you install the browser in another place, set
+`PLAYWRIGHT_BROWSERS_PATH` to that place. Without root, you can also use `apt-get download`
+to unpack the missing libraries and point `LD_LIBRARY_PATH` at the result. To install the
+browser into the repository, run `vp exec playwright install chromium` with
+`PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers`. Use `apt-get download` to get the missing
+packages. Unpack them into `.e2e/sysroot` with `dpkg-deb -x`. At run time, point
+`LD_LIBRARY_PATH` at its `usr/lib/x86_64-linux-gnu`. Both live under `.e2e/`, so neither
+enters the repository.
 
-热的一次约 15 秒，其中大半是 Vite 冷启动。
+A warm run takes about 15 seconds. Most of that time is the Vite cold start.
 
-### 跑一条
+### Run one case
 
-位置参数按**文件路径**过滤。传名字（`outbox`）不报错，但八条会全部跑一遍：
+A positional argument filters by **file path**. A name (`outbox`) reports no error, but the
+whole suite runs:
 
 ```bash
 vp exec playwright test --config e2e/playwright.config.ts e2e/outbox.e2e.ts
 ```
 
-### 浏览器装在别处
+### The browser is installed elsewhere
 
-`PLAYWRIGHT_BROWSERS_PATH` 指到那份安装，缺的系统库解包出来的
-`usr/lib/x86_64-linux-gnu` 用 `LD_LIBRARY_PATH` 指过去：
+Point `PLAYWRIGHT_BROWSERS_PATH` at that installation. Point `LD_LIBRARY_PATH` at the
+`usr/lib/x86_64-linux-gnu` directory that holds the unpacked system libraries:
 
 ```bash
 PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
@@ -58,119 +64,177 @@ LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
 vp run e2e
 ```
 
-worktree 里要注意：harness 把仓库根算成 worktree 自己，所以 `.e2e/` 也是
-worktree 自己的。浏览器可以只装一份，用 `PLAYWRIGHT_BROWSERS_PATH` 指到主
-checkout 的那份。
+In a worktree, note one thing: the harness reads the repository root as the worktree
+itself, so `.e2e/` belongs to the worktree too. You can install the browser once and point
+`PLAYWRIGHT_BROWSERS_PATH` at the copy in the main checkout.
 
-浏览器的 locale 固定成 `en-US`；应用自己的语言走 i18n 默认值——每个用例都是新的
-context，`localStorage` 是空的。
+The browser locale is fixed to `en-US`. The application uses the i18n default for its own
+language, because each case gets a new context and its `localStorage` is empty.
 
-## 用例做什么
+## What the cases do
 
-### 主流程（`journey.e2e.ts`）
+### Main flow (`journey.e2e.ts`)
 
-1. 用 `/?token=…` 打开，侧栏出现，项目组显示 `No projects`
-2. 新建项目，主目录指向一个临时的 Git 仓库
-3. 悬停项目行，在项目里新建会话
-4. 输入一句话并发送
-5. 用户消息出现在会话里
-6. 工具步骤出现（`Edit` 开头的那一行）
-7. 回合标题变成 `Finished`，回答文字在下面
-8. 点右上角的入口展开右侧的会话面板，选「改动」
-9. 改动视图说 `1 files changed`，树里有 `notes.md`；点它，被改的那一行就在右边
+1. Open `/?token=…`. The sidebar appears. The project group shows `No projects`.
+2. Create a project. Point the main directory at a temporary Git repository.
+3. Hover the project row. Create a session in the project.
+4. Type one message and send it.
+5. The user message appears in the transcript.
+6. A tool step appears (the line that starts with `Edit`).
+7. The turn title becomes `Finished`. The answer text sits below it.
+8. Click the entry at the top right. The session panel opens on the right. Select `Changes`.
+9. The review view says `1 files changed`. The tree holds `notes.md`. Click it. The changed
+   line appears on the right.
 
-侧栏状态不参与断言：一个回合结束后它回到 `Idle`，不是 `Done`。终态只认页面里的
-`Finished`。
+The sidebar state takes no part in the assertions: after a turn, it returns to `Idle`, not
+`Done`. The only final state is the `Finished` in the page.
 
-请求序列也是一条断言：恰好 1 次非流式的标题请求、2 次流式的正文请求（先要工具、再回答）。标题和主回合并发，所以只数次数，不咬死顺序。
+The request sequence is also an assertion: exactly 1 non-streaming title request and 2
+streaming body requests (first the tool, then the answer). The title request and the main
+turn run concurrently, so the case counts the requests and does not fix their order.
 
-### 排队的两条消息由一次运行回答（`batching.e2e.ts`）
+### Approval policy (`approval-policy.e2e.ts`)
 
-用户在一次运行里把两条消息排进队列，运行器下一次一起领走，只回答一条。
+Three cases, and each one proves one seam: the policy persists, the run reads the policy, and
+the interface asks only if the policy says so.
 
-它必须先制造一个「运行还没结束」的窗口。没有静默窗口，第一条消息会立刻起跑，后两条
-只有在第一次运行还在跑时选中「排队」，才会落在同一次领取里。所以现场的剧本是
-`slow-answer`：首块延迟 3 秒，够输两条消息。
+1. Edit policy: send one message that makes the model change a file. The tool really runs.
+   The file lands on the disk. The turn completes. No approval card appears.
+2. Read-only policy: the same scene. The tool is refused. The turn still completes. Not one
+   character of the file changes. No approval card appears.
+3. Timer: the session stores the edit policy, but no person attends the run that the timer
+   starts. The runner tightens the policy to standard. When the timer comes due, the approval
+   card appears. After the approval, the same run continues, and only then does the file
+   land on the disk.
 
-断言分两层：界面上是三条用户消息、两个 `Finished`、队列清空；假供应商那边是两次流式
-请求。只看界面只能证明用户看到一条回复，数请求才证明只跑了一次模型循环。
+The third case waits a full minute (the timer minimum) and then waits for the scan loop to
+wake the session. Its timeout is therefore longer than the timeout of the other cases.
 
-### 完成通知（`job-notice.e2e.ts`）
+The behavior matrix (four policies × five classes, the fold of host rules and hooks) does not
+live here. That part belongs to the table-driven cases in `packages/agent/tests`. A hook,
+an MCP annotation, a subagent, a fork, and compaction cannot reach this scene. Here, they
+would only become false evidence.
 
-场景 `job-notice` 让模型要一条后台命令（`sleep 5; echo done`）。命令活得比第一个回合长，所以：
+### Two queued messages get one answer from one run (`batching.e2e.ts`)
 
-1. `Bash` 行出现，后台任务真的起来了
-2. 第一个回合收尾，仍是 `Finished`
-3. 任务结算，通知落进收件箱，空闲会话被唤醒
-4. 会话里出现通知块（`role="note"`，标签 `Background job finished`）：抬头带命令与终态 `[status: completed, exit code: 0]`，正文是内联的 `done`
-5. 通知块里没有按钮——它不是用户气泡，不给复制与重新生成
-6. 被唤醒的那个回合自己跑完，`Finished` 变成 2 个
+The user queues two messages during one run. The runner takes them together on the next
+claim and gives one answer.
 
-流式请求是 3 次：要后台命令、第一个回合作答、被唤醒的回合作答。非流式只断言「有」：通知本身也是一个 user 回合，标题生成会为它再问一次，问不问不是这条用例要证明的事。
+The case must first make a window in which the run is not over. Without a quiet window, the
+first message starts at once. The two later messages share one claim only if the user
+selects `queue` while the first run still runs. The scene therefore uses the script
+`slow-answer`: the first chunk waits 3 seconds, which is enough time to type two messages.
 
-### 定时器（`timer.e2e.ts`）
+The assertions have two layers. The interface shows three user messages, two `Finished`,
+and an empty queue. The fake provider side shows two streaming requests. The interface
+alone proves only that the user sees one reply. Only the request count proves that one
+model loop ran.
 
-场景 `timer` 让模型排一个 60 秒的跟进，然后停在这里。它真的等满一分钟：
+### Completion notice (`job-notice.e2e.ts`)
 
-1. 第一个回合收尾，`Finished` 是 1 个，会话回到空闲
-2. 到点后扫描循环把定时器换成收件箱里的一行，空闲会话被唤醒
-3. 会话里出现通知块（`role="note"`，标签 `Timer fired`），正文带着模型当时写下的备注
-4. 通知块里没有按钮——它不是用户气泡
-5. 被唤醒的那个回合自己跑完，`Finished` 变成 2 个
+The scene `job-notice` makes the model ask for one background command. The command is
+`sleep 5; echo done`. The command lives longer than the first turn, so:
 
-扫描间隔在 e2e 里降到 1 秒（`AIFY_TIMER_SCAN_MS`），否则最坏要等满两个周期、超过用例上限。定时器自己的 60 秒下限不动：那是契约，用例就该真的等。
+1. A `Bash` line appears. The background job really starts.
+2. The first turn completes and is still `Finished`.
+3. The job settles. The notice lands in the inbox. The idle session wakes up.
+4. A notice block appears in the transcript. It has `role="note"` and the label
+   `Background job finished`. Its header carries the command and the final state
+   `[status: completed, exit code: 0]`. The body is the inline `done`.
+5. The notice block has no buttons. It is not a user bubble, so it gives no copy and no
+   regenerate.
+6. The woken turn completes by itself. `Finished` becomes 2.
 
-流式请求是 3 次：排定时器、第一个回合作答、被唤醒的回合作答。
+The case makes 3 streaming requests: the background command, the answer of the first turn,
+and the answer of the woken turn. The non-streaming requests assert presence only: the
+notice is itself a user turn, and the title generation asks once more for it. This case
+does not prove if that request occurs.
 
-### 日程（`schedule.e2e.ts`）
+### Timer (`timer.e2e.ts`)
 
-场景 `schedule` 在运行时算出来：`daily` 写的是当地「几点几分」，所以把目标定在十几秒
-之后的那个整分，模型据此排一个日程。等待因此压到一分钟出头，300 秒的间隔下限不必动。
+The scene `timer` makes the model set a 60-second follow-up and then stop. The case really
+waits a full minute:
 
-和定时器用例走同一条链路，差别只在收尾：
+1. The first turn completes. `Finished` is 1. The session returns to idle.
+2. When the timer comes due, the scan loop turns the timer into one row in the inbox. The
+   idle session wakes up.
+3. A notice block appears in the transcript (`role="note"`, label `Timer fired`). The body
+   carries the note that the model wrote at that time.
+4. The notice block has no buttons. It is not a user bubble.
+5. The woken turn completes by itself. `Finished` becomes 2.
 
-1. 第一个回合收尾，`Finished` 是 1 个，会话回到空闲
-2. 到点后通知块出现（标签同样是 `Timer fired`），正文说得出来规则和 `Next:`
-3. 从 `/api/openapi/timer/state` 读回 `pendingSchedules`：**是 1**——那一行还在，只是到期
-   时刻前进了。这是跟进的用例给不了的断言
-4. 被唤醒的那个回合自己跑完，`Finished` 变成 2 个
+The scan interval drops to 1 second in e2e (`AIFY_TIMER_SCAN_MS`). Without it, the case can
+wait two full cycles at worst, which exceeds the case limit. The 60-second minimum of the
+timer does not change: that minimum is the contract, and the case should really wait.
 
-第 3 步要带 `Authorization: Bearer`：这条读的路径和别的接口一样要凭据。
+The case makes 3 streaming requests: the timer, the answer of the first turn, and the answer
+of the woken turn.
 
-### 发件箱（`outbox.e2e.ts`）
+### Schedule (`schedule.e2e.ts`)
 
-场景 `outbox` 只有一次不需要工具的作答：跑完就有话要带给用户。这条用例和别的不一样，
-它不开页面：
+The scene `schedule` computes its target at run time. `daily` writes a local "hour and
+minute", so the case sets the target at the next whole minute, a bit more than ten seconds
+later, and the model sets a schedule from it. The wait therefore drops to a little over one
+minute, and the 300-second interval minimum need not change.
 
-1. 用例扮演桌面主进程那条连接：连上 `/api/ws`，发 `outbox.subscribe`
-2. 用接口开一条会话、发一句话，运行器把这个回合跑完
-3. 落定两秒之后通知推过来：正文取那个回合的最后一段文字，标题是会话标题
-4. 回执发回去
-5. `GET /api/openapi/outbox/state` 说：没有等着投的行，推过一条，有连接在等
-6. 再等三个扫描周期也没有第二批——同一行只推一次
+It uses the same chain as the timer case. Only the end differs:
 
-不开页面是有意的：页面一收到 `run.end` 就把会话标成已读，而「有人看了」正是不该弹
-通知的理由。要验的正是反面，所以用例得自己扮那个没在看的人。
+1. The first turn completes. `Finished` is 1. The session returns to idle.
+2. When the time comes, the notice block appears (its label is also `Timer fired`). The
+   body can state the rule and `Next:`.
+3. The case reads `pendingSchedules` back from `/api/openapi/timer/state`: **it is 1**. That
+   row is still there, and only its due time advanced. This is the assertion that the
+   follow-up case cannot give.
+4. The woken turn completes by itself. `Finished` becomes 2.
 
-桌面进程跑不进 Playwright，所以第 1、3、4 步由用例自己做。它说的是同一份协议
-（`@workspace/shared/ws-protocol`），协议一改，它和桌面一起红。
+Step 3 needs `Authorization: Bearer`: this read path needs credentials like the other
+endpoints.
 
-### 隐藏窗口（`outbox-hidden.e2e.ts`）
+### Outbox (`outbox.e2e.ts`)
 
-桌面「关窗」只是 `hide()`，页面还在，也会收到 `run.end`。这条用例补上
-`outbox.e2e.ts` 不看页面所覆盖不到的那一半：
+The scene `outbox` has one answer, and that answer needs no tool: at the end of the run, it
+has something to tell the user. This case differs from the others because it does not open
+the page:
 
-1. 页面建项目、开会话、发一句话；场景是 `slow-answer`，首块延迟三秒
-2. 运行落定前把文档切到 hidden——Electron 隐藏窗口时 Chromium 给的就是这个状态
-3. 回合落定后通知仍推过来，会话还是 `done`
-4. 恢复可见后页面补做标记已读，会话变 `idle`
+1. The case acts as the connection of the desktop main process. It connects to `/api/ws`
+   and sends `outbox.subscribe`.
+2. It opens a session through the API and sends one message. The runner completes the turn.
+3. Two seconds after the run settles, the notice arrives. The body takes the last text of
+   that turn, and the title is the session title.
+4. The case sends the receipt back.
+5. `GET /api/openapi/outbox/state` says: no row waits for delivery, one push occurred, and
+   a connection waits.
+6. Three more scan cycles give no second batch. One row pushes once.
 
-隐藏时标记已读，投递器就会以为有人看过，系统通知永远不弹。标记已读因此以页面
-可见为准，不是以页面存在为准。
+The case does not open the page on purpose. The page marks the session as read as soon as
+it receives `run.end`, and "someone looked" is exactly the reason not to show a
+notification. The case must prove the opposite, so it acts as the person who does not look.
 
-## 查看现场
+The desktop process does not run inside Playwright, so the case does steps 1, 3, and 4
+itself. It speaks the same protocol (`@workspace/shared/ws-protocol`). When the protocol
+changes, the case and the desktop fail together.
 
-默认情况下，成功后会清理临时现场；失败时会保留现场：
+### Hidden window (`outbox-hidden.e2e.ts`)
+
+The desktop close-window action only calls `hide()`. The page stays, and it still receives
+`run.end`. This case covers the half that `outbox.e2e.ts` misses when it does not look at
+the page:
+
+1. The page creates a project, opens a session, and sends one message. The scene is
+   `slow-answer`, and the first chunk waits three seconds.
+2. Before the run settles, the case sets the document to hidden. Chromium gives this state
+   when Electron hides a window.
+3. After the turn settles, the notice still arrives, and the session is still `done`.
+4. When the page is visible again, the page marks the session as read. The session becomes
+   `idle`.
+
+If the page marks as read while hidden, the dispatcher thinks that a person looked, and the
+system notification never appears. The read mark therefore depends on a visible page, not
+on a page that exists.
+
+## Inspect a scene
+
+By default, a successful case cleans its temporary scene. A failed case keeps its scene:
 
 ```text
 .e2e/
@@ -182,46 +246,59 @@ context，`localStorage` 是空的。
     └── project/             # 临时仓库与改过的文件
 ```
 
-打开 trace：`vp exec playwright show-trace .e2e/results/<用例>/trace.zip`。
+To open a trace, run `vp exec playwright show-trace .e2e/results/<case>/trace.zip`.
 
-要查看成功用例的日志、数据库、临时仓库、截图和 trace，设置 `E2E_KEEP_ARTIFACTS=1`：
+To inspect the logs, the database, the temporary repository, the screenshots, and the trace
+of a successful case, set `E2E_KEEP_ARTIFACTS=1`:
 
 ```bash
 E2E_KEEP_ARTIFACTS=1 vp run e2e
 ```
 
-成功用例的现场也会留在 `.e2e/runs/<时间戳>/`，trace 和截图在 `.e2e/results/`。
-不设置这个变量时，成功用例仍会清理现场，trace 和截图仍只在失败时保存。
+The scene of a successful case also stays in `.e2e/runs/<timestamp>/`, and the trace and
+the screenshots stay in `.e2e/results/`. Without this variable, a successful case still
+cleans its scene. A trace and screenshots still exist only after a failure.
 
-## 它是怎么搭起来的
+## How it is built
 
-`e2e/harness.ts` 每次跑都做一遍：
+`e2e/harness.ts` does this on every run:
 
-- 造临时目录、临时 SQLite、临时 `HOME`，所以不碰你的 `~/.aify-zero`
-- `git init` 加一次提交，改动视图才有基线
-- 起假供应商（在测试进程内），起 API 子进程，起 Vite dev server，端口都是系统挑的
-- 用 Bearer 令牌把供应商写进设置，走的是公开接口，不塞数据库
+- It makes a temporary directory, a temporary SQLite database, and a temporary `HOME`, so
+  it does not touch your `~/.aify-zero`.
+- `git init` plus one commit gives the review view a baseline.
+- It starts the fake provider (inside the test process), the API child process, and the Vite
+  dev server. The system picks every port.
+- It writes the provider into the settings with a Bearer token. It uses the public
+  interface and does not write the database.
 
-用例只认用户看得见的东西：文字、按钮名、文件内容。页面里的类名和 DOM 结构不在断言范围里。
+The cases use only what a user can see: text, button names, and file content. The class
+names and the DOM structure of the page are outside the assertions.
 
-## 三个坑
+## Three traps
 
-1. **地址栏不反映路由。** `app.tsx` 用内存历史，`page.goto("/sessions/x")` 只会落到 `/sessions`。要换页面就点击。
-   面板收起时里面的内容是 `inert`：不先点入口展开，里面的按钮点不动，点击会一直等到超时。
-2. **`Start a session`、`Working`、`Finished`、`Approve` 是硬编码英文。** 切到中文也不变。哪天它们进了 i18n，断言会红——应该红，改断言就是。
-3. **假供应商的 `toolCall` 只是「能被客户端解析回同一个工具调用」。** 协议级测试
-   （`packages/agent/tests/testing/tool-call.test.ts`）证明的是这一点，它不证明假
-   供应商与真供应商同形——那种漂移要靠录制回放（`replay`）才发现。
+1. **The address bar does not reflect the route.** `app.tsx` uses an in-memory history, so
+   `page.goto("/sessions/x")` lands only on `/sessions`. To change the page, click. When
+   the panel is collapsed, its content is `inert`. The buttons inside do not respond until
+   you click the entry to expand the panel. A click waits until the timeout.
+2. **`Start a session`, `Working`, `Finished`, and `Approve` are hard-coded English.** They
+   do not change in Chinese either. If they enter i18n one day, the assertions fail. They
+   should fail: change the assertions then.
+3. **The `toolCall` of the fake provider only proves that the client parses it back into
+   the same tool call.** The protocol-level test
+   (`packages/agent/tests/testing/tool-call.test.ts`) proves that. It does not prove that
+   the fake provider has the same shape as a real provider. Only a record and replay
+   (`replay`) finds that drift.
 
-## 加一条用例
+## Add a case
 
-现在有八条：主流程、队列领取、完成通知、定时器、日程、发件箱、隐藏窗口、会话排序。
-要加审批路径
-（`write-file`、MCP 工具）时：
+There are ten files now: approval policy, main flow, batch claim, completion notice, timer,
+schedule, outbox, hidden window, session delete, and session order. To add an approval path (`write-file`, an MCP tool):
 
-1. 在 `packages/agent/scenarios/` 加一个场景，用 `toolCall` 要那个会询问的工具
-2. 在 `e2e/` 加一个 `*.e2e.ts`，用 `startStack({ scenario: "..." })` 换剧本，
-   点 `Approve` 后继续断言
-3. 用例预算仍是 120 秒，仍然不重试
+1. Add a scene in `packages/agent/scenarios/`. Use `toolCall` to request the tool that asks
+   for approval.
+2. Add a `*.e2e.ts` in `e2e/`. Use `startStack({ scenario: "..." })` to change the script,
+   and continue the assertions after the click on `Approve`.
+3. The case budget is still 120 seconds, and the case still does not retry.
 
-它不进 `vp run ready`：那是「提交前几秒跑完」的东西，端到端是三分钟的东西，混在一起两个都会坏。
+End-to-end does not enter `vp run ready`. That command runs in the seconds before a commit.
+End-to-end takes three minutes. Mix the two, and both break.
