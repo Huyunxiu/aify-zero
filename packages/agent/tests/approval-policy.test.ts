@@ -13,65 +13,56 @@ describe(policyAnswer, () => {
     });
     expect(policyAnswer("standard", "read")).toBeUndefined();
   });
+
+  test("read-only refuses a mutation and a command", () => {
+    expect(policyAnswer("readonly", "mutate")).toStrictEqual({
+      decision: "deny",
+    });
+    expect(policyAnswer("readonly", "exec")).toStrictEqual({
+      decision: "deny",
+    });
+  });
 });
 
 describe(resolveServiceDecision, () => {
   test("the read-only cap outranks the host's allow", () => {
-    expect(policyAnswer("readonly", "mutate")).toStrictEqual({
-      decision: "deny",
-    });
     expect(
-      resolveServiceDecision(
-        { decision: "allow" },
-        { decision: "deny" },
-        "mutate"
-      )
+      resolveServiceDecision({ decision: "allow" }, { decision: "deny" })
     ).toStrictEqual({ decision: "deny" });
   });
 
   test("a host denial keeps its reason", () => {
     const denial = { decision: "deny" as const, reason: "destructive" };
-    expect(
-      resolveServiceDecision(denial, { decision: "allow" }, "mutate")
-    ).toStrictEqual(denial);
+    expect(resolveServiceDecision(denial, { decision: "allow" })).toStrictEqual(
+      denial
+    );
   });
 
-  test("an allow relaxes the ask on a call we know nothing about", () => {
+  test("an allow closes the host's ask", () => {
     expect(
-      resolveServiceDecision(
-        { decision: "ask" },
-        { decision: "allow" },
-        "unknown"
-      )
+      resolveServiceDecision({ decision: "ask" }, { decision: "allow" })
     ).toStrictEqual({ decision: "allow" });
   });
 
-  test("an allow does not relax the ask on a known mutation", () => {
-    // 服务器自己说它会破坏东西时，全放行也得先问一句。
+  test("a host allow for this call stands over the policy's ask", () => {
     expect(
-      resolveServiceDecision(
-        { decision: "ask" },
-        { decision: "allow" },
-        "mutate"
-      )
-    ).toStrictEqual({ decision: "ask" });
+      resolveServiceDecision({ decision: "allow" }, { decision: "ask" })
+    ).toStrictEqual({ decision: "allow" });
   });
 
   test("either side answers alone", () => {
+    expect(resolveServiceDecision({ decision: "ask" })).toStrictEqual({
+      decision: "ask",
+    });
     expect(
-      resolveServiceDecision({ decision: "ask" }, undefined, "read")
+      resolveServiceDecision(undefined, { decision: "ask" })
     ).toStrictEqual({ decision: "ask" });
-    expect(
-      resolveServiceDecision(undefined, { decision: "ask" }, "read")
-    ).toStrictEqual({ decision: "ask" });
-    expect(
-      resolveServiceDecision(undefined, undefined, "read")
-    ).toBeUndefined();
+    expect(resolveServiceDecision()).toBeUndefined();
   });
 });
 
 describe(effectivePolicy, () => {
-  test("an attended run keeps the stored tier", () => {
+  test("an attended run keeps the stored policy", () => {
     expect(effectivePolicy("unrestricted", true)).toBe("unrestricted");
     expect(effectivePolicy("edit", true)).toBe("edit");
   });

@@ -12,7 +12,7 @@ export const forkSessionSchema = z.object({
 
 export type ForkSessionType = z.infer<typeof forkSessionSchema>;
 
-/** 审批档位的值域；数据库那列是 text，靠这里守。 */
+/** 审批策略的值域；数据库那列是 text，靠这里守。 */
 export const approvalPolicySchema = z.enum(APPROVAL_POLICIES);
 
 export const inboxItemIdSchema = z.object({

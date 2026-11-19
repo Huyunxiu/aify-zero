@@ -124,6 +124,7 @@ const makeAgent = () => {
   });
 
   const agent = new Agent({
+    approvalPolicy: "standard",
     name: "main",
     sessionId: "session-1",
     session,

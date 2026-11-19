@@ -318,7 +318,7 @@ describe("approval policy", () => {
     await expect(decide(agent, "task")).resolves.toBeUndefined();
   });
 
-  test("unrestricted keeps asking when the server warns it is destructive", async () => {
+  test("unrestricted closes the host's ask for a destructive tool", async () => {
     const destructive = "mcp__linear__delete_issue";
     const agent = await makeAgent({
       approvalPolicy: "unrestricted",
@@ -328,9 +328,10 @@ describe("approval policy", () => {
         toolName === destructive ? "mutate" : "unknown",
     });
 
-    // 全放行放松的是「不知道它做什么」的询问；服务器自己说破坏性，仍然要问。
+    // The policy leads where it speaks: "never ask" also covers a tool the
+    // server itself calls destructive. A refusal would still stand.
     await expect(decide(agent, destructive)).resolves.toStrictEqual({
-      decision: "ask",
+      decision: "allow",
     });
   });
 

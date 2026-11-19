@@ -6,8 +6,9 @@ export type ApprovalClass = "read" | "mutate" | "exec" | "interact" | "unknown";
 /**
  * 内置工具的类别表。
  *
- * 新增内置工具必须在这里落一格：漏掉会变成 unknown，策略对它就只剩
- * 「不表态」和「全放行」两种回答，不会静默地按读取处理。
+ * 会落盘或跑命令的工具必须在这里落一格：漏掉就成了 unknown，只读策略拦不住它。
+ * 故意不列的（`task`、`web-fetch`、定时器与后台任务）也按 unknown 处理：
+ * 策略对它们只剩「不表态」和「全放行」，标准策略的询问集合因此不变。
  */
 const BUILTIN: Readonly<Record<string, ApprovalClass>> = {
   "delete-file": "mutate",

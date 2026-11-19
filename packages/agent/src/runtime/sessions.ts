@@ -1,11 +1,13 @@
 import {
   addToolApprovalResponse,
+  DEFAULT_APPROVAL_POLICY,
   findToolApprovalRequests,
   findTurnWithoutToolResult,
 } from "@workspace/agent-client";
 import type {
   AgentTurn,
   AgentUserTurn,
+  ApprovalPolicy,
   InboxItem,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
@@ -15,8 +17,7 @@ import type { ModelRef } from "@workspace/shared/model";
 
 import { AgentSession } from "../agent-session";
 import type { Agent } from "../agents";
-import type { ApprovalPolicy } from "../approval-policy";
-import { DEFAULT_APPROVAL_POLICY, effectivePolicy } from "../approval-policy";
+import { effectivePolicy } from "../approval-policy";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { InboxClaim } from "../kernel/run-types";
@@ -129,8 +130,12 @@ export class SessionLifecycle {
       sessionId,
       turns: originalTurns,
       model,
-      approvalPolicy:
+      // 答复审批由用户发起，按有人在场处理。归档值走同一个收紧函数，免得
+      // 「生效策略」有第二条计算路径。
+      approvalPolicy: effectivePolicy(
         previousSession?.approvalPolicy ?? DEFAULT_APPROVAL_POLICY,
+        true
+      ),
       ...(effort === undefined ? {} : { effort }),
       ...(sessionProjectId === undefined
         ? {}
@@ -228,7 +233,7 @@ export class SessionLifecycle {
     effort?: ModelEffort;
     projectId?: string;
     claims?: readonly InboxClaim[];
-    /** 会话存的档位；这里按在场情况收紧后才交给 agent。 */
+    /** 会话存的策略；这里按在场情况收紧后才交给 agent。 */
     approvalPolicy: ApprovalPolicy;
     /** 默认有人在场：只有定时器或完成通知唤起的运行才不是。 */
     attended?: boolean;
@@ -435,7 +440,8 @@ export class SessionLifecycle {
     const agent = await buildAgent({
       sessionId,
       session: new AgentSession({ turns }),
-      approvalPolicy: session.approvalPolicy,
+      // 手工压缩由用户发起，按有人在场处理；收紧仍走同一个函数。
+      approvalPolicy: effectivePolicy(session.approvalPolicy, true),
       model,
       ...(effort === undefined ? {} : { effort }),
       ...(session.projectId === null || session.projectId === undefined

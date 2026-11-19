@@ -112,7 +112,7 @@ const createSession = publicProcedure
       modelEffort?: string;
       projectId?: string;
       inboxId?: string;
-      /** 首次落库时的审批档位；行已存在时忽略，改为走 setApprovalPolicy。 */
+      /** 首次落库时的审批策略；行已存在时忽略，改为走 setApprovalPolicy。 */
       approvalPolicy?: string;
     }>()
   )

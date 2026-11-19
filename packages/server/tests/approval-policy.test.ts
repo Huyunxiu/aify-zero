@@ -33,7 +33,7 @@ async function seedSession(id: string, title: string): Promise<void> {
   await store.saveSession({ id, title, metadata: {} });
 }
 
-/** 读行上的审批档位；断言只看这一列。 */
+/** 读行上的审批策略；断言只看这一列。 */
 async function storedPolicy(sessionId: string): Promise<string | undefined> {
   const { session } = await client.session.getSession({ sessionId });
   return session?.approvalPolicy;

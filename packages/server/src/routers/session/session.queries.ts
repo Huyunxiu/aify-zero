@@ -141,9 +141,9 @@ export const listSessionResources = publicProcedure
   });
 
 /**
- * 改一个会话的审批档位。
+ * 改一个会话的审批策略。
  *
- * 只改这一列，不碰运行状态：改档位不打断正在跑的回合，下一次运行才按新值
+ * 只改这一列，不碰运行状态：改策略不打断正在跑的回合，下一次运行才按新值
  * 装配。已删的会话按不存在处理。
  */
 export const setApprovalPolicy = publicProcedure

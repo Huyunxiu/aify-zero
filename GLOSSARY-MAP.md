@@ -18,7 +18,7 @@
 - **packages/agent → packages/ui**：会话记录、工具和 MCP 工具的名字出现在会话面板里，面板
   用同一套说法显示它们，不另起词。「审批策略」按 `packages/agent/GLOSSARY.md` 的说法用，
   界面不另立「权限模式」。
-- **packages/ui ↔ packages/agent-client ↔ packages/agent**：审批档位的值域由
+- **packages/ui ↔ packages/agent-client ↔ packages/agent**：审批策略的值域由
   `packages/agent-client` 定义；界面拿它做选项，服务端拿它守入参，agent 包拿它做
   判定。`packages/db` 不依赖协议包，那一列保留同样的字面量并在注释里指明对齐对象。
 - **packages/agent ↔ packages/server**：MCP 的「授权令牌」属于第三方服务器；本机 API

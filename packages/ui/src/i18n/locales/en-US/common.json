@@ -221,7 +221,7 @@
     "hints": {
       "readonly": "Denies writes and commands; reads still work",
       "standard": "Asks before every change",
-      "edit": "Applies changes without asking; interviews still ask",
+      "edit": "Applies changes without asking; interactive tools still ask",
       "unrestricted": "Never asks; use it only while watching"
     }
   },

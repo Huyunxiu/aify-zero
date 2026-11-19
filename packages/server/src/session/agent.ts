@@ -1,27 +1,26 @@
 import { mkdirSync } from "node:fs";
 
 import {
-  classifyAnnotations,
   classifyTool,
   createMcpToolApprovalPattern,
   createSessionAgent,
   ContextExtension,
   FileSystemContextSource,
   FileSystemSkillSource,
+  mcpApprovalClass,
   McpExtension,
   SkillExtension,
   timeZoneOrHost,
 } from "@workspace/agent";
 import type {
   Agent,
-  ApprovalPolicy,
+  ApprovalClassResolver,
   BuildAgentInput,
   JobRegistry,
   McpManager,
   SteeringSignal,
-  ApprovalClassResolver,
 } from "@workspace/agent";
-import { splitMcpToolName } from "@workspace/agent-client";
+import type { ApprovalPolicy } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
 
 import { getSessionDir } from "../config";
@@ -50,7 +49,7 @@ export interface BuildSessionAgentInput {
   /** 运行器的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
   /**
-   * 这次运行生效的审批档位。
+   * 这次运行生效的审批策略。
    *
    * 运行器已经按是否有人在场收紧过，这里不再判断；无人值守收紧只发生在
    * 运行器，那里才知道一次运行是被谁唤起的。
@@ -147,17 +146,10 @@ export async function buildSessionAgent({
  * 把一次调用的工具名映射成审批类别。
  *
  * 内置工具查表；MCP 工具查服务器给的注解。查不到注解不代表安全，所以落到
- * unknown，档位对它不表态，MCP 那条规则照旧会问。
+ * unknown，策略对它不表态，MCP 那条规则照旧会问。
  */
 function resolveApprovalClass(mcpManager: McpManager): ApprovalClassResolver {
-  return (request) => {
-    const parsed = splitMcpToolName(request.toolName);
-    const resolved = parsed
-      ? mcpManager.resolveTool(request.toolName)
-      : undefined;
-
-    return resolved
-      ? classifyAnnotations(resolved.definition.annotations)
-      : classifyTool(request.toolName);
-  };
+  return (request) =>
+    mcpApprovalClass(mcpManager, request.toolName) ??
+    classifyTool(request.toolName);
 }

@@ -4,11 +4,8 @@ import { DEFAULT_APPROVAL_POLICY } from "@workspace/agent-client";
 import type { ApprovalClass } from "./approval-classes";
 import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
 
-export type { ApprovalPolicy };
-export { DEFAULT_APPROVAL_POLICY };
-
 /**
- * 档位 × 类别 → 回答。
+ * 策略 × 类别 → 回答。
  *
  * 缺席的一格表示「不表态」：交给宿主的规则和现有默认，不凭空多出询问。
  * standard 一行就是今天的行为，所以它取代 `DEFAULT_TOOL_APPROVAL_TOOLS`，
@@ -49,42 +46,35 @@ export function policyAnswer(
 }
 
 /**
- * 宿主的回答和策略的回答合成服务层的答案。
+ * Folds the host's answer and the policy's answer into the service answer.
  *
- * 四条规则，按序：
- * 1. 策略说 deny，就是 deny —— 只读是封顶，宿主的放行翻不过去。
- * 2. 宿主说 deny，就是 deny —— 策略只能放松「问」，不能推翻「不行」。
- * 3. 策略说 allow 而宿主说 ask，只有**未知类别**才取 allow：这类询问的意思是
- *    「不知道它做什么」，用户已经说了不用问。已知的改动类不在此列 —— 服务器
- *    明确说它会破坏东西时，全放行也得先问一句。
- * 4. 其余照旧：宿主有意见听宿主，没有就听策略。
+ * A refusal from either side is the answer, and it keeps its reason. Next comes
+ * the host's allow: it looked at this call, not at a class, so it closes a
+ * policy that would otherwise ask. Everything else follows the policy, because
+ * the user picked it for the session — that includes a host's `ask`, which a
+ * policy that allows the class also allows.
  */
 export function resolveServiceDecision(
-  host: ToolStartDecision | undefined,
-  policy: ToolStartDecision | undefined,
-  toolClass: ApprovalClass
+  host?: ToolStartDecision,
+  policy?: ToolStartDecision
 ): ToolStartDecision | undefined {
-  if (policy?.decision === "deny") {
-    return policy;
-  }
-
   if (host?.decision === "deny") {
     return host;
   }
 
-  if (
-    policy?.decision === "allow" &&
-    host?.decision === "ask" &&
-    toolClass === "unknown"
-  ) {
-    return { decision: "allow" };
+  if (policy?.decision === "deny") {
+    return policy;
   }
 
-  return host ?? policy;
+  if (host?.decision === "allow") {
+    return host;
+  }
+
+  return policy ?? host;
 }
 
 /**
- * 没人看着的时候把档位收紧。
+ * 没人看着的时候把策略收紧。
  *
  * 编辑和全放行都意味着「自动放行改动」，半夜被定时器唤起来正是它们最不该
  * 生效的时刻。只读不用收：它本来就不放行任何东西。

@@ -3,6 +3,7 @@ import type {
   AgentTextPart,
   AgentTurn,
   AgentTurnStatus,
+  ApprovalPolicy,
 } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
 import type { ToolSet } from "ai";
@@ -10,7 +11,6 @@ import type { ToolSet } from "ai";
 import { AgentContext } from "../agent-context";
 import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
-import type { ApprovalPolicy } from "../approval-policy";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { ModelTargetResolver } from "../kernel/model-gateway";
 import type { AgentStore } from "../storage";
@@ -137,9 +137,9 @@ export type SubagentParent = {
   /** 父的压缩策略；子 agent 继承它解析出的策略和摘要器。 */
   compaction?: CompactionStrategy;
   /**
-   * 父的生效审批档位。
+   * 父的生效审批策略。
    *
-   * 子会话的行是它自己的，缺这一列会静默回到标准档；父收紧到标准时，
+   * 子会话的行是它自己的，缺这一列会静默回到标准策略；父收紧到标准时，
    * 子会话也不该比父宽松。
    */
   approvalPolicy: ApprovalPolicy;
@@ -191,7 +191,7 @@ export async function resolveSubagentSession(
     prompt: string;
     /** 父会话的项目归属；子会话跟着父走，列表按项目过滤时才不会漏掉它。 */
     projectId?: string;
-    /** 父的生效档位；子会话的行要抄它，否则回到标准档。 */
+    /** 父的生效策略；子会话的行要抄它，否则回到标准策略。 */
     approvalPolicy: ApprovalPolicy;
   }
 ): Promise<{ sessionId: string; turns: AgentTurn<AgentToolSet>[] }> {

@@ -379,7 +379,7 @@ describe("SessionLifecycle startFromInbox guards", () => {
   });
 });
 
-describe("SessionLifecycle 的审批档位", () => {
+describe("SessionLifecycle 的审批策略", () => {
   const lifecycleFor = (seen: BuildAgentInput[]) => {
     const { agent } = fakeAgent();
 
@@ -403,7 +403,7 @@ describe("SessionLifecycle 的审批档位", () => {
     });
   };
 
-  test("定时器唤起的运行收紧到标准档", async () => {
+  test("定时器唤起的运行收紧到标准策略", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({
@@ -414,7 +414,18 @@ describe("SessionLifecycle 的审批档位", () => {
     expect(seen[0]?.approvalPolicy).toBe("standard");
   });
 
-  test("用户消息让档位原样生效", async () => {
+  test("后台任务的完成通知同样算无人值守", async () => {
+    const seen: BuildAgentInput[] = [];
+
+    await lifecycleFor(seen).startFromInbox({
+      sessionId: "s1",
+      items: [{ ...inboxItem("s1"), kind: "job-notice" }],
+    });
+
+    expect(seen[0]?.approvalPolicy).toBe("standard");
+  });
+
+  test("用户消息让策略原样生效", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({

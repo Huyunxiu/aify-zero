@@ -1,3 +1,5 @@
+import type { ApprovalPolicy } from "@workspace/agent-client";
+import { DEFAULT_APPROVAL_POLICY } from "@workspace/agent-client";
 import type { Sandbox } from "@workspace/sandbox";
 import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
@@ -7,12 +9,8 @@ import type { ModelContextWindows } from "./agent-context";
 import type { AgentSession } from "./agent-session";
 import { Agent } from "./agents";
 import { classifyTool } from "./approval-classes";
-import type { ApprovalPolicy, ApprovalClassResolver } from "./approval-policy";
-import {
-  DEFAULT_APPROVAL_POLICY,
-  policyAnswer,
-  resolveServiceDecision,
-} from "./approval-policy";
+import type { ApprovalClassResolver } from "./approval-policy";
+import { policyAnswer, resolveServiceDecision } from "./approval-policy";
 import type { CompactionPolicyOverrides } from "./compaction/types";
 import {
   CompactionExtension,
@@ -46,11 +44,12 @@ import type { AgentToolSet } from "./types";
 import { timeZoneOrHost } from "./utils/time-zone";
 
 /**
- * 组合宿主的函数和档位。
+ * Composes the host's rules with the session's policy.
  *
- * 宿主先答（MCP 的注解规则），档位再答它覆盖的那一类，两者按
- * `resolveServiceDecision` 折叠：档位只能放松「问」，拒绝仍然最优先。
- * 档位表取代了原来那张硬编码的集合，所以「谁该问」只剩这一处权威。
+ * The host answers first (the MCP annotation rules); the policy answers for the
+ * class, and the two fold through `resolveServiceDecision`: the policy closes a
+ * host's `ask`, and a refusal on either side stands. The class table replaced
+ * the hard-coded set, so one place answers who gets asked for a built-in tool.
  */
 function createToolApprovalPattern(input: {
   host: ToolApprovalPattern | undefined;
@@ -62,15 +61,11 @@ function createToolApprovalPattern(input: {
     // 宿主那一侧可能抛：`evaluateToolApproval` 把抛错当弃权，坏规则不中断回合。
     const host = await evaluateToolApproval(input.host, request);
 
-    return resolveServiceDecision(
-      host,
-      policyAnswer(input.policy, toolClass),
-      toolClass
-    );
+    return resolveServiceDecision(host, policyAnswer(input.policy, toolClass));
   };
 }
 
-/** 不知道注解时按内置表分类；MCP 工具会落到 unknown，档位对它不表态。 */
+/** 不知道注解时按内置表分类；MCP 工具会落到 unknown，策略对它不表态。 */
 const defaultResolveApprovalClass: ApprovalClassResolver = (request) =>
   classifyTool(request.toolName);
 
@@ -124,7 +119,7 @@ export interface SessionAgentOptions {
   /**
    * 宿主自己的工具审批函数：按调用入参决定 deny / ask / allow。
    *
-   * 返回 undefined 表示没有意见；此时档位按工具类别回答。子 agent 继承
+   * 返回 undefined 表示没有意见；此时策略按工具类别回答。子 agent 继承
    * 组合后的函数。
    */
   toolApprovalPattern?: ToolApprovalPattern;
@@ -138,7 +133,7 @@ export interface SessionAgentOptions {
    * 工具名到审批类别的解析；省略时只查内置表。
    *
    * 宿主知道自己的工具带什么注解（MCP 的 readOnly / destructive），所以由它
-   * 注入；不注入时 MCP 工具落到 unknown，档位对它不表态。
+   * 注入；不注入时 MCP 工具落到 unknown，策略对它不表态。
    */
   resolveApprovalClass?: ApprovalClassResolver;
   /** 系统提示的起点；子 agent 说明会追加在后面。 */
@@ -215,7 +210,7 @@ export async function createSessionAgent(
   });
 
   try {
-    // 宿主规则和档位合成一个审批函数；扩展不再声明审批。
+    // 宿主规则和策略合成一个审批函数；扩展不再声明审批。
     agent.registerToolApprovalPattern(
       createToolApprovalPattern({
         host: options.toolApprovalPattern,

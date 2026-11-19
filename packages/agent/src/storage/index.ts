@@ -1,12 +1,12 @@
 import type {
   AgentSteeringStep,
   AgentTurn,
+  ApprovalPolicy,
   DeliverAt,
   EnqueueInboxInput,
   InboxItem,
 } from "@workspace/agent-client";
 
-import type { ApprovalPolicy } from "../approval-policy";
 import type {
   SessionEndStatus,
   SessionKind,
@@ -88,7 +88,7 @@ export interface AgentStore {
 
   updateSessionById(sessionId: string, title: string): Promise<number>;
 
-  /** 改一个会话的审批档位；返回受影响的行数。 */
+  /** 改一个会话的审批策略；返回受影响的行数。 */
   setSessionApprovalPolicy(
     sessionId: string,
     policy: ApprovalPolicy

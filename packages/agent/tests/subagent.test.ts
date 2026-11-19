@@ -151,6 +151,21 @@ describe(resolveSubagentSession, () => {
     ]);
   });
 
+  test("puts the parent's policy on the child row", async () => {
+    const store = new FakeStore();
+
+    await resolveSubagentSession(asStore(store), {
+      parentSessionId: "parent-1",
+      toolCallId: "call-1",
+      description: taskLabel,
+      prompt: "Find the thing.",
+      // 父收紧到只读；子会话的行要抄这个值，不能落回标准。
+      approvalPolicy: "readonly",
+    });
+
+    expect(store.saved[0]).toMatchObject({ approvalPolicy: "readonly" });
+  });
+
   test("reuses the existing child session instead of starting over", async () => {
     const store = new FakeStore();
     const existingId = store.seedChild("parent-1", "call-1", [
@@ -273,6 +288,7 @@ describe("subagent 的 abort scope", () => {
    */
   const buildParent = (): Agent =>
     new Agent({
+      approvalPolicy: "standard",
       name: "main",
       sessionId: "parent-session",
       session: new AgentSession({ turns: [] }),
@@ -376,8 +392,8 @@ describe("subagent 继承审批函数", () => {
   });
 });
 
-describe("subagent 继承审批档位", () => {
-  test("子会话的行抄父的生效档位", async () => {
+describe("subagent 继承审批策略", () => {
+  test("子会话的行抄父的生效策略", async () => {
     const store = new FakeStore();
 
     const { agent: child } = await createSubagent(
@@ -406,7 +422,7 @@ describe("subagent 继承审批档位", () => {
       }
     );
 
-    // 行上的值和 agent 上的值都要跟着父走：只抄一处，另一处就会静默回到标准档。
+    // 行上的值和 agent 上的值都要跟着父走：只抄一处，另一处就会静默回到标准策略。
     expect(store.saved.at(0)?.approvalPolicy).toBe("readonly");
     expect(child.approvalPolicy).toBe("readonly");
   });
@@ -459,6 +475,7 @@ describe("subagent 继承项目说明", () => {
 
   const buildParent = (): Agent =>
     new Agent({
+      approvalPolicy: "standard",
       name: "main",
       sessionId: "parent-session",
       session: new AgentSession({ turns: [] }),

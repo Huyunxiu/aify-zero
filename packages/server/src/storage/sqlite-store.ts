@@ -1,8 +1,8 @@
-import type { ApprovalPolicy } from "@workspace/agent";
 import type {
   AgentSteeringStep,
   AgentTurn,
   AgentUserTurn,
+  ApprovalPolicy,
   EnqueueInboxInput,
   DeliverAt,
   InboxItem,
