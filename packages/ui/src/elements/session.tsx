@@ -1251,7 +1251,7 @@ export function Session({
                               />
                             </PromptInputBody>
                             <PromptInputFooter>
-                              <PromptInputTools className="gap-0">
+                              <PromptInputTools className="flex-wrap gap-0">
                                 <PromptInputActionMenu>
                                   <PromptInputActionMenuTrigger />
                                   <PromptInputActionMenuContent className="min-w-max">
