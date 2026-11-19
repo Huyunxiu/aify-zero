@@ -35,7 +35,7 @@ line under the title that names its source:
 - `.agents/skills/`: installed from other repositories. `skills-lock.json` holds the
   hashes. Do not translate these files.
 - `.agents/worktrees/` and `.claude/worktrees/`: copies of this repository, not sources.
-- `CLAUDE.md` and `.github/copilot-instructions.md`: symbolic links to `AGENTS.md`.
+- `CLAUDE.md`: a symbolic link to `AGENTS.md`.
 
 ## Documents that are still Chinese
 

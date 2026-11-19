@@ -52,13 +52,9 @@ describe(findProblems, () => {
     );
   });
 
-  test("installed skills and the links to AGENTS.md are outside the rule", () => {
+  test("installed skills and the link to AGENTS.md are outside the rule", () => {
     expect(
-      problemsFor([
-        ".agents/skills/hono/SKILL.md",
-        "CLAUDE.md",
-        ".github/copilot-instructions.md",
-      ])
+      problemsFor([".agents/skills/hono/SKILL.md", "CLAUDE.md"])
     ).toStrictEqual([]);
   });
 });

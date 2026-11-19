@@ -34,7 +34,7 @@
 
 - `.agents/skills/`：从别的仓库装进来的。`skills-lock.json` 锁着哈希。不要翻这些文件。
 - `.agents/worktrees/` 与 `.claude/worktrees/`：本仓库的副本，不是源。
-- `CLAUDE.md` 与 `.github/copilot-instructions.md`：指向 `AGENTS.md` 的符号链接。
+- `CLAUDE.md`：指向 `AGENTS.md` 的符号链接。
 
 ## 还是中文的文档
 

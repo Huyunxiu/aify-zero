@@ -27,11 +27,8 @@ const EXCLUDED_PREFIXES = [
   ".claude/worktrees/",
 ];
 
-/** Symbolic links to `AGENTS.md`. A link is not a source. */
-const EXCLUDED_FILES = new Set([
-  ".github/copilot-instructions.md",
-  "CLAUDE.md",
-]);
+/** A symbolic link to `AGENTS.md`. A link is not a source. */
+const EXCLUDED_FILES = new Set(["CLAUDE.md"]);
 
 const isExcluded = (file: string) =>
   EXCLUDED_FILES.has(file) ||
