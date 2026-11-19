@@ -1,6 +1,6 @@
 # 提交信息
 
-> 中文副本。以 [`commit-message.md`](./commit-message.md)@bcc56a0 为准。
+> 中文副本。以 [`commit-message.md`](./commit-message.md) 为准。
 
 每条提交信息都用 Conventional Commits 1.0.0 的格式。`commit-msg` 钩子会跑 commitlint，不合规则的
 信息会被拦住，提交不会发生。

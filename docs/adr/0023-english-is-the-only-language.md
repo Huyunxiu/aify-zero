@@ -10,9 +10,8 @@ and the pointer. `commit-message.md` keeps the format of a
 commit message and leaves the language to `language.md`.
 
 A document `NAME.md` has a copy `NAME.zh.md`. The copy opens with one line under the title:
-`> 中文副本。以 NAME.md@<sha> 为准。` The commit is the last change of the English file.
-A copy that names an old commit is out of date. No check fails on it; a person reads the
-two and fixes the copy.
+`> 中文副本。以 NAME.md 为准。` The line names the document, not a commit. A copy is behind
+when the English file changed after it. Git tells you that; no check fails on it.
 
 The copies are not a second truth. Nobody edits a `.zh.md` file by hand. A change starts
 in the English file and the copy follows.
@@ -40,6 +39,10 @@ is. The reply in a session stays Chinese.
 - **`.zh-CN.md` instead of `.zh.md`.** The repository already has five `.zh.md` files and
   no `.zh-CN.md` file. `zh` names the language; `zh-CN` claims a regional difference that
   this repository does not make. File names are not locale tags.
+- **Store the commit in the copy line.** The copy cannot name the commit that writes it:
+  the hash does not exist until the commit exists. The first version of this rule asked
+  for `@<sha>`, and two commits in this change existed only to write that hash. The next
+  English change made it stale again.
 - **One bulk translation of the 46 Chinese documents.** One commit would hold 46
   translations and 46 copies. Nobody can read that commit. The manifest burns down
   instead, and every step stays reviewable.

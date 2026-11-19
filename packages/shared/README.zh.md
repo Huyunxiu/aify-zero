@@ -1,6 +1,6 @@
 # vite-plus-starter
 
-> 中文副本。以 [`README.md`](./README.md)@048cfe0 为准。
+> 中文副本。以 [`README.md`](./README.md) 为准。
 
 创建一个 Vite Plus 项目的起步模板。
 

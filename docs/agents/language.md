@@ -22,13 +22,14 @@ English text follows ASD-STE100, as `AGENTS.md` requires.
 A document `NAME.md` has a copy `NAME.zh.md` in the same directory. The copy opens with one
 line under the title that names its source:
 
-> 中文副本。以 `commit-message.md@048cfe0` 为准。
+> 中文副本。以 `commit-message.md` 为准。
 
 - The English file is the authority. When the two disagree, the English file is right.
 - Do not edit a `.zh.md` file by hand. Regenerate it from the English file, in the same
   commit.
-- The commit names the last change of the English file. A copy that names an old commit
-  is out of date. No check fails. A person fixes it.
+- A copy is behind when its English file changed after the copy. The copy does not say
+  so. To tell, run `git log -1 --format=%h -- NAME.md` and the same command for
+  `NAME.zh.md`, then compare. No check fails. A person looks.
 
 ## What is outside the rule
 
