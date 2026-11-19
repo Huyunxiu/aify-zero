@@ -1,6 +1,6 @@
 # 只用英文
 
-> 中文副本。以 [`0023-english-is-the-only-language.md`](./0023-english-is-the-only-language.md)@048cfe0 为准。
+> 中文副本。以 [`0023-english-is-the-only-language.md`](./0023-english-is-the-only-language.md)@bcc56a0 为准。
 
 仓库里的每段文字都是英文。每份文档旁边有一份中文副本。英文文件是权威。
 

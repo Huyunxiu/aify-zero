@@ -1,6 +1,6 @@
 # 语言
 
-> 中文副本。以 [`language.md`](./language.md)@048cfe0 为准。
+> 中文副本。以 [`language.md`](./language.md)@bcc56a0 为准。
 
 仓库里的每一份 Markdown 都是英文，每一份旁边都有一份中文副本。英文文件是权威，中文副本
 是译本。
