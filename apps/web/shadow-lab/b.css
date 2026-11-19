@@ -1,0 +1,46 @@
+@import "../../../packages/ui/src/styles/globals.css";
+
+/* B · 利落：接触影更紧、更实；远层比 A 少一级。 */
+:root {
+  --lab-edge: oklch(0.25 0.01 283 / 0.055);
+  --lab-contact: oklch(0.25 0.01 283 / 0.1);
+  --lab-mid: oklch(0.25 0.01 283 / 0.07);
+  --lab-ambient: oklch(0.25 0.01 283 / 0.055);
+  --lab-deep: oklch(0.25 0.01 283 / 0.04);
+  --lab-far: oklch(0.25 0.01 283 / 0.03);
+  --lab-farther: oklch(0.25 0.01 283 / 0.02);
+}
+
+.dark {
+  --lab-edge: oklch(1 0 0 / 0.07);
+  --lab-contact: oklch(0 0 0 / 0.5);
+  --lab-mid: oklch(0 0 0 / 0.36);
+  --lab-ambient: oklch(0 0 0 / 0.28);
+  --lab-deep: oklch(0 0 0 / 0.22);
+  --lab-far: oklch(0 0 0 / 0.17);
+  --lab-farther: oklch(0 0 0 / 0.13);
+}
+
+@theme inline {
+  --shadow-2xs: 0 0 0 1px var(--lab-edge);
+  --shadow-xs: 0 0 0 1px var(--lab-edge), 0 1px 1px -0.5px var(--lab-contact);
+  --shadow-sm:
+    0 0 0 1px var(--lab-edge), 0 1px 1px -0.5px var(--lab-contact),
+    0 2px 3px -1.5px var(--lab-mid);
+  --shadow-md:
+    0 0 0 1px var(--lab-edge), 0 1px 1px -0.5px var(--lab-contact),
+    0 2px 3px -1.5px var(--lab-mid), 0 6px 12px -6px var(--lab-ambient);
+  --shadow-lg:
+    0 0 0 1px var(--lab-edge), 0 1px 1px -0.5px var(--lab-contact),
+    0 2px 3px -1.5px var(--lab-mid), 0 6px 12px -6px var(--lab-ambient),
+    0 14px 24px -14px var(--lab-deep);
+  --shadow-xl:
+    0 0 0 1px var(--lab-edge), 0 1px 1px -0.5px var(--lab-contact),
+    0 2px 3px -1.5px var(--lab-mid), 0 6px 12px -6px var(--lab-ambient),
+    0 14px 24px -14px var(--lab-deep), 0 24px 40px -24px var(--lab-far);
+  --shadow-2xl:
+    0 0 0 1px var(--lab-edge), 0 1px 1px -0.5px var(--lab-contact),
+    0 2px 3px -1.5px var(--lab-mid), 0 6px 12px -6px var(--lab-ambient),
+    0 14px 24px -14px var(--lab-deep), 0 24px 40px -24px var(--lab-far),
+    0 40px 64px -40px var(--lab-farther);
+}
