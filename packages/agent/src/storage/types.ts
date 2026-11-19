@@ -42,7 +42,7 @@ export type SessionRecord = {
   forkedFromMessageId: string | null;
   parentSessionId: string | null;
   parentToolCallId: string | null;
-  /** 这个会话的审批策略；运行器按是否有人在场收紧之后才交给 agent。 */
+  /** The Approval Policy of this session. The runner tightens it for attendance and then gives it to the agent. */
   approvalPolicy: ApprovalPolicy;
   /** 删除时刻；有值即「已删」，读路径当它不存在。 */
   deletedAt: Date | null;

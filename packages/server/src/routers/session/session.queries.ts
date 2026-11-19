@@ -141,10 +141,10 @@ export const listSessionResources = publicProcedure
   });
 
 /**
- * 改一个会话的审批策略。
+ * Change the Approval Policy of a session.
  *
- * 只改这一列，不碰运行状态：改策略不打断正在跑的回合，下一次运行才按新值
- * 装配。已删的会话按不存在处理。
+ * It changes this column only and does not touch the Run state: a policy change does not stop
+ * the running Turn; the next Run assembles with the new value. A deleted session counts as absent.
  */
 export const setApprovalPolicy = publicProcedure
   .route({ method: "PUT", path: "/sessions/{sessionId}/approval-policy" })

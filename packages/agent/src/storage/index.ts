@@ -88,7 +88,7 @@ export interface AgentStore {
 
   updateSessionById(sessionId: string, title: string): Promise<number>;
 
-  /** 改一个会话的审批策略；返回受影响的行数。 */
+  /** Change the Approval Policy of a session and return the row count. */
   setSessionApprovalPolicy(
     sessionId: string,
     policy: ApprovalPolicy

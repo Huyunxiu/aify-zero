@@ -1,11 +1,11 @@
 /**
- * 审批策略：走真实的 app、真实的数据库和真实的存储。
+ * Approval Policy: the real app, the real database, and the real storage.
  *
- * 断言落在外面看得见的行为上：路由的响应、会话行里存下来的值。装配层的判定
- * 由 `packages/agent/tests` 的纯函数与组合根用例负责，这里只证明值真的落库。
+ * The assertions check visible behavior: the router response and the value in the session
+ * row. The pure functions and the composition root cases in `packages/agent/tests` cover assembly; this proves the write.
  *
- * `@workspace/db` 在导入时就按 `DATABASE_URL` 建连接，所以选库必须发生在它被
- * 加载之前：先设环境变量，再在 `beforeAll` 里动态导入。
+ * `@workspace/db` opens its connection from `DATABASE_URL` at import, so select the
+ * database before the import: set the environment variable, then import dynamically in `beforeAll`.
  */
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,7 +20,7 @@ import type { SQLiteStore } from "../src/storage/sqlite-store";
 
 const dir = mkdtempSync(path.join(tmpdir(), "aify-approval-policy-"));
 process.env.DATABASE_URL = `file:${path.join(dir, "test.db")}`;
-// 会话目录从宿主目录派生；指到临时目录，用例不往真实的家目录写。
+// The session directory derives from the home directory. Point it at a temporary directory, so the test writes nothing to the real home.
 process.env.HOME = dir;
 
 const API_TOKEN = "test-api-token";
@@ -28,18 +28,18 @@ const API_TOKEN = "test-api-token";
 let client: AppRouterClient;
 let store: SQLiteStore;
 
-/** 直接写行：这是现场的搭建，不是被断言的行为。 */
+/** Write the row directly. This is test setup, not asserted behavior. */
 async function seedSession(id: string, title: string): Promise<void> {
   await store.saveSession({ id, title, metadata: {} });
 }
 
-/** 读行上的审批策略；断言只看这一列。 */
+/** Read the Approval Policy from the row. The assertion reads this column only. */
 async function storedPolicy(sessionId: string): Promise<string | undefined> {
   const { session } = await client.session.getSession({ sessionId });
   return session?.approvalPolicy;
 }
 
-describe("审批策略", () => {
+describe("approval policy", () => {
   beforeAll(async () => {
     const { migrateDb } = await import("@workspace/db");
     await migrateDb();
@@ -60,7 +60,7 @@ describe("审批策略", () => {
   });
 
   test("stores the chosen tier on the session row", async () => {
-    await seedSession("policy-1", "甲");
+    await seedSession("policy-1", "first");
 
     const result = await client.session.setApprovalPolicy({
       sessionId: "policy-1",
@@ -75,13 +75,13 @@ describe("审批策略", () => {
   });
 
   test("starts at the standard tier without anyone choosing", async () => {
-    await seedSession("policy-2", "乙");
+    await seedSession("policy-2", "second");
 
     await expect(storedPolicy("policy-2")).resolves.toBe("standard");
   });
 
   test("refuses a deleted session", async () => {
-    await seedSession("policy-3", "丙");
+    await seedSession("policy-3", "third");
     await client.session.deleteSession({ sessionId: "policy-3" });
 
     await expect(

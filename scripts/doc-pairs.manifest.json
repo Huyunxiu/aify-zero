@@ -1,8 +1,6 @@
 {
   "note": "Documents that are still Chinese. The list only gets shorter: translate a document, add its copy, then delete the entry. See docs/agents/language.md.",
   "documents": [
-    "GLOSSARY-MAP.md",
-    "packages/agent/GLOSSARY.md",
     "packages/db/GLOSSARY.md",
     "packages/sandbox/GLOSSARY.md",
     "packages/server/GLOSSARY.md",

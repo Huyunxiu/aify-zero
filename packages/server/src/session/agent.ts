@@ -49,10 +49,10 @@ export interface BuildSessionAgentInput {
   /** 运行器的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
   /**
-   * 这次运行生效的审批策略。
+   * The Approval Policy that applies to this Run.
    *
-   * 运行器已经按是否有人在场收紧过，这里不再判断；无人值守收紧只发生在
-   * 运行器，那里才知道一次运行是被谁唤起的。
+   * The runner already tightened it for attendance, so this layer does not decide again.
+   * Only the runner tightens for an unattended Run, because only it knows what started the Run.
    */
   approvalPolicy: ApprovalPolicy;
 }
@@ -122,7 +122,7 @@ export async function buildSessionAgent({
     // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。
     toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),
     approvalPolicy,
-    // 类别解析归宿主：注解挂在 MCP 工具表里，agent 包不认识管理器。
+    // Class resolution belongs to the host: the annotations sit in the MCP Tool table, and the agent package does not know the manager.
     resolveApprovalClass: resolveApprovalClass(mcpManager),
     extensions: [
       new McpExtension({
@@ -143,10 +143,10 @@ export async function buildSessionAgent({
 }
 
 /**
- * 把一次调用的工具名映射成审批类别。
+ * Map the Tool name of one call to its Approval Class.
  *
- * 内置工具查表；MCP 工具查服务器给的注解。查不到注解不代表安全，所以落到
- * unknown，策略对它不表态，MCP 那条规则照旧会问。
+ * A built-in Tool reads the table; an MCP Tool reads the annotation from the server.
+ * A missing annotation does not mean safe, so it falls to unknown: the policy has no opinion, and the MCP rule still asks.
  */
 function resolveApprovalClass(mcpManager: McpManager): ApprovalClassResolver {
   return (request) =>

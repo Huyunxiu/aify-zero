@@ -109,13 +109,13 @@ export const session_table = sqliteTable(
       .notNull()
       .default("idle"),
     /**
-     * 这个会话的审批档位。
+     * The Approval Policy of this session.
      *
-     * 值域与 `@workspace/agent-client` 的 `APPROVAL_POLICIES` 对应；数据库层
-     * 不依赖协议包，这里保留字面量，改值域时两处一起改。
+     * The values match `APPROVAL_POLICIES` in `@workspace/agent-client`. The database
+     * layer does not depend on the protocol package, so the literals stay here; change both together.
      *
-     * 它只决定「问不问」：谁该被询问。能不能做仍然由沙箱决定，所以不要
-     * 拿它当权限模型。无人值守的运行会在装配时收紧，库里始终存用户选的。
+     * It decides only whether to ask, and who gets asked. The Sandbox still decides
+     * what is possible, so it is no permission model. An Unattended Run tightens at assembly, and the row stores the user choice.
      */
     approvalPolicy: text("approval_policy", {
       enum: ["standard", "edit", "readonly", "unrestricted"],

@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest";
 import { approvalPolicyTarget } from "../src/lib/approval-policy-target";
 
 describe(approvalPolicyTarget, () => {
-  test("会话已经有 id 时写到它", () => {
+  test("writes to the session id when the session has one", () => {
     expect(
       approvalPolicyTarget({
         sessionId: "s-1",
@@ -13,7 +13,7 @@ describe(approvalPolicyTarget, () => {
     ).toBe("s-1");
   });
 
-  test("首页路由落库之后写到刚建出来的那一行", () => {
+  test("writes to the new row once the home route saved it", () => {
     expect(
       approvalPolicyTarget({
         sessionId: undefined,
@@ -23,7 +23,7 @@ describe(approvalPolicyTarget, () => {
     ).toBe("k-1");
   });
 
-  test("行还没建出来时没有可写的地方", () => {
+  test("has nowhere to write before the row exists", () => {
     expect(
       approvalPolicyTarget({
         sessionId: undefined,

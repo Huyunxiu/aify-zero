@@ -1,14 +1,14 @@
 import type { McpToolAnnotations } from "@ai-sdk/mcp";
 
-/** 一次工具调用在审批上的类别。策略只看类别，不看工具名。 */
+/** The Approval Class of one Tool call. The policy reads the class, not the Tool name. */
 export type ApprovalClass = "read" | "mutate" | "exec" | "interact" | "unknown";
 
 /**
- * 内置工具的类别表。
+ * The class table for built-in Tools.
  *
- * 会落盘或跑命令的工具必须在这里落一格：漏掉就成了 unknown，只读策略拦不住它。
- * 故意不列的（`task`、`web-fetch`、定时器与后台任务）也按 unknown 处理：
- * 策略对它们只剩「不表态」和「全放行」，标准策略的询问集合因此不变。
+ * A Tool that writes to disk or runs a command needs a row here. A missing row makes
+ * it unknown, and Read-Only does not stop it. Tools left out on purpose (`task`,
+ * `web-fetch`, timers, jobs) are also unknown, so Standard asks the same set.
  */
 const BUILTIN: Readonly<Record<string, ApprovalClass>> = {
   "delete-file": "mutate",
@@ -24,16 +24,16 @@ const BUILTIN: Readonly<Record<string, ApprovalClass>> = {
   questionnaire: "interact",
 };
 
-/** 查内置表；不认识的工具按 unknown，比按读取安全。 */
+/** Read the built-in table. An unknown Tool becomes unknown, which is safer than read. */
 export function classifyTool(toolName: string): ApprovalClass {
   return BUILTIN[toolName] ?? "unknown";
 }
 
 /**
- * MCP 注解 → 类别。
+ * MCP annotations to classes.
  *
- * 注解是第三方自述，按不可信处理：只有明确说只读才算读取，明确说破坏性
- * 就算改动，其余一律 unknown。和 `createMcpToolApprovalPattern` 同一套读法。
+ * An annotation is a third-party claim, so treat it as untrusted: only a clear
+ * read-only claim is read, only a destructive claim is mutate, the rest is unknown. It reads like `createMcpToolApprovalPattern`.
  */
 export function classifyAnnotations(
   annotations?: McpToolAnnotations

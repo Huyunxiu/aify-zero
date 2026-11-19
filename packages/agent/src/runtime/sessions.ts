@@ -130,8 +130,8 @@ export class SessionLifecycle {
       sessionId,
       turns: originalTurns,
       model,
-      // 答复审批由用户发起，按有人在场处理。归档值走同一个收紧函数，免得
-      // 「生效策略」有第二条计算路径。
+      // The user starts an approval answer, so treat it as attended. The stored value
+      // goes through the same tightening function, so "effective policy" has one path.
       approvalPolicy: effectivePolicy(
         previousSession?.approvalPolicy ?? DEFAULT_APPROVAL_POLICY,
         true
@@ -233,9 +233,9 @@ export class SessionLifecycle {
     effort?: ModelEffort;
     projectId?: string;
     claims?: readonly InboxClaim[];
-    /** 会话存的策略；这里按在场情况收紧后才交给 agent。 */
+    /** The stored policy of the session. This layer tightens it for attendance and then gives it to the agent. */
     approvalPolicy: ApprovalPolicy;
-    /** 默认有人在场：只有定时器或完成通知唤起的运行才不是。 */
+    /** Attended by default: only a Run that a Timer or a job notice starts is not. */
     attended?: boolean;
   }): Promise<StartedRun> {
     const { sessionId, turns, model, effort, projectId, claims } = input;
@@ -440,7 +440,7 @@ export class SessionLifecycle {
     const agent = await buildAgent({
       sessionId,
       session: new AgentSession({ turns }),
-      // 手工压缩由用户发起，按有人在场处理；收紧仍走同一个函数。
+      // A manual compaction starts from the user, so treat it as attended. The tightening still uses the same function.
       approvalPolicy: effectivePolicy(session.approvalPolicy, true),
       model,
       ...(effort === undefined ? {} : { effort }),
@@ -546,7 +546,7 @@ export class SessionLifecycle {
       forkedFromMessageId: messageId ?? prefix.at(-1)?.id,
       // fork 出来的会话留在源会话的项目里，否则按项目列表时会凭空少一条。
       projectId: source.projectId,
-      // Fork 是同一个姿态的延续：源会话会放行的，分支里不该重新开始问。
+      // A fork continues the same posture: what the source session lets pass must not ask again in the branch.
       approvalPolicy: source.approvalPolicy,
     });
     await store.saveTurns(copies);

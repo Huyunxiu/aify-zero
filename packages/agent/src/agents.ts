@@ -62,11 +62,11 @@ export type AgentOptions = {
   model: ModelRef;
   modelEffort?: ModelEffort;
   /**
-   * 这个 agent 的审批策略。
+   * The Approval Policy of this agent.
    *
-   * 必填：默认值只由组合根决定一次（`createSessionAgent`），这里再给一个默认
-   * 就会出现两处「没人选时听谁的」。组合根已经按是否有人在场收紧过，所以这里
-   * 存的是生效值；子会话抄它，才会和父会话同一个姿态。
+   * Required. The composition root sets the default, once (`createSessionAgent`);
+   * a default here makes two owners. The root already tightened the value for
+   * attendance, so this is the effective value, and a child session copies it.
    */
   approvalPolicy: ApprovalPolicy;
   /**
@@ -99,7 +99,7 @@ export type AgentOptions = {
 export class Agent {
   name: string;
   sessionId: string;
-  /** 生效的审批策略；子会话抄它。 */
+  /** The effective Approval Policy. A child session copies it. */
   approvalPolicy: ApprovalPolicy;
   instructions?: string;
   tools: ToolSet;

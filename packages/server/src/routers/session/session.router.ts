@@ -112,7 +112,7 @@ const createSession = publicProcedure
       modelEffort?: string;
       projectId?: string;
       inboxId?: string;
-      /** 首次落库时的审批策略；行已存在时忽略，改为走 setApprovalPolicy。 */
+      /** The Approval Policy for the first write. The layer ignores it when the row exists; use setApprovalPolicy then. */
       approvalPolicy?: string;
     }>()
   )
@@ -126,7 +126,7 @@ const createSession = publicProcedure
       projectId,
       inboxId,
     } = input;
-    // 输入是类型而不是 schema，所以值域在这里守一次；写库之前就要拦住。
+    // The input is a type, not a schema, so check the values here, before the write.
     const approvalPolicy =
       input.approvalPolicy === undefined
         ? undefined

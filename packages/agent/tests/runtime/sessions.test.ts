@@ -176,7 +176,7 @@ describe(SessionLifecycle, () => {
       assistantStepId: "s1",
       retainedFromTurnId: "u1",
     });
-    // 分支是同一个姿态的延续：源会话存的是编辑，fork 出来的行也是编辑。
+    // A branch continues the same posture: the source session stores Edit, and the fork row stores Edit too.
     expect(savedSessions[0]).toMatchObject({ approvalPolicy: "edit" });
   });
 });
@@ -379,7 +379,7 @@ describe("SessionLifecycle startFromInbox guards", () => {
   });
 });
 
-describe("SessionLifecycle 的审批策略", () => {
+describe("approval policy on SessionLifecycle", () => {
   const lifecycleFor = (seen: BuildAgentInput[]) => {
     const { agent } = fakeAgent();
 
@@ -403,7 +403,7 @@ describe("SessionLifecycle 的审批策略", () => {
     });
   };
 
-  test("定时器唤起的运行收紧到标准策略", async () => {
+  test("a timer-driven run tightens to the standard policy", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({
@@ -414,7 +414,7 @@ describe("SessionLifecycle 的审批策略", () => {
     expect(seen[0]?.approvalPolicy).toBe("standard");
   });
 
-  test("后台任务的完成通知同样算无人值守", async () => {
+  test("a completion notice also counts as unattended", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({
@@ -425,7 +425,7 @@ describe("SessionLifecycle 的审批策略", () => {
     expect(seen[0]?.approvalPolicy).toBe("standard");
   });
 
-  test("用户消息让策略原样生效", async () => {
+  test("a user message keeps the stored policy", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({

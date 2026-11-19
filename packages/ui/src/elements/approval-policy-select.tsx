@@ -20,10 +20,10 @@ export type ApprovalPolicySelectProps = {
 };
 
 /**
- * 会话的审批策略选择器。
+ * The Approval Policy selector of a session.
  *
- * 它选的是「问不问」，不是「能不能」：能不能做仍由沙箱决定。所以文案里不
- * 出现「权限」；最宽的那一档单独写了提醒。
+ * It selects whether to ask, not whether the action can run: the Sandbox decides that.
+ * So the text never says "permission", and the loosest class has its own note.
  */
 export function ApprovalPolicySelect({
   approvalPolicy,

@@ -159,7 +159,7 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "Find the thing.",
-      // 父收紧到只读；子会话的行要抄这个值，不能落回标准。
+      // The parent tightens to Read-Only. The child row copies this value and must not fall back to Standard.
       approvalPolicy: "readonly",
     });
 
@@ -392,8 +392,8 @@ describe("subagent 继承审批函数", () => {
   });
 });
 
-describe("subagent 继承审批策略", () => {
-  test("子会话的行抄父的生效策略", async () => {
+describe("a subagent inherits the approval policy", () => {
+  test("the child row copies the effective policy of the parent", async () => {
     const store = new FakeStore();
 
     const { agent: child } = await createSubagent(
@@ -422,7 +422,7 @@ describe("subagent 继承审批策略", () => {
       }
     );
 
-    // 行上的值和 agent 上的值都要跟着父走：只抄一处，另一处就会静默回到标准策略。
+    // The row value and the agent value both follow the parent. A single copy leaves the other at Standard with no error.
     expect(store.saved.at(0)?.approvalPolicy).toBe("readonly");
     expect(child.approvalPolicy).toBe("readonly");
   });

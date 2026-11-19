@@ -5,11 +5,11 @@ import type { ApprovalClass } from "./approval-classes";
 import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
 
 /**
- * 策略 × 类别 → 回答。
+ * Policy × class to an answer.
  *
- * 缺席的一格表示「不表态」：交给宿主的规则和现有默认，不凭空多出询问。
- * standard 一行就是今天的行为，所以它取代 `DEFAULT_TOOL_APPROVAL_TOOLS`，
- * 询问集合只剩这一处权威。
+ * A missing cell means "no opinion": the host rules and the current defaults answer,
+ * so no new ask appears. The standard row is today's behavior, so it replaces
+ * `DEFAULT_TOOL_APPROVAL_TOOLS` and holds the only ask set.
  */
 const ANSWERS: Readonly<
   Record<
@@ -74,10 +74,10 @@ export function resolveServiceDecision(
 }
 
 /**
- * 没人看着的时候把策略收紧。
+ * Tighten the policy when nobody watches the Run.
  *
- * 编辑和全放行都意味着「自动放行改动」，半夜被定时器唤起来正是它们最不该
- * 生效的时刻。只读不用收：它本来就不放行任何东西。
+ * Edit and Unrestricted both let a change pass with no question, and a Timer at night
+ * is the worst moment for them. Read-Only needs no tightening: it allows nothing.
  */
 export function effectivePolicy(
   stored: ApprovalPolicy,
@@ -90,7 +90,7 @@ export function effectivePolicy(
   return DEFAULT_APPROVAL_POLICY;
 }
 
-/** 类别解析：内置查表，MCP 查注解。由组合根注入，agent 包不认识管理器。 */
+/** Class resolution: the built-in table, or MCP annotations. The composition root injects it; this package does not know the manager. */
 export type ApprovalClassResolver = (
   request: ToolCallHookEvent
 ) => ApprovalClass;

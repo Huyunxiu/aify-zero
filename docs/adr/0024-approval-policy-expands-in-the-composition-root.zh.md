@@ -1,5 +1,7 @@
 # 审批策略在组合根展开成决策，执行器不认识策略
 
+> 中文副本。以 [`0024-approval-policy-expands-in-the-composition-root.md`](./0024-approval-policy-expands-in-the-composition-root.md) 为准。
+
 会话加了一个审批策略（标准、编辑、只读、全放行），用户选择存在
 `session.approval_policy` 里。它在 `createSessionAgent` 里展开成
 `ToolApprovalPattern`，与宿主规则（MCP 注解）折叠之后交给执行器；执行器和判定

@@ -57,9 +57,9 @@ export type CreateSessionInput = {
   projectId?: string;
   metadata?: unknown;
   /**
-   * 会话的初始审批策略；只在插行时生效。
+   * The initial Approval Policy of the session. It applies only when the row is new.
    *
-   * 行已经存在时忽略：那多半是用户中途改过的，不能被一次重发覆盖。
+   * The layer ignores it when the row exists: the user probably changed it mid-session, and a resend must not overwrite it.
    */
   approvalPolicy?: ApprovalPolicy;
 };
@@ -104,9 +104,9 @@ export type BuildAgentInput = {
   /** 这次运行的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
   /**
-   * 这次运行生效的审批策略。
+   * The Approval Policy that applies to this Run.
    *
-   * 运行器已经按「有没有人在场」收紧过；宿主拿到的是生效值，不再自己判断。
+   * The runner already tightened it for attendance. The host receives the effective value and does not decide again.
    */
   approvalPolicy: ApprovalPolicy;
 };

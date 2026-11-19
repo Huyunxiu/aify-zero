@@ -137,10 +137,10 @@ export type SubagentParent = {
   /** 父的压缩策略；子 agent 继承它解析出的策略和摘要器。 */
   compaction?: CompactionStrategy;
   /**
-   * 父的生效审批策略。
+   * The effective Approval Policy of the parent.
    *
-   * 子会话的行是它自己的，缺这一列会静默回到标准策略；父收紧到标准时，
-   * 子会话也不该比父宽松。
+   * The row of a child session is its own, and a missing value falls back to Standard
+   * with no error. When the parent tightens to Standard, the child must not be looser.
    */
   approvalPolicy: ApprovalPolicy;
 };
@@ -191,7 +191,7 @@ export async function resolveSubagentSession(
     prompt: string;
     /** 父会话的项目归属；子会话跟着父走，列表按项目过滤时才不会漏掉它。 */
     projectId?: string;
-    /** 父的生效策略；子会话的行要抄它，否则回到标准策略。 */
+    /** The effective policy of the parent. The child row copies it, or it falls back to Standard. */
     approvalPolicy: ApprovalPolicy;
   }
 ): Promise<{ sessionId: string; turns: AgentTurn<AgentToolSet>[] }> {

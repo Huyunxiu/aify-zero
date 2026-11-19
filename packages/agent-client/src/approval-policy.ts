@@ -1,15 +1,15 @@
 /**
- * 一个会话的询问姿态。
+ * The ask posture of one session.
  *
- * 客户端选、服务端存、agent 解释：值域归三方共用，所以放在协议包里。它只
- * 决定「问不问」；能不能做仍由沙箱决定。
+ * The client selects it, the server stores it, the agent reads it: three parties
+ * share the values, so they live in the protocol package. It answers only "do we ask"; the Sandbox decides what is possible.
  */
 export type ApprovalPolicy = "standard" | "edit" | "readonly" | "unrestricted";
 
-/** 没人选过时用它：和引入策略之前的行为一致。界面、库、判定都认这一个值。 */
+/** Use it when nobody selected a value: same behavior as before the policy. The UI, the storage, and the decision all read this value. */
 export const DEFAULT_APPROVAL_POLICY: ApprovalPolicy = "standard";
 
-/** 从严到从宽。界面按这个顺序列，最不容易出事的一档在最上面。 */
+/** From the strictest to the loosest. The UI lists them in this order, with the safest class on top. */
 export const APPROVAL_POLICIES = [
   "readonly",
   "standard",

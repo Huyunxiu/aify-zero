@@ -58,14 +58,14 @@ function createToolApprovalPattern(input: {
 }): ToolApprovalPattern {
   return async (request) => {
     const toolClass = input.resolveClass(request);
-    // 宿主那一侧可能抛：`evaluateToolApproval` 把抛错当弃权，坏规则不中断回合。
+    // The host side can throw: `evaluateToolApproval` treats a throw as no opinion, so a bad rule does not stop the Turn.
     const host = await evaluateToolApproval(input.host, request);
 
     return resolveServiceDecision(host, policyAnswer(input.policy, toolClass));
   };
 }
 
-/** 不知道注解时按内置表分类；MCP 工具会落到 unknown，策略对它不表态。 */
+/** Classify by the built-in table when no annotation is known. An MCP Tool falls to unknown, and the policy has no opinion. */
 const defaultResolveApprovalClass: ApprovalClassResolver = (request) =>
   classifyTool(request.toolName);
 
@@ -119,21 +119,21 @@ export interface SessionAgentOptions {
   /**
    * 宿主自己的工具审批函数：按调用入参决定 deny / ask / allow。
    *
-   * 返回 undefined 表示没有意见；此时策略按工具类别回答。子 agent 继承
-   * 组合后的函数。
+   * It returns undefined when it has no opinion; then the policy answers by Tool class. A
+   * child agent inherits the composed function.
    */
   toolApprovalPattern?: ToolApprovalPattern;
   /**
-   * 会话的审批策略；省略时用 `standard`，即引入策略之前的行为。
+   * The Approval Policy of the session; the default is `standard`, the behavior before the policy.
    *
-   * 它只决定「问不问」：改动类要不要问、命令要不要拒。能不能做仍归沙箱。
+   * It decides only whether to ask: an ask for a change class, a refusal for a command. The Sandbox decides feasibility.
    */
   approvalPolicy?: ApprovalPolicy;
   /**
-   * 工具名到审批类别的解析；省略时只查内置表。
+   * The resolution from Tool name to Approval Class; by default it reads the built-in table only.
    *
-   * 宿主知道自己的工具带什么注解（MCP 的 readOnly / destructive），所以由它
-   * 注入；不注入时 MCP 工具落到 unknown，策略对它不表态。
+   * The host knows the annotations of its own Tools (MCP's readOnly / destructive), so it
+   * injects this. Without it an MCP Tool falls to unknown, and the policy has no opinion.
    */
   resolveApprovalClass?: ApprovalClassResolver;
   /** 系统提示的起点；子 agent 说明会追加在后面。 */
@@ -210,7 +210,7 @@ export async function createSessionAgent(
   });
 
   try {
-    // 宿主规则和策略合成一个审批函数；扩展不再声明审批。
+    // The host rules and the policy combine into one approval function. An Extension no longer states approval.
     agent.registerToolApprovalPattern(
       createToolApprovalPattern({
         host: options.toolApprovalPattern,

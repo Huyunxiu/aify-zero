@@ -1,40 +1,60 @@
 # Glossary Map
 
-本仓库是多上下文布局。每个术语只在一个上下文里定义，其余上下文引用同一套说法。
+This repository uses a multi-context layout. Each term has one definition in one context,
+and the other contexts use the same word.
 
 ## Contexts
 
-- [packages/ui](./packages/ui/GLOSSARY.md)：会话面板与其中的各个视图（文件、改动、终端）。
-- [packages/agent](./packages/agent/GLOSSARY.md)：会话里的模型循环，以及进入循环的工具、MCP 服务器和扩展。
-- [packages/server](./packages/server/GLOSSARY.md)：设置、项目、会话行和凭据；模型与供应商在这里定义；浏览器怎么拿到本机 API 的凭据。
-- [packages/db](./packages/db/GLOSSARY.md)：表结构与它的版本历史；数据库语境下的迁移、迁移历史、基线按这里的说法用。
-- [packages/sandbox](./packages/sandbox/GLOSSARY.md)：工具在哪跑、按什么读写文件；沙箱与沙箱适配器的区别只在这里定义。
+- [packages/ui](./packages/ui/GLOSSARY.md): the session panel and its views (files, changes,
+  terminal).
+- [packages/agent](./packages/agent/GLOSSARY.md): the model loop in a session, and the
+  tools, MCP servers, and extensions that enter that loop.
+- [packages/server](./packages/server/GLOSSARY.md): settings, projects, session rows, and
+  credentials; this file defines the model and the provider; how the browser gets the
+  credential of the local API.
+- [packages/db](./packages/db/GLOSSARY.md): the table structure and its version history;
+  migration, migration history, and baseline in the database context follow this file.
+- [packages/sandbox](./packages/sandbox/GLOSSARY.md): where a tool runs, and which files it
+  reads and writes; only this file defines the difference between the sandbox and the
+  sandbox adapter.
 
 ## Relationships
 
-- **packages/ui ↔ packages/server**：服务端计算改动与基线，用的是同一套词；词表只写在
-  `packages/ui/GLOSSARY.md`，服务端不另立说法。
-  （注意：这里的「基线」指改动对比的基线，和 `packages/db` 里数据库的「基线」不是一回事。）
-- **packages/agent → packages/ui**：会话记录、工具和 MCP 工具的名字出现在会话面板里，面板
-  用同一套说法显示它们，不另起词。「审批策略」按 `packages/agent/GLOSSARY.md` 的说法用，
-  界面不另立「权限模式」。
-- **packages/ui ↔ packages/agent-client ↔ packages/agent**：审批策略的值域由
-  `packages/agent-client` 定义；界面拿它做选项，服务端拿它守入参，agent 包拿它做
-  判定。`packages/db` 不依赖协议包，那一列保留同样的字面量并在注释里指明对齐对象。
-- **packages/agent ↔ packages/server**：MCP 的「授权令牌」属于第三方服务器；本机 API
-  的「访问令牌」和浏览器的「登录态」是另一回事，不要混用这两个说法。
-- **packages/server ↔ packages/agent**：运行器启动运行，运行在会话里跑；「回合」「会话记录」
-  「运行」「收件箱」「待办项」「发件箱」「投递」「运行器」「暂停」都按
-  `packages/agent/GLOSSARY.md` 的说法用。收件箱是入站的那一侧，不要和发件箱混用。
-- **apps/desktop ← packages/agent**：桌面只做一件事——把一次「投递」变成一条系统通知。
-  它没有自己的词表，也不把发件项叫「通知」；「通知」留给 `packages/agent` 的「完成通知」。
-- **packages/db ← packages/server**：server 启动时应用迁移，失败就不提供服务；「迁移」
-  「迁移历史」只按 `packages/db/GLOSSARY.md` 的说法用，「基线」在数据库语境下也按它、
-  在改动对比语境下按 `packages/ui/GLOSSARY.md` 的说法用。
-- **packages/server → packages/agent**：「时区」只在 `packages/server/GLOSSARY.md` 里定义；
-  日程的规则带一份副本，写进去之后不再跟着设置走。
-- **packages/agent → packages/sandbox**：工具只认沙箱，不认具体环境；沙箱缺少某项能力时，
-  对应的工具不注册，而不是注册了再报错。
-- **packages/sandbox ↔ packages/server**：server 决定一个会话用哪个适配器、什么时候复用；
-  「沙箱」「沙箱适配器」只按 `packages/sandbox/GLOSSARY.md` 的说法用，不叫「提供方」——
-  那个词在 `packages/server/GLOSSARY.md` 里已经归模型。
+- **packages/ui ↔ packages/server**: the server counts changes and baselines with the same
+  words. The vocabulary is only in `packages/ui/GLOSSARY.md`, and the server does not make
+  its own word. (Note: "baseline" here means the baseline of a change comparison. It is not
+  the database "baseline" in `packages/db`.)
+- **packages/agent → packages/ui**: the names of the transcript, the tools, and the MCP tools
+  appear in the session panel. The panel shows them with the same words and does not make a
+  new word. "Approval Policy" follows `packages/agent/GLOSSARY.md`, and the interface does
+  not make a "permission mode".
+- **packages/ui ↔ packages/agent-client ↔ packages/agent**: `packages/agent-client` defines
+  the value set of the approval policy. The interface uses this set for its options, the
+  server uses it to guard the input, and the agent package uses it to decide.
+  `packages/db` does not depend on the protocol package: that column keeps the same literals,
+  and its comment names the object that it aligns with.
+- **packages/agent ↔ packages/server**: the "authorization token" of MCP belongs to a
+  third-party server. The "access token" of the local API and the "login state" of the
+  browser are different things. Do not mix these words.
+- **packages/server ↔ packages/agent**: the runner starts a run, and the run executes in a
+  session. Turn, transcript, run, inbox, inbox item, outbox, delivery, runner, and paused all
+  follow `packages/agent/GLOSSARY.md`. The inbox is the inbound side; do not mix it with the
+  outbox.
+- **apps/desktop ← packages/agent**: the desktop does one thing: it changes one "delivery"
+  into one system notification. It has no vocabulary of its own, and it does not call an
+  outbox item a "notification". "Notification" stays with the "completion notice" of
+  `packages/agent`.
+- **packages/db ← packages/server**: the server applies the migrations at startup, and it
+  does not serve if a migration fails. "Migration" and "migration history" follow only
+  `packages/db/GLOSSARY.md`. "Baseline" follows that file in the database context, and
+  `packages/ui/GLOSSARY.md` in the change-comparison context.
+- **packages/server → packages/agent**: "time zone" has its definition only in
+  `packages/server/GLOSSARY.md`. The rule of a schedule holds a copy, and that copy does not
+  follow the setting after it is written.
+- **packages/agent → packages/sandbox**: a tool knows only the sandbox, not a specific
+  environment. If the sandbox lacks a capability, the matching tool does not register; it
+  does not register and then report an error.
+- **packages/sandbox ↔ packages/server**: the server decides which adapter a session uses,
+  and when it reuses that adapter. "Sandbox" and "sandbox adapter" follow only
+  `packages/sandbox/GLOSSARY.md`, and they are not "provider": that word already belongs to
+  the model in `packages/server/GLOSSARY.md`.

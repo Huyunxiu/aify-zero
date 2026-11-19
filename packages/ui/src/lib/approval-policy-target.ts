@@ -1,11 +1,11 @@
 /**
- * 改策略要写到哪一行上。
+ * Tells which row a policy change writes to.
  *
- * 会话已经有 id 时就是它。首页路由没有 id，但第一条消息落库之后行已经在了，
- * 那时改策略必须写到刚建出来的那一行，否则界面显示的和库里存的分叉，下一次
- * 运行还会按旧策略走。
+ * It is the session when the session has an id. The home route has no id, but the row
+ * exists after the first message is stored. A change then must write to that new row, or
+ * the UI and the database disagree, and the next Run uses the old policy.
  *
- * 返回 undefined 表示行还不存在：首次消息会把策略一起带上去，这里不发请求。
+ * It returns undefined while the row does not exist: the first message carries the policy, and this code sends no request.
  */
 export function approvalPolicyTarget(input: {
   sessionId: string | undefined;
