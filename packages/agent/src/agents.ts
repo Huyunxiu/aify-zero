@@ -6,6 +6,8 @@ import type { Tool, ToolSet } from "ai";
 
 import type { AgentContext } from "./agent-context";
 import type { AgentSession } from "./agent-session";
+import { DEFAULT_APPROVAL_POLICY } from "./approval-policy";
+import type { ApprovalPolicy } from "./approval-policy";
 import { Capabilities } from "./extensions/capabilities";
 import type {
   EventWriter,
@@ -61,6 +63,13 @@ export type AgentOptions = {
   model: ModelRef;
   modelEffort?: ModelEffort;
   /**
+   * 这个 agent 的审批档位。
+   *
+   * 组合根已经按是否有人在场收紧过，这里存的是生效值；子会话抄它，才会和
+   * 父会话同一个姿态。
+   */
+  approvalPolicy?: ApprovalPolicy;
+  /**
    * 这个 agent 所属的外部 abort scope，由派生它的父传进来。父停时它跟着停；和它
    * 自己的 `abort()` 是并集而不是替代，所以子 agent 仍然能被单独停掉。
    */
@@ -90,6 +99,8 @@ export type AgentOptions = {
 export class Agent {
   name: string;
   sessionId: string;
+  /** 生效的审批档位；子会话抄它。 */
+  approvalPolicy: ApprovalPolicy;
   instructions?: string;
   tools: ToolSet;
   /** 工具名到暴露方式，和 `tools` 同生共死：注册写入，注销删除。 */
@@ -137,6 +148,7 @@ export class Agent {
   constructor(options: AgentOptions) {
     this.name = options.name;
     this.sessionId = options.sessionId;
+    this.approvalPolicy = options.approvalPolicy ?? DEFAULT_APPROVAL_POLICY;
     this.instructions = options.instructions;
     this.tools = options.tools ?? {};
     this.toolExposure = new Map(options.toolExposure);

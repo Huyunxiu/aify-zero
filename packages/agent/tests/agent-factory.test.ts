@@ -263,3 +263,86 @@ describe(createSessionAgent, () => {
     expect(disposed).toBeTruthy();
   });
 });
+
+describe("approval policy", () => {
+  test("edit approves a mutation and still asks the interview", async () => {
+    const agent = await makeAgent({ approvalPolicy: "edit" });
+
+    await expect(decide(agent, "write-file")).resolves.toStrictEqual({
+      decision: "allow",
+    });
+    await expect(decide(agent, "questionnaire")).resolves.toStrictEqual({
+      decision: "ask",
+    });
+    await expect(decide(agent, "read-file")).resolves.toBeUndefined();
+  });
+
+  test("read-only denies a mutation and a command", async () => {
+    const agent = await makeAgent({ approvalPolicy: "readonly" });
+
+    await expect(decide(agent, "write-file")).resolves.toStrictEqual({
+      decision: "deny",
+    });
+    await expect(decide(agent, "bash")).resolves.toStrictEqual({
+      decision: "deny",
+    });
+    await expect(decide(agent, "read-file")).resolves.toBeUndefined();
+  });
+
+  test("unrestricted relaxes the host's ask but not its denial", async () => {
+    const agent = await makeAgent({
+      approvalPolicy: "unrestricted",
+      toolApprovalPattern: ({ toolName }) => {
+        if (toolName === "host-ask") {
+          return { decision: "ask" };
+        }
+
+        return toolName === "host-deny"
+          ? { decision: "deny", reason: "blocked" }
+          : undefined;
+      },
+    });
+
+    await expect(decide(agent, "host-ask")).resolves.toStrictEqual({
+      decision: "allow",
+    });
+    await expect(decide(agent, "host-deny")).resolves.toStrictEqual({
+      decision: "deny",
+      reason: "blocked",
+    });
+  });
+
+  test("spawning a subagent is not an interview", async () => {
+    const agent = await makeAgent();
+
+    await expect(decide(agent, "task")).resolves.toBeUndefined();
+  });
+
+  test("unrestricted keeps asking when the server warns it is destructive", async () => {
+    const destructive = "mcp__linear__delete_issue";
+    const agent = await makeAgent({
+      approvalPolicy: "unrestricted",
+      toolApprovalPattern: ({ toolName }) =>
+        toolName === destructive ? { decision: "ask" } : undefined,
+      resolveApprovalClass: ({ toolName }) =>
+        toolName === destructive ? "mutate" : "unknown",
+    });
+
+    // 全放行放松的是「不知道它做什么」的询问；服务器自己说破坏性，仍然要问。
+    await expect(decide(agent, destructive)).resolves.toStrictEqual({
+      decision: "ask",
+    });
+  });
+
+  test("a read-only session refuses a call the host allowed", async () => {
+    const agent = await makeAgent({
+      approvalPolicy: "readonly",
+      toolApprovalPattern: ({ toolName }) =>
+        toolName === "write-file" ? { decision: "allow" } : undefined,
+    });
+
+    await expect(decide(agent, "write-file")).resolves.toStrictEqual({
+      decision: "deny",
+    });
+  });
+});

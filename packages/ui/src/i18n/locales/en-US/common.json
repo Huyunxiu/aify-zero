@@ -210,6 +210,21 @@
   "promptCommand": {
     "compact": "compact"
   },
+  "approvalPolicy": {
+    "label": "Approvals",
+    "values": {
+      "readonly": "Read-only",
+      "standard": "Standard",
+      "edit": "Edit",
+      "unrestricted": "Unrestricted"
+    },
+    "hints": {
+      "readonly": "Denies writes and commands; reads still work",
+      "standard": "Asks before every change",
+      "edit": "Applies changes without asking; interviews still ask",
+      "unrestricted": "Never asks; use it only while watching"
+    }
+  },
   "compaction": {
     "title": "Context compacted",
     "trigger": {

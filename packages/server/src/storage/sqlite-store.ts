@@ -1,3 +1,4 @@
+import type { ApprovalPolicy } from "@workspace/agent";
 import type {
   AgentSteeringStep,
   AgentTurn,
@@ -465,6 +466,17 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
     const result = await db
       .update(session_table)
       .set({ title })
+      .where(eq(session_table.id, sessionId));
+    return result.rowsAffected;
+  }
+
+  async setSessionApprovalPolicy(
+    sessionId: string,
+    policy: ApprovalPolicy
+  ): Promise<number> {
+    const result = await db
+      .update(session_table)
+      .set({ approvalPolicy: policy })
       .where(eq(session_table.id, sessionId));
     return result.rowsAffected;
   }

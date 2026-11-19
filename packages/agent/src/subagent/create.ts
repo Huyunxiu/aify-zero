@@ -10,6 +10,7 @@ import type { ToolSet } from "ai";
 import { AgentContext } from "../agent-context";
 import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
+import type { ApprovalPolicy } from "../approval-policy";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { ModelTargetResolver } from "../kernel/model-gateway";
 import type { AgentStore } from "../storage";
@@ -135,6 +136,13 @@ export type SubagentParent = {
   toolApprovalPattern?: ToolApprovalPattern;
   /** 父的压缩策略；子 agent 继承它解析出的策略和摘要器。 */
   compaction?: CompactionStrategy;
+  /**
+   * 父的生效审批档位。
+   *
+   * 子会话的行是它自己的，缺这一列会静默回到标准档；父收紧到标准时，
+   * 子会话也不该比父宽松。
+   */
+  approvalPolicy: ApprovalPolicy;
 };
 
 export type CreateSubagentOptions = {
@@ -175,6 +183,7 @@ export async function resolveSubagentSession(
     description,
     prompt,
     projectId,
+    approvalPolicy,
   }: {
     parentSessionId: string;
     toolCallId: string;
@@ -182,6 +191,8 @@ export async function resolveSubagentSession(
     prompt: string;
     /** 父会话的项目归属；子会话跟着父走，列表按项目过滤时才不会漏掉它。 */
     projectId?: string;
+    /** 父的生效档位；子会话的行要抄它，否则回到标准档。 */
+    approvalPolicy: ApprovalPolicy;
   }
 ): Promise<{ sessionId: string; turns: AgentTurn<AgentToolSet>[] }> {
   const existing = await store.findSessionByParentToolCall({
@@ -213,6 +224,7 @@ export async function resolveSubagentSession(
     parentSessionId,
     parentToolCallId: toolCallId,
     projectId,
+    approvalPolicy,
   });
 
   return { sessionId, turns: [buildPromptTurn(prompt)] };
@@ -270,6 +282,7 @@ export async function createSubagent(
       description,
       prompt,
       projectId: parent.context.projectId,
+      approvalPolicy: parent.approvalPolicy,
     }
   );
   const session = new AgentSession({ turns });
@@ -305,6 +318,7 @@ export async function createSubagent(
   const agent = new Agent({
     name: `subagent:${definition.name}`,
     sessionId: childSessionId,
+    approvalPolicy: parent.approvalPolicy,
     instructions,
     context,
     session,

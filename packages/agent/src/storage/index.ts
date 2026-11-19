@@ -6,6 +6,7 @@ import type {
   InboxItem,
 } from "@workspace/agent-client";
 
+import type { ApprovalPolicy } from "../approval-policy";
 import type {
   SessionEndStatus,
   SessionKind,
@@ -86,6 +87,12 @@ export interface AgentStore {
   getSessionById(sessionId: string): Promise<SessionRecord | null>;
 
   updateSessionById(sessionId: string, title: string): Promise<number>;
+
+  /** 改一个会话的审批档位；返回受影响的行数。 */
+  setSessionApprovalPolicy(
+    sessionId: string,
+    policy: ApprovalPolicy
+  ): Promise<number>;
 
   /**
    * 读会话行，不过滤删除。

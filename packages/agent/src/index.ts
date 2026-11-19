@@ -24,6 +24,8 @@ export * from "./session-events";
 export * from "./subagent";
 export * from "./timers";
 export * from "./utils/time-zone";
+export * from "./approval-policy";
+export * from "./approval-classes";
 export * from "./tool-approval";
 export * from "./runtime";
 export type * from "./storage";

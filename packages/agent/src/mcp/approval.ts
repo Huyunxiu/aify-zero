@@ -1,3 +1,4 @@
+import { classifyAnnotations } from "../approval-classes";
 import type { ToolApprovalPattern } from "../tool-approval";
 import { splitMcpToolName } from "./config";
 import type { McpManager } from "./manager";
@@ -31,13 +32,15 @@ export function createMcpToolApprovalPattern(
     }
 
     const { server, definition } = resolved;
-    const { annotations } = definition;
+    const toolClass = classifyAnnotations(definition.annotations);
 
-    if (annotations?.destructiveHint === true) {
+    // 类别只在这里判一次：注解的读法归 `approval-classes`，档位也拿同一个
+    // 结果回答。两处各写一遍「破坏性优先于只读」迟早会分叉。
+    if (toolClass === "mutate") {
       return { decision: "ask" };
     }
 
-    if (annotations?.readOnlyHint === true) {
+    if (toolClass === "read") {
       return { decision: "allow" };
     }
 

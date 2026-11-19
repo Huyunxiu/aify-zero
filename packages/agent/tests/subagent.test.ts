@@ -131,6 +131,7 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "Find the thing.",
+      approvalPolicy: "standard",
     });
 
     expect(store.saved).toHaveLength(1);
@@ -162,6 +163,7 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "Find the thing.",
+      approvalPolicy: "standard",
     });
 
     expect(sessionId).toBe(existingId);
@@ -181,6 +183,7 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "Find the thing.",
+      approvalPolicy: "standard",
     });
 
     // 进程恰好死在"写了行"和"写了第一轮"之间的场景：喂一个空 transcript
@@ -198,12 +201,14 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "First.",
+      approvalPolicy: "standard",
     });
     const second = await resolveSubagentSession(asStore(store), {
       parentSessionId: "parent-1",
       toolCallId: "call-2",
       description: taskLabel,
       prompt: "Second.",
+      approvalPolicy: "standard",
     });
 
     expect(first.sessionId).not.toBe(second.sessionId);
@@ -294,6 +299,7 @@ describe("subagent 的 abort scope", () => {
         resolveModel: parent.resolveModel,
         sessionId: parent.sessionId,
         toolCallId: "call-1",
+        approvalPolicy: parent.approvalPolicy,
       },
       {
         definition,
@@ -355,6 +361,7 @@ describe("subagent 继承审批函数", () => {
         resolveModel: testResolveModel,
         sessionId: "parent-session",
         toolCallId: "call-1",
+        approvalPolicy: "standard",
         toolApprovalPattern: askPattern,
       },
       {
@@ -366,6 +373,42 @@ describe("subagent 继承审批函数", () => {
     );
 
     expect(child.toolApprovalPattern).toBe(askPattern);
+  });
+});
+
+describe("subagent 继承审批档位", () => {
+  test("子会话的行抄父的生效档位", async () => {
+    const store = new FakeStore();
+
+    const { agent: child } = await createSubagent(
+      {
+        context: new AgentContext({
+          sandbox: testSandbox("/tmp", "/tmp/sessions/parent-session"),
+
+          sessionId: "parent-session",
+          projectDirs: ["/tmp"],
+          sessionDir: "/tmp/sessions/parent-session",
+          model: testModel(),
+        }),
+        tools: {},
+        toolExposure: new Map(),
+        toolRoute: new Map(),
+        resolveModel: testResolveModel,
+        sessionId: "parent-session",
+        toolCallId: "call-1",
+        approvalPolicy: "readonly",
+      },
+      {
+        definition,
+        prompt: "Find the thing.",
+        store: asStore(store),
+        description: taskLabel,
+      }
+    );
+
+    // 行上的值和 agent 上的值都要跟着父走：只抄一处，另一处就会静默回到标准档。
+    expect(store.saved.at(0)?.approvalPolicy).toBe("readonly");
+    expect(child.approvalPolicy).toBe("readonly");
   });
 });
 
@@ -389,6 +432,7 @@ describe("subagent 继承转调入口", () => {
         resolveModel: testResolveModel,
         sessionId: "parent-session",
         toolCallId: "call-1",
+        approvalPolicy: "standard",
       },
       {
         definition,
@@ -443,6 +487,7 @@ describe("subagent 继承项目说明", () => {
         resolveModel: parent.resolveModel,
         sessionId: parent.sessionId,
         toolCallId: "call-1",
+        approvalPolicy: parent.approvalPolicy,
       },
       {
         definition,

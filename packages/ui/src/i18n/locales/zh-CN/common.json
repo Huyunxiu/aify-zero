@@ -210,6 +210,21 @@
   "promptCommand": {
     "compact": "压缩"
   },
+  "approvalPolicy": {
+    "label": "审批",
+    "values": {
+      "readonly": "只读",
+      "standard": "标准",
+      "edit": "编辑",
+      "unrestricted": "全放行"
+    },
+    "hints": {
+      "readonly": "拒绝写入与命令，读取照常",
+      "standard": "改动类工具每次询问",
+      "edit": "改动类直接放行，交互仍然问你",
+      "unrestricted": "什么都不问；只建议在盯着的会话里用"
+    }
+  },
   "compaction": {
     "title": "上下文已压缩",
     "trigger": {

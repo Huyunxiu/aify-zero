@@ -2,6 +2,8 @@ import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  APPROVAL_POLICIES,
+  DEFAULT_APPROVAL_POLICY,
   generateSessionId,
   generateStepId,
   generateTurnId,
@@ -14,10 +16,12 @@ import type {
   AgentTurn,
   AgentUserPart,
   AgentUserTurn,
+  ApprovalPolicy,
 } from "@workspace/agent-client";
 import type { ForkSessionType } from "@workspace/server/routers/session/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
+import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
 import type { LanguageModelUsage } from "ai";
 import { MessageSquareIcon, PanelRightIcon, XIcon } from "lucide-react";
@@ -77,6 +81,7 @@ import type { SubmitMode } from "../hooks/use-agent-session";
 import { flattenModels, parseModelRef, sameModel } from "../lib/models";
 import { client, queryClient } from "../lib/orpc";
 import { cn } from "../lib/utils";
+import { ApprovalPolicySelect } from "./approval-policy-select";
 import { AssistantMessage } from "./assistant-message";
 import { CompactionMessage } from "./compaction-message";
 import { InboxDock } from "./inbox-dock";
@@ -483,8 +488,6 @@ export function Session({
     }
   }, [getSessionQuery.data?.session, sessionProjectId]);
 
-  const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
-
   // The desktop home route renders the session with no id. `useChat` used to
   // mint one; keep doing that, and keep it stable across renders so the hook's
   // store is not rebuilt under the conversation.
@@ -492,6 +495,50 @@ export function Session({
     () => sessionId ?? generateSessionId(),
     [sessionId]
   );
+
+  // 档位和项目不同：它可以中途改，改的是下一次运行。会话行的值仍是权威，
+  // 页面进入时以行为准；新会话没有行，先按标准档攒在本地，首次消息带上去。
+  const [approvalPolicy, setApprovalPolicy] = React.useState<ApprovalPolicy>(
+    DEFAULT_APPROVAL_POLICY
+  );
+  // 首页路由没有会话 id，但第一条消息落库之后行就有了。存下来，后续改档位
+  // 才能写到那一行上，而不是等到刷新才生效。
+  const rowSavedRef = React.useRef(false);
+  const sessionApprovalPolicy = getSessionQuery.data?.session?.approvalPolicy;
+
+  React.useEffect(() => {
+    if (sessionApprovalPolicy) {
+      setApprovalPolicy(sessionApprovalPolicy);
+    }
+  }, [sessionApprovalPolicy]);
+
+  const handleApprovalPolicyChange = React.useCallback(
+    (next: ApprovalPolicy) => {
+      setApprovalPolicy(next);
+      // 行还没建出来时不发请求：首次消息会把档位一起带上去。
+      if (!sessionId) {
+        return;
+      }
+
+      const target =
+        sessionId ?? (rowSavedRef.current ? sessionKey : undefined);
+      if (!target) {
+        return;
+      }
+
+      void client.session
+        .setApprovalPolicy({ sessionId: target, approvalPolicy: next })
+        .then(() =>
+          queryClient.invalidateQueries({ queryKey: ["getSession", sessionId] })
+        )
+        .catch((error: unknown) => {
+          logger.warn("[approval-policy] failed to save the tier", error);
+        });
+    },
+    [approvalPolicy, sessionId, sessionKey]
+  );
+
+  const [isEditorEmpty, setIsEditorEmpty] = React.useState(true);
 
   const onEvent = React.useCallback(
     (event: AgentStreamEvent<AgentToolSet>) => {
@@ -533,6 +580,11 @@ export function Session({
       // 那时还没选项目。hook 只把 payload 当不透明数据，所以这里收窄再传。
       const projectId =
         typeof options.projectId === "string" ? options.projectId : undefined;
+      // 档位也走 payload：hook 的 store 在挂载时就建好了，闭包里读不到后来
+      // 选的档位。值域在这里收窄一次，越界的一律当没带。
+      const requestedPolicy = APPROVAL_POLICIES.find(
+        (policy) => policy === options.approvalPolicy
+      );
       // 排队消息领取时带上 Inbox 行 id：服务端在保存 user turn 的同一事务里
       // 删除它，重复领取会失败而不是写出重复 turn。
       const inboxId =
@@ -546,6 +598,8 @@ export function Session({
           modelEffort: options.modelEffort as string,
           // 项目只在会话首次落库时写入；省略它，会话就落到默认项目。
           projectId,
+          // 档位同样只在插行时生效：行已存在时以 setApprovalPolicy 为准。
+          approvalPolicy: requestedPolicy,
           // An answer to a held call travels with the turn it answers. Its
           // presence is what makes the new stream a resumption: the server runs
           // the calls it names before asking the model anything again.
@@ -554,6 +608,7 @@ export function Session({
         },
         { signal: options.abortSignal }
       );
+      rowSavedRef.current = true;
       // 收到的只是「已落库」：这一次运行什么时候开始，由服务端的运行器决定，
       // 页面从下面那条事件流上看到 `run.start` 就知道。
     },
@@ -899,6 +954,7 @@ export function Session({
           model,
           modelEffort: selectedModelEffort,
           projectId: selectedProjectId,
+          approvalPolicy,
         },
       });
     } catch (error) {
@@ -1213,6 +1269,12 @@ export function Session({
                                   modelEffort={selectedModelEffort}
                                   onModelChange={handleModelChange}
                                   onModelEffortChange={handleModelEffortChange}
+                                />
+                                <ApprovalPolicySelect
+                                  approvalPolicy={approvalPolicy}
+                                  onApprovalPolicyChange={
+                                    handleApprovalPolicyChange
+                                  }
                                 />
                               </PromptInputTools>
                               <div className="flex items-center gap-2">

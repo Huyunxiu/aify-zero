@@ -120,6 +120,13 @@
       "when": 1795015770432,
       "tag": "0016_session_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1795091416675,
+      "tag": "0017_session_approval_policy",
+      "breakpoints": true
     }
   ]
 }

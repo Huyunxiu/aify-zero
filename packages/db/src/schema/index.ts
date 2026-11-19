@@ -108,6 +108,20 @@ export const session_table = sqliteTable(
     })
       .notNull()
       .default("idle"),
+    /**
+     * 这个会话的审批档位。
+     *
+     * 值域与 `@workspace/agent-client` 的 `APPROVAL_POLICIES` 对应；数据库层
+     * 不依赖协议包，这里保留字面量，改值域时两处一起改。
+     *
+     * 它只决定「问不问」：谁该被询问。能不能做仍然由沙箱决定，所以不要
+     * 拿它当权限模型。无人值守的运行会在装配时收紧，库里始终存用户选的。
+     */
+    approvalPolicy: text("approval_policy", {
+      enum: ["standard", "edit", "readonly", "unrestricted"],
+    })
+      .notNull()
+      .default("standard"),
     forkedFromSessionId: text("forked_from_session_id"),
     forkedFromMessageId: text("forked_from_message_id"),
     /**

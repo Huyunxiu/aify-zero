@@ -1,6 +1,8 @@
 import { mkdirSync } from "node:fs";
 
 import {
+  classifyAnnotations,
+  classifyTool,
   createMcpToolApprovalPattern,
   createSessionAgent,
   ContextExtension,
@@ -12,10 +14,14 @@ import {
 } from "@workspace/agent";
 import type {
   Agent,
+  ApprovalPolicy,
   BuildAgentInput,
   JobRegistry,
+  McpManager,
   SteeringSignal,
+  ApprovalClassResolver,
 } from "@workspace/agent";
+import { splitMcpToolName } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
 
 import { getSessionDir } from "../config";
@@ -43,6 +49,13 @@ export interface BuildSessionAgentInput {
   jobs?: JobRegistry;
   /** 运行器的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
+  /**
+   * 这次运行生效的审批档位。
+   *
+   * 运行器已经按是否有人在场收紧过，这里不再判断；无人值守收紧只发生在
+   * 运行器，那里才知道一次运行是被谁唤起的。
+   */
+  approvalPolicy: ApprovalPolicy;
 }
 
 /**
@@ -61,6 +74,7 @@ export async function buildSessionAgent({
   streams,
   jobs,
   steering,
+  approvalPolicy,
 }: BuildSessionAgentInput): Promise<Agent> {
   // 会话目录先建出来：Environment 提示会把路径告诉模型，模型可能直接往里
   // 写文件，不该让它先自己 mkdir。
@@ -108,6 +122,9 @@ export async function buildSessionAgent({
     sandbox,
     // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。
     toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),
+    approvalPolicy,
+    // 类别解析归宿主：注解挂在 MCP 工具表里，agent 包不认识管理器。
+    resolveApprovalClass: resolveApprovalClass(mcpManager),
     extensions: [
       new McpExtension({
         id: "mcp",
@@ -124,4 +141,23 @@ export async function buildSessionAgent({
       }),
     ],
   });
+}
+
+/**
+ * 把一次调用的工具名映射成审批类别。
+ *
+ * 内置工具查表；MCP 工具查服务器给的注解。查不到注解不代表安全，所以落到
+ * unknown，档位对它不表态，MCP 那条规则照旧会问。
+ */
+function resolveApprovalClass(mcpManager: McpManager): ApprovalClassResolver {
+  return (request) => {
+    const parsed = splitMcpToolName(request.toolName);
+    const resolved = parsed
+      ? mcpManager.resolveTool(request.toolName)
+      : undefined;
+
+    return resolved
+      ? classifyAnnotations(resolved.definition.annotations)
+      : classifyTool(request.toolName);
+  };
 }

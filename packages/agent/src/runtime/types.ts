@@ -6,6 +6,7 @@ import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 
 import type { AgentSession } from "../agent-session";
+import type { ApprovalPolicy } from "../approval-policy";
 import type { InboxMode } from "../inbox/delivery";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
@@ -55,6 +56,12 @@ export type CreateSessionInput = {
   title?: string;
   projectId?: string;
   metadata?: unknown;
+  /**
+   * 会话的初始审批档位；只在插行时生效。
+   *
+   * 行已经存在时忽略：那多半是用户中途改过的，不能被一次重发覆盖。
+   */
+  approvalPolicy?: ApprovalPolicy;
 };
 
 export type EnqueueInput = {
@@ -96,6 +103,12 @@ export type BuildAgentInput = {
   jobs?: JobRegistry;
   /** 这次运行的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
+  /**
+   * 这次运行生效的审批档位。
+   *
+   * 运行器已经按「有没有人在场」收紧过；宿主拿到的是生效值，不再自己判断。
+   */
+  approvalPolicy: ApprovalPolicy;
 };
 
 /** 运行器只依赖 `warn`；测试可以塞收集器。 */

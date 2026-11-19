@@ -30,6 +30,7 @@ const session = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
+  approvalPolicy: "standard",
   deletedAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),

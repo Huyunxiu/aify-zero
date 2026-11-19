@@ -34,9 +34,10 @@ import {
   listSessions,
   listSessionTurns,
   markSessionRead,
+  setApprovalPolicy,
   updateSession,
 } from "./session.queries";
-import { forkSessionSchema } from "./session.schema";
+import { approvalPolicySchema, forkSessionSchema } from "./session.schema";
 
 /** 把生命周期错误翻译成传输层错误；其他错误原样抛出。 */
 function toApiError(error: unknown): never {
@@ -111,6 +112,8 @@ const createSession = publicProcedure
       modelEffort?: string;
       projectId?: string;
       inboxId?: string;
+      /** 首次落库时的审批档位；行已存在时忽略，改为走 setApprovalPolicy。 */
+      approvalPolicy?: string;
     }>()
   )
   .handler(async ({ input }) => {
@@ -123,6 +126,11 @@ const createSession = publicProcedure
       projectId,
       inboxId,
     } = input;
+    // 输入是类型而不是 schema，所以值域在这里守一次；写库之前就要拦住。
+    const approvalPolicy =
+      input.approvalPolicy === undefined
+        ? undefined
+        : approvalPolicySchema.parse(input.approvalPolicy);
 
     const configured = await findConfiguredModel(model);
     if (!configured) {
@@ -165,6 +173,7 @@ const createSession = publicProcedure
       await agentRunner.createSession({
         sessionId,
         ...(projectId === undefined ? {} : { projectId }),
+        ...(approvalPolicy === undefined ? {} : { approvalPolicy }),
       });
     } catch (error) {
       toApiError(error);
@@ -313,6 +322,7 @@ export const deleteSession = publicProcedure
 
 export const session = {
   createSession,
+  setApprovalPolicy,
   deleteSession,
   listSessions,
   getSession,

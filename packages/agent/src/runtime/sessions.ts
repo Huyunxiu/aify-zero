@@ -15,6 +15,8 @@ import type { ModelRef } from "@workspace/shared/model";
 
 import { AgentSession } from "../agent-session";
 import type { Agent } from "../agents";
+import type { ApprovalPolicy } from "../approval-policy";
+import { DEFAULT_APPROVAL_POLICY, effectivePolicy } from "../approval-policy";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { InboxClaim } from "../kernel/run-types";
@@ -24,6 +26,7 @@ import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
 import type { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
 import { generateSessionId } from "../utils/id-util";
+import { isAttendedRun } from "./attended";
 import { AgentRunnerError } from "./errors";
 import type { BuildAgentInput, RunStart, StartedRun } from "./types";
 
@@ -126,6 +129,8 @@ export class SessionLifecycle {
       sessionId,
       turns: originalTurns,
       model,
+      approvalPolicy:
+        previousSession?.approvalPolicy ?? DEFAULT_APPROVAL_POLICY,
       ...(effort === undefined ? {} : { effort }),
       ...(sessionProjectId === undefined
         ? {}
@@ -202,6 +207,8 @@ export class SessionLifecycle {
       sessionId,
       turns: AgentSession.toAgentTurns(branch),
       model: latest.payload.model,
+      approvalPolicy: session.approvalPolicy,
+      attended: isAttendedRun(items),
       ...(effort === undefined ? {} : { effort }),
       ...(projectId === undefined ? {} : { projectId }),
       claims: items.map((item) => ({ inboxId: item.id, turn: item.content })),
@@ -221,6 +228,10 @@ export class SessionLifecycle {
     effort?: ModelEffort;
     projectId?: string;
     claims?: readonly InboxClaim[];
+    /** 会话存的档位；这里按在场情况收紧后才交给 agent。 */
+    approvalPolicy: ApprovalPolicy;
+    /** 默认有人在场：只有定时器或完成通知唤起的运行才不是。 */
+    attended?: boolean;
   }): Promise<StartedRun> {
     const { sessionId, turns, model, effort, projectId, claims } = input;
     const { store, registry, buildAgent } = this.#deps;
@@ -228,6 +239,10 @@ export class SessionLifecycle {
     const agent = await buildAgent({
       sessionId,
       session: new AgentSession({ turns }),
+      approvalPolicy: effectivePolicy(
+        input.approvalPolicy,
+        input.attended ?? true
+      ),
       model,
       ...(effort === undefined ? {} : { effort }),
       ...(projectId === undefined ? {} : { projectId }),
@@ -420,6 +435,7 @@ export class SessionLifecycle {
     const agent = await buildAgent({
       sessionId,
       session: new AgentSession({ turns }),
+      approvalPolicy: session.approvalPolicy,
       model,
       ...(effort === undefined ? {} : { effort }),
       ...(session.projectId === null || session.projectId === undefined
@@ -524,6 +540,8 @@ export class SessionLifecycle {
       forkedFromMessageId: messageId ?? prefix.at(-1)?.id,
       // fork 出来的会话留在源会话的项目里，否则按项目列表时会凭空少一条。
       projectId: source.projectId,
+      // Fork 是同一个姿态的延续：源会话会放行的，分支里不该重新开始问。
+      approvalPolicy: source.approvalPolicy,
     });
     await store.saveTurns(copies);
 
