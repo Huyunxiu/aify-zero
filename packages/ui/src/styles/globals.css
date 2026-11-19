@@ -576,14 +576,6 @@
   }
 }
 
-/* Streamdown */
-
-/* Streamdown Tables */
-[data-streamdown="table-wrapper"] {
-  padding: 0;
-  border: none;
-}
-
 /* Pele 图表的颜色和字体沿用应用的主题变量。 */
 .pele-diagram {
   --pele-bg: var(--background);

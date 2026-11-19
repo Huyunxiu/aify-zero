@@ -17,6 +17,7 @@ import { useIsCodeFenceIncomplete } from "streamdown";
 
 import { Button } from "../components/button";
 import { MarkdownLink } from "./markdown-link";
+import { markdownTableComponents } from "./markdown-table";
 
 // 围栏代码的 children 通常是字符串；插件可能把它包成元素，这里一并处理。
 function getCodeText(children: React.ReactNode) {
@@ -108,10 +109,10 @@ function MarkdownCodeBlock({
   // 闭合围栏到达之前，复制按钮保持禁用。
   const incomplete = useIsCodeFenceIncomplete();
   const lines = useHighlightedCode(code, language);
-  const [wrap, setWrap] = React.useState(true);
+  const [wrap, setWrap] = React.useState(false);
 
   return (
-    <CodeBlock className="bg-muted">
+    <CodeBlock>
       <CodeBlockHeader>
         <CodeBlockTitle>{language || "text"}</CodeBlockTitle>
         <CodeBlockActions>
@@ -120,7 +121,7 @@ function MarkdownCodeBlock({
             size="icon-xs"
             aria-label="Wrap lines"
             aria-pressed={wrap}
-            className="aria-pressed:text-foreground"
+            className="text-muted-foreground aria-pressed:text-foreground"
             onClick={() => setWrap(!wrap)}
           >
             <WrapTextIcon />
@@ -128,7 +129,7 @@ function MarkdownCodeBlock({
           <CodeBlockCopyButton disabled={incomplete} value={code} />
         </CodeBlockActions>
       </CodeBlockHeader>
-      <CodeBlockContent wrap={wrap}>
+      <CodeBlockContent lineNumbers wrap={wrap}>
         {lines.map((line, index) => (
           <CodeBlockLine key={index}>{line}</CodeBlockLine>
         ))}
@@ -168,4 +169,5 @@ function MarkdownCode({
 export const markdownComponents: Components = {
   a: MarkdownLink,
   code: MarkdownCode,
+  ...markdownTableComponents,
 };
