@@ -683,7 +683,7 @@ function ProviderWorkbench(props: {
           ) : null}
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 scroll-fade overflow-y-auto">
           {provider ? null : (
             <section className="px-5 py-4">
               <span className="mb-1 block text-muted-foreground text-xs">
@@ -1318,7 +1318,7 @@ function AddModelsPanel(props: {
               : t("settings.provider.noMatches")}
           </p>
         ) : (
-          <div className="mt-2 max-h-44 overflow-y-auto">
+          <div className="mt-2 max-h-44 scroll-fade overflow-y-auto">
             {available.map((model) => (
               <label
                 className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/50"

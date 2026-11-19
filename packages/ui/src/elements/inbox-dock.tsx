@@ -70,7 +70,7 @@ export const InboxDock = ({
           </Button>
         </div>
       </div>
-      <ul className="flex max-h-36 flex-col gap-1 overflow-y-auto">
+      <ul className="flex max-h-36 scroll-fade flex-col gap-1 overflow-y-auto">
         {messages.map((message) => (
           <li className="flex items-center gap-2" key={message.id}>
             <Badge className="shrink-0" variant="secondary">
