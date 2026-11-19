@@ -1,6 +1,6 @@
 # Issue 跟踪：Linear
 
-> 本文件是 [`issue-tracker.md`](./issue-tracker.md) 的中文镜像。改动要同时改两份。
+> 中文副本。以 [`issue-tracker.md`](./issue-tracker.md) 为准。
 
 本仓库的 issue 和规格都存放在 Linear。工作区 `Aify0`（https://linear.app/aify0），团队 `AIFY0`，
 编号格式为 `AIFY0-<n>`。所有操作使用 Linear MCP 工具（`mcp__linear__*`）。不要对本仓库使用 `gh issue`。

@@ -37,6 +37,11 @@ jobs:
       - name: Migrations match the schema
         run: vp run db#db:check
 
+      # The check reads `scripts/doc-pairs.manifest.json`. It asks only whether a file
+      # exists.
+      - name: Documents have their copies
+        run: vp run check:docs
+
       - name: Format, lint, types
         run: vp check
 

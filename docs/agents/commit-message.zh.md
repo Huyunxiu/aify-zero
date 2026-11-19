@@ -1,6 +1,6 @@
 # 提交信息
 
-> 本文件是 [`commit-message.md`](./commit-message.md) 的中文镜像。改动要同时改两份。
+> 中文副本。以 [`commit-message.md`](./commit-message.md) 为准。
 
 每条提交信息都用 Conventional Commits 1.0.0 的格式。`commit-msg` 钩子会跑 commitlint，不合规则的
 信息会被拦住，提交不会发生。
@@ -24,7 +24,7 @@ Refs: AIFY0-78
 - **body**：可省。说明为什么要改。每行不超过 100 个字符。头行和正文之间空一行。
 - **footer**：可省。Linear 票号写在 `Refs:` 那一行：`Refs: AIFY0-78`。Linear 靠这一行把提交挂到票上。
 
-`type` 和 `scope` 用英文。subject 中英文都行。一条信息里只用一种语言。
+`type` 和 `scope` 用英文。整条信息都用英文。见 `language.md`。
 
 ## 范围
 

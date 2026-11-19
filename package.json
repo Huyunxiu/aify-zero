@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "ready": "vp run db#db:check && vp check && vp test && vp run -r build",
+    "ready": "vp run db#db:check && vp run check:docs && vp check && vp test && vp run -r build",
     "dev": "vp run --filter @workspace/server-app --filter web --parallel dev",
     "dev:server": "vp run @workspace/server-app#dev",
     "dev:api": "vp run @workspace/server-app#dev",
@@ -20,6 +20,7 @@
     "db:query": "tsx packages/db/src/query.ts",
     "package:desktop": "vp run desktop#package",
     "package:server": "vp run @workspace/server-app#package",
+    "check:docs": "tsx scripts/check-doc-pairs.ts",
     "prepare": "vp config"
   },
   "dependencies": {

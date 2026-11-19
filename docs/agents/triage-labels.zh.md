@@ -1,6 +1,6 @@
 # 分诊标签
 
-> 本文件是 [`triage-labels.md`](./triage-labels.md) 的中文镜像。改动要同时改两份。
+> 中文副本。以 [`triage-labels.md`](./triage-labels.md) 为准。
 
 技能用五个标准分诊角色说话。本文件把这些角色映射到本仓库 Linear 团队 `AIFY0` 实际使用的标签。
 

@@ -1,5 +1,7 @@
 # Aify Zero
 
+> 中文副本。以 [`README.md`](./README.md) 为准。
+
 仓库里有 `apps/desktop`（Electron 外壳）、`apps/server`（API）和 `apps/web`
 （浏览器 UI）；`packages/` 放 UI、agent、server、数据库和沙箱的代码。
 
