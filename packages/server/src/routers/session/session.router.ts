@@ -6,12 +6,14 @@ import type {
   AgentUserTurn,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
+import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
 import { agentRunner } from "../../runtime";
+import { releaseSessionSandbox } from "../../sandbox/registry";
 import {
   acceptedEffort,
   requestedEffort,
@@ -98,6 +100,7 @@ const createSession = publicProcedure
     MODEL_UNSUPPORTED_INPUT: ErrorMap.MODEL_UNSUPPORTED_INPUT,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
+    SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND,
   })
   .input(
     type<{
@@ -157,10 +160,15 @@ const createSession = publicProcedure
     }
 
     // 会话行先落库：收件箱按会话归属，运行器也要靠这一行看项目和状态。
-    await agentRunner.createSession({
-      sessionId,
-      ...(projectId === undefined ? {} : { projectId }),
-    });
+    // 已删的会话不是「已存在」，这里会报 SESSION_NOT_FOUND（ADR 0020）。
+    try {
+      await agentRunner.createSession({
+        sessionId,
+        ...(projectId === undefined ? {} : { projectId }),
+      });
+    } catch (error) {
+      toApiError(error);
+    }
 
     // 已经入队的那条（客户端先入队再发）不再重复写一行。
     if (!inboxId) {
@@ -276,8 +284,36 @@ export const compactSession = publicProcedure
     }
   });
 
+/**
+ * 删除一个会话。
+ *
+ * 幂等：不存在或已经删过都返回 `removed: false`，不报未找到——调用方要的是
+ * 「它不在了」，而这个事实已经成立。运行中的会话报 `SESSION_BUSY`：一次正在
+ * 花钱的运行不该被一条删除请求带走（ADR 0020）。
+ */
+export const deleteSession = publicProcedure
+  .route({ method: "DELETE", path: "/sessions/{sessionId}" })
+  .errors({ SESSION_BUSY: ErrorMap.SESSION_BUSY })
+  .input(z.object({ sessionId: z.string() }))
+  .handler(async ({ input }) => {
+    try {
+      const { removed } = await agentRunner.delete(input.sessionId);
+      if (removed) {
+        // 沙箱句柄只有服务端认识，agent 包看不见它。释放失败只记日志：库里的事
+        // 已经成立，一个缓存条目不该把删除变成失败。
+        await releaseSessionSandbox(input.sessionId).catch((error: unknown) => {
+          logger.warn("[session] failed to release the sandbox", error);
+        });
+      }
+      return { sessionId: input.sessionId, removed };
+    } catch (error) {
+      toApiError(error);
+    }
+  });
+
 export const session = {
   createSession,
+  deleteSession,
   listSessions,
   getSession,
   updateSession,

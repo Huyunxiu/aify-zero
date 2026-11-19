@@ -5,13 +5,17 @@ import {
   SidebarMenuItem,
   SidebarMenuSubButton,
 } from "@workspace/ui/components/sidebar";
-import { PencilIcon } from "lucide-react";
+
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc";
-import { DropdownMenuItem } from "./dropdown-menu";
 import { RelativeTime } from "./relative-time";
+import {
+  SessionDeleteDialog,
+  type DeletableSession,
+} from "./session-delete-dialog";
+import { SessionRowMenuItems } from "./session-row-actions";
 import {
   SessionRenameDialog,
   type RenamableSession,
@@ -30,6 +34,7 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [renaming, setRenaming] = useState<RenamableSession | null>(null);
+  const [deleting, setDeleting] = useState<DeletableSession | null>(null);
 
   const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
     useInfiniteQuery({
@@ -86,14 +91,15 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
               label={t("sessions.actions")}
               className="top-1/2 -translate-y-1/2"
             >
-              <DropdownMenuItem
-                onClick={() => {
+              <SessionRowMenuItems
+                session={session}
+                onRename={() => {
                   setRenaming({ id: session.id, title: session.title });
                 }}
-              >
-                <PencilIcon />
-                {t("sessions.rename")}
-              </DropdownMenuItem>
+                onDelete={() => {
+                  setDeleting({ id: session.id, title: session.title });
+                }}
+              />
             </SidebarRowMenu>
           </SidebarMenuItem>
         ))}
@@ -110,6 +116,7 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
         <li ref={sentinelRef} aria-hidden="true" className="h-px" />
       </SidebarMenu>
       <SessionRenameDialog session={renaming} onOpenChange={setRenaming} />
+      <SessionDeleteDialog session={deleting} onOpenChange={setDeleting} />
     </>
   );
 }

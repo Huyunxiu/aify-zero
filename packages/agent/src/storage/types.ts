@@ -38,6 +38,8 @@ export type SessionRecord = {
   forkedFromMessageId: string | null;
   parentSessionId: string | null;
   parentToolCallId: string | null;
+  /** 删除时刻；有值即「已删」，读路径当它不存在。 */
+  deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 };

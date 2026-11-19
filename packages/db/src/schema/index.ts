@@ -118,6 +118,13 @@ export const session_table = sqliteTable(
      */
     parentSessionId: text("parent_session_id"),
     parentToolCallId: text("parent_tool_call_id"),
+    /**
+     * 删除时刻。有值即「已删」：列表和所有读接口都当它不存在。
+     *
+     * 只加一列时间戳，不加布尔：判别只有一个来源（`deleted_at IS NULL`），
+     * 而时间戳多带一条回收站要用的信息（ADR 0020）。
+     */
+    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),

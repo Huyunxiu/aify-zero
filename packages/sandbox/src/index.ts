@@ -49,6 +49,7 @@ export {
   probeNativeIsolation,
 } from "./isolated/adapter";
 export type {
+  IsolationProbeOptions,
   IsolationProbeResult,
   IsolatedSandboxOptions,
 } from "./isolated/adapter";

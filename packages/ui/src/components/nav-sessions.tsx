@@ -10,7 +10,7 @@ import {
 import { generateSessionId } from "@workspace/agent-client"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useNavigate } from "@tanstack/react-router";
-import { ChevronDownIcon, PencilIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -20,8 +20,12 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./collapsible"
-import { DropdownMenuItem } from "./dropdown-menu"
 import { RelativeTime } from "./relative-time"
+import {
+  SessionDeleteDialog,
+  type DeletableSession,
+} from "./session-delete-dialog"
+import { SessionRowMenuItems } from "./session-row-actions"
 import {
   SessionRenameDialog,
   type RenamableSession,
@@ -29,7 +33,6 @@ import {
 import { SessionStatus } from "./session-status"
 import { SidebarRowMenu } from "./sidebar-row-menu"
 import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
-import { Button } from "./button";
 
 const SESSION_PAGE_SIZE = 30;
 
@@ -38,6 +41,7 @@ export function NavSessions() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [renaming, setRenaming] = useState<RenamableSession | null>(null);
+  const [deleting, setDeleting] = useState<DeletableSession | null>(null);
 
   const {
     data,
@@ -131,14 +135,15 @@ export function NavSessions() {
                       />
                     </SidebarMenuButton>
                     <SidebarRowMenu label={t("sessions.actions")}>
-                      <DropdownMenuItem
-                        onClick={() => {
+                      <SessionRowMenuItems
+                        session={item}
+                        onRename={() => {
                           setRenaming({ id: item.id, title: item.title });
                         }}
-                      >
-                        <PencilIcon />
-                        {t("sessions.rename")}
-                      </DropdownMenuItem>
+                        onDelete={() => {
+                          setDeleting({ id: item.id, title: item.title });
+                        }}
+                      />
                     </SidebarRowMenu>
                   </SidebarMenuItem>
                 )),
@@ -151,6 +156,7 @@ export function NavSessions() {
         </CollapsibleContent>
       </Collapsible>
       <SessionRenameDialog session={renaming} onOpenChange={setRenaming} />
+      <SessionDeleteDialog session={deleting} onOpenChange={setDeleting} />
     </>
   )
 }

@@ -143,19 +143,29 @@ export function buildSeatbeltInvocation(
 /**
  * 把 shell 的 argv 包进 bubblewrap。
  *
- * 根文件系统只读挂载，再把每个可写根 bind 成可写；`/dev` 与 `/proc` 单独给一份
- * 可用的，否则 `/dev/null` 在只读挂载下不可写。`--die-with-parent` 保证父进程
- * 被取消时命令不会留在后台。
+ * 根文件系统只读挂载，再把每个可写根 bind 成可写；`/dev` 单独给一份可用的，
+ * 否则 `/dev/null` 在只读挂载下不可写。`--die-with-parent` 保证父进程被取消时
+ * 命令不会留在后台。
+ *
+ * 不另挂 `/proc`：新挂一份 procfs 要求命令处在一个由本沙箱的用户命名空间拥有的
+ * pid 命名空间里，否则内核直接拒绝（`Can't mount proc on /newroot/proc:
+ * Operation not permitted`）。读本来就不受限，宿主那份 `/proc` 跟着
+ * `--ro-bind / /` 只读挂进来就够用，少一步就少一个能让每条命令都以退出码 1
+ * 失败的地方。
+ *
+ * 可写根用 `--bind-try`：`buildWritePolicy` 会列出这台机器上并不存在的目录
+ * （Linux 上没有 `~/Library/Caches`，会话目录也可能还没建），普通 `--bind`
+ * 会让整条命令失败，而不是少放行一个不存在的目录。
  */
 export function buildBwrapInvocation(
   roots: readonly string[],
   cwd: string,
   shellArgv: readonly string[]
 ): IsolatedInvocation {
-  const args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
+  const args = ["--ro-bind", "/", "/", "--dev", "/dev"];
 
   for (const root of roots) {
-    args.push("--bind", root, root);
+    args.push("--bind-try", root, root);
   }
 
   args.push("--chdir", cwd, "--die-with-parent", "--", ...shellArgv);

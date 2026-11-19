@@ -237,6 +237,11 @@
     "renamePlaceholder": "Session name",
     "renameSave": "Save",
     "renameCancel": "Cancel",
+    "delete": "Delete",
+    "deleteTitle": "Delete session",
+    "deleteDescription": "“{{title}}” disappears from every list.",
+    "deleteConfirm": "Delete",
+    "deleteCancel": "Cancel",
     "status": {
       "idle": "Idle",
       "running": "Running",

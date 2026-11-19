@@ -314,6 +314,41 @@ export class SessionLifecycle {
   }
 
   /**
+   * 删除一个会话。
+   *
+   * 先认领再清扫：行不存在或已经删过就什么都不做，返回 `removed: false`——
+   * 删除是幂等的，调用方要的是「它不在了」，而这个事实已经成立。
+   *
+   * 忙判定只拦活跃流。真正的运行在内存里，它在跑就不能删；`wait_review` 不是
+   * 运行，待审批住在转录里，删掉之后恢复出来还能回答（ADR 0020）。
+   */
+  async delete(
+    sessionId: string
+  ): Promise<{ removed: boolean; sessionIds: string[] }> {
+    const { store, jobs } = this.#deps;
+
+    // 先看一遍：已经删过的会话不该再去停任务、也不该白开一个事务。真正的认领
+    // 在事务里（`UPDATE … WHERE deleted_at IS NULL`），两个窗口同时删时以那里
+    // 的结果为准。
+    const existing = await store.findSessionRow(sessionId);
+    if (!existing || existing.deletedAt !== null) {
+      return { removed: false, sessionIds: [] };
+    }
+
+    this.#assertIdle(sessionId);
+
+    // 任务先停：它们还在写的时候删行，删完又会冒出新的。子会话随父一起消失，
+    // 它们名下的活也不能留着，所以按整棵子树停。
+    if (jobs) {
+      for (const id of await store.listSessionSubtreeIds(sessionId)) {
+        await jobs.disposeOwner(id);
+      }
+    }
+
+    return await store.deleteSession(sessionId, new Date());
+  }
+
+  /**
    * 停掉会话正在跑的运行。
    *
    * 没有运行中的流时也清理残留的 `activeStreamId` 和子会话行，返回

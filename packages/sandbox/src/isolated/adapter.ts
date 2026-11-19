@@ -50,8 +50,30 @@ export interface IsolationProbeResult {
   readonly reason?: string;
 }
 
+/** 探针里跑的可执行文件：不写文件、立即退出。 */
+const SEATBELT_PROBE_PROGRAM = "/usr/bin/true";
+const BWRAP_PROBE_PROGRAM = "/bin/true";
+
+export interface IsolationProbeOptions {
+  /** 探针在哪个目录跑；默认家目录。 */
+  readonly cwd?: string;
+  /** 真实命令会 bind 的可写根；给了就一并验证，默认不 bind。 */
+  readonly roots?: readonly string[];
+}
+
 /** 探针的超时：只是起一个 `/usr/bin/true` 同级进程，不需要更多。 */
 const PROBE_TIMEOUT_MS = 5000;
+
+/**
+ * 把探针的 stderr 压成原因里的一行。
+ *
+ * 退出码 1 本身不说明问题：`bwrap: setting up uid map: Permission denied` 才
+ * 说明为什么这台机器套不上隔离。
+ */
+function probeDetail(chunks: readonly string[]): string {
+  const first = chunks.join("").trim().split(/\r?\n/)[0]?.trim();
+  return first === undefined || first.length === 0 ? "" : `: ${first}`;
+}
 
 /**
  * 探测这台机器现在能不能真的套上原生隔离。
@@ -59,8 +81,13 @@ const PROBE_TIMEOUT_MS = 5000;
  * 必须实测而不是只看二进制在不在：`sandbox-exec` 在部分环境里存在但
  * `sandbox_apply` 会被外层策略拒绝，只看文件存在会让每条命令都以
  * `Operation not permitted` 失败。
+ *
+ * 探针走的必须是真实命令的同一条装配路径。只跑一个更宽松的调用，会把「起得来
+ * 探针、跑不了真命令」的机器报成可用，然后每一次 `exec` 都以退出码 1 失败。
  */
-export async function probeNativeIsolation(): Promise<IsolationProbeResult> {
+export async function probeNativeIsolation(
+  options: IsolationProbeOptions = {}
+): Promise<IsolationProbeResult> {
   const backend = detectBackend();
   if (backend === undefined) {
     return {
@@ -69,26 +96,26 @@ export async function probeNativeIsolation(): Promise<IsolationProbeResult> {
     };
   }
 
-  const probe =
+  const cwd = options.cwd ?? homedir();
+  const roots = options.roots ?? [];
+  const invocation =
     backend === "seatbelt"
-      ? {
-          file: "/usr/bin/sandbox-exec",
-          args: ["-p", "(version 1)(allow default)", "/usr/bin/true"],
-        }
-      : {
-          file: "bwrap",
-          args: ["--ro-bind", "/", "/", "--dev", "/dev", "--", "/bin/true"],
-        };
+      ? buildSeatbeltInvocation(roots, [SEATBELT_PROBE_PROGRAM])
+      : buildBwrapInvocation(roots, cwd, [BWRAP_PROBE_PROGRAM]);
+
+  const diagnostics: string[] = [];
 
   try {
     const result = await runShell({
-      file: probe.file,
-      args: probe.args,
-      cwd: homedir(),
+      file: invocation.file,
+      args: [...invocation.args],
+      cwd,
       env: { ...process.env },
       timeoutMs: PROBE_TIMEOUT_MS,
-      onData: () => {
-        // 探针的输出没有用处。
+      onData: (channel, chunk) => {
+        if (channel === "stderr") {
+          diagnostics.push(chunk.toString());
+        }
       },
     });
 
@@ -99,7 +126,7 @@ export async function probeNativeIsolation(): Promise<IsolationProbeResult> {
     return {
       available: false,
       backend,
-      reason: `${backend} refused to start a sandbox (exit code ${result.exitCode ?? "null"})`,
+      reason: `${backend} refused to start a sandbox (exit code ${result.exitCode ?? "null"})${probeDetail(diagnostics)}`,
     };
   } catch (error) {
     return {
@@ -114,7 +141,8 @@ export async function probeNativeIsolation(): Promise<IsolationProbeResult> {
  * 建一个原生隔离适配器。
  *
  * `acquire` 先探测；探测失败就抛，不退回无隔离的本机执行——用户以为隔离了、
- * 其实命令在本机裸跑，比直接失败危险得多。
+ * 其实命令在本机裸跑，比直接失败危险得多。探测带着这个会话自己的可写根一起
+ * 跑，探针通过就说明这个会话的沙箱真能起命令。
  */
 export function createIsolatedSandboxAdapter(
   options: IsolatedSandboxOptions = {}
@@ -122,13 +150,6 @@ export function createIsolatedSandboxAdapter(
   return {
     name: ISOLATED_ADAPTER,
     acquire: async (input: AcquireSandboxInput): Promise<SandboxHandle> => {
-      const probe = await probeNativeIsolation();
-      if (probe.backend === undefined || !probe.available) {
-        throw new Error(
-          `Native isolation is unavailable: ${probe.reason ?? "unknown reason"}.`
-        );
-      }
-
       const host = createHostSandbox(input);
       const roots = buildWritePolicy({
         projectDirs: input.projectDirs,
@@ -137,6 +158,13 @@ export function createIsolatedSandboxAdapter(
           ? {}
           : { extra: options.extraWritableRoots }),
       });
+
+      const probe = await probeNativeIsolation({ roots });
+      if (probe.backend === undefined || !probe.available) {
+        throw new Error(
+          `Native isolation is unavailable: ${probe.reason ?? "unknown reason"}.`
+        );
+      }
 
       return {
         sandbox: new IsolatedSandbox(host, probe.backend, roots),

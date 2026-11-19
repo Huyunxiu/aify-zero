@@ -1,3 +1,4 @@
+import { HOST_BACKEND } from "@workspace/sandbox";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { acquireSessionSandbox } from "../src/sandbox/registry";
@@ -49,10 +50,11 @@ describe(acquireSessionSandbox, () => {
   test("should refuse the isolated backend when isolation is unavailable", async () => {
     vi.stubEnv("AIFY_SANDBOX_ADAPTER", "isolated");
 
-    // 这台机器能套上隔离时这条走成功分支；不能套时必须明确失败，不静默降级。
+    // 这台机器能套上隔离时这条报的是平台机制（macOS 的 seatbelt、Linux 的
+    // bwrap），不能是本机；套不上时必须明确失败，不静默降级成无隔离执行。
     await acquireSessionSandbox(input("session-isolated")).then(
       (sandbox) => {
-        expect(sandbox.describe().backend).toBe("seatbelt");
+        expect(sandbox.describe().backend).not.toBe(HOST_BACKEND);
       },
       (error: unknown) => {
         expect(String(error)).toContain("Native isolation is unavailable");
