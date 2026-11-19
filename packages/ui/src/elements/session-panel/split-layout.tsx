@@ -61,7 +61,7 @@ export function SplitLayout({
         <div className="flex h-full min-w-0 flex-col">
           {/* 正文再长也不参与高度：`contain: size` 让这一格的尺寸只由 flex
             决定，长内容才不会把面板和它外面整条高度链一起撑高。 */}
-          <div className="min-h-0 flex-1 overflow-auto contain-[size]">
+          <div className="min-h-0 flex-1 scroll-fade overflow-auto contain-[size]">
             {left}
           </div>
         </div>

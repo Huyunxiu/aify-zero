@@ -129,7 +129,7 @@ function MarkdownCodeBlock({
           <CodeBlockCopyButton disabled={incomplete} value={code} />
         </CodeBlockActions>
       </CodeBlockHeader>
-      <CodeBlockContent lineNumbers wrap={wrap}>
+      <CodeBlockContent lineNumbers viewportClassName="max-h-96" wrap={wrap}>
         {lines.map((line, index) => (
           <CodeBlockLine key={index}>{line}</CodeBlockLine>
         ))}

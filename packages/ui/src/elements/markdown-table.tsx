@@ -12,7 +12,8 @@ import { TableCopyDropdown, TableDownloadDropdown } from "streamdown";
 
 // The table is the shadcn Table, so its styles have one source. The copy and
 // download buttons stay from Streamdown: they find the table through the nearest
-// [data-streamdown="table-wrapper"].
+// [data-streamdown="table-wrapper"]. A tall table scrolls inside the markdown
+// scroll box instead of pushing the rest of the message down.
 function MarkdownTable({
   children,
   node: _node,
@@ -24,7 +25,9 @@ function MarkdownTable({
         <TableCopyDropdown />
         <TableDownloadDropdown />
       </div>
-      <Table {...props}>{children}</Table>
+      <Table viewportClassName="max-h-96" {...props}>
+        {children}
+      </Table>
     </div>
   );
 }

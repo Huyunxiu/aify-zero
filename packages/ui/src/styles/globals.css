@@ -511,6 +511,71 @@
   --success-foreground: var(--color-emerald-400);
 }
 
+/* shadcn ships one scroll-fade utility per axis. A table capped in height
+   scrolls both ways, so it needs all four edges faded: two masks intersect,
+   each driven by its own scroll timeline. */
+@utility scroll-fade-both {
+  --_scroll-fade-size-t: var(
+    --scroll-fade-t-size,
+    var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10)))
+  );
+  --_scroll-fade-size-b: var(
+    --scroll-fade-b-size,
+    var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10)))
+  );
+  --_scroll-fade-size-s: var(
+    --scroll-fade-s-size,
+    var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10)))
+  );
+  --_scroll-fade-size-e: var(
+    --scroll-fade-e-size,
+    var(--scroll-fade-size, min(12%, calc(var(--spacing) * 10)))
+  );
+  --scroll-fade-block: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--scroll-fade-t, 0px),
+    #000 calc(100% - var(--scroll-fade-b, 0px)),
+    transparent 100%
+  );
+  --scroll-fade-inline: linear-gradient(
+    to right,
+    transparent 0,
+    #000 var(--scroll-fade-s, 0px),
+    #000 calc(100% - var(--scroll-fade-e, 0px)),
+    transparent 100%
+  );
+  -webkit-mask-image: var(--scroll-fade-block), var(--scroll-fade-inline);
+  mask-image: var(--scroll-fade-block), var(--scroll-fade-inline);
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+
+  @supports (animation-timeline: scroll()) {
+    animation:
+      scroll-fade-reveal-t 1ms ease-in-out,
+      scroll-fade-reveal-b 1ms ease-in-out,
+      scroll-fade-reveal-s 1ms ease-in-out,
+      scroll-fade-reveal-e 1ms ease-in-out;
+    animation-timeline:
+      scroll(self y), scroll(self y), scroll(self inline), scroll(self inline);
+    animation-range:
+      0 var(--scroll-fade-reveal, calc(var(--spacing) * 24)),
+      calc(100% - var(--scroll-fade-reveal, calc(var(--spacing) * 24))) 100%,
+      0 var(--scroll-fade-reveal, calc(var(--spacing) * 24)),
+      calc(100% - var(--scroll-fade-reveal, calc(var(--spacing) * 24))) 100%;
+    animation-fill-mode: both;
+  }
+
+  @supports not (animation-timeline: scroll()) {
+    --scroll-fade-t: var(--_scroll-fade-size-t);
+    --scroll-fade-b: var(--_scroll-fade-size-b);
+    --scroll-fade-s: var(--_scroll-fade-size-s);
+    --scroll-fade-e: var(--_scroll-fade-size-e);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -526,11 +591,14 @@
     cursor: pointer;
   }
 
+  /* Scrollbars keep the shadcn scroll-fade baseline: the thumb rests quiet but
+     visible, since a list that hides its bar gives no sign there is more below.
+     `--scrollbar-thumb` is the color in effect, so a local rule can override it
+     (see the message scroller while it auto-scrolls). */
   * {
-    /* 滑块颜色按主题定义；--scrollbar-thumb 是「当前生效」的颜色，
-       局部想改滚动条行为时覆盖它即可（见下方消息滚动区） */
     --scrollbar-thumb-color: oklch(0 0 0 / 0.12);
     --scrollbar-thumb-color-hover: oklch(0 0 0 / 0.25);
+    --scrollbar-thumb-color-active: oklch(0 0 0 / 0.4);
     --scrollbar-thumb: var(--scrollbar-thumb-color);
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -539,40 +607,50 @@
   .dark * {
     --scrollbar-thumb-color: oklch(1 0 0 / 0.1);
     --scrollbar-thumb-color-hover: oklch(1 0 0 / 0.2);
+    --scrollbar-thumb-color-active: oklch(1 0 0 / 0.3);
   }
 
+  /* A 10px track is the hit target; transparent borders clip the thumb back to
+     4px, so the mark stays thin while the target stays reachable. */
   *::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 10px;
+    height: 10px;
   }
 
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 9999px;
-  }
-
-  *::-webkit-scrollbar-thumb:hover {
-    background: var(--scrollbar-thumb-color-hover);
-  }
-
+  *::-webkit-scrollbar-track,
   *::-webkit-scrollbar-corner {
     background: transparent;
   }
 
-  /* 消息滚动区：滑块只在 hover 时可见，平时靠 scrollbar-gutter-stable 占位避免抖动。
-     触摸设备没有 hover，保持常驻可见 */
-  @media (hover: hover) {
-    [data-slot="message-scroller-viewport"] {
-      --scrollbar-thumb: transparent;
-    }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: 9999px;
+  }
 
-    [data-slot="message-scroller-viewport"]:hover {
-      --scrollbar-thumb: var(--scrollbar-thumb-color);
-    }
+  *::-webkit-scrollbar-thumb:vertical {
+    border-left-width: 3px;
+    border-right-width: 3px;
+  }
+
+  *::-webkit-scrollbar-thumb:horizontal {
+    border-top-width: 3px;
+    border-bottom-width: 3px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-color-hover);
+  }
+
+  *::-webkit-scrollbar-thumb:active {
+    background-color: var(--scrollbar-thumb-color-active);
+  }
+
+  /* While the message scroller pins to the bottom the content moves under the
+     pointer, so a bar in that spot reads as jitter; it comes back on release. */
+  [data-autoscrolling] {
+    --scrollbar-thumb: transparent;
   }
 }
 

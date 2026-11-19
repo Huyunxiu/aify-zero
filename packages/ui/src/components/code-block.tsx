@@ -8,9 +8,10 @@ import { cn } from "@workspace/ui/lib/utils"
 
 import { useCopyToClipboard } from "../hooks/use-copy-to-clipboard"
 import { Button } from "./button"
+import { ScrollArea } from "./scroll-area"
 
 const codeBlockVariants = cva(
-  "group/code-block relative flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-neutral-12 text-sm has-[>[data-slot=code-block-content]:focus-visible]:border-ring",
+  "group/code-block relative flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-neutral-12 text-sm has-[[data-slot=scroll-area-viewport]:focus-visible]:border-ring",
   {
     variants: {
       variant: {
@@ -120,40 +121,47 @@ function CodeBlockContent({
   wrap = false,
   lineNumbers = false,
   startLine = 1,
+  viewportClassName,
   ...props
 }: React.ComponentProps<"pre"> & {
   wrap?: boolean
   lineNumbers?: boolean
   startLine?: number
+  viewportClassName?: string
 }) {
   return (
-    <pre
-      data-slot="code-block-content"
-      data-wrap={wrap || undefined}
-      data-numbered={lineNumbers || undefined}
-      dir="ltr"
-      tabIndex={0}
-      style={{ counterReset: `line ${startLine - 1}`, ...style }}
-      className={cn(
-        "scroll-fade-x scrollbar-thin min-h-0 min-w-0 overflow-auto px-3 py-1.5 text-start font-mono text-xs leading-[1.6] outline-none data-wrap:scroll-fade-y data-wrap:wrap-break-word data-wrap:whitespace-pre-wrap",
-        className
-      )}
-      {...props}
+    <ScrollArea
+      className="min-h-0 min-w-0"
+      orientation="both"
+      viewportClassName={cn("scroll-fade-both", viewportClassName)}
     >
-      <code
-        data-slot="code-block-code"
-        className="grid min-h-lh min-w-max content-start in-data-numbered:grid-cols-[auto_1fr] in-data-wrap:min-w-0"
+      <pre
+        data-slot="code-block-content"
+        data-wrap={wrap || undefined}
+        data-numbered={lineNumbers || undefined}
+        dir="ltr"
+        style={{ counterReset: `line ${startLine - 1}`, ...style }}
+        className={cn(
+          "min-h-0 min-w-0 px-3 py-1.5 text-start font-mono text-xs leading-[1.6] outline-none data-wrap:wrap-break-word data-wrap:whitespace-pre-wrap",
+          className
+        )}
+        {...props}
       >
-        {lineNumbers && typeof children === "string"
-          ? children
-              .replace(/\n$/, "")
-              .split("\n")
-              .map((line, index) => (
-                <CodeBlockLine key={index}>{line}</CodeBlockLine>
-              ))
-          : children}
-      </code>
-    </pre>
+        <code
+          data-slot="code-block-code"
+          className="grid min-h-lh min-w-max content-start in-data-numbered:grid-cols-[auto_1fr] in-data-wrap:min-w-0"
+        >
+          {lineNumbers && typeof children === "string"
+            ? children
+                .replace(/\n$/, "")
+                .split("\n")
+                .map((line, index) => (
+                  <CodeBlockLine key={index}>{line}</CodeBlockLine>
+                ))
+            : children}
+        </code>
+      </pre>
+    </ScrollArea>
   )
 }
 

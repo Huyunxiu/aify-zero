@@ -2,11 +2,18 @@ import * as React from "react"
 
 import { cn } from "@workspace/ui/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+import { ScrollArea } from "./scroll-area"
+
+function Table({
+  className,
+  viewportClassName,
+  ...props
+}: React.ComponentProps<"table"> & { viewportClassName?: string }) {
   return (
-    <div
-      data-slot="table-container"
-      className="scroll-fade-x relative w-full overflow-x-auto rounded-md border border-border"
+    <ScrollArea
+      className="w-full rounded-md border border-border"
+      orientation="both"
+      viewportClassName={cn("scroll-fade-both", viewportClassName)}
     >
       <table
         data-slot="table"
@@ -16,7 +23,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
         )}
         {...props}
       />
-    </div>
+    </ScrollArea>
   )
 }
 
