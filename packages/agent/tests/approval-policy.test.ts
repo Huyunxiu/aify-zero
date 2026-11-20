@@ -8,11 +8,11 @@ import {
 } from "../src/approval-policy.js";
 
 describe(policyAnswer, () => {
-  test("standard asks for a mutation and stays silent for a read", () => {
-    expect(policyAnswer("standard", "mutate")).toStrictEqual({
+  test("the cautious posture asks for a mutation and stays silent for a read", () => {
+    expect(policyAnswer("cautious", "mutate")).toStrictEqual({
       decision: "ask",
     });
-    expect(policyAnswer("standard", "read")).toBeUndefined();
+    expect(policyAnswer("cautious", "read")).toBeUndefined();
   });
 
   test("no policy closes a questionnaire, full access included", () => {
@@ -77,12 +77,16 @@ describe(effectivePolicy, () => {
   });
 
   test("an unattended run never auto-approves a mutation", () => {
-    expect(effectivePolicy("edit", false)).toBe("standard");
-    expect(effectivePolicy("unrestricted", false)).toBe("standard");
-    expect(effectivePolicy("standard", false)).toBe("standard");
+    expect(effectivePolicy("edit", false)).toBe("cautious");
+    expect(effectivePolicy("unrestricted", false)).toBe("cautious");
   });
 
   test("read-only needs no tightening", () => {
     expect(effectivePolicy("readonly", false)).toBe("readonly");
+  });
+
+  test("a cautious row stays cautious, attended or not", () => {
+    expect(effectivePolicy("cautious", true)).toBe("cautious");
+    expect(effectivePolicy("cautious", false)).toBe("cautious");
   });
 });

@@ -131,7 +131,7 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "Find the thing.",
-      approvalPolicy: "standard",
+      approvalPolicy: "edit",
     });
 
     expect(store.saved).toHaveLength(1);
@@ -178,7 +178,7 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "Find the thing.",
-      approvalPolicy: "standard",
+      approvalPolicy: "edit",
     });
 
     expect(sessionId).toBe(existingId);
@@ -198,7 +198,7 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "Find the thing.",
-      approvalPolicy: "standard",
+      approvalPolicy: "edit",
     });
 
     // 进程恰好死在"写了行"和"写了第一轮"之间的场景：喂一个空 transcript
@@ -216,14 +216,14 @@ describe(resolveSubagentSession, () => {
       toolCallId: "call-1",
       description: taskLabel,
       prompt: "First.",
-      approvalPolicy: "standard",
+      approvalPolicy: "edit",
     });
     const second = await resolveSubagentSession(asStore(store), {
       parentSessionId: "parent-1",
       toolCallId: "call-2",
       description: taskLabel,
       prompt: "Second.",
-      approvalPolicy: "standard",
+      approvalPolicy: "edit",
     });
 
     expect(first.sessionId).not.toBe(second.sessionId);
@@ -288,7 +288,7 @@ describe("subagent 的 abort scope", () => {
    */
   const buildParent = (): Agent =>
     new Agent({
-      approvalPolicy: "standard",
+      approvalPolicy: "edit",
       name: "main",
       sessionId: "parent-session",
       session: new AgentSession({ turns: [] }),
@@ -377,7 +377,7 @@ describe("subagent 继承审批函数", () => {
         resolveModel: testResolveModel,
         sessionId: "parent-session",
         toolCallId: "call-1",
-        approvalPolicy: "standard",
+        approvalPolicy: "edit",
         toolApprovalPattern: askPattern,
       },
       {
@@ -448,7 +448,7 @@ describe("subagent 继承转调入口", () => {
         resolveModel: testResolveModel,
         sessionId: "parent-session",
         toolCallId: "call-1",
-        approvalPolicy: "standard",
+        approvalPolicy: "edit",
       },
       {
         definition,
@@ -475,7 +475,7 @@ describe("subagent 继承项目说明", () => {
 
   const buildParent = (): Agent =>
     new Agent({
-      approvalPolicy: "standard",
+      approvalPolicy: "edit",
       name: "main",
       sessionId: "parent-session",
       session: new AgentSession({ turns: [] }),

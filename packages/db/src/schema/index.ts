@@ -111,17 +111,19 @@ export const session_table = sqliteTable(
     /**
      * The Approval Policy of this session.
      *
-     * The values match `APPROVAL_POLICIES` in `@workspace/agent-client`. The database
+     * The values match `ApprovalPolicy` in `@workspace/agent-client`. The database
      * layer does not depend on the protocol package, so the literals stay here; change both together.
      *
      * It decides only whether to ask, and who gets asked. The Sandbox still decides
-     * what is possible, so it is no permission model. An Unattended Run tightens at assembly, and the row stores the user choice.
+     * what is possible, so it is no permission model. A user picks `edit`, `readonly`, or
+     * `unrestricted`; `cautious` is the posture an Unattended Run takes, and the value a
+     * sub session inherits from it. An Unattended Run tightens at assembly, and the row stores the choice.
      */
     approvalPolicy: text("approval_policy", {
-      enum: ["standard", "edit", "readonly", "unrestricted"],
+      enum: ["cautious", "edit", "readonly", "unrestricted"],
     })
       .notNull()
-      .default("standard"),
+      .default("edit"),
     forkedFromSessionId: text("forked_from_session_id"),
     forkedFromMessageId: text("forked_from_message_id"),
     /**

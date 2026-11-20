@@ -57,17 +57,13 @@ test("Main journey: create project → send message → tool edits file → Chan
     // 5. 用户消息出现在会话里。
     await expect(page.getByRole("log").getByText(MESSAGE)).toBeVisible();
 
-    // 6. 工具步骤出现：名字是 `Edit` 加细节。标准策略把改动类工具交给用户，
-    //    所以这一行先挂在「等待批准」上，回合停在这里。
+    // 6. 工具步骤出现：名字是 `Edit` 加细节。默认策略是「编辑」，改动类直接放行，
+    //    所以这一行不会停在「等待批准」上。
     await expect(
       page.getByRole("button", { name: /^Edit/u }).first()
     ).toBeVisible();
-    await expect(
-      page.getByText("Awaiting review", { exact: true })
-    ).toBeVisible();
 
-    // 7. 批准之后工具才真的跑；回合的终态由页面自己说：`Finished`，回答文字也在。
-    await page.getByRole("button", { name: "Approve" }).click();
+    // 7. 回合的终态由页面自己说：`Finished`，回答文字也在。
     await expect(page.getByText("Finished", { exact: true })).toBeVisible();
     await expect(page.getByText("The second line is updated.")).toBeVisible();
 

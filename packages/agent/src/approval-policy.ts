@@ -1,5 +1,5 @@
 import type { ApprovalPolicy } from "@workspace/agent-client";
-import { DEFAULT_APPROVAL_POLICY } from "@workspace/agent-client";
+import { UNATTENDED_APPROVAL_POLICY } from "@workspace/agent-client";
 
 import type { ApprovalClass } from "./approval-classes";
 import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
@@ -8,8 +8,8 @@ import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
  * Policy × class to an answer.
  *
  * A missing cell means "no opinion": the host rules and the current defaults answer,
- * so no new ask appears. The standard row is today's behavior, so it replaces
- * `DEFAULT_TOOL_APPROVAL_TOOLS` and holds the only ask in the table.
+ * so no new ask appears. The cautious row is the one that asks before a change; it and
+ * the built-in defaults answer the same set that `DEFAULT_TOOL_APPROVAL_TOOLS` did.
  *
  * `interact` has no cell here, on purpose. See `policyAnswer`.
  */
@@ -19,7 +19,7 @@ const ANSWERS: Readonly<
     Readonly<Partial<Record<ApprovalClass, ToolStartDecision>>>
   >
 > = {
-  standard: {
+  cautious: {
     mutate: { decision: "ask" },
   },
   edit: {
@@ -88,17 +88,18 @@ export function resolveServiceDecision(
  * Tighten the policy when nobody watches the Run.
  *
  * Edit and Unrestricted both let a change pass with no question, and a Timer at night
- * is the worst moment for them. Read-Only needs no tightening: it allows nothing.
+ * is the worst moment for them. Read-Only allows nothing, and a cautious row already
+ * asks, so neither needs the change.
  */
 export function effectivePolicy(
   stored: ApprovalPolicy,
   attended: boolean
 ): ApprovalPolicy {
-  if (attended || stored === "readonly") {
+  if (attended || stored === "readonly" || stored === "cautious") {
     return stored;
   }
 
-  return DEFAULT_APPROVAL_POLICY;
+  return UNATTENDED_APPROVAL_POLICY;
 }
 
 /** Class resolution: the built-in table, or MCP annotations. The composition root injects it; this package does not know the manager. */

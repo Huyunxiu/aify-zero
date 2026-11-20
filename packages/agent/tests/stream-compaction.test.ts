@@ -62,7 +62,7 @@ const buildAgent = (
     })
 ): Agent =>
   new Agent({
-    approvalPolicy: "standard",
+    approvalPolicy: "edit",
     name: "main",
     sessionId: "session-1",
     session: new AgentSession({ turns: [] }),

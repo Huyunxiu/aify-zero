@@ -124,7 +124,7 @@ export interface SessionAgentOptions {
    */
   toolApprovalPattern?: ToolApprovalPattern;
   /**
-   * The Approval Policy of the session; the default is `standard`, the behavior before the policy.
+   * The Approval Policy of the session; the default is `edit`.
    *
    * It decides only whether to ask: an ask for a change class, a refusal for a command. The Sandbox decides feasibility.
    */

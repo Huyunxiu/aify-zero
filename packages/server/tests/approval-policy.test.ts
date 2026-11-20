@@ -74,10 +74,10 @@ describe("approval policy", () => {
     await expect(storedPolicy("policy-1")).resolves.toBe("readonly");
   });
 
-  test("starts at the standard tier without anyone choosing", async () => {
+  test("starts at the edit tier without anyone choosing", async () => {
     await seedSession("policy-2", "second");
 
-    await expect(storedPolicy("policy-2")).resolves.toBe("standard");
+    await expect(storedPolicy("policy-2")).resolves.toBe("edit");
   });
 
   test("refuses a deleted session", async () => {

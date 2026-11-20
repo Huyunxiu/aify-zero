@@ -50,28 +50,22 @@ async function openSession(page: Page, stack: Stack): Promise<Locator> {
     .getByRole("button", { name: "New session in this project" })
     .click();
 
-  // The composer shows the stored policy as its own button; the default is
-  // `Standard`, and a new session has no row yet, so the first message carries
-  // the choice.
-  // The trigger is a `div` with the button role that wraps the real button, so
-  // the same name matches twice. The wrapper has no box of its own; the inner
-  // button is the one to click, and the click still bubbles up to the trigger.
+  // The composer shows the stored policy as its own button. A new session has no
+  // row yet, so the first message carries the choice; until then the trigger shows
+  // the default.
   await expect(
-    page.getByRole("button", { name: "Standard", exact: true }).last()
+    page.getByRole("button", { name: "Edit", exact: true })
   ).toBeVisible();
   return page.getByRole("textbox", { name: COMPOSER_NAME });
 }
 
 /** Pick a policy in the composer, and wait for the button to show it. */
 async function choosePolicy(page: Page, name: "Edit" | "Read-only") {
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page
-    .getByRole("button", { name: "Standard", exact: true })
-    .last()
+    .getByRole("menuitemradio", { name: new RegExp(`^${name}`, "u") })
     .click();
-  await page.getByRole("option", { name: new RegExp(`^${name}`, "u") }).click();
-  await expect(
-    page.getByRole("button", { name, exact: true }).last()
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
 }
 
 /** Send one message, and wait for the send button to become enabled. */
@@ -196,7 +190,7 @@ test("Unattended: a timer run asks even when the session stores Edit", async ({
     await expect(page.getByText(FIRST_ANSWER)).toBeVisible();
 
     // The timer run starts with no person present. The stored policy is Edit, but
-    // the runner tightens it to Standard, so the change waits for an answer.
+    // the runner tightens it to the cautious posture, so the change waits for an answer.
     await expect(page.getByRole("button", { name: "Approve" })).toBeVisible({
       timeout: TIMER_TIMEOUT_MS,
     });

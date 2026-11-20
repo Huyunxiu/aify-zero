@@ -1,7 +1,8 @@
 # An approval policy becomes decisions in the composition root; the executor does not know it
 
-A session now has an approval policy: standard, edit, read-only, or full access. The
-user's choice lives in `session.approval_policy`. `createSessionAgent` turns the policy into
+A session now has an approval policy: edit, read-only, or full access. A fourth value,
+`cautious`, is no one's choice: it is the posture an unattended run takes and the one a sub
+session inherits from it. The user's choice lives in `session.approval_policy`. `createSessionAgent` turns the policy into
 a `ToolApprovalPattern`. That pattern folds with the host rules (the MCP annotations), and
 the executor receives the result. The executor and the decision layer still see three
 answers only: allow, ask, and deny. Two places read the policy: the `ANSWERS` table answers
@@ -26,7 +27,7 @@ Five rules that must not change:
   so we do not pretend that we do.
 - **A host's allow for one call outranks the policy's ask.** The host saw the input of this
   call (a write inside the project, an allowed path). The policy answers for a class only.
-  The specific answer beats the general one, so under the standard policy the calls that
+  The specific answer beats the general one, so under the cautious posture the calls that
   the host allows do not turn back into questions.
 - **A policy closes an ask, including one from a hook.** When the user picks a class, that
   class no longer interrupts. The ask may come from a host default or from a hook; the
@@ -37,12 +38,12 @@ Five rules that must not change:
   not be quieter, it would be broken — the tool reads the approval for answers, finds none,
   and fails. So `interact` has no row, and `policyAnswer` answers it before it reads one.
 - **An unattended run tightens the policy.** A run that a timer or a completion notice
-  starts uses the standard policy. Edit and full access step back: nobody is present, and
+  starts uses the cautious posture. Edit and full access step back: nobody is present, and
   that is the worst moment to apply changes without a question. The runner tightens the
   policy, because it knows what started the run. The database always holds the user's
   choice.
 - **A sub session inherits the effective policy.** A subagent row and a fork row copy the
-  value of the parent or the source. Without the copy they fall back to standard, and the
+  value of the parent or the source. Without the copy they fall back to the default, and the
   calls that the parent allowed ask again in another session.
 
 ## Considered Options
@@ -60,13 +61,16 @@ Five rules that must not change:
 - **`auto` as a fifth policy value** (a model judges the risk): a judge is a probabilistic
   component. It may close an ask, but it must not become a row of the table, or a pure
   function table waits for a network call. The port for a judge waits for later; the UI
-  shows it as "standard with the judge on".
+  shows it as the cautious posture with the judge on.
 
 ## Consequences
 
-- `edit-file` changes from "never asks" to "the standard policy asks". This closes a gap;
-  it is not a new policy. `bash` still does not ask. To change that, write a separate ADR:
-  it changes the feel for every user.
+- A tier leaves the picker. The default becomes `edit`, and a stored `standard` row moves
+  there too, so an upgrade removes one question from the sessions that never chose. The
+  cautious posture keeps the question for the runs nobody watches.
+- `edit-file` asks under the cautious posture and not under the default. `bash` still does
+  not ask anywhere but read-only. To change that, write a separate ADR: it changes the feel
+  for every user.
 - The read-only policy refuses `bash`. That is the only new hard protection. A read tool
   never asks more often under any policy.
 - The effective policy does not reach the database, so a history entry cannot say which

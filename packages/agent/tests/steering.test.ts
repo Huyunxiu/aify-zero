@@ -71,7 +71,7 @@ const sessionRow: SessionRecord = {
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
-  approvalPolicy: "standard",
+  approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
@@ -175,7 +175,7 @@ const makeAgent = (inbox: FakeInbox) => {
   });
 
   const agent = new Agent({
-    approvalPolicy: "standard",
+    approvalPolicy: "edit",
     name: "main",
     sessionId: "session-1",
     session,

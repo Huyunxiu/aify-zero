@@ -25,7 +25,7 @@ const session = (id: string): SessionRecord => ({
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
-  approvalPolicy: "standard",
+  approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),

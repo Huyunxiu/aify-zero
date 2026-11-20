@@ -103,9 +103,9 @@ the interface asks only if the policy says so.
 2. Read-only policy: the same scene. The tool is refused. The turn still completes. Not one
    character of the file changes. No approval card appears.
 3. Timer: the session stores the edit policy, but no person attends the run that the timer
-   starts. The runner tightens the policy to standard. When the timer comes due, the approval
-   card appears. After the approval, the same run continues, and only then does the file
-   land on the disk.
+   starts. The runner tightens the policy to the cautious posture. When the timer comes due,
+   the approval card appears. After the approval, the same run continues, and only then does
+   the file land on the disk.
 
 The third case waits a full minute (the timer minimum) and then waits for the scan loop to
 wake the session. Its timeout is therefore longer than the timeout of the other cases.

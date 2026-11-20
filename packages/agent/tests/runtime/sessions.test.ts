@@ -40,7 +40,7 @@ const sessionRow = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
-  approvalPolicy: "standard",
+  approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
@@ -403,7 +403,7 @@ describe("approval policy on SessionLifecycle", () => {
     });
   };
 
-  test("a timer-driven run tightens to the standard policy", async () => {
+  test("a timer-driven run tightens to the cautious posture", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({
@@ -411,7 +411,7 @@ describe("approval policy on SessionLifecycle", () => {
       items: [{ ...inboxItem("s1"), kind: "timer" }],
     });
 
-    expect(seen[0]?.approvalPolicy).toBe("standard");
+    expect(seen[0]?.approvalPolicy).toBe("cautious");
   });
 
   test("a completion notice also counts as unattended", async () => {
@@ -422,7 +422,7 @@ describe("approval policy on SessionLifecycle", () => {
       items: [{ ...inboxItem("s1"), kind: "job-notice" }],
     });
 
-    expect(seen[0]?.approvalPolicy).toBe("standard");
+    expect(seen[0]?.approvalPolicy).toBe("cautious");
   });
 
   test("a user message keeps the stored policy", async () => {

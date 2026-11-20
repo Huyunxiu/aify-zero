@@ -127,6 +127,13 @@
       "when": 1795091416675,
       "tag": "0017_session_approval_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1795146651522,
+      "tag": "0018_session_approval_policy_cautious",
+      "breakpoints": true
     }
   ]
 }

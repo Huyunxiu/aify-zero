@@ -89,7 +89,7 @@ const decide = async (
 
 describe(createSessionAgent, () => {
   test("registers the default tool extensions", async () => {
-    const agent = await makeAgent();
+    const agent = await makeAgent({ approvalPolicy: "cautious" });
 
     expect(Object.keys(agent.tools)).toStrictEqual(
       expect.arrayContaining([
@@ -101,7 +101,7 @@ describe(createSessionAgent, () => {
       ])
     );
 
-    // 写、删和问卷的默认策略由组合根注册。
+    // 稳妥姿态下，写、删和问卷由组合根要求确认。
     await expect(decide(agent, "write-file")).resolves.toStrictEqual({
       decision: "ask",
     });
@@ -127,6 +127,7 @@ describe(createSessionAgent, () => {
 
   test("asks the host function before the default rule", async () => {
     const agent = await makeAgent({
+      approvalPolicy: "cautious",
       toolApprovalPattern: ({ toolName, input }) =>
         toolName === "write-file" &&
         (input as { path: string }).path === "notes.md"
