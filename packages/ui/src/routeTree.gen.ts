@@ -10,13 +10,18 @@
 
 import { Route as rootRouteImport } from "./routes/__root"
 import { Route as IndexRouteImport } from "./routes/index"
+import { Route as ShellRouteImport } from "./routes/_shell"
 import { Route as AgentsAgentIdRouteImport } from "./routes/agents/$agentId"
-import { Route as SessionsIndexRouteImport } from "./routes/sessions/index"
-import { Route as SessionsSessionIdRouteImport } from "./routes/sessions/$sessionId"
+import { Route as ShellSessionsIndexRouteImport } from "./routes/_shell/sessions/index"
+import { Route as ShellSessionsSessionIdRouteImport } from "./routes/_shell/sessions/$sessionId"
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
   path: "/",
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShellRoute = ShellRouteImport.update({
+  id: "/_shell",
   getParentRoute: () => rootRouteImport,
 } as any)
 const AgentsAgentIdRoute = AgentsAgentIdRouteImport.update({
@@ -24,35 +29,36 @@ const AgentsAgentIdRoute = AgentsAgentIdRouteImport.update({
   path: "/agents/$agentId",
   getParentRoute: () => rootRouteImport,
 } as any)
-const SessionsIndexRoute = SessionsIndexRouteImport.update({
+const ShellSessionsIndexRoute = ShellSessionsIndexRouteImport.update({
   id: "/sessions/",
   path: "/sessions/",
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => ShellRoute,
 } as any)
-const SessionsSessionIdRoute = SessionsSessionIdRouteImport.update({
+const ShellSessionsSessionIdRoute = ShellSessionsSessionIdRouteImport.update({
   id: "/sessions/$sessionId",
   path: "/sessions/$sessionId",
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => ShellRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
   "/agents/$agentId": typeof AgentsAgentIdRoute
-  "/sessions/$sessionId": typeof SessionsSessionIdRoute
-  "/sessions/": typeof SessionsIndexRoute
+  "/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
+  "/sessions/": typeof ShellSessionsIndexRoute
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/agents/$agentId": typeof AgentsAgentIdRoute
-  "/sessions/$sessionId": typeof SessionsSessionIdRoute
-  "/sessions": typeof SessionsIndexRoute
+  "/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
+  "/sessions": typeof ShellSessionsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
+  "/_shell": typeof ShellRouteWithChildren
   "/agents/$agentId": typeof AgentsAgentIdRoute
-  "/sessions/$sessionId": typeof SessionsSessionIdRoute
-  "/sessions/": typeof SessionsIndexRoute
+  "/_shell/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
+  "/_shell/sessions/": typeof ShellSessionsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -62,16 +68,16 @@ export interface FileRouteTypes {
   id:
     | "__root__"
     | "/"
+    | "/_shell"
     | "/agents/$agentId"
-    | "/sessions/$sessionId"
-    | "/sessions/"
+    | "/_shell/sessions/$sessionId"
+    | "/_shell/sessions/"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  ShellRoute: typeof ShellRouteWithChildren
   AgentsAgentIdRoute: typeof AgentsAgentIdRoute
-  SessionsSessionIdRoute: typeof SessionsSessionIdRoute
-  SessionsIndexRoute: typeof SessionsIndexRoute
 }
 
 declare module "@tanstack/react-router" {
@@ -83,6 +89,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/_shell": {
+      id: "/_shell"
+      path: ""
+      fullPath: "/"
+      preLoaderRoute: typeof ShellRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     "/agents/$agentId": {
       id: "/agents/$agentId"
       path: "/agents/$agentId"
@@ -90,28 +103,39 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof AgentsAgentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    "/sessions/": {
-      id: "/sessions/"
+    "/_shell/sessions/": {
+      id: "/_shell/sessions/"
       path: "/sessions"
       fullPath: "/sessions/"
-      preLoaderRoute: typeof SessionsIndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof ShellSessionsIndexRouteImport
+      parentRoute: typeof ShellRoute
     }
-    "/sessions/$sessionId": {
-      id: "/sessions/$sessionId"
+    "/_shell/sessions/$sessionId": {
+      id: "/_shell/sessions/$sessionId"
       path: "/sessions/$sessionId"
       fullPath: "/sessions/$sessionId"
-      preLoaderRoute: typeof SessionsSessionIdRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof ShellSessionsSessionIdRouteImport
+      parentRoute: typeof ShellRoute
     }
   }
 }
 
+interface ShellRouteChildren {
+  ShellSessionsSessionIdRoute: typeof ShellSessionsSessionIdRoute
+  ShellSessionsIndexRoute: typeof ShellSessionsIndexRoute
+}
+
+const ShellRouteChildren: ShellRouteChildren = {
+  ShellSessionsSessionIdRoute: ShellSessionsSessionIdRoute,
+  ShellSessionsIndexRoute: ShellSessionsIndexRoute,
+}
+
+const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  ShellRoute: ShellRouteWithChildren,
   AgentsAgentIdRoute: AgentsAgentIdRoute,
-  SessionsSessionIdRoute: SessionsSessionIdRoute,
-  SessionsIndexRoute: SessionsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
