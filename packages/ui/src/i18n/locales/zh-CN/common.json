@@ -210,6 +210,19 @@
   "promptCommand": {
     "compact": "压缩"
   },
+  "approvalPolicy": {
+    "label": "审批",
+    "values": {
+      "readonly": "只读",
+      "edit": "编辑",
+      "unrestricted": "完全访问"
+    },
+    "hints": {
+      "readonly": "拒绝写入与命令，读取照常",
+      "edit": "改动类直接放行，交互仍然问你",
+      "unrestricted": "除了问卷都不打断"
+    }
+  },
   "compaction": {
     "title": "上下文已压缩",
     "trigger": {

@@ -16,17 +16,17 @@ import type { Stack } from "./harness";
 /** 编辑框的可访问名取自它自己的占位文案（`prompt-input-tiptap.tsx`）。 */
 const COMPOSER_NAME = "What would you like to know?";
 
-const MESSAGE = "每天早上提醒我看一次构建";
+const MESSAGE = "Remind me to check the build every morning";
 
 /** 通知块的标签（`timerNotice.marker`）；日程和跟进共用同一块。 */
 const NOTICE_MARKER = "Timer fired";
 
 /** 场景里模型写下的备注；它到点原样回到正文里。 */
-const NOTE = "看看今天的构建过了没有";
+const NOTE = "Check whether today's build passed";
 
-const FIRST_ANSWER = "日程排好了，我先停在这里。";
+const FIRST_ANSWER = "The schedule is set; I will stop here.";
 
-const SECOND_ANSWER = "到点了，我接着看。";
+const SECOND_ANSWER = "The schedule fired; I will continue.";
 
 /** 目标时刻离「现在」至少这么远，第一次运行才来得及收尾。 */
 const LEAD_MS = 20_000;
@@ -70,7 +70,7 @@ test("Schedule: a daily rule fires → the notice wakes the idle session → the
         models: ["fake-fast"],
         rules: [
           // 标题生成走非流式，先把它分出去，免得吃掉对话的规则。
-          { when: { stream: false }, answer: "日程" },
+          { when: { stream: false }, answer: "Schedule" },
           {
             when: { stream: true },
             toolCall: {

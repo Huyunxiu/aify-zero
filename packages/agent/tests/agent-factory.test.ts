@@ -101,12 +101,12 @@ describe(createSessionAgent, () => {
       ])
     );
 
-    // 写、删和问卷的默认策略由组合根注册。
+    // 默认档放行改动；问卷仍然要问，那是组合根唯一保留的一问。
     await expect(decide(agent, "write-file")).resolves.toStrictEqual({
-      decision: "ask",
+      decision: "allow",
     });
     await expect(decide(agent, "delete-file")).resolves.toStrictEqual({
-      decision: "ask",
+      decision: "allow",
     });
     await expect(decide(agent, "questionnaire")).resolves.toStrictEqual({
       decision: "ask",
@@ -123,27 +123,6 @@ describe(createSessionAgent, () => {
     expect(Object.keys(withTimers.tools)).toStrictEqual(
       expect.arrayContaining(["timer-set", "timer-list", "timer-cancel"])
     );
-  });
-
-  test("asks the host function before the default rule", async () => {
-    const agent = await makeAgent({
-      toolApprovalPattern: ({ toolName, input }) =>
-        toolName === "write-file" &&
-        (input as { path: string }).path === "notes.md"
-          ? { decision: "allow" }
-          : undefined,
-    });
-
-    // 宿主放行时默认 ask 不再追加；宿主没有意见时默认规则仍然询问。
-    await expect(
-      decide(agent, "write-file", { path: "notes.md" })
-    ).resolves.toStrictEqual({ decision: "allow" });
-    await expect(
-      decide(agent, "write-file", { path: "/etc/passwd" })
-    ).resolves.toStrictEqual({ decision: "ask" });
-    await expect(decide(agent, "delete-file")).resolves.toStrictEqual({
-      decision: "ask",
-    });
   });
 
   test("registers host rules for its own tools", async () => {
@@ -261,5 +240,89 @@ describe(createSessionAgent, () => {
 
     // 已经注册的扩展在装配失败时也要收掉，半成品 agent 不留在内存里。
     expect(disposed).toBeTruthy();
+  });
+});
+
+describe("approval policy", () => {
+  test("edit approves a mutation and still asks the interview", async () => {
+    const agent = await makeAgent({ approvalPolicy: "edit" });
+
+    await expect(decide(agent, "write-file")).resolves.toStrictEqual({
+      decision: "allow",
+    });
+    await expect(decide(agent, "questionnaire")).resolves.toStrictEqual({
+      decision: "ask",
+    });
+    await expect(decide(agent, "read-file")).resolves.toBeUndefined();
+  });
+
+  test("read-only denies a mutation and a command", async () => {
+    const agent = await makeAgent({ approvalPolicy: "readonly" });
+
+    await expect(decide(agent, "write-file")).resolves.toStrictEqual({
+      decision: "deny",
+    });
+    await expect(decide(agent, "bash")).resolves.toStrictEqual({
+      decision: "deny",
+    });
+    await expect(decide(agent, "read-file")).resolves.toBeUndefined();
+  });
+
+  test("unrestricted relaxes the host's ask but not its denial", async () => {
+    const agent = await makeAgent({
+      approvalPolicy: "unrestricted",
+      toolApprovalPattern: ({ toolName }) => {
+        if (toolName === "host-ask") {
+          return { decision: "ask" };
+        }
+
+        return toolName === "host-deny"
+          ? { decision: "deny", reason: "blocked" }
+          : undefined;
+      },
+    });
+
+    await expect(decide(agent, "host-ask")).resolves.toStrictEqual({
+      decision: "allow",
+    });
+    await expect(decide(agent, "host-deny")).resolves.toStrictEqual({
+      decision: "deny",
+      reason: "blocked",
+    });
+  });
+
+  test("spawning a subagent is not an interview", async () => {
+    const agent = await makeAgent();
+
+    await expect(decide(agent, "task")).resolves.toBeUndefined();
+  });
+
+  test("unrestricted closes the host's ask for a destructive tool", async () => {
+    const destructive = "mcp__linear__delete_issue";
+    const agent = await makeAgent({
+      approvalPolicy: "unrestricted",
+      toolApprovalPattern: ({ toolName }) =>
+        toolName === destructive ? { decision: "ask" } : undefined,
+      resolveApprovalClass: ({ toolName }) =>
+        toolName === destructive ? "mutate" : "unknown",
+    });
+
+    // The policy leads where it speaks: "never ask" also covers a tool the
+    // server itself calls destructive. A refusal would still stand.
+    await expect(decide(agent, destructive)).resolves.toStrictEqual({
+      decision: "allow",
+    });
+  });
+
+  test("a read-only session refuses a call the host allowed", async () => {
+    const agent = await makeAgent({
+      approvalPolicy: "readonly",
+      toolApprovalPattern: ({ toolName }) =>
+        toolName === "write-file" ? { decision: "allow" } : undefined,
+    });
+
+    await expect(decide(agent, "write-file")).resolves.toStrictEqual({
+      decision: "deny",
+    });
   });
 });

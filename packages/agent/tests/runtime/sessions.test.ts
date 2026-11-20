@@ -6,6 +6,7 @@ import type {
 import { describe, expect, test } from "vitest";
 
 import { SessionLifecycle } from "../../src/runtime/sessions";
+import type { BuildAgentInput } from "../../src/runtime/types";
 import type { AgentStore, TurnRecord, TurnWrite } from "../../src/storage";
 import type { SessionEndStatus, SessionRecord } from "../../src/storage/types";
 import {
@@ -39,6 +40,7 @@ const sessionRow = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
+  approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
@@ -133,7 +135,8 @@ describe(SessionLifecycle, () => {
     const savedTurns: TurnWrite[] = [];
 
     const lifecycle = makeLifecycle({
-      getSessionById: () => Promise.resolve(sessionRow()),
+      getSessionById: () =>
+        Promise.resolve(sessionRow({ approvalPolicy: "edit" })),
       getBranchTurns: () => Promise.resolve(branch),
       saveSession: (session) => {
         savedSessions.push(session);
@@ -173,6 +176,8 @@ describe(SessionLifecycle, () => {
       assistantStepId: "s1",
       retainedFromTurnId: "u1",
     });
+    // A branch continues the same posture: the source session stores Edit, and the fork row stores Edit too.
+    expect(savedSessions[0]).toMatchObject({ approvalPolicy: "edit" });
   });
 });
 
@@ -371,5 +376,63 @@ describe("SessionLifecycle startFromInbox guards", () => {
       name: "AgentRunnerError",
       code: "SESSION_NOT_RUNNABLE",
     });
+  });
+});
+
+describe("approval policy on SessionLifecycle", () => {
+  const lifecycleFor = (seen: BuildAgentInput[]) => {
+    const { agent } = fakeAgent();
+
+    return new SessionLifecycle({
+      store: asStore({
+        getSessionById: () =>
+          Promise.resolve(sessionRow({ approvalPolicy: "edit" })),
+        getBranchTurns: () => Promise.resolve([]),
+        setActiveStream: () => Promise.resolve(1),
+        clearActiveStream: () => Promise.resolve(1),
+      }),
+      registry: {
+        getStreamEntryBySession: () => null,
+        registerStream: () => {},
+        unregisterStream: () => Promise.resolve(true),
+      } as never,
+      buildAgent: (input) => {
+        seen.push(input);
+        return Promise.resolve(agent as never);
+      },
+    });
+  };
+
+  test("a timer-driven run uses the stored policy", async () => {
+    const seen: BuildAgentInput[] = [];
+
+    await lifecycleFor(seen).startFromInbox({
+      sessionId: "s1",
+      items: [{ ...inboxItem("s1"), kind: "timer" }],
+    });
+
+    expect(seen[0]?.approvalPolicy).toBe("edit");
+  });
+
+  test("a completion notice uses the stored policy too", async () => {
+    const seen: BuildAgentInput[] = [];
+
+    await lifecycleFor(seen).startFromInbox({
+      sessionId: "s1",
+      items: [{ ...inboxItem("s1"), kind: "job-notice" }],
+    });
+
+    expect(seen[0]?.approvalPolicy).toBe("edit");
+  });
+
+  test("a user message keeps the stored policy", async () => {
+    const seen: BuildAgentInput[] = [];
+
+    await lifecycleFor(seen).startFromInbox({
+      sessionId: "s1",
+      items: [inboxItem("s1")],
+    });
+
+    expect(seen[0]?.approvalPolicy).toBe("edit");
   });
 });

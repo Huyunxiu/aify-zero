@@ -17,8 +17,8 @@ import type { Stack } from "./harness";
 const COMPOSER_NAME = "What would you like to know?";
 
 /** 场景给两次标题生成两个不同的回答，所以这两段文字各自只属于一个会话。 */
-const FIRST = "会话甲";
-const SECOND = "会话乙";
+const FIRST = "Session one";
+const SECOND = "Session two";
 
 test("Session list: the session used last comes first and shows when it was used", async ({
   page,
@@ -37,7 +37,7 @@ test("Session list: the session used last comes first and shows when it was used
     // 1. 会话甲的第一个回合。标题在回合开始后由后台生成，落库后侧栏与页面头部各
     //    显示一处，所以这里等到它出现即可。
     await newSession.click();
-    await sendAndSettle(page, "第一句");
+    await sendAndSettle(page, "First message");
     await expect(page.getByText(FIRST, { exact: true }).first()).toBeVisible();
 
     // 2. 会话乙的第一个回合。此刻乙既是最晚创建、也是最晚活动的。
@@ -46,7 +46,7 @@ test("Session list: the session used last comes first and shows when it was used
     //    时刻排也是同一个顺序，最后那条断言就分辨不出排序用的是哪一列。
     await page.waitForTimeout(1100);
     await newSession.click();
-    await sendAndSettle(page, "第二句");
+    await sendAndSettle(page, "Second message");
     await expect(page.getByText(SECOND, { exact: true }).first()).toBeVisible();
 
     // 3. 回到甲再跑一个回合。现在甲更早创建、却更晚活动：按创建时刻排它该在下面，
@@ -55,8 +55,10 @@ test("Session list: the session used last comes first and shows when it was used
     //    这一步同时是「回到旧会话继续用」这个真实动作：切回来时不需要刷新，甲的
     //    第一个回合就该在屏幕上。
     await page.getByText(FIRST, { exact: true }).click();
-    await expect(page.getByText("第一句", { exact: true })).toBeVisible();
-    await sendAndSettle(page, "第三句");
+    await expect(
+      page.getByText("First message", { exact: true })
+    ).toBeVisible();
+    await sendAndSettle(page, "Third message");
 
     // 4. 落到一个还没有标题的新会话，让两个标题在整页上各自只剩侧栏那一处。
     //    不要跳过这一步：会话页头部也显示标题，停在甲里会让 `会话甲` 匹配两处，

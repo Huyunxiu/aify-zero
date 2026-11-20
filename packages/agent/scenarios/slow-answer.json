@@ -2,17 +2,17 @@
   "name": "slow-answer",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "假标题" },
+    { "when": { "stream": false }, "answer": "Fake title" },
     {
       "when": { "stream": true },
-      "answer": "第一句收到。",
+      "answer": "Got the first message.",
       "slow": { "firstChunkMs": 3000, "chunkMs": 200 }
     },
     {
       "when": { "stream": true },
-      "answer": "两条都收到了。",
+      "answer": "Got both messages.",
       "slow": { "firstChunkMs": 800, "chunkMs": 100 }
     },
-    { "answer": "还有一条。" }
+    { "answer": "One more message." }
   ]
 }

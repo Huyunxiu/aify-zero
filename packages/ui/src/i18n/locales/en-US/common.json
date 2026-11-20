@@ -210,6 +210,19 @@
   "promptCommand": {
     "compact": "compact"
   },
+  "approvalPolicy": {
+    "label": "Approvals",
+    "values": {
+      "readonly": "Read-only",
+      "edit": "Edit",
+      "unrestricted": "Full access"
+    },
+    "hints": {
+      "readonly": "Denies writes and commands; reads still work",
+      "edit": "Applies changes without asking; interactive tools still ask",
+      "unrestricted": "Nothing interrupts except the questionnaire"
+    }
+  },
   "compaction": {
     "title": "Context compacted",
     "trigger": {

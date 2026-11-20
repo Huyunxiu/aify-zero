@@ -29,10 +29,10 @@ import {
 /** 编辑框的可访问名取自它自己的占位文案（`prompt-input-tiptap.tsx`）。 */
 const COMPOSER_NAME = "What would you like to know?";
 
-const MESSAGE = "跑一条会慢一点的活";
+const MESSAGE = "Run a job that takes a moment";
 
 /** 慢回答场景里第一个流式回答的正文；通知的正文就是它。 */
-const ANSWER = "第一句收到。";
+const ANSWER = "Got the first message.";
 
 /** 起页、建项目、跑一个三秒的回合；比默认的 120 秒留一点余量。 */
 test.setTimeout(150_000);

@@ -108,6 +108,21 @@ export const session_table = sqliteTable(
     })
       .notNull()
       .default("idle"),
+    /**
+     * The Approval Policy of this session.
+     *
+     * The values match `ApprovalPolicy` in `@workspace/agent-client`. The database
+     * layer does not depend on the protocol package, so the literals stay here; change both together.
+     *
+     * It decides only whether to ask, and who gets asked. The Sandbox still decides
+     * what is possible, so it is no permission model. A run uses the stored value as it is,
+     * whatever started the run.
+     */
+    approvalPolicy: text("approval_policy", {
+      enum: ["edit", "readonly", "unrestricted"],
+    })
+      .notNull()
+      .default("edit"),
     forkedFromSessionId: text("forked_from_session_id"),
     forkedFromMessageId: text("forked_from_message_id"),
     /**

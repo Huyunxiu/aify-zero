@@ -1,5 +1,6 @@
 import type {
   AgentUserTurn,
+  ApprovalPolicy,
   TextStreamToolApprovalResponseEvent,
 } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
@@ -55,6 +56,12 @@ export type CreateSessionInput = {
   title?: string;
   projectId?: string;
   metadata?: unknown;
+  /**
+   * The initial Approval Policy of the session. It applies only when the row is new.
+   *
+   * The layer ignores it when the row exists: the user probably changed it mid-session, and a resend must not overwrite it.
+   */
+  approvalPolicy?: ApprovalPolicy;
 };
 
 export type EnqueueInput = {
@@ -96,6 +103,12 @@ export type BuildAgentInput = {
   jobs?: JobRegistry;
   /** 这次运行的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
+  /**
+   * The Approval Policy that applies to this Run.
+   *
+   * The runner already tightened it for attendance. The host receives the effective value and does not decide again.
+   */
+  approvalPolicy: ApprovalPolicy;
 };
 
 /** 运行器只依赖 `warn`；测试可以塞收集器。 */

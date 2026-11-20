@@ -1,0 +1,1 @@
+ALTER TABLE `session` ADD `approval_policy` text DEFAULT 'standard' NOT NULL;

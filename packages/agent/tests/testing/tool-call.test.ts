@@ -21,7 +21,7 @@ const SCENARIO = "edit-then-answer";
 /** 场景里那次工具调用要改的东西；断言直接从这条事实出发。 */
 const EXPECTED_ARGS = {
   path: "notes.md",
-  edits: [{ oldText: "第二行", newText: "第二行已改" }],
+  edits: [{ oldText: "second line", newText: "second line edited" }],
 };
 
 /** 一条 SSE 数据块拆成对象；`[DONE]` 与空行丢掉。 */

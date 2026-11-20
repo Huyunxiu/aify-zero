@@ -1,4 +1,8 @@
-import type { AgentStep, AgentTurn } from "@workspace/agent-client";
+import type {
+  AgentStep,
+  AgentTurn,
+  ApprovalPolicy,
+} from "@workspace/agent-client";
 
 import type { AgentToolSet } from "../types";
 
@@ -38,6 +42,8 @@ export type SessionRecord = {
   forkedFromMessageId: string | null;
   parentSessionId: string | null;
   parentToolCallId: string | null;
+  /** The Approval Policy of this session. The runner tightens it for attendance and then gives it to the agent. */
+  approvalPolicy: ApprovalPolicy;
   /** 删除时刻；有值即「已删」，读路径当它不存在。 */
   deletedAt: Date | null;
   createdAt: Date;
@@ -56,6 +62,7 @@ export type SessionWrite = {
   forkedFromMessageId?: string | null;
   parentSessionId?: string | null;
   parentToolCallId?: string | null;
+  approvalPolicy?: ApprovalPolicy;
 };
 
 export type TurnStatus =

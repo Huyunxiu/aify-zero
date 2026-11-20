@@ -1,3 +1,5 @@
+import type { ApprovalPolicy } from "@workspace/agent-client";
+import { DEFAULT_APPROVAL_POLICY } from "@workspace/agent-client";
 import type { Sandbox } from "@workspace/sandbox";
 import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
@@ -6,6 +8,9 @@ import { AgentContext } from "./agent-context";
 import type { ModelContextWindows } from "./agent-context";
 import type { AgentSession } from "./agent-session";
 import { Agent } from "./agents";
+import { classifyTool } from "./approval-classes";
+import type { ApprovalClassResolver } from "./approval-policy";
+import { policyAnswer, resolveServiceDecision } from "./approval-policy";
 import type { CompactionPolicyOverrides } from "./compaction/types";
 import {
   CompactionExtension,
@@ -32,38 +37,37 @@ import { createSubagentFactory } from "./subagent/factory";
 import { bindSessionTimers } from "./timers/session-timers";
 import type { TimerStore } from "./timers/types";
 import type { ToolApprovalPattern } from "./tool-approval";
+import { evaluateToolApproval } from "./tool-approval";
 import { catalogEntries } from "./tool-catalog/catalog";
 import type { JobToolOptions } from "./tools/jobs";
 import type { AgentToolSet } from "./types";
 import { timeZoneOrHost } from "./utils/time-zone";
 
-/** 默认在调用前询问用户的工具。 */
-const DEFAULT_TOOL_APPROVAL_TOOLS = new Set([
-  "write-file",
-  "delete-file",
-  "questionnaire",
-]);
-
 /**
- * 组合宿主的函数和默认规则。
+ * Composes the host's rules with the session's policy.
  *
- * 宿主函数先回答；它没有意见时，默认工具才要求用户确认。这样宿主可以按
- * 入参放行某些调用（例如项目内写入），其余情况仍会询问。
+ * The host answers first (the MCP annotation rules); the policy answers for the
+ * class, and the two fold through `resolveServiceDecision`: the policy closes a
+ * host's `ask`, and a refusal on either side stands. The class table replaced
+ * the hard-coded set, so one place answers who gets asked for a built-in tool.
  */
-function createToolApprovalPattern(
-  host: ToolApprovalPattern | undefined
-): ToolApprovalPattern {
+function createToolApprovalPattern(input: {
+  host: ToolApprovalPattern | undefined;
+  policy: ApprovalPolicy;
+  resolveClass: ApprovalClassResolver;
+}): ToolApprovalPattern {
   return async (request) => {
-    const decision = await host?.(request);
-    if (decision) {
-      return decision;
-    }
+    const toolClass = input.resolveClass(request);
+    // The host side can throw: `evaluateToolApproval` treats a throw as no opinion, so a bad rule does not stop the Turn.
+    const host = await evaluateToolApproval(input.host, request);
 
-    return DEFAULT_TOOL_APPROVAL_TOOLS.has(request.toolName)
-      ? { decision: "ask" }
-      : undefined;
+    return resolveServiceDecision(host, policyAnswer(input.policy, toolClass));
   };
 }
+
+/** Classify by the built-in table when no annotation is known. An MCP Tool falls to unknown, and the policy has no opinion. */
+const defaultResolveApprovalClass: ApprovalClassResolver = (request) =>
+  classifyTool(request.toolName);
 
 export interface SessionModel {
   /** 会话起始使用的模型。 */
@@ -115,10 +119,23 @@ export interface SessionAgentOptions {
   /**
    * 宿主自己的工具审批函数：按调用入参决定 deny / ask / allow。
    *
-   * 返回 undefined 表示没有意见；此时默认工具（write-file、delete-file、
-   * questionnaire）仍会询问用户。子 agent 继承组合后的函数。
+   * It returns undefined when it has no opinion; then the policy answers by Tool class. A
+   * child agent inherits the composed function.
    */
   toolApprovalPattern?: ToolApprovalPattern;
+  /**
+   * The Approval Policy of the session; the default is `edit`.
+   *
+   * It decides only whether to ask: an ask for a change class, a refusal for a command. The Sandbox decides feasibility.
+   */
+  approvalPolicy?: ApprovalPolicy;
+  /**
+   * The resolution from Tool name to Approval Class; by default it reads the built-in table only.
+   *
+   * The host knows the annotations of its own Tools (MCP's readOnly / destructive), so it
+   * injects this. Without it an MCP Tool falls to unknown, and the policy has no opinion.
+   */
+  resolveApprovalClass?: ApprovalClassResolver;
   /** 系统提示的起点；子 agent 说明会追加在后面。 */
   instructions?: string;
   /** 宿主扩展，在默认扩展之后注册。 */
@@ -170,8 +187,11 @@ export async function createSessionAgent(
     sandbox: options.sandbox,
   });
 
+  const approvalPolicy = options.approvalPolicy ?? DEFAULT_APPROVAL_POLICY;
+
   const agent = new Agent({
     name: options.name ?? "main",
+    approvalPolicy,
     sessionId: options.sessionId,
     context,
     session: options.session,
@@ -190,9 +210,14 @@ export async function createSessionAgent(
   });
 
   try {
-    // 宿主函数和默认规则合成一个审批函数；扩展不再声明审批。
+    // The host rules and the policy combine into one approval function. An Extension no longer states approval.
     agent.registerToolApprovalPattern(
-      createToolApprovalPattern(options.toolApprovalPattern)
+      createToolApprovalPattern({
+        host: options.toolApprovalPattern,
+        policy: approvalPolicy,
+        resolveClass:
+          options.resolveApprovalClass ?? defaultResolveApprovalClass,
+      })
     );
 
     await agent.registerExtension(

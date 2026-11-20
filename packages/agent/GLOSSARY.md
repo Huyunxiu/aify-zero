@@ -1,147 +1,186 @@
 # Agent
 
-会话里的模型循环：一个会话由若干回合组成，一个回合由若干步组成，一次运行驱动
-其中一个 assistant 回合。工具、钩子和提示片段在装配时进入这个循环。
+The model loop in a session. A session holds turns. A turn holds steps. One run drives one
+assistant turn. Tools, hooks, and prompt fragments enter this loop at assembly.
 
 ## Language
 
-**回合 (Turn)**:
-会话里按顺序排列的一段交换。user 回合装一条输入，assistant 回合装对它的回答；一次运行可以
-产生多个 user 回合和一条 assistant 回合。
+**Turn (回合)**:
+One exchange between the user and the model, in the order of a session. A user turn holds
+one input. An assistant turn holds the answer to it. One run can make many user turns and
+one assistant turn.
 _Avoid_: 轮、对话轮、用户回合
 
-**会话记录 (Transcript)**:
-一个会话里按顺序落定的全部回合；子代理的记录就是它自己那条会话的记录。待审批住在它里面；
-压缩往它里面追加标记与摘要，被盖住的回合原文仍在——改的是模型侧历史，不是记录。
+**Transcript (会话记录)**:
+All the turns that settled in order in one session. The transcript of a subagent is the
+transcript of its own session. Pending approvals live in it. Compaction appends markers and
+summaries to it, and the text of a covered turn stays there: compaction changes the
+model-side history, not the transcript.
 _Avoid_: 转录、对话记录、历史
 
-**运行 (Run)**:
-一次从起跑到结束的模型执行，用一个运行 id 标识：它在起点领取收件箱里的全部待办项，
-让它们成为 user 回合，再驱动挂在最后一条之后的那条 assistant 回合。事件流、领取和
-暂停都以它为界。
+**Run (运行)**:
+One model execution from start to end, identified by a run id. At its start, the run claims
+every inbox item, makes each item a user turn, and then drives the assistant turn that
+follows the last one. The event stream, the claim, and a pause all have the run as their
+boundary.
 _Avoid_: 任务、会话、流
 
-**收件箱 (Inbox)**:
-一个会话里按到达顺序排列、还没进入循环的东西。用户消息、定时器到点、外部事件都
-写进这里；一次运行开始时从它领取。
+**Inbox (收件箱)**:
+The things in a session that arrived in order and did not enter the loop. User messages,
+timer firings, and external events write here. A run claims from it at its start.
 _Avoid_: 待发箱、发送队列
 
-**待办项 (Inbox Item)**:
-收件箱里的一行，记着内容、到达顺序，以及最早能在哪个边界交进去：本次运行中途，还是
-下一条运行。一次运行可以领走多条：每条仍是一个独立的 user 回合，回复只有一条，挂在
-最后一条之后。
+**Inbox Item (待办项)**:
+One row in the inbox. It holds the content, the arrival order, and the earliest boundary
+where the item can enter: in the middle of the current run, or at the next run. A run can
+claim many items. Each item is still a separate user turn. Only one reply exists, and it
+follows the last turn.
 _Avoid_: 消息、事件、任务、合并
 
-**发件箱 (Outbox)**:
-一个会话里已经落定、还没送到人的回复记录。它是收件箱的反面：那边是进来的东西，
-这边是出去的东西。一次运行落定成 `done` 且确实说了话，就留一条；没话说、失败、
-取消、等审批都不留。
+**Outbox (发件箱)**:
+The reply records of a session that settled and did not reach a person. It is the opposite
+of the inbox: the inbox holds what comes in, and the outbox holds what goes out. A run
+leaves one record when it settles as `done` and it did speak. A run leaves no record when
+it has nothing to say, fails, is canceled, or waits for approval.
 _Avoid_: 发送队列、通知列表
 
-**发件项 (Outbox Item)**:
-发件箱里的一行，指向一个已落定的回合。它不存正文：正文在回合的 step 里，复制一份
-会随压缩和重生成分叉。送达之后留下做账，没有送达的在过期之后留下做账。
+**Outbox Item (发件项)**:
+One row in the outbox. It points at a settled turn. It does not store the body: the body is
+in the steps of the turn, and a copy of it would diverge on compaction and regeneration. It
+stays for the record after delivery. An item that did not deliver stays for the record
+after it expires.
 _Avoid_: 消息、通知、提醒、推送
 
-**投递 (Delivery)**:
-把发件项变成一次系统通知。以通知已经显示为准，不以用户看见为准；它和「交付」不是
-一回事——交付是把待办项交进模型循环（入站），投递是把发件项送到人（出站）。
+**Delivery (投递)**:
+Delivery turns one outbox item into one system notification. It counts when the notification
+shows, not when the user sees it. Delivery is not a handoff: a handoff puts an inbox item
+into the model loop (inbound), and delivery sends an outbox item to a person (outbound).
 _Avoid_: 发送、推送、通知
 
-**投递器 (Outbox Dispatcher)**:
-进程里那个扫描循环：挑出到条件的发件项，推给在等的桌面连接，收回执。它不弹通知，
-也不决定用户有没有看见；推送出去的行不会推第二次。
+**Delivery Dispatcher (投递器)**:
+The scan loop in the process. It picks the outbox items that meet the condition, pushes
+them to the desktop connection that waits, and collects the receipt. It does not show a
+notification. It does not decide if the user saw it. A row that it pushed does not go out a
+second time.
 _Avoid_: 调度器、发送器、worker
 
-**后台任务 (Job)**:
-模型发起、比一次请求活得久的命令或工作。注册表记账它的身份、归属、生命周期和
-输出；执行资源归生产方。「任务」在散文里是它的简称，但不能用来指一次运行。
+**Job (后台任务)**:
+A command or a unit of work that the model starts and that lives longer than one request. A
+registry records its identity, owner, lifecycle, and output. The producer owns the execution
+resource. In prose, "task" is a short form of it, but "task" must not name a run.
 _Avoid_: 作业、job（中文行文）、后台进程
 
-**完成通知 (Completion Notice)**:
-后台任务结算后投给拥有者的一条消息。它不是用户输入，也不结束运行。
+**Completion Notice (完成通知)**:
+One message that a job sends to its owner after it settles. It is not user input. It does
+not end a run.
 _Avoid_: 完成消息、回调、完成事件
 
-**定时器 (Timer)**:
-会话上一个有「下一次触发时刻」的对象。到点后它往收件箱写一条待办项，会话因此可能
-被唤醒；它自己不跑模型，也不属于某次运行。两种：跟进与日程。
+**Timer (定时器)**:
+An object on a session that has a next fire time. At that time, it writes one inbox item,
+and the session can wake for that item. A timer does not run the model itself, and it does
+not belong to one run. Two kinds: Follow-up and Schedule.
 _Avoid_: 提醒、闹钟、定时任务、cron
 
-**跟进 (Follow-up)**:
-只触发一次的定时器。触发之后它就不存在了；到点那次运行用的是设定它时的模型。
+**Follow-up (跟进)**:
+A timer that fires one time. After it fires, it no longer exists. The run at that time uses
+the model that was set when the follow-up was made.
 _Avoid_: 提醒、一次性任务、超时
 
-**日程 (Schedule)**:
-按周期重复的定时器。触发之后把到期时刻推进到下一次，直到被撤销。它带一条周期规则；
-日历规则还带一个写定时固化的时区。
+**Schedule (日程)**:
+A timer that repeats on a cycle. After it fires, it moves the due time to the next one,
+until someone cancels it. It holds one recurrence rule. A calendar rule also holds a time
+zone, fixed when the schedule is written.
 _Avoid_: 定时任务、周期任务、循环任务、cron
 
-**周期规则 (Recurrence Rule)**:
-日程重复的节拍：每天、每周的某几天，或固定间隔。前两种按当地墙上时间算，后一种按
-绝对毫秒算。
+**Recurrence Rule (周期规则)**:
+The rhythm of a schedule: every day, some days of the week, or a fixed interval. The first
+two count local wall-clock time. The third counts absolute milliseconds.
 _Avoid_: cron 表达式、RRULE、重复规则
 
-**插话 (Steering)**:
-运行中用户补的一句话。它作为一条引导消息，在下一个步边界进入当前回合，不拆成
-独立的 user 回合。
+**Steering (插话)**:
+One sentence that the user adds during a run. It enters the current turn as a steering
+message at the next step boundary. It does not become a separate user turn.
 _Avoid_: steer、中途消息
 
-**会话事件流 (Session Event Stream)**:
-一个会话的事件通道：把连续几次运行接成一条给读者看的序列，每次运行自成一段
-（`run.start` 到 `run.end`），运行之间的空档不关闭它。读者按会话游标往后读，
-所以排队中的待办项被领走时，读者已经在看了。
+**Session Event Stream (会话事件流)**:
+The event channel of a session. It joins successive runs into one sequence for the reader.
+Each run is its own segment (`run.start` to `run.end`), and the gaps between runs do not
+close it. The reader reads forward from the session cursor, so the reader already watches
+when a queued inbox item is claimed.
 _Avoid_: 数据流、事件流（一次运行的）
 
-**工具 (Tool)**:
-模型可以请求执行的一个动作，由名字、说明和入参结构描述。内置工具和 MCP 工具
-都是工具，区别只在来源。
+**Tool (工具)**:
+One action that the model can request. A name, a description, and an input structure
+describe it. Built-in tools and MCP tools are both tools; only their source is different.
 _Avoid_: 函数、函数调用、能力
 
-**MCP 服务器 (MCP Server)**:
-按 MCP 协议对外提供工具的一个独立进程或 HTTP 服务。
+**MCP Server (MCP 服务器)**:
+One separate process or HTTP service that supplies tools over the MCP protocol.
 _Avoid_: 插件、集成、连接器、外部服务
 
-**MCP 工具 (MCP Tool)**:
-属于某个 MCP 服务器的工具。它和内置工具在会话里地位相同，但可用性取决于那个
-服务器是否连得上。
+**MCP Tool (MCP 工具)**:
+One tool that belongs to an MCP server. It has the same rank as a built-in tool in a
+session, but its availability depends on whether that server connects.
 _Avoid_: 远程工具、外部工具、第三方工具
 
-**暴露方式 (Exposure)**:
-一个工具是随每一步请求声明给模型，还是只在工具目录里等模型来搜。
+**Exposure (暴露方式)**:
+The choice to declare a tool to the model with each step request, or to keep it in the tool
+catalog until the model searches for it.
 _Avoid_: 可见性、模式、mode、懒加载
 
-**工具目录 (Tool Catalog)**:
-模型当前看不见、但可以搜到的那批工具。它不是一个新来源，只是工具被藏起来的部分。
+**Tool Catalog (工具目录)**:
+The set of tools that the model cannot see now but can find by search. It is not a new
+source. It is only the hidden part of the tools.
 _Avoid_: 注册表、索引、工具箱
 
-**转调 (Route)**:
-模型说出工具的准确名字和入参，由内核找到那个工具并执行，模型没有直接调用它。
+**Route (转调)**:
+The model gives the exact tool name and input. The kernel finds that tool and runs it. The
+model does not call the tool directly.
 _Avoid_: 代理、包装、网关、gateway
 
-**授权 (Authorization)**:
-用户在一台 MCP 服务器上同意之后，客户端取得该服务器访问凭据的流程。发起者是用
-户，客户端不代替用户同意。
+**Authorization (授权)**:
+The process where the client gets the access credential of an MCP server after the user
+agrees on that server. The user starts this process. The client does not agree on behalf of
+the user.
 _Avoid_: 鉴权、登录、认证
 
-**授权令牌 (Authorization Token)**:
-授权之后客户端持有、随每次请求发给 MCP 服务器的凭据。它和本地 API 的访问令牌
-不是一回事：前者属于第三方服务器，后者只证明请求来自本机客户端。
+**Authorization Token (授权令牌)**:
+The credential that the client holds after authorization and sends to the MCP server with
+each request. It is not the access token of the local API. The first belongs to a
+third-party server. The second only proves that the request comes from the local client.
 _Avoid_: 密钥、apiKey
 
-**扩展 (Extension)**:
-在会话装配时注册工具、钩子或提示片段的一段代码。一个扩展可以注册多个工具；
-一个 MCP 服务器不是扩展。
+**Extension (扩展)**:
+One piece of code that registers tools, hooks, or prompt fragments at session assembly. An
+extension can register more than one tool. An MCP server is not an extension.
 _Avoid_: 插件、模块、集成
 
-**重试 (Retry)**:
-一步失败之后，在同一个回合里用同一份历史重新请求一次。它本身是一步。次数
-只在重试上算：第一次请求不算，之后每一次重新请求都算一次重试。
+**Retry (重试)**:
+One new request with the same history in the same turn, after a step fails. A retry is a
+step itself. The count applies to retries only. The first request does not count, and each
+new request after it counts as one retry.
 _Avoid_: 重发、再试、重新生成、尝试
 
-**运行器 (Runner)**:
-一个会话的常驻推进者：从收件箱领取待办项、起跑、在失败或中止后暂停，持有唯一的运行锁，并负责会话的 create / resume / stop / compact / fork。主会话的运行只由它开始。
+**Runner (运行器)**:
+The resident driver of one session. It claims inbox items, starts a run, and pauses after a
+failure or an abort. It holds the only run lock. It runs create / resume / stop / compact /
+fork for the session. Only the runner starts a run of the main session.
 _Avoid_: 调度器、worker、后台服务、运行时
 
-**暂停 (Paused)**:
-运行器不再自动开始下一次运行的状态。它是对自动推进的刹车，不是对会话的关闭。
+**Paused (暂停)**:
+The state where the runner does not start the next run automatically. A pause is a brake on
+automatic progress. It does not close the session.
 _Avoid_: 停止、中断、挂起
+
+**Approval Policy (审批策略)**:
+The asking stance of one session on tool calls: which calls the session passes, which calls
+it must ask about, and which calls it does not permit. The policy decides only if the
+session asks; the sandbox decides if the call can occur. The policy that the user selects
+lives on the session, and the runtime makes it tighter when no person attends.
+_Avoid_: 权限模式、permissionMode、授权、策略模式
+
+**Approval Class (审批类别)**:
+The approval category of one tool: read, mutate, exec, interact, or unknown. The policy
+answers by class, not by tool name. The class of an MCP tool comes from the annotation of
+its server. If that annotation is absent, the class is unknown.
+_Avoid_: 风险等级、权限级别、工具类型

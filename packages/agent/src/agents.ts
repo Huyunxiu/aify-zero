@@ -1,4 +1,5 @@
 import { DevToolsTelemetry } from "@ai-sdk/devtools";
+import type { ApprovalPolicy } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 import { registerTelemetry } from "ai";
@@ -61,6 +62,14 @@ export type AgentOptions = {
   model: ModelRef;
   modelEffort?: ModelEffort;
   /**
+   * The Approval Policy of this agent.
+   *
+   * Required. The composition root sets the default, once (`createSessionAgent`);
+   * a default here makes two owners. The root already tightened the value for
+   * attendance, so this is the effective value, and a child session copies it.
+   */
+  approvalPolicy: ApprovalPolicy;
+  /**
    * 这个 agent 所属的外部 abort scope，由派生它的父传进来。父停时它跟着停；和它
    * 自己的 `abort()` 是并集而不是替代，所以子 agent 仍然能被单独停掉。
    */
@@ -90,6 +99,8 @@ export type AgentOptions = {
 export class Agent {
   name: string;
   sessionId: string;
+  /** The effective Approval Policy. A child session copies it. */
+  approvalPolicy: ApprovalPolicy;
   instructions?: string;
   tools: ToolSet;
   /** 工具名到暴露方式，和 `tools` 同生共死：注册写入，注销删除。 */
@@ -137,6 +148,7 @@ export class Agent {
   constructor(options: AgentOptions) {
     this.name = options.name;
     this.sessionId = options.sessionId;
+    this.approvalPolicy = options.approvalPolicy;
     this.instructions = options.instructions;
     this.tools = options.tools ?? {};
     this.toolExposure = new Map(options.toolExposure);

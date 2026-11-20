@@ -1,6 +1,7 @@
 import type {
   AgentSteeringStep,
   AgentTurn,
+  ApprovalPolicy,
   DeliverAt,
   EnqueueInboxInput,
   InboxItem,
@@ -86,6 +87,12 @@ export interface AgentStore {
   getSessionById(sessionId: string): Promise<SessionRecord | null>;
 
   updateSessionById(sessionId: string, title: string): Promise<number>;
+
+  /** Change the Approval Policy of a session and return the row count. */
+  setSessionApprovalPolicy(
+    sessionId: string,
+    policy: ApprovalPolicy
+  ): Promise<number>;
 
   /**
    * 读会话行，不过滤删除。

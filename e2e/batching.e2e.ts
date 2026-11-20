@@ -17,12 +17,12 @@ import type { Stack } from "./harness";
 /** 编辑框的可访问名取自它自己的占位文案（`prompt-input-tiptap.tsx`）。 */
 const COMPOSER_NAME = "What would you like to know?";
 
-const SENT = "先处理这一条";
-const QUEUED_FIRST = "顺便看第二个";
-const QUEUED_SECOND = "还有第三个";
+const SENT = "Handle this one first";
+const QUEUED_FIRST = "Also look at the second one";
+const QUEUED_SECOND = "And the third one";
 
-const FIRST_ANSWER = "第一句收到。";
-const SECOND_ANSWER = "两条都收到了。";
+const FIRST_ANSWER = "Got the first message.";
+const SECOND_ANSWER = "Got both messages.";
 
 test("Queued messages are answered by one run", async ({ page }) => {
   let stack: Stack | undefined;
