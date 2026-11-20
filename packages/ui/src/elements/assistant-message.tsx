@@ -72,7 +72,6 @@ import {
   ToolSection,
   languageFromPath,
 } from "./tool-panels";
-import type { ToolPanelVariant } from "./tool-panels";
 import {
   formatDuration,
   getPartDurationMs,
@@ -106,13 +105,6 @@ type AssistantMessageProps = {
 
 /** Max characters of the first line used as a Frame title. */
 const REASON_TOOL_LABEL_MAX_LENGTH = 180;
-
-/**
- * Which of the three tool panel arrangements this transcript draws. Switching
- * a call's whole shape is a one-word change here, which is what the prototype
- * is for.
- */
-const TOOL_PANELS_VARIANT: ToolPanelVariant = "stack";
 
 /**
  * The copy controls every Frame panel shares. Declared once so the eight tool
@@ -365,7 +357,6 @@ const ToolPanels = ({
     outputLanguage={languageFromPath(toolInputPath(part))}
     pending={part.state === "input-streaming"}
     renderOutput={renderOutput}
-    variant={TOOL_PANELS_VARIANT}
   >
     {children}
   </ToolPanelsShell>

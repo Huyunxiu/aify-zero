@@ -19,13 +19,9 @@ import { cn } from "../lib/utils";
  * code — JSON and raw text — so both are drawn as code blocks instead of as
  * `whitespace-pre` text, which neither wraps nor keeps the monospaced column.
  *
- * Two arrangements are kept while one is chosen:
- *
- * - `stack`: one card per side. Closest to the panel it replaces.
- * - `log`: one card, both sides in a row each. Densest, reads like a transcript.
+ * Each side is its own card. The frame behind a call carries no surface of its
+ * own: these cards are the surface.
  */
-export const TOOL_PANEL_VARIANTS = ["stack", "log"] as const;
-export type ToolPanelVariant = (typeof TOOL_PANEL_VARIANTS)[number];
 
 /**
  * Tool output runs to thousands of lines. The block scrolls past this height
@@ -302,12 +298,12 @@ type PanelsProps = {
 };
 
 /**
- * `stack` — one card per side.
+ * The two ends of a call, one card each.
  *
- * The titles move into the cards, so the two ends of a call read as two blocks
- * of the same kind instead of as a floating label over a white panel.
+ * The titles sit in the cards, so a call reads as two blocks of the same kind
+ * instead of as a floating label over a white panel.
  */
-const StackPanels = ({
+export function ToolPanels({
   input,
   output,
   inputLanguage = "json",
@@ -318,141 +314,25 @@ const StackPanels = ({
   approval,
   children,
   errorText,
-}: PanelsProps) => (
-  <div className="flex flex-col gap-1.5">
-    <ToolSection
-      footer={approval}
-      label="Input"
-      language={inputLanguage}
-      pending={pending}
-      value={input}
-    />
-    {children}
-    {hideOutput ? null : renderOutput === undefined ? (
-      <ToolSection label="Output" language={outputLanguage} value={output} />
-    ) : (
-      <ToolRenderedSection copyValue={output} label="Output">
-        {renderOutput(output)}
-      </ToolRenderedSection>
-    )}
-    {errorText === undefined ? null : <ToolErrorSection text={errorText} />}
-  </div>
-);
-
-/**
- * `log` — one card, both sides as rows.
- *
- * Nothing repeats: one border, one surface, the titles in the smallest type the
- * scale has. It is the version for readers who open a call and scan it.
- */
-const LogPanels = ({
-  input,
-  output,
-  inputLanguage = "json",
-  outputLanguage = "text",
-  pending,
-  hideOutput,
-  renderOutput,
-  approval,
-  children,
-  errorText,
-}: PanelsProps) => (
-  <div className="flex flex-col gap-1.5">
-    <CodeBlock className="shrink-0">
-      <ToolLogRow
+}: PanelsProps) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <ToolSection
         footer={approval}
         label="Input"
         language={inputLanguage}
         pending={pending}
         value={input}
       />
+      {children}
       {hideOutput ? null : renderOutput === undefined ? (
-        <ToolLogRow
-          className="border-t border-border/70"
-          label="Output"
-          language={outputLanguage}
-          value={output}
-        />
+        <ToolSection label="Output" language={outputLanguage} value={output} />
       ) : (
-        <div className="border-t border-border/70">
-          <div className="flex h-7 items-center gap-2 px-3">
-            <span className="font-mono font-medium text-[10px] text-muted-foreground uppercase leading-none tracking-[0.14em]">
-              Output
-            </span>
-            <span className={LANGUAGE_CLASS}>{outputLanguage}</span>
-          </div>
-          <div className="overflow-x-auto p-3 text-sm">
-            {renderOutput(output)}
-          </div>
-        </div>
+        <ToolRenderedSection copyValue={output} label="Output">
+          {renderOutput(output)}
+        </ToolRenderedSection>
       )}
-    </CodeBlock>
-    {children}
-    {errorText === undefined ? null : <ToolErrorSection text={errorText} />}
-  </div>
-);
-
-function ToolLogRow({
-  label,
-  language,
-  value,
-  pending,
-  footer,
-  className,
-}: {
-  label: string;
-  language?: string;
-  value: string;
-  pending?: boolean;
-  footer?: React.ReactNode;
-  className?: string;
-}) {
-  const [wrap, setWrap] = React.useState(
-    language === undefined || language === "text"
-  );
-
-  return (
-    <div className={cn("group/section", className)}>
-      <div className="flex h-7 items-center gap-2 px-3">
-        <span className="font-mono font-medium text-[10px] text-muted-foreground uppercase leading-none tracking-[0.14em]">
-          {label}
-        </span>
-        {language === undefined ? null : (
-          <span className={LANGUAGE_CLASS}>{language}</span>
-        )}
-        <CodeBlockActions className="gap-1">
-          <ToolWrapToggle
-            className={cn(HOVER_CONTROL_CLASS, "text-muted-foreground/50")}
-            onToggle={() => setWrap((previous) => !previous)}
-            pressed={wrap}
-          />
-          <CodeBlockCopyButton
-            className="text-muted-foreground/50 hover:text-foreground"
-            disabled={value.length === 0}
-            value={value}
-          />
-        </CodeBlockActions>
-      </div>
-      <ToolCodeBody
-        className="px-3 pb-1.5"
-        language={language ?? "text"}
-        pending={pending}
-        value={value}
-        viewportClassName="max-h-[min(14rem,32vh)]"
-        wrap={wrap}
-      />
-      {footer}
+      {errorText === undefined ? null : <ToolErrorSection text={errorText} />}
     </div>
   );
-}
-
-export function ToolPanels({
-  variant = "stack",
-  ...props
-}: PanelsProps & { variant?: ToolPanelVariant }) {
-  if (variant === "log") {
-    return <LogPanels {...props} />;
-  }
-
-  return <StackPanels {...props} />;
 }
