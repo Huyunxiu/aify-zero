@@ -1,6 +1,6 @@
 # An approval policy becomes decisions in the composition root; the executor does not know it
 
-A session now has an approval policy: standard, edit, read-only, or unrestricted. The
+A session now has an approval policy: standard, edit, read-only, or full access. The
 user's choice lives in `session.approval_policy`. `createSessionAgent` turns the policy into
 a `ToolApprovalPattern`. That pattern folds with the host rules (the MCP annotations), and
 the executor receives the result. The executor and the decision layer still see three
@@ -30,10 +30,10 @@ Five rules that must not change:
   the host allows do not turn back into questions.
 - **A policy closes an ask, including one from a hook.** When the user picks a class, that
   class no longer interrupts. The ask may come from a host default or from a hook; the
-  policy closes both. Unrestricted is therefore literal: nothing asks. That includes an MCP
+  policy closes both. Full access is therefore literal: nothing asks. That includes an MCP
   tool with `destructiveHint`. A refusal is the only protection that stays.
 - **An unattended run tightens the policy.** A run that a timer or a completion notice
-  starts uses the standard policy. Edit and unrestricted step back: nobody is present, and
+  starts uses the standard policy. Edit and full access step back: nobody is present, and
   that is the worst moment to apply changes without a question. The runner tightens the
   policy, because it knows what started the run. The database always holds the user's
   choice.

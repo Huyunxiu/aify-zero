@@ -216,7 +216,7 @@
       "readonly": "只读",
       "standard": "标准",
       "edit": "编辑",
-      "unrestricted": "全放行"
+      "unrestricted": "完全访问"
     },
     "hints": {
       "readonly": "拒绝写入与命令，读取照常",

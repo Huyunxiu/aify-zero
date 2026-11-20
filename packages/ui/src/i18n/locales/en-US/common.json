@@ -216,7 +216,7 @@
       "readonly": "Read-only",
       "standard": "Standard",
       "edit": "Edit",
-      "unrestricted": "Unrestricted"
+      "unrestricted": "Full access"
     },
     "hints": {
       "readonly": "Denies writes and commands; reads still work",
