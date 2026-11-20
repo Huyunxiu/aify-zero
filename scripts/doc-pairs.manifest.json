@@ -27,7 +27,6 @@
     "docs/adr/0017-provider-owns-access-config.md",
     "docs/adr/0018-schedule-advances-instead-of-deleting.md",
     "docs/adr/0019-outbox-delivers-over-the-app-channel.md",
-    "docs/adr/0020-read-mark-requires-visible-page.md",
     "docs/adr/0021-session-last-activity-is-turn-boundary.md",
     "docs/adr/0022-session-delete-is-soft.md",
     "docs/plans/fake-provider.md",
