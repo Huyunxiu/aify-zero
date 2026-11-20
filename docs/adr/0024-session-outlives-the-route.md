@@ -7,10 +7,10 @@ session, closed the stream and threw the draft away. Settings then became a
 route, which made that loss reachable from the screen the reader was looking at.
 
 The session now lives in a pathless `_shell` layout. A route below that layout
-can paint over the session instead of replacing it. The route that covers says
+can cover the session instead of replacing it. The route that covers says
 so with `staticData.coversSession`; the shell asks that question, so a new
 section under `/settings` inherits the answer from its layout route, and the
-shell never learns an address.
+shell tests no addresses.
 
 A covered session keeps streaming. It is only not read: the read mark still
 needs the document visible and the session uncovered (ADR 0020), so a turn that

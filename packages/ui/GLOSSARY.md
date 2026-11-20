@@ -49,7 +49,7 @@ _Avoid_: 模型头像、model logo
 
 **会话宿主 (Session Host)**:
 屏幕上有状态的那个会话实例。它由外壳持有，换地址不换它。
-_Avoid_: 会话页面、会话容器、keep-alive
+_Avoid_: 会话页面、keep-alive
 
 **遮挡 (Covered)**:
 会话仍在跑、仍在读会话事件流，但另一条路由盖在它上面，读者看不见它。

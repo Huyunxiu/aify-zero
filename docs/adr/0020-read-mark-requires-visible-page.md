@@ -25,7 +25,7 @@ What changes is that "somebody watched" expires the pending rows early.
 "Read" assumes that a person can see. A page that exists is not a page that a
 person sees; the page itself is the only thing that knows.
 
-A session that another route covers counts as unseen. Settings stands over the
+A session that another route covers counts as unseen. Settings covers the
 session, and the session keeps streaming behind it (ADR 0024). The page is
 visible; the session is not. A covered session is therefore not read either.
 
