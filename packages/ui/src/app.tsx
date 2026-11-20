@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
-  createMemoryHistory,
+  createBrowserHistory,
+  createHashHistory,
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
@@ -18,15 +19,23 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
 import "@workspace/ui/styles/globals.css";
+import { isDesktopShell } from "./lib/desktop";
 import { queryClient } from "./lib/orpc";
 import { routeTree } from "./routeTree.gen";
 import { useChannelStore } from "./stores/channel";
 
+/**
+ * The address bar follows the route, so history is the document's own.
+ *
+ * The desktop document comes from `aify-app://`, where the protocol handler
+ * serves files by path. A hash keeps the business path out of that lookup.
+ */
+const history = isDesktopShell ? createHashHistory() : createBrowserHistory();
+
 export const router = createRouter({
   defaultPendingMinMs: 0,
-  history: createMemoryHistory({
-    initialEntries: ["/sessions"],
-  }),
+  defaultPreload: "intent",
+  history,
   routeTree,
   scrollRestoration: true,
 });
