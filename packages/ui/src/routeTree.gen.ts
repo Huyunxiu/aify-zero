@@ -11,9 +11,15 @@
 import { Route as rootRouteImport } from "./routes/__root"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as ShellRouteImport } from "./routes/_shell"
+import { Route as ShellSettingsRouteImport } from "./routes/_shell/settings"
 import { Route as AgentsAgentIdRouteImport } from "./routes/agents/$agentId"
 import { Route as ShellSessionsIndexRouteImport } from "./routes/_shell/sessions/index"
 import { Route as ShellSessionsSessionIdRouteImport } from "./routes/_shell/sessions/$sessionId"
+import { Route as ShellSettingsIndexRouteImport } from "./routes/_shell/settings/index"
+import { Route as ShellSettingsAppearanceRouteImport } from "./routes/_shell/settings/appearance"
+import { Route as ShellSettingsGeneralRouteImport } from "./routes/_shell/settings/general"
+import { Route as ShellSettingsMcpRouteImport } from "./routes/_shell/settings/mcp"
+import { Route as ShellSettingsProviderRouteImport } from "./routes/_shell/settings/provider"
 
 const IndexRoute = IndexRouteImport.update({
   id: "/",
@@ -23,6 +29,11 @@ const IndexRoute = IndexRouteImport.update({
 const ShellRoute = ShellRouteImport.update({
   id: "/_shell",
   getParentRoute: () => rootRouteImport,
+} as any)
+const ShellSettingsRoute = ShellSettingsRouteImport.update({
+  id: "/settings",
+  path: "/settings",
+  getParentRoute: () => ShellRoute,
 } as any)
 const AgentsAgentIdRoute = AgentsAgentIdRouteImport.update({
   id: "/agents/$agentId",
@@ -39,39 +50,106 @@ const ShellSessionsSessionIdRoute = ShellSessionsSessionIdRouteImport.update({
   path: "/sessions/$sessionId",
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellSettingsIndexRoute = ShellSettingsIndexRouteImport.update({
+  id: "/",
+  path: "/",
+  getParentRoute: () => ShellSettingsRoute,
+} as any)
+const ShellSettingsAppearanceRoute = ShellSettingsAppearanceRouteImport.update({
+  id: "/appearance",
+  path: "/appearance",
+  getParentRoute: () => ShellSettingsRoute,
+} as any)
+const ShellSettingsGeneralRoute = ShellSettingsGeneralRouteImport.update({
+  id: "/general",
+  path: "/general",
+  getParentRoute: () => ShellSettingsRoute,
+} as any)
+const ShellSettingsMcpRoute = ShellSettingsMcpRouteImport.update({
+  id: "/mcp",
+  path: "/mcp",
+  getParentRoute: () => ShellSettingsRoute,
+} as any)
+const ShellSettingsProviderRoute = ShellSettingsProviderRouteImport.update({
+  id: "/provider",
+  path: "/provider",
+  getParentRoute: () => ShellSettingsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
+  "/settings": typeof ShellSettingsRouteWithChildren
   "/agents/$agentId": typeof AgentsAgentIdRoute
   "/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
+  "/settings/appearance": typeof ShellSettingsAppearanceRoute
+  "/settings/general": typeof ShellSettingsGeneralRoute
+  "/settings/mcp": typeof ShellSettingsMcpRoute
+  "/settings/provider": typeof ShellSettingsProviderRoute
   "/sessions/": typeof ShellSessionsIndexRoute
+  "/settings/": typeof ShellSettingsIndexRoute
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
   "/agents/$agentId": typeof AgentsAgentIdRoute
   "/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
+  "/settings/appearance": typeof ShellSettingsAppearanceRoute
+  "/settings/general": typeof ShellSettingsGeneralRoute
+  "/settings/mcp": typeof ShellSettingsMcpRoute
+  "/settings/provider": typeof ShellSettingsProviderRoute
   "/sessions": typeof ShellSessionsIndexRoute
+  "/settings": typeof ShellSettingsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   "/": typeof IndexRoute
   "/_shell": typeof ShellRouteWithChildren
+  "/_shell/settings": typeof ShellSettingsRouteWithChildren
   "/agents/$agentId": typeof AgentsAgentIdRoute
   "/_shell/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
+  "/_shell/settings/appearance": typeof ShellSettingsAppearanceRoute
+  "/_shell/settings/general": typeof ShellSettingsGeneralRoute
+  "/_shell/settings/mcp": typeof ShellSettingsMcpRoute
+  "/_shell/settings/provider": typeof ShellSettingsProviderRoute
   "/_shell/sessions/": typeof ShellSessionsIndexRoute
+  "/_shell/settings/": typeof ShellSettingsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: "/" | "/agents/$agentId" | "/sessions/$sessionId" | "/sessions/"
+  fullPaths:
+    | "/"
+    | "/settings"
+    | "/agents/$agentId"
+    | "/sessions/$sessionId"
+    | "/settings/appearance"
+    | "/settings/general"
+    | "/settings/mcp"
+    | "/settings/provider"
+    | "/sessions/"
+    | "/settings/"
   fileRoutesByTo: FileRoutesByTo
-  to: "/" | "/agents/$agentId" | "/sessions/$sessionId" | "/sessions"
+  to:
+    | "/"
+    | "/agents/$agentId"
+    | "/sessions/$sessionId"
+    | "/settings/appearance"
+    | "/settings/general"
+    | "/settings/mcp"
+    | "/settings/provider"
+    | "/sessions"
+    | "/settings"
   id:
     | "__root__"
     | "/"
     | "/_shell"
+    | "/_shell/settings"
     | "/agents/$agentId"
     | "/_shell/sessions/$sessionId"
+    | "/_shell/settings/appearance"
+    | "/_shell/settings/general"
+    | "/_shell/settings/mcp"
+    | "/_shell/settings/provider"
     | "/_shell/sessions/"
+    | "/_shell/settings/"
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -96,6 +174,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ShellRouteImport
       parentRoute: typeof rootRouteImport
     }
+    "/_shell/settings": {
+      id: "/_shell/settings"
+      path: "/settings"
+      fullPath: "/settings"
+      preLoaderRoute: typeof ShellSettingsRouteImport
+      parentRoute: typeof ShellRoute
+    }
     "/agents/$agentId": {
       id: "/agents/$agentId"
       path: "/agents/$agentId"
@@ -117,15 +202,72 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ShellSessionsSessionIdRouteImport
       parentRoute: typeof ShellRoute
     }
+    "/_shell/settings/": {
+      id: "/_shell/settings/"
+      path: "/"
+      fullPath: "/settings/"
+      preLoaderRoute: typeof ShellSettingsIndexRouteImport
+      parentRoute: typeof ShellSettingsRoute
+    }
+    "/_shell/settings/appearance": {
+      id: "/_shell/settings/appearance"
+      path: "/appearance"
+      fullPath: "/settings/appearance"
+      preLoaderRoute: typeof ShellSettingsAppearanceRouteImport
+      parentRoute: typeof ShellSettingsRoute
+    }
+    "/_shell/settings/general": {
+      id: "/_shell/settings/general"
+      path: "/general"
+      fullPath: "/settings/general"
+      preLoaderRoute: typeof ShellSettingsGeneralRouteImport
+      parentRoute: typeof ShellSettingsRoute
+    }
+    "/_shell/settings/mcp": {
+      id: "/_shell/settings/mcp"
+      path: "/mcp"
+      fullPath: "/settings/mcp"
+      preLoaderRoute: typeof ShellSettingsMcpRouteImport
+      parentRoute: typeof ShellSettingsRoute
+    }
+    "/_shell/settings/provider": {
+      id: "/_shell/settings/provider"
+      path: "/provider"
+      fullPath: "/settings/provider"
+      preLoaderRoute: typeof ShellSettingsProviderRouteImport
+      parentRoute: typeof ShellSettingsRoute
+    }
   }
 }
 
+interface ShellSettingsRouteChildren {
+  ShellSettingsAppearanceRoute: typeof ShellSettingsAppearanceRoute
+  ShellSettingsGeneralRoute: typeof ShellSettingsGeneralRoute
+  ShellSettingsMcpRoute: typeof ShellSettingsMcpRoute
+  ShellSettingsProviderRoute: typeof ShellSettingsProviderRoute
+  ShellSettingsIndexRoute: typeof ShellSettingsIndexRoute
+}
+
+const ShellSettingsRouteChildren: ShellSettingsRouteChildren = {
+  ShellSettingsAppearanceRoute: ShellSettingsAppearanceRoute,
+  ShellSettingsGeneralRoute: ShellSettingsGeneralRoute,
+  ShellSettingsMcpRoute: ShellSettingsMcpRoute,
+  ShellSettingsProviderRoute: ShellSettingsProviderRoute,
+  ShellSettingsIndexRoute: ShellSettingsIndexRoute,
+}
+
+const ShellSettingsRouteWithChildren = ShellSettingsRoute._addFileChildren(
+  ShellSettingsRouteChildren,
+)
+
 interface ShellRouteChildren {
+  ShellSettingsRoute: typeof ShellSettingsRouteWithChildren
   ShellSessionsSessionIdRoute: typeof ShellSessionsSessionIdRoute
   ShellSessionsIndexRoute: typeof ShellSessionsIndexRoute
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
+  ShellSettingsRoute: ShellSettingsRouteWithChildren,
   ShellSessionsSessionIdRoute: ShellSessionsSessionIdRoute,
   ShellSessionsIndexRoute: ShellSessionsIndexRoute,
 }
