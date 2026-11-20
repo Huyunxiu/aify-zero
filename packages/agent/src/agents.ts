@@ -65,8 +65,8 @@ export type AgentOptions = {
    * The Approval Policy of this agent.
    *
    * Required. The composition root sets the default, once (`createSessionAgent`);
-   * a default here makes two owners. The root already tightened the value for
-   * attendance, so this is the effective value, and a child session copies it.
+   * a default here makes two owners. This is the value the session stores, and a
+   * child session copies it.
    */
   approvalPolicy: ApprovalPolicy;
   /**

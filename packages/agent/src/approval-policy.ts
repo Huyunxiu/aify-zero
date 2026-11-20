@@ -12,6 +12,25 @@ import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
  *
  * `interact` has no cell here, on purpose. See `policyAnswer`.
  */
+/**
+ * What a policy calls a class when it refuses one, in the words the model reads.
+ *
+ * One list feeds two readers: the refusal sentence the model receives, and the notice
+ * the prompt carries. A class that has no noun is left out of both, so a policy that
+ * refuses it in the table still says nothing about it — keep this list complete.
+ */
+export const CLASS_NOUN: Readonly<Partial<Record<ApprovalClass, string>>> = {
+  mutate: "writes to disk",
+  exec: "shell commands",
+};
+
+/** What the read-only policy says when it refuses a class. The model reads it alone. */
+export const POLICY_REFUSAL: Readonly<Partial<Record<ApprovalClass, string>>> =
+  {
+    mutate: `This session's approval policy refuses ${CLASS_NOUN.mutate}.`,
+    exec: `This session's approval policy refuses ${CLASS_NOUN.exec}.`,
+  };
+
 const ANSWERS: Readonly<
   Record<
     ApprovalPolicy,
@@ -22,8 +41,8 @@ const ANSWERS: Readonly<
     mutate: { decision: "allow" },
   },
   readonly: {
-    mutate: { decision: "deny" },
-    exec: { decision: "deny" },
+    mutate: { decision: "deny", reason: POLICY_REFUSAL.mutate },
+    exec: { decision: "deny", reason: POLICY_REFUSAL.exec },
   },
   unrestricted: {
     mutate: { decision: "allow" },

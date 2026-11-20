@@ -130,6 +130,15 @@ test("Read-only: the change is refused and the file stays as it was", async ({
     await expect(page.getByText("Finished", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
     expect(notesFile(stack)).toBe(before);
+
+    // The reason reaches the person too, under the refused call: the sentence the
+    // policy gave the model, not an empty panel.
+    await page.getByRole("button", { name: /^Edit/u }).first().click();
+    await expect(
+      page.getByText("This session's approval policy refuses writes to disk.", {
+        exact: true,
+      })
+    ).toBeVisible();
   } catch (error) {
     failed = true;
     throw error;

@@ -176,7 +176,7 @@ _Avoid_: 停止、中断、挂起
 The asking stance of one session on tool calls: which calls the session passes, which calls
 it must ask about, and which calls it does not permit. The policy decides only if the
 session asks; the sandbox decides if the call can occur. The policy that the user selects
-lives on the session, and the runtime makes it tighter when no person attends.
+lives on the session, and every run applies it as it is.
 _Avoid_: 权限模式、permissionMode、授权、策略模式
 
 **Approval Class (审批类别)**:

@@ -13,6 +13,7 @@ import type { ApprovalClassResolver } from "./approval-policy";
 import { policyAnswer, resolveServiceDecision } from "./approval-policy";
 import type { CompactionPolicyOverrides } from "./compaction/types";
 import {
+  ApprovalPolicyExtension,
   CompactionExtension,
   FileToolsExtension,
   JobsToolsExtension,
@@ -222,6 +223,9 @@ export async function createSessionAgent(
 
     await agent.registerExtension(
       new EnvironmentExtension({ id: "environment" })
+    );
+    await agent.registerExtension(
+      new ApprovalPolicyExtension({ id: "approval", policy: approvalPolicy })
     );
     await agent.registerExtension(
       new CompactionExtension({ id: "compaction" })

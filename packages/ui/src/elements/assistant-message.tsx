@@ -227,15 +227,24 @@ const TURN_HEADING = {
   error: "Failed",
 } as const;
 
+/**
+ * The text a call ends with, under the input: the failure, or the refusal's own
+ * sentence. A refusal is not a failure — the label says which one this is, because
+ * "ERROR" would blame a tool that never ran.
+ */
 const renderToolError = (part: AgentToolPart) => {
-  if (part.state !== "output-error" || !part.errorText) {
+  const failed = part.state === "output-error";
+  const refused = part.state === "output-denied";
+  if ((!failed && !refused) || !part.errorText) {
     return null;
   }
 
   return (
     <>
       <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-        <div className="text-muted-foreground">ERROR</div>
+        <div className="text-muted-foreground">
+          {refused ? (part.approval ? "DECLINED" : "REFUSED") : "ERROR"}
+        </div>
         <div>
           <CopyButton
             className="text-muted-foreground"
@@ -337,6 +346,9 @@ const ToolPanels = ({
   renderOutput?: (text: string) => ReactNode;
 }) => {
   const input = JSON.stringify(part.input, null, 2) ?? "";
+  // A refused call has no result to show: the reason belongs in the block below,
+  // and an empty OUTPUT frame reads like a result that went missing.
+  const refused = part.state === "output-denied";
   // 结构化结果也要能显示：search-tools 的 output 是对象，直接交给 React 会抛错。
   const output = toolOutputText(part.output);
 
@@ -348,7 +360,7 @@ const ToolPanels = ({
       </FramePanel>
       <InlineToolApproval part={part} onRespond={onRespond} />
       {children}
-      {hideOutput ? null : (
+      {hideOutput || refused ? null : (
         <>
           <ToolSectionLabel label="OUTPUT" copy={output} />
           <FramePanel>

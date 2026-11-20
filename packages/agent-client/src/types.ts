@@ -203,7 +203,13 @@ type TextStreamToolErrorEvent<TOOLS extends ToolSet> = TextStreamEventBase &
   RenameEventType<TypedToolError<TOOLS>, "tool.error">;
 type TextStreamToolOutputDeniedEvent<TOOLS extends ToolSet> =
   TextStreamEventBase &
-    RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied">;
+    RenameEventType<StaticToolOutputDenied<TOOLS>, "tool.output-denied"> & {
+      /**
+       * The text the model received in place of a result. The part keeps it, so the
+       * rebuilt history repeats the same bytes instead of a generic sentence.
+       */
+      errorText?: string;
+    };
 export type TextStreamStartStepEvent = TextStreamEventBase & {
   type: "step.start";
   stepType: AgentStep<any>["type"];
@@ -733,9 +739,19 @@ type AgentToolInvocationBase<INPUT, OUTPUT> = {
       state: "output-denied";
       input: INPUT;
       output?: never;
-      errorText?: never;
+      /**
+       * The text the model received in place of a result: the refusal's own sentence,
+       * or the generic one. It is written down rather than derived, because the
+       * rebuilt history must repeat the same bytes — a policy read again later could
+       * answer with a different sentence.
+       */
+      errorText?: string;
       callProviderMetadata?: ProviderMetadata;
-      approval: {
+      /**
+       * The user's answer, when a user gave one. A refusal by a policy, a hook, or
+       * the host has none: nobody was asked, and `approvedAt` would be a fiction.
+       */
+      approval?: {
         id: string;
         approved: false;
         descriptor?: unknown;

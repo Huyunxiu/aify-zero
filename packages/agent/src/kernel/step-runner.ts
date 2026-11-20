@@ -308,6 +308,7 @@ export class StepRunner {
           toolCallId: toolApproval.toolCall.toolCallId,
           toolName: toolApproval.toolCall.toolName,
           providerExecuted: false,
+          errorText: toolApproval.approvalResponse.reason,
         } as AgentStreamEvent<AgentToolSet>);
       }
 

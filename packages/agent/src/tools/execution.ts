@@ -397,6 +397,9 @@ async function runToolCall(
 
   if (decision?.decision === "deny") {
     const durationMs = elapsed(startedAt);
+    // The model reads this sentence alone: a refusal that says nothing leaves it
+    // guessing, and a guess costs a tool call.
+    const text = decision.reason ?? TOOL_DENIED_TEXT;
 
     await write({
       type: "tool.output-denied",
@@ -406,6 +409,7 @@ async function runToolCall(
       toolCallId,
       toolName,
       providerExecuted: false,
+      errorText: text,
     } as AgentStreamEvent<AgentToolSet>);
     await hooks.emit(
       "post_tool_call",
@@ -419,7 +423,7 @@ async function runToolCall(
         type: "tool-result",
         toolCallId,
         toolName,
-        output: { type: "error-text", value: TOOL_DENIED_TEXT },
+        output: { type: "error-text", value: text },
       },
     };
   }
