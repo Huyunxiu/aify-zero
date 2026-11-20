@@ -14,7 +14,7 @@ import { expect, test } from "@playwright/test";
 import { PROJECT_NAME, startStack } from "./harness";
 import type { Stack } from "./harness";
 
-/** 编辑框的可访问名取自它自己的占位文案（`prompt-input-tiptap.tsx`）。 */
+/** The composer takes its accessible name from its own placeholder. */
 const COMPOSER_NAME = "What would you like to know?";
 
 const MESSAGE = "先处理这一条";
@@ -71,13 +71,29 @@ test("Settings covers the session without unmounting it", async ({ page }) => {
     // session event stream kept running while the session was covered.
     await expect(page.getByText(ANSWER).first()).toBeVisible();
 
+    // And the session was not marked read: the reader could not see it. The
+    // sidebar behind the dialog still holds the unread tick. The dialog hides
+    // the rest of the page from the accessibility tree, so the tick is matched
+    // by its own label attribute rather than through a role query.
+    await expect(page.locator('[aria-label="Done"]').first()).toBeVisible();
+
     // A section is a route: moving between them is navigation, not a tab swap.
+    // Back walks them one by one, and each step keeps the previous screen.
     await page.getByRole("button", { name: "Appearance" }).click();
+    await expect(page).toHaveURL(/\/settings\/appearance$/u);
+    await page.getByRole("button", { name: "Providers" }).click();
+    await expect(page).toHaveURL(/\/settings\/provider$/u);
+    await page.goBack();
     await expect(page).toHaveURL(/\/settings\/appearance$/u);
     await page.goBack();
     await expect(page).toHaveURL(/\/settings\/general$/u);
 
-    // The way back is the session that was open, not the session list.
+    // The way back is the session that was open, not the previous section: one
+    // step per section opened would land the reader on Appearance again.
+    await page.getByRole("button", { name: "Appearance" }).click();
+    await expect(page).toHaveURL(/\/settings\/appearance$/u);
+    await page.getByRole("button", { name: "Providers" }).click();
+    await expect(page).toHaveURL(/\/settings\/provider$/u);
     await page.getByRole("button", { name: "Back to app" }).click();
     await expect(page).toHaveURL(sessionUrl);
 
@@ -85,6 +101,48 @@ test("Settings covers the session without unmounting it", async ({ page }) => {
     await expect(composer).toContainText(DRAFT);
     await expect(page.getByText("Finished", { exact: true })).toHaveCount(1);
     await expect(page.getByText(ANSWER).first()).toBeVisible();
+
+    // Seen at last: the tick goes away.
+    await expect(page.locator('[aria-label="Idle"]').first()).toBeVisible();
+
+    // A section address can be opened on its own, and survives a reload.
+    await page.goto(new URL("/settings/provider", sessionUrl).href);
+    await expect(page).toHaveURL(/\/settings\/provider$/u);
+    await page.reload();
+    await expect(page).toHaveURL(/\/settings\/provider$/u);
+    await expect(page.getByText("Providers").first()).toBeVisible();
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    await stack?.stop({
+      keep: failed || process.env.E2E_KEEP_ARTIFACTS === "1",
+    });
+  }
+});
+
+test("Settings from the session list keeps the draft", async ({ page }) => {
+  let stack: Stack | undefined;
+  let failed = false;
+
+  try {
+    stack = await startStack();
+    await page.goto(stack.loginUrl);
+
+    // The list has no session id: its screen is the draft. It is the same
+    // session host, so a covering route must remember the draft too.
+    await expect(page).toHaveURL(/\/sessions$/u);
+
+    const composer = page.getByRole("textbox", { name: COMPOSER_NAME });
+    await composer.click();
+    await page.keyboard.type(DRAFT);
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page).toHaveURL(/\/settings\/general$/u);
+
+    await page.getByRole("button", { name: "Back to app" }).click();
+    await expect(page).toHaveURL(/\/sessions$/u);
+    await expect(composer).toContainText(DRAFT);
   } catch (error) {
     failed = true;
     throw error;

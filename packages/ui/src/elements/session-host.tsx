@@ -5,6 +5,7 @@ import {
   IslandHandle,
 } from "@workspace/ui/elements/island";
 import { SessionContainer } from "@workspace/ui/elements/session-container";
+import { readProjectId } from "@workspace/ui/lib/session-search";
 import { useSubagentPane } from "@workspace/ui/stores/subagent-pane";
 import * as React from "react";
 
@@ -12,6 +13,11 @@ export type SessionHostProps = {
   /** An opaque layer stands between the reader and this session. */
   covered: boolean;
 };
+
+/** The session the host shows: a saved one, or the session list's draft. */
+type ShownSession =
+  | { readonly kind: "draft" }
+  | { readonly id: string; readonly kind: "id" };
 
 /**
  * The session on screen, owned by the shell rather than by a route.
@@ -32,23 +38,40 @@ export function SessionHost({ covered }: SessionHostProps) {
   const sessionId =
     typeof params.sessionId === "string" ? params.sessionId : undefined;
 
-  // A covering route has no session in its address. The host remembers the last
-  // one it showed, so coming back lands on the same session.
-  const lastSessionId = React.useRef(sessionId);
+  // A covering route has no session in its address. The host remembers what it
+  // showed last, so coming back lands on the same session. The draft counts:
+  // opening settings from the session list must not throw the draft away.
+  const lastShown = React.useRef<ShownSession | undefined>(
+    sessionId === undefined ? undefined : { id: sessionId, kind: "id" }
+  );
   React.useEffect(() => {
     if (sessionId !== undefined) {
-      lastSessionId.current = sessionId;
-    }
-  }, [sessionId]);
+      lastShown.current = { id: sessionId, kind: "id" };
 
-  // "new" is the session list's draft, which has no id until the first message.
-  const shownSessionId: string | "new" | undefined =
-    sessionId ??
-    (atSessionList
-      ? "new"
-      : covered
-        ? (lastSessionId.current ?? undefined)
-        : undefined);
+      return;
+    }
+
+    if (atSessionList) {
+      lastShown.current = { kind: "draft" };
+    }
+  }, [sessionId, atSessionList]);
+
+  const shownSession: ShownSession | undefined = sessionId
+    ? { id: sessionId, kind: "id" }
+    : covered
+      ? lastShown.current
+      : atSessionList
+        ? { kind: "draft" }
+        : undefined;
+
+  const activeSessionId =
+    shownSession?.kind === "id" ? shownSession.id : undefined;
+  const shownKey =
+    shownSession === undefined
+      ? undefined
+      : shownSession.kind === "id"
+        ? `id:${shownSession.id}`
+        : "draft";
 
   const subagentSessionId = useSubagentPane((state) => state.sessionId);
   const clearSubagent = useSubagentPane((state) => state.clear);
@@ -58,14 +81,15 @@ export function SessionHost({ covered }: SessionHostProps) {
   // A covering route is not a move: the session underneath did not change.
   React.useEffect(() => {
     clearSubagent();
-  }, [shownSessionId, clearSubagent]);
+  }, [shownKey, clearSubagent]);
 
-  if (shownSessionId === undefined) {
+  // The session list shows a draft session, which has no id until the first
+  // message. A covering route shows nothing only when there was nothing before.
+  if (shownSession === undefined) {
     return null;
   }
 
-  const projectId =
-    typeof search.projectId === "string" ? search.projectId : undefined;
+  const projectId = readProjectId(search);
 
   return (
     <IslandGroup orientation="horizontal">
@@ -73,7 +97,7 @@ export function SessionHost({ covered }: SessionHostProps) {
         <SessionContainer
           covered={covered}
           initialProjectId={projectId}
-          sessionId={shownSessionId === "new" ? undefined : shownSessionId}
+          sessionId={activeSessionId}
         />
       </Island>
       {subagentSessionId && (

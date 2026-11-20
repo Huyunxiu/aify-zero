@@ -15,7 +15,7 @@ export type SessionContainerProps = {
   /** Closes the pane showing this session, when it can be pointed elsewhere. */
   onClose?: () => void;
   /** Whether an opaque layer stands between the reader and this session. */
-  covered?: boolean;
+  covered: boolean;
 };
 
 export function SessionContainer({

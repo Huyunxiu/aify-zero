@@ -5,6 +5,7 @@ import {
   useMatchRoute,
   useNavigate,
   useRouter,
+  useRouterState,
 } from "@tanstack/react-router";
 import { Dialog, DialogContent } from "@workspace/ui/components/dialog";
 import {
@@ -20,40 +21,13 @@ import {
   SidebarProvider,
 } from "@workspace/ui/components/sidebar";
 import { Island, IslandGroup } from "@workspace/ui/elements/island";
+import { SETTINGS_SECTIONS } from "@workspace/ui/elements/settings/sections";
 import { DesktopTitleBar } from "@workspace/ui/elements/title-bar";
 import { isDesktopShell } from "@workspace/ui/lib/desktop";
 import { COVERS_SESSION } from "@workspace/ui/lib/route-static-data";
-import { ChevronLeft, Package, Palette, Plug, UserCog } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
+import * as React from "react";
 import { useTranslation } from "react-i18next";
-
-/**
- * Every section of settings, in the order the sidebar shows them.
- *
- * A section is a route, not a tab: its address is the one a reader can send to
- * someone else, and the back button walks them one by one.
- */
-const SECTIONS = [
-  {
-    icon: UserCog,
-    titleKey: "settings.general.title" as const,
-    to: "/settings/general" as const,
-  },
-  {
-    icon: Palette,
-    titleKey: "settings.appearance.title" as const,
-    to: "/settings/appearance" as const,
-  },
-  {
-    icon: Package,
-    titleKey: "settings.provider.title" as const,
-    to: "/settings/provider" as const,
-  },
-  {
-    icon: Plug,
-    titleKey: "settings.mcp.title" as const,
-    to: "/settings/mcp" as const,
-  },
-];
 
 /**
  * Settings, drawn over the session.
@@ -69,15 +43,24 @@ const SettingsLayout = () => {
   const { history }: { history: RouterHistory } = useRouter();
   const matchRoute = useMatchRoute();
 
-  // Back to whatever was on screen. A visit that starts here has nothing to go
-  // back to, so it lands on the session list instead.
+  // The history entry that opened settings. Sections are pushed on top of it, so
+  // closing has to step over all of them: one step back per section would land
+  // the reader on the previous section instead of the app.
+  const index = useRouterState({
+    select: (state) => state.location.state.__TSR_index,
+  });
+  const entryIndex = React.useRef(index);
+
   const close = (): void => {
-    if (history.canGoBack()) {
-      history.back();
+    const steps = index - entryIndex.current + 1;
+
+    if (history.canGoBack() && steps > 0) {
+      history.go(-steps);
 
       return;
     }
 
+    // A visit that starts at a section has nothing behind it.
     void navigate({ replace: true, to: "/sessions" });
   };
 
@@ -110,7 +93,7 @@ const SettingsLayout = () => {
               <SidebarGroup>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    {SECTIONS.map((item) => (
+                    {SETTINGS_SECTIONS.map((item) => (
                       <SidebarMenuItem key={item.to}>
                         <SidebarMenuButton
                           isActive={Boolean(matchRoute({ to: item.to }))}

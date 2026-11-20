@@ -225,7 +225,7 @@ export type SessionProps = React.ComponentProps<"div"> & {
    * a turn that ends behind a covering route is still unseen, so its notice
    * still fires. See ADR 0020.
    */
-  covered?: boolean;
+  covered: boolean;
 };
 
 /**
@@ -332,7 +332,7 @@ export function Session({
   readOnly = false,
   questionnairePlacement = "composer",
   onClose,
-  covered = false,
+  covered,
 }: SessionProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -621,20 +621,21 @@ export function Session({
 
     const id = sessionId;
 
-    const markReadIfVisible = (): void => {
-      // A covered session is on screen but unseen: the reader looks at the
-      // route above it. Leaving it unread is what makes its notice fire.
-      if (
-        covered ||
-        status !== "ready" ||
-        document.visibilityState !== "visible"
-      ) {
+    const settle = (): void => {
+      if (status !== "ready") {
         return;
       }
 
       void (async () => {
         try {
-          await client.session.markSessionRead({ sessionId: id });
+          // A covered session is on screen but unseen: the reader looks at the
+          // route above it. Leaving it unread is what makes its notice fire.
+          if (!covered && document.visibilityState === "visible") {
+            await client.session.markSessionRead({ sessionId: id });
+          }
+
+          // The sidebar shows the last activity and the unread tick. Both change
+          // when a turn settles, whether or not this page is the one looking.
           await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
         } catch {
           // 标记已读是记账，不是页面的正事：链接坏了，会话记录照样显示，只是
@@ -643,11 +644,11 @@ export function Session({
       })();
     };
 
-    markReadIfVisible();
-    document.addEventListener("visibilitychange", markReadIfVisible);
+    settle();
+    document.addEventListener("visibilitychange", settle);
 
     return () => {
-      document.removeEventListener("visibilitychange", markReadIfVisible);
+      document.removeEventListener("visibilitychange", settle);
     };
   }, [sessionId, status, covered]);
 
@@ -683,7 +684,7 @@ export function Session({
     if (status === "error") {
       void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
     }
-  }, [sessionId, status, covered]);
+  }, [sessionId, status]);
 
   const finalError =
     sessionError ?? turns.findLast((turn) => turn.status === "error")?.error;

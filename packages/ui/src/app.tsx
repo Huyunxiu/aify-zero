@@ -34,7 +34,6 @@ const history = isDesktopShell ? createHashHistory() : createBrowserHistory();
 
 export const router = createRouter({
   defaultPendingMinMs: 0,
-  defaultPreload: "intent",
   history,
   routeTree,
   scrollRestoration: true,
