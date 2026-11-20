@@ -28,8 +28,10 @@ function lookupMcpTool(manager: McpManager, toolName: string): McpToolLookup {
 /**
  * The Approval Class of an MCP Tool; undefined for a Tool that is not ours, which the built-in table then answers.
  *
- * Read-Only and Unrestricted both use it: Read-Only refuses a destructive Tool,
- * Unrestricted keeps the ask that the server itself declares. An annotation is untrusted.
+ * Read-Only and Full Access both read it. Read-Only refuses a destructive Tool. Full
+ * Access closes the ask that the server declares, because the policy's allow answers
+ * for the whole class — a refusal is the only answer that survives it. An annotation
+ * is untrusted either way.
  */
 export function mcpApprovalClass(
   manager: McpManager,
@@ -47,21 +49,24 @@ export function mcpApprovalClass(
 }
 
 /**
- * MCP 工具的审批规则。
+ * The approval rule for MCP Tools.
  *
- * 返回给宿主挂到 `toolApprovalPattern` 上，而不是 `pre_tool_call`：
- * 子会话只继承审批函数，不继承扩展注册的 hook，放在 hook 里会让子会话里
- * 的 MCP 调用绕过询问。
+ * The host mounts it as a `toolApprovalPattern`, not as a `pre_tool_call` hook. A sub
+ * session inherits the approval function but not the hooks an extension registered, so
+ * a hook would let an MCP call in a sub session skip the question.
  *
  * It and the policy table both answer "do we ask", but they stay apart: the table
  * covers built-in Tools, and this covers third-party Tools, because only this manager
  * reads the annotation. A merge adds a process singleton and ends table-driving.
  *
- * 注解是第三方自述，按不可信处理：只有明确说「只读」才自动放行，明确说
- * 「破坏性」就永远询问，其余看服务器自己的 `autoApprove`。
+ * An annotation is the server's own claim, so treat it as untrusted: only an explicit
+ * "read only" passes the call, an explicit "destructive" asks, and the rest follows the
+ * server's `autoApprove`. A policy that allows the class closes that ask; a refusal is
+ * the only answer that survives it.
  *
- * 查不到注解不等于安全：前缀是我们的服务器、工具表里却没有它（旧回合手里
- * 的工具、被取代的一代），一样要问。
+ * No annotation is not the same as safe: the prefix names a server we configured, but
+ * the Tool table has no entry for it (a Tool from an older Turn, a replaced generation),
+ * so the call asks.
  */
 export function createMcpToolApprovalPattern(
   manager: McpManager
@@ -69,7 +74,7 @@ export function createMcpToolApprovalPattern(
   return (request) => {
     const lookup = lookupMcpTool(manager, request.toolName);
     if (!lookup.owned) {
-      // 不是我们的工具名形状，交给后面的规则。
+      // Not our Tool name shape: let the later rules answer.
       return;
     }
 
