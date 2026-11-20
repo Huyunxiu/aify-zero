@@ -14,8 +14,8 @@ import type { Stack } from "./harness";
 const COMPOSER_NAME = "What would you like to know?";
 
 /** 场景给两次标题生成两个不同的回答，所以这两段文字各自只属于一个会话。 */
-const KEPT = "会话甲";
-const REMOVED = "会话乙";
+const KEPT = "Session one";
+const REMOVED = "Session two";
 
 test("Session delete: the removed session leaves the list and the page", async ({
   page,
@@ -32,7 +32,7 @@ test("Session delete: the removed session leaves the list and the page", async (
 
     // 1. 留下一个会话：删掉另一个之后，它必须还在。
     await newSession.click();
-    await sendAndSettle(page, "第一句");
+    await sendAndSettle(page, "First message");
     await expect(page.getByText(KEPT, { exact: true }).first()).toBeVisible();
 
     // 2. 再建一个，并且停在它里面——删除要顺带把页面让开。
@@ -41,7 +41,7 @@ test("Session delete: the removed session leaves the list and the page", async (
     //    列表顺序不确定，刷新后的断言就分不清是谁。
     await page.waitForTimeout(1100);
     await newSession.click();
-    await sendAndSettle(page, "第二句");
+    await sendAndSettle(page, "Second message");
     await expect(
       page.getByText(REMOVED, { exact: true }).first()
     ).toBeVisible();

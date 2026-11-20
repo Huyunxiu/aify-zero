@@ -2,10 +2,10 @@
   "name": "session-order",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "会话甲" },
-    { "when": { "stream": false }, "answer": "会话乙" },
-    { "when": { "stream": true }, "answer": "好" },
-    { "when": { "stream": true }, "answer": "好" },
-    { "when": { "stream": true }, "answer": "好" }
+    { "when": { "stream": false }, "answer": "Session one" },
+    { "when": { "stream": false }, "answer": "Session two" },
+    { "when": { "stream": true }, "answer": "Okay" },
+    { "when": { "stream": true }, "answer": "Okay" },
+    { "when": { "stream": true }, "answer": "Okay" }
   ]
 }
