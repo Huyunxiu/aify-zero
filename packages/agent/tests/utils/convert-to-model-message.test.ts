@@ -104,6 +104,67 @@ describe(convertAgentTurnToModalMessage, () => {
     });
   });
 
+  test("repeats the sentence a refused call already gave the model", async () => {
+    // The refusal was written down with the text it sent, so the rebuilt history
+    // carries the same bytes: a prefix cache keyed on them survives.
+    const messages = await convertAgentTurnToModalMessage(
+      turnWithCall({
+        state: "output-denied",
+        output: undefined,
+        errorText: "This session's approval policy refuses writes to disk.",
+      })
+    );
+
+    expect(messages[1]).toMatchObject({
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "call-1",
+          toolName: "task",
+          output: {
+            type: "error-text",
+            value: "This session's approval policy refuses writes to disk.",
+          },
+        },
+      ],
+    });
+  });
+
+  test("falls back to the reason a user gave, on a record written before the field", async () => {
+    const messages = await convertAgentTurnToModalMessage(
+      turnWithCall({
+        state: "output-denied",
+        output: undefined,
+        approval: {
+          id: "approval-1",
+          approved: false,
+          reason: "not now",
+          createdAt: 1000,
+          approvedAt: 2000,
+        },
+      })
+    );
+
+    expect(messages[1]).toMatchObject({
+      content: [{ output: { type: "error-text", value: "not now" } }],
+    });
+  });
+
+  test("falls back to the generic text when nobody wrote one", async () => {
+    const messages = await convertAgentTurnToModalMessage(
+      turnWithCall({ state: "output-denied", output: undefined })
+    );
+
+    expect(messages[1]).toMatchObject({
+      content: [
+        {
+          output: { type: "error-text", value: "Tool call execution denied." },
+        },
+      ],
+    });
+  });
+
   test("puts a steering step in the history as a user message at its position", async () => {
     const messages = await convertAgentTurnToModalMessage([
       assistantTurn("a1", [

@@ -28,12 +28,14 @@ describe(policyAnswer, () => {
     }
   });
 
-  test("read-only refuses a mutation and a command", () => {
+  test("read-only refuses a mutation and a command, and says why", () => {
     expect(policyAnswer("readonly", "mutate")).toStrictEqual({
       decision: "deny",
+      reason: "This session's approval policy refuses writes to disk.",
     });
     expect(policyAnswer("readonly", "exec")).toStrictEqual({
       decision: "deny",
+      reason: "This session's approval policy refuses shell commands.",
     });
   });
 });

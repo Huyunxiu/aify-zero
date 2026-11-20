@@ -87,6 +87,20 @@ const decide = async (
     approvalRequest(toolName, input)
   );
 
+describe("the approval notice in the prompt", () => {
+  test("a read-only session tells the model what it refuses", async () => {
+    const agent = await makeAgent({ approvalPolicy: "readonly" });
+    let rendered = "";
+    for (const section of agent.context.instructionsSections) {
+      rendered = section.render(rendered);
+    }
+
+    expect(rendered).toContain(
+      "This session refuses writes to disk and shell commands"
+    );
+  });
+});
+
 describe(createSessionAgent, () => {
   test("registers the default tool extensions", async () => {
     const agent = await makeAgent();
@@ -261,9 +275,11 @@ describe("approval policy", () => {
 
     await expect(decide(agent, "write-file")).resolves.toStrictEqual({
       decision: "deny",
+      reason: "This session's approval policy refuses writes to disk.",
     });
     await expect(decide(agent, "bash")).resolves.toStrictEqual({
       decision: "deny",
+      reason: "This session's approval policy refuses shell commands.",
     });
     await expect(decide(agent, "read-file")).resolves.toBeUndefined();
   });
@@ -323,6 +339,7 @@ describe("approval policy", () => {
 
     await expect(decide(agent, "write-file")).resolves.toStrictEqual({
       decision: "deny",
+      reason: "This session's approval policy refuses writes to disk.",
     });
   });
 });

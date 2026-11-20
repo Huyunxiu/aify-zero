@@ -104,9 +104,9 @@ export type BuildAgentInput = {
   /** 这次运行的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
   /**
-   * The Approval Policy that applies to this Run.
+   * The Approval Policy that applies to this Run: the value the session stores.
    *
-   * The runner already tightened it for attendance. The host receives the effective value and does not decide again.
+   * No part of the run changes it. A timer and a completion notice apply the same tier.
    */
   approvalPolicy: ApprovalPolicy;
 };

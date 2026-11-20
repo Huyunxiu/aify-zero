@@ -20,8 +20,9 @@ singleton.
 Five rules that must not change:
 
 - **A refusal comes first.** When either side refuses, the call does not run, and the
-  reason travels with it. Only the read-only policy refuses a class of mutation, and no
-  host allow gets past it. An unknown class (for example an MCP tool whose server sets
+  reason travels with it: into the result the model reads, and into the record, so the
+  rebuilt history repeats it (ADR 0025). Only the read-only policy refuses a class of
+  mutation, and no host allow gets past it. An unknown class (for example an MCP tool whose server sets
   `autoApprove`) gets no answer from the read-only policy: we do not know what it writes,
   so we do not pretend that we do.
 - **A host's allow for one call outranks the policy's ask.** The host saw the input of this

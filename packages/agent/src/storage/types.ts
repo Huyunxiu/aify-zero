@@ -42,7 +42,7 @@ export type SessionRecord = {
   forkedFromMessageId: string | null;
   parentSessionId: string | null;
   parentToolCallId: string | null;
-  /** The Approval Policy of this session. The runner tightens it for attendance and then gives it to the agent. */
+  /** The Approval Policy of this session. A run applies it as it is; nothing tightens it. */
   approvalPolicy: ApprovalPolicy;
   /** 删除时刻；有值即「已删」，读路径当它不存在。 */
   deletedAt: Date | null;
