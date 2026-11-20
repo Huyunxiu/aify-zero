@@ -19,13 +19,12 @@ import { cn } from "../lib/utils";
  * code — JSON and raw text — so both are drawn as code blocks instead of as
  * `whitespace-pre` text, which neither wraps nor keeps the monospaced column.
  *
- * Three arrangements are kept while one is chosen:
+ * Two arrangements are kept while one is chosen:
  *
  * - `stack`: one card per side. Closest to the panel it replaces.
- * - `tabs`: one card, one side visible. Halves the height of a long call.
  * - `log`: one card, both sides in a row each. Densest, reads like a transcript.
  */
-export const TOOL_PANEL_VARIANTS = ["stack", "tabs", "log"] as const;
+export const TOOL_PANEL_VARIANTS = ["stack", "log"] as const;
 export type ToolPanelVariant = (typeof TOOL_PANEL_VARIANTS)[number];
 
 /**
@@ -320,7 +319,7 @@ const StackPanels = ({
   children,
   errorText,
 }: PanelsProps) => (
-  <div className="flex flex-col gap-1.5 p-1.5">
+  <div className="flex flex-col gap-1.5">
     <ToolSection
       footer={approval}
       label="Input"
@@ -341,135 +340,6 @@ const StackPanels = ({
 );
 
 /**
- * `tabs` — one card, one side visible.
- *
- * The side that matters flips to the answer as soon as the call answers, and
- * the tabs take over the moment the reader picks a side themselves.
- */
-const TabsPanels = ({
-  input,
-  output,
-  inputLanguage = "json",
-  outputLanguage = "text",
-  pending,
-  hideOutput,
-  renderOutput,
-  approval,
-  children,
-  errorText,
-}: PanelsProps) => {
-  const [chosen, setChosen] = React.useState<"input" | "output" | null>(null);
-  const [wrapOverrides, setWrapOverrides] = React.useState<
-    Partial<Record<"input" | "output", boolean>>
-  >({});
-  const id = React.useId();
-
-  const hasOutput = !hideOutput && output.length > 0;
-  // Until the reader picks, the answer wins: it is what a finished call is for,
-  // and it is only there once the call is over.
-  const active = chosen ?? (hasOutput ? "output" : "input");
-  const value = active === "input" ? input : output;
-  const language = active === "input" ? inputLanguage : outputLanguage;
-  const wrap = wrapOverrides[active] ?? language === "text";
-
-  return (
-    <div className="flex flex-col gap-1.5 p-1.5">
-      <CodeBlock className="shrink-0">
-        <CodeBlockHeader className="group/section h-8 gap-2 pr-1.5">
-          <div
-            aria-label="Tool call content"
-            className="flex items-center gap-0.5 rounded-md bg-muted/60 p-0.5"
-            onKeyDown={(event) => {
-              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-                return;
-              }
-
-              event.preventDefault();
-              setChosen(active === "input" ? "output" : "input");
-            }}
-            role="tablist"
-            // The tabs inside take the tab stops; the list is only a landmark.
-            tabIndex={-1}
-          >
-            {(["input", "output"] as const).map((side) => (
-              <button
-                key={side}
-                aria-controls={`${id}-panel`}
-                aria-selected={active === side}
-                id={`${id}-${side}`}
-                role="tab"
-                tabIndex={active === side ? 0 : -1}
-                className={cn(
-                  "h-6 rounded-[5px] px-2 font-medium text-[11px] transition-colors duration-150 ease-out outline-none",
-                  "focus-visible:ring-2 focus-visible:ring-ring/50",
-                  active === side
-                    ? "bg-background text-foreground shadow-2xs dark:bg-input"
-                    : "text-muted-foreground hover:text-foreground",
-                  side === "output" && !hasOutput && "opacity-45"
-                )}
-                onClick={() => setChosen(side)}
-                type="button"
-              >
-                {side === "input" ? "Input" : "Output"}
-              </button>
-            ))}
-          </div>
-          <CodeBlockActions className="gap-2">
-            <span className={LANGUAGE_CLASS}>{language}</span>
-            <ToolWrapToggle
-              className={HOVER_CONTROL_CLASS}
-              onToggle={() =>
-                setWrapOverrides((previous) => ({
-                  ...previous,
-                  [active]: !wrap,
-                }))
-              }
-              pressed={wrap}
-            />
-            <CodeBlockCopyButton
-              className="text-muted-foreground/60 hover:text-foreground"
-              disabled={value.length === 0}
-              value={value}
-            />
-          </CodeBlockActions>
-        </CodeBlockHeader>
-        {active === "output" && renderOutput !== undefined ? (
-          <div
-            aria-labelledby={`${id}-output`}
-            className="animate-in fade-in-0 p-3 text-sm duration-150 motion-reduce:animate-none"
-            id={`${id}-panel`}
-            role="tabpanel"
-          >
-            {renderOutput(output)}
-          </div>
-        ) : (
-          // The body is keyed by side so the fade runs on every switch; the
-          // height snaps, because a growing card during a read is worse than a
-          // jump between two known heights.
-          <div
-            aria-labelledby={`${id}-${active}`}
-            className="animate-in fade-in-0 duration-150 motion-reduce:animate-none"
-            id={`${id}-panel`}
-            key={active}
-            role="tabpanel"
-          >
-            <ToolCodeBody
-              language={language}
-              pending={pending}
-              value={value}
-              wrap={wrap}
-            />
-          </div>
-        )}
-        {approval}
-      </CodeBlock>
-      {children}
-      {errorText === undefined ? null : <ToolErrorSection text={errorText} />}
-    </div>
-  );
-};
-
-/**
  * `log` — one card, both sides as rows.
  *
  * Nothing repeats: one border, one surface, the titles in the smallest type the
@@ -487,7 +357,7 @@ const LogPanels = ({
   children,
   errorText,
 }: PanelsProps) => (
-  <div className="flex flex-col gap-1.5 p-1.5">
+  <div className="flex flex-col gap-1.5">
     <CodeBlock className="shrink-0">
       <ToolLogRow
         footer={approval}
@@ -580,10 +450,6 @@ export function ToolPanels({
   variant = "stack",
   ...props
 }: PanelsProps & { variant?: ToolPanelVariant }) {
-  if (variant === "tabs") {
-    return <TabsPanels {...props} />;
-  }
-
   if (variant === "log") {
     return <LogPanels {...props} />;
   }

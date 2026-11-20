@@ -18,7 +18,6 @@ import { createRoot } from "react-dom/client";
 
 const VARIANT_TITLES: Record<ToolPanelVariant, string> = {
   stack: "A · Stack — one card per side",
-  tabs: "B · Tabs — one card, one side at a time",
   log: "C · Log — one card, both sides as rows",
 };
 
@@ -130,8 +129,12 @@ function Demo({ variant }: { variant: ToolPanelVariant }) {
         {VARIANT_TITLES[variant]}
       </h2>
 
-      <Frame overflowBehavior="scroll" variant="default">
-        <FrameHeader>
+      <Frame
+        className="bg-transparent shadow-none"
+        overflowBehavior="scroll"
+        variant="default"
+      >
+        <FrameHeader className="px-0">
           <FrameTitle>Read</FrameTitle>
         </FrameHeader>
         <ToolPanels
@@ -142,8 +145,12 @@ function Demo({ variant }: { variant: ToolPanelVariant }) {
         />
       </Frame>
 
-      <Frame overflowBehavior="scroll" variant="default">
-        <FrameHeader>
+      <Frame
+        className="bg-transparent shadow-none"
+        overflowBehavior="scroll"
+        variant="default"
+      >
+        <FrameHeader className="px-0">
           <FrameTitle>Bash</FrameTitle>
         </FrameHeader>
         <ToolPanels
@@ -155,8 +162,12 @@ function Demo({ variant }: { variant: ToolPanelVariant }) {
         />
       </Frame>
 
-      <Frame overflowBehavior="scroll" variant="default">
-        <FrameHeader>
+      <Frame
+        className="bg-transparent shadow-none"
+        overflowBehavior="scroll"
+        variant="default"
+      >
+        <FrameHeader className="px-0">
           <FrameTitle>Edit</FrameTitle>
         </FrameHeader>
         <ToolPanels

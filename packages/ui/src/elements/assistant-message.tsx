@@ -579,8 +579,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>Read</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -607,8 +611,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>Create</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -635,8 +643,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>Delete</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -665,8 +677,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>Edit</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -716,8 +732,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>Grep</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -744,8 +764,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>Glob</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -772,8 +796,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>Fetch</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -800,8 +828,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>
                             Load skill {part.input?.skill}
                           </FrameTitle>
@@ -840,8 +872,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>
                             {getStepLabel(shellAction, part.input?.description)}
                           </FrameTitle>
@@ -901,8 +937,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>
                             {getStepLabel("Task", part.input?.description)}
                           </FrameTitle>
@@ -973,7 +1013,11 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
                         <div className="flex flex-col gap-1.5 p-1.5">
                           <ToolSection
                             label="Output"
@@ -1013,8 +1057,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-0">
                           <FrameTitle>
                             {serverName
                               ? `${serverName} · ${shortName}`
