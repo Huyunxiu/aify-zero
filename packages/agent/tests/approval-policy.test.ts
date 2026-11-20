@@ -1,3 +1,4 @@
+import { APPROVAL_POLICIES } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -12,6 +13,14 @@ describe(policyAnswer, () => {
       decision: "ask",
     });
     expect(policyAnswer("standard", "read")).toBeUndefined();
+  });
+
+  test("no policy closes a questionnaire, full access included", () => {
+    for (const policy of APPROVAL_POLICIES) {
+      expect(policyAnswer(policy, "interact")).toStrictEqual({
+        decision: "ask",
+      });
+    }
   });
 
   test("read-only refuses a mutation and a command", () => {

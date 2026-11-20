@@ -9,7 +9,9 @@ import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
  *
  * A missing cell means "no opinion": the host rules and the current defaults answer,
  * so no new ask appears. The standard row is today's behavior, so it replaces
- * `DEFAULT_TOOL_APPROVAL_TOOLS` and holds the only ask set.
+ * `DEFAULT_TOOL_APPROVAL_TOOLS` and holds the only ask in the table.
+ *
+ * `interact` has no cell here, on purpose. See `policyAnswer`.
  */
 const ANSWERS: Readonly<
   Record<
@@ -19,29 +21,38 @@ const ANSWERS: Readonly<
 > = {
   standard: {
     mutate: { decision: "ask" },
-    interact: { decision: "ask" },
   },
   edit: {
     mutate: { decision: "allow" },
-    interact: { decision: "ask" },
   },
   readonly: {
     mutate: { decision: "deny" },
     exec: { decision: "deny" },
-    interact: { decision: "ask" },
   },
   unrestricted: {
     mutate: { decision: "allow" },
     exec: { decision: "allow" },
-    interact: { decision: "allow" },
     unknown: { decision: "allow" },
   },
 };
 
+/**
+ * The answer a policy gives for one class.
+ *
+ * A questionnaire is the one call that no policy closes. Its ask is not a question
+ * about the call: the call is the question, and the answers come back on the approval.
+ * A policy that allowed it would not make the session quieter — it would hand the tool
+ * nothing to read, so every questionnaire fails with no answers. The rule therefore
+ * lives here, above the table, so no row can spell the mistake.
+ */
 export function policyAnswer(
   policy: ApprovalPolicy,
   toolClass: ApprovalClass
 ): ToolStartDecision | undefined {
+  if (toolClass === "interact") {
+    return { decision: "ask" };
+  }
+
   return ANSWERS[policy][toolClass];
 }
 

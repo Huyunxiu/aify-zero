@@ -30,8 +30,12 @@ Five rules that must not change:
   the host allows do not turn back into questions.
 - **A policy closes an ask, including one from a hook.** When the user picks a class, that
   class no longer interrupts. The ask may come from a host default or from a hook; the
-  policy closes both. Full access is therefore literal: nothing asks. That includes an MCP
-  tool with `destructiveHint`. A refusal is the only protection that stays.
+  policy closes both. Full access is therefore literal for every class in the table. That
+  includes an MCP tool with `destructiveHint`. A refusal is the only answer that stays.
+- **No policy closes a questionnaire.** A questionnaire is a call whose content is the
+  question: the user's answers travel back on the approval. A policy that allowed it would
+  not be quieter, it would be broken — the tool reads the approval for answers, finds none,
+  and fails. So `interact` has no row, and `policyAnswer` answers it before it reads one.
 - **An unattended run tightens the policy.** A run that a timer or a completion notice
   starts uses the standard policy. Edit and full access step back: nobody is present, and
   that is the worst moment to apply changes without a question. The runner tightens the

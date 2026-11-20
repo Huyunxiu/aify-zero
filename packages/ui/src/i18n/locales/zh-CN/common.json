@@ -222,7 +222,7 @@
       "readonly": "拒绝写入与命令，读取照常",
       "standard": "改动类工具每次询问",
       "edit": "改动类直接放行，交互仍然问你",
-      "unrestricted": "什么都不问；只建议在盯着的会话里用"
+      "unrestricted": "除了问卷都不打断"
     }
   },
   "compaction": {
