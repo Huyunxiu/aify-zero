@@ -48,12 +48,7 @@ export interface BuildSessionAgentInput {
   jobs?: JobRegistry;
   /** 运行器的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
-  /**
-   * The Approval Policy that applies to this Run.
-   *
-   * The runner already tightened it for attendance, so this layer does not decide again.
-   * Only the runner tightens for an unattended Run, because only it knows what started the Run.
-   */
+  /** The Approval Policy of the session, which this Run uses as it is. */
   approvalPolicy: ApprovalPolicy;
 }
 

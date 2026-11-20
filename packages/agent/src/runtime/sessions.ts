@@ -17,7 +17,6 @@ import type { ModelRef } from "@workspace/shared/model";
 
 import { AgentSession } from "../agent-session";
 import type { Agent } from "../agents";
-import { effectivePolicy } from "../approval-policy";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { InboxClaim } from "../kernel/run-types";
@@ -27,7 +26,6 @@ import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
 import type { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
 import { generateSessionId } from "../utils/id-util";
-import { isAttendedRun } from "./attended";
 import { AgentRunnerError } from "./errors";
 import type { BuildAgentInput, RunStart, StartedRun } from "./types";
 
@@ -130,12 +128,9 @@ export class SessionLifecycle {
       sessionId,
       turns: originalTurns,
       model,
-      // The user starts an approval answer, so treat it as attended. The stored value
-      // goes through the same tightening function, so "effective policy" has one path.
-      approvalPolicy: effectivePolicy(
+      // An approval answer continues the session that asked, so it keeps that session's policy.
+      approvalPolicy:
         previousSession?.approvalPolicy ?? DEFAULT_APPROVAL_POLICY,
-        true
-      ),
       ...(effort === undefined ? {} : { effort }),
       ...(sessionProjectId === undefined
         ? {}
@@ -213,7 +208,6 @@ export class SessionLifecycle {
       turns: AgentSession.toAgentTurns(branch),
       model: latest.payload.model,
       approvalPolicy: session.approvalPolicy,
-      attended: isAttendedRun(items),
       ...(effort === undefined ? {} : { effort }),
       ...(projectId === undefined ? {} : { projectId }),
       claims: items.map((item) => ({ inboxId: item.id, turn: item.content })),
@@ -233,10 +227,8 @@ export class SessionLifecycle {
     effort?: ModelEffort;
     projectId?: string;
     claims?: readonly InboxClaim[];
-    /** The stored policy of the session. This layer tightens it for attendance and then gives it to the agent. */
+    /** The stored policy of the session, which the run uses as it is. */
     approvalPolicy: ApprovalPolicy;
-    /** Attended by default: only a Run that a Timer or a job notice starts is not. */
-    attended?: boolean;
   }): Promise<StartedRun> {
     const { sessionId, turns, model, effort, projectId, claims } = input;
     const { store, registry, buildAgent } = this.#deps;
@@ -244,10 +236,7 @@ export class SessionLifecycle {
     const agent = await buildAgent({
       sessionId,
       session: new AgentSession({ turns }),
-      approvalPolicy: effectivePolicy(
-        input.approvalPolicy,
-        input.attended ?? true
-      ),
+      approvalPolicy: input.approvalPolicy,
       model,
       ...(effort === undefined ? {} : { effort }),
       ...(projectId === undefined ? {} : { projectId }),
@@ -440,8 +429,7 @@ export class SessionLifecycle {
     const agent = await buildAgent({
       sessionId,
       session: new AgentSession({ turns }),
-      // A manual compaction starts from the user, so treat it as attended. The tightening still uses the same function.
-      approvalPolicy: effectivePolicy(session.approvalPolicy, true),
+      approvalPolicy: session.approvalPolicy,
       model,
       ...(effort === undefined ? {} : { effort }),
       ...(session.projectId === null || session.projectId === undefined

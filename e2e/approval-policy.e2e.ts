@@ -4,7 +4,7 @@
  * Three seams, and each one is reachable only end to end:
  * - a policy that allows the class lets the change land, and no card appears;
  * - a policy that refuses the class keeps the file as it was, and no card appears;
- * - a timer run tightens the stored policy, so the card appears again.
+ * - a run that a timer starts uses the stored policy, and no rule tightens it.
  *
  * The policy matrix (policy x class, host rules, hooks) belongs to the table tests
  * in `packages/agent/tests`. A hook, an MCP annotation, a subagent, a fork, and
@@ -140,7 +140,7 @@ test("Read-only: the change is refused and the file stays as it was", async ({
   }
 });
 
-test("Unattended: a timer run asks even when the session stores Edit", async ({
+test("Unattended: a timer run keeps the policy the session stores", async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -189,18 +189,12 @@ test("Unattended: a timer run asks even when the session stores Edit", async ({
     await send(page, composer, "Set a timer to update the file in one minute");
     await expect(page.getByText(FIRST_ANSWER)).toBeVisible();
 
-    // The timer run starts with no person present. The stored policy is Edit, but
-    // the runner tightens it to the cautious posture, so the change waits for an answer.
-    await expect(page.getByRole("button", { name: "Approve" })).toBeVisible({
+    // The timer run starts with no person present. The session stores Edit, and no
+    // rule tightens it, so the change lands without a question.
+    await expect(page.getByText(SECOND_ANSWER)).toBeVisible({
       timeout: TIMER_TIMEOUT_MS,
     });
-    await expect(
-      page.getByText("Awaiting review", { exact: true })
-    ).toBeVisible();
-
-    // The answer lets the same run continue, and the edit lands.
-    await page.getByRole("button", { name: "Approve" }).click();
-    await expect(page.getByText(SECOND_ANSWER)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
     expect(notesFile(stack)).toContain(EDITED_LINE);
   } catch (error) {
     failed = true;

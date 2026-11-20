@@ -2,17 +2,22 @@ import { APPROVAL_POLICIES } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
 import {
-  effectivePolicy,
   policyAnswer,
   resolveServiceDecision,
 } from "../src/approval-policy.js";
 
 describe(policyAnswer, () => {
-  test("the cautious posture asks for a mutation and stays silent for a read", () => {
-    expect(policyAnswer("cautious", "mutate")).toStrictEqual({
-      decision: "ask",
-    });
-    expect(policyAnswer("cautious", "read")).toBeUndefined();
+  test("the default lets a change pass and stays silent for a read", () => {
+    expect(policyAnswer("edit", "mutate")).toStrictEqual({ decision: "allow" });
+    expect(policyAnswer("edit", "read")).toBeUndefined();
+  });
+
+  test("no policy asks before a change", () => {
+    for (const policy of APPROVAL_POLICIES) {
+      expect(policyAnswer(policy, "mutate")).not.toStrictEqual({
+        decision: "ask",
+      });
+    }
   });
 
   test("no policy closes a questionnaire, full access included", () => {
@@ -67,26 +72,5 @@ describe(resolveServiceDecision, () => {
       resolveServiceDecision(undefined, { decision: "ask" })
     ).toStrictEqual({ decision: "ask" });
     expect(resolveServiceDecision()).toBeUndefined();
-  });
-});
-
-describe(effectivePolicy, () => {
-  test("an attended run keeps the stored policy", () => {
-    expect(effectivePolicy("unrestricted", true)).toBe("unrestricted");
-    expect(effectivePolicy("edit", true)).toBe("edit");
-  });
-
-  test("an unattended run never auto-approves a mutation", () => {
-    expect(effectivePolicy("edit", false)).toBe("cautious");
-    expect(effectivePolicy("unrestricted", false)).toBe("cautious");
-  });
-
-  test("read-only needs no tightening", () => {
-    expect(effectivePolicy("readonly", false)).toBe("readonly");
-  });
-
-  test("a cautious row stays cautious, attended or not", () => {
-    expect(effectivePolicy("cautious", true)).toBe("cautious");
-    expect(effectivePolicy("cautious", false)).toBe("cautious");
   });
 });

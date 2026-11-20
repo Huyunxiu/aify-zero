@@ -1,5 +1,4 @@
 import type { ApprovalPolicy } from "@workspace/agent-client";
-import { UNATTENDED_APPROVAL_POLICY } from "@workspace/agent-client";
 
 import type { ApprovalClass } from "./approval-classes";
 import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
@@ -7,9 +6,9 @@ import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
 /**
  * Policy × class to an answer.
  *
- * A missing cell means "no opinion": the host rules and the current defaults answer,
- * so no new ask appears. The cautious row is the one that asks before a change; it and
- * the built-in defaults answer the same set that `DEFAULT_TOOL_APPROVAL_TOOLS` did.
+ * A missing cell means "no opinion": the host rules answer, and the call runs. No row asks
+ * before a change any more: the tier that did is gone, so the only question a policy
+ * raises is the questionnaire's, and that one is not in the table.
  *
  * `interact` has no cell here, on purpose. See `policyAnswer`.
  */
@@ -19,9 +18,6 @@ const ANSWERS: Readonly<
     Readonly<Partial<Record<ApprovalClass, ToolStartDecision>>>
   >
 > = {
-  cautious: {
-    mutate: { decision: "ask" },
-  },
   edit: {
     mutate: { decision: "allow" },
   },
@@ -82,24 +78,6 @@ export function resolveServiceDecision(
   }
 
   return policy ?? host;
-}
-
-/**
- * Tighten the policy when nobody watches the Run.
- *
- * Edit and Unrestricted both let a change pass with no question, and a Timer at night
- * is the worst moment for them. Read-Only allows nothing, and a cautious row already
- * asks, so neither needs the change.
- */
-export function effectivePolicy(
-  stored: ApprovalPolicy,
-  attended: boolean
-): ApprovalPolicy {
-  if (attended || stored === "readonly" || stored === "cautious") {
-    return stored;
-  }
-
-  return UNATTENDED_APPROVAL_POLICY;
 }
 
 /** Class resolution: the built-in table, or MCP annotations. The composition root injects it; this package does not know the manager. */

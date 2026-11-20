@@ -184,9 +184,3 @@ The approval category of one tool: read, mutate, exec, interact, or unknown. The
 answers by class, not by tool name. The class of an MCP tool comes from the annotation of
 its server. If that annotation is absent, the class is unknown.
 _Avoid_: 风险等级、权限级别、工具类型
-
-**Unattended Run (无人值守运行)**:
-A run that starts while no person is present: a timer or a completion notice triggers it,
-not user input or a user answer. The session assembles it with a tighter policy. It never
-allows a mutation.
-_Avoid_: 后台运行、自动运行、定时运行

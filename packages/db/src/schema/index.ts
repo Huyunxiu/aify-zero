@@ -115,12 +115,11 @@ export const session_table = sqliteTable(
      * layer does not depend on the protocol package, so the literals stay here; change both together.
      *
      * It decides only whether to ask, and who gets asked. The Sandbox still decides
-     * what is possible, so it is no permission model. A user picks `edit`, `readonly`, or
-     * `unrestricted`; `cautious` is the posture an Unattended Run takes, and the value a
-     * sub session inherits from it. An Unattended Run tightens at assembly, and the row stores the choice.
+     * what is possible, so it is no permission model. A run uses the stored value as it is,
+     * whatever started the run.
      */
     approvalPolicy: text("approval_policy", {
-      enum: ["cautious", "edit", "readonly", "unrestricted"],
+      enum: ["edit", "readonly", "unrestricted"],
     })
       .notNull()
       .default("edit"),

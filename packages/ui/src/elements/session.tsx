@@ -16,7 +16,7 @@ import type {
   AgentTurn,
   AgentUserPart,
   AgentUserTurn,
-  ApprovalChoice,
+  ApprovalPolicy,
 } from "@workspace/agent-client";
 import type { ForkSessionType } from "@workspace/server/routers/session/session.schema";
 import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
@@ -501,7 +501,7 @@ export function Session({
 
   // The policy differs from the project: a change is allowed mid-session, and it applies to
   // the next Run. The row wins when the page opens; a new session has no row, so it keeps the default until the first message.
-  const [approvalPolicy, setApprovalPolicy] = React.useState<ApprovalChoice>(
+  const [approvalPolicy, setApprovalPolicy] = React.useState<ApprovalPolicy>(
     DEFAULT_APPROVAL_POLICY
   );
   // The home route has no session id, but the row exists after the first message is stored.
@@ -525,7 +525,7 @@ export function Session({
   });
 
   const handleApprovalPolicyChange = React.useCallback(
-    (next: ApprovalChoice) => {
+    (next: ApprovalPolicy) => {
       setApprovalPolicy(next);
       // Send no request while the row does not exist: the first message carries the policy with it.
       if (!policyTarget) {

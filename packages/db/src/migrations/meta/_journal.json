@@ -131,8 +131,8 @@
     {
       "idx": 18,
       "version": "6",
-      "when": 1795146651522,
-      "tag": "0018_session_approval_policy_cautious",
+      "when": 1795156970074,
+      "tag": "0018_session_approval_policy_default",
       "breakpoints": true
     }
   ]

@@ -403,7 +403,7 @@ describe("approval policy on SessionLifecycle", () => {
     });
   };
 
-  test("a timer-driven run tightens to the cautious posture", async () => {
+  test("a timer-driven run uses the stored policy", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({
@@ -411,10 +411,10 @@ describe("approval policy on SessionLifecycle", () => {
       items: [{ ...inboxItem("s1"), kind: "timer" }],
     });
 
-    expect(seen[0]?.approvalPolicy).toBe("cautious");
+    expect(seen[0]?.approvalPolicy).toBe("edit");
   });
 
-  test("a completion notice also counts as unattended", async () => {
+  test("a completion notice uses the stored policy too", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({
@@ -422,7 +422,7 @@ describe("approval policy on SessionLifecycle", () => {
       items: [{ ...inboxItem("s1"), kind: "job-notice" }],
     });
 
-    expect(seen[0]?.approvalPolicy).toBe("cautious");
+    expect(seen[0]?.approvalPolicy).toBe("edit");
   });
 
   test("a user message keeps the stored policy", async () => {

@@ -89,7 +89,7 @@ const decide = async (
 
 describe(createSessionAgent, () => {
   test("registers the default tool extensions", async () => {
-    const agent = await makeAgent({ approvalPolicy: "cautious" });
+    const agent = await makeAgent();
 
     expect(Object.keys(agent.tools)).toStrictEqual(
       expect.arrayContaining([
@@ -101,12 +101,12 @@ describe(createSessionAgent, () => {
       ])
     );
 
-    // 稳妥姿态下，写、删和问卷由组合根要求确认。
+    // 默认档放行改动；问卷仍然要问，那是组合根唯一保留的一问。
     await expect(decide(agent, "write-file")).resolves.toStrictEqual({
-      decision: "ask",
+      decision: "allow",
     });
     await expect(decide(agent, "delete-file")).resolves.toStrictEqual({
-      decision: "ask",
+      decision: "allow",
     });
     await expect(decide(agent, "questionnaire")).resolves.toStrictEqual({
       decision: "ask",
@@ -123,28 +123,6 @@ describe(createSessionAgent, () => {
     expect(Object.keys(withTimers.tools)).toStrictEqual(
       expect.arrayContaining(["timer-set", "timer-list", "timer-cancel"])
     );
-  });
-
-  test("asks the host function before the default rule", async () => {
-    const agent = await makeAgent({
-      approvalPolicy: "cautious",
-      toolApprovalPattern: ({ toolName, input }) =>
-        toolName === "write-file" &&
-        (input as { path: string }).path === "notes.md"
-          ? { decision: "allow" }
-          : undefined,
-    });
-
-    // 宿主放行时默认 ask 不再追加；宿主没有意见时默认规则仍然询问。
-    await expect(
-      decide(agent, "write-file", { path: "notes.md" })
-    ).resolves.toStrictEqual({ decision: "allow" });
-    await expect(
-      decide(agent, "write-file", { path: "/etc/passwd" })
-    ).resolves.toStrictEqual({ decision: "ask" });
-    await expect(decide(agent, "delete-file")).resolves.toStrictEqual({
-      decision: "ask",
-    });
   });
 
   test("registers host rules for its own tools", async () => {

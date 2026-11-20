@@ -20,9 +20,9 @@ DROP INDEX "idx_timer_session_due";--> statement-breakpoint
 DROP INDEX "idx_turn_session_turn";--> statement-breakpoint
 DROP INDEX "idx_turn_session_parent";--> statement-breakpoint
 ALTER TABLE `session` ALTER COLUMN "approval_policy" TO "approval_policy" text NOT NULL DEFAULT 'edit';--> statement-breakpoint
--- The picker no longer offers the old tier. A stored row keeps the closest tier it can still be
+-- The old tier is gone from the picker. A stored row keeps the closest tier it can still be
 -- changed from, so an upgrade loosens one question instead of leaving a value nobody can pick.
-UPDATE `session` SET `approval_policy` = 'edit' WHERE `approval_policy` = 'standard';--> statement-breakpoint
+UPDATE `session` SET `approval_policy` = 'edit' WHERE `approval_policy` IN ('standard', 'cautious');--> statement-breakpoint
 CREATE INDEX `idx_auth_login_ticket_instance` ON `auth_login_ticket` (`instance`);--> statement-breakpoint
 CREATE INDEX `idx_auth_session_user` ON `auth_session` (`user_id`);--> statement-breakpoint
 CREATE INDEX `idx_auth_session_expires` ON `auth_session` (`expires_at`);--> statement-breakpoint
