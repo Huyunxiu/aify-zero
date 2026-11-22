@@ -13,6 +13,7 @@ import type {
   AgentStaticToolPart,
   AgentToolPart,
   AgentTurnStatus,
+  FileReadMetadata,
 } from "@workspace/agent-client";
 import type { ReactNode } from "react";
 
@@ -149,36 +150,6 @@ export const getPartError = (
 
   return undefined;
 };
-
-/**
- * The metadata of a `read-file` or `load-skill` call, which share one union.
- * Restated here rather than imported because the agent package keeps it
- * private; structural typing means a new member over there fails to compile
- * here, which is the drift check we want.
- */
-type FileReadMetadata =
-  | { type: "miss"; filepath: string }
-  | {
-      type: "directory";
-      filepath: string;
-      truncated: boolean;
-      entries: string[];
-      limit: number;
-      offset: number;
-      totalEntries: number;
-    }
-  | {
-      type: "file";
-      mime: string;
-      text: string;
-      filepath: string;
-      truncated: boolean;
-      limit: number;
-      offset: number;
-      totalLines?: number;
-    }
-  | { type: "attachments"; filepath: string; mime: string }
-  | { type: "binary-file"; filepath: string; mime: string };
 
 /**
  * Summarizes a file read. `totalLines` is optional, and absent exactly when the
