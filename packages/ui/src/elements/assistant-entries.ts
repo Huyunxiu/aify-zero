@@ -4,18 +4,24 @@ import type {
   AgentAssistantStep,
   AgentAssistantTurn,
   AgentCompactionStep,
-  AgentPart,
   AgentSteeringStep,
   AgentTextPart,
 } from "@workspace/agent-client";
 
+import type { StepPart } from "./steps/types";
 import type { StepRow } from "./tool-step";
 
-/** assistant turn 里的一行：普通 part，或一条 steering step。 */
+/**
+ * assistant turn 里的一行：普通 part，或一条 steering step。
+ *
+ * A part is one a step view can draw. A user step's attachments and text never
+ * reach this list: a steering step is the one place a user step appears inside
+ * an assistant turn, and it is an entry of its own.
+ */
 export type AssistantEntry =
   | {
       kind: "part";
-      part: AgentPart<AgentToolSet>;
+      part: StepPart;
       step: AgentAssistantStep<AgentToolSet> | AgentCompactionStep;
     }
   | { kind: "steering"; step: AgentSteeringStep };
@@ -53,7 +59,7 @@ export const splitAssistantMessageSteps = (
 
       return step.content.map((part) => ({
         kind: "part",
-        part: part as AgentPart<AgentToolSet>,
+        part,
         step,
       }));
     }

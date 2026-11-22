@@ -1,7 +1,7 @@
 import type { AgentToolPart, AgentToolSet } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
-import { outputLanguageOf } from "../src/elements/tool-panels";
+import { outputLanguageOf } from "../../src/elements/steps/file-read";
 
 /**
  * Builds a part from the fields a case cares about, cast through the real union

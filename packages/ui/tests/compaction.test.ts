@@ -5,11 +5,8 @@ import type {
 import { describe, expect, test } from "vitest";
 
 import { formatTokens } from "../src/elements/compaction-message";
-import {
-  getPartDurationMs,
-  getPartStatus,
-  getPartSummary,
-} from "../src/elements/tool-step";
+import { compactionSummary } from "../src/elements/steps/compaction";
+import { getPartDurationMs, getPartStatus } from "../src/elements/tool-step";
 
 const part: AgentCompactionPart = {
   type: "compaction",
@@ -45,7 +42,7 @@ const step: AgentCompactionStep = {
 describe("compaction rendering helpers", () => {
   test("a committed compaction part is complete", () => {
     expect(getPartStatus(part)).toBe("complete");
-    expect(getPartSummary(part)).toBe("context compacted");
+    expect(compactionSummary(part)).toBe("context compacted");
   });
 
   test("a part opened by compaction.start is still running", () => {
@@ -56,7 +53,7 @@ describe("compaction rendering helpers", () => {
       createdAt: 1000,
     };
     expect(getPartStatus(streaming)).toBe("running");
-    expect(getPartSummary(streaming)).toBeUndefined();
+    expect(compactionSummary(streaming)).toBeUndefined();
     expect(getPartDurationMs(streaming, step)).toBeUndefined();
   });
 
