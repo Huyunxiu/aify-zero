@@ -1,4 +1,5 @@
 import {
+  getToolName,
   isAgentReasoningPart,
   isAgentStaticToolPart,
   isAgentTextPart,
@@ -119,6 +120,34 @@ export const getPartStatus = (
   }
 
   return "complete";
+};
+
+/**
+ * The text a call ends with, and what that end is called.
+ *
+ * A refusal is not a failure — "ERROR" would blame a tool that never ran. A call
+ * the user answered carries the approval, so it was declined; one that no
+ * approval reached was refused before it started.
+ */
+export const getPartError = (
+  part: AgentToolPart
+): { label: string; text: string } | undefined => {
+  if (!part.errorText) {
+    return undefined;
+  }
+
+  if (part.state === "output-denied") {
+    return {
+      label: part.approval ? "Declined" : "Refused",
+      text: part.errorText,
+    };
+  }
+
+  if (part.state === "output-error") {
+    return { label: "Error", text: part.errorText };
+  }
+
+  return undefined;
 };
 
 /**
@@ -256,6 +285,24 @@ const summarizeShell = (
       : `${summary} · output truncated`;
   }
   return summary;
+};
+
+/**
+ * Which tool this row is about.
+ *
+ * A routed call is one call from the model's side and another from the tool's
+ * side: the row names the tool that actually ran, because `call-tool` says
+ * nothing. The real name is in the input; a call that has not got that far falls
+ * back to its own name.
+ */
+export const getDisplayedToolName = (
+  part: AgentToolPart<AgentToolSet>
+): string => {
+  if (part.type !== "tool-call-tool" || !("input" in part)) {
+    return getToolName(part);
+  }
+
+  return part.input?.name || getToolName(part);
 };
 
 /**
