@@ -198,8 +198,8 @@ export function ToolSection({
   const [wrap, setWrap] = React.useState(wrapProp ?? language === "text");
 
   return (
-    <CodeBlock className={cn("shrink-0", className)}>
-      <CodeBlockHeader className="group/section h-8 gap-2 pr-1.5">
+    <CodeBlock className={cn("shrink-0 shadow-lg", className)}>
+      <CodeBlockHeader className="group/section h-10 gap-2 pr-1.5">
         <CodeBlockTitle>{label}</CodeBlockTitle>
         <span className={LANGUAGE_CLASS}>{language}</span>
         <CodeBlockActions className="gap-1">
@@ -241,8 +241,8 @@ export function ToolRenderedSection({
   footer?: React.ReactNode;
 }) {
   return (
-    <CodeBlock className="shrink-0">
-      <CodeBlockHeader className="group/section h-8 pr-1.5">
+    <CodeBlock className="shrink-0 shadow-lg">
+      <CodeBlockHeader className="group/section h-10 pr-1.5">
         <CodeBlockTitle>{label}</CodeBlockTitle>
         {copyValue === undefined ? null : (
           <CodeBlockActions>
@@ -261,8 +261,8 @@ export function ToolRenderedSection({
 
 /** The error a failed call carries, drawn in the code block's red variant. */
 export const ToolErrorSection = ({ text }: { text: string }) => (
-  <CodeBlock variant="destructive">
-    <CodeBlockHeader className="group/section h-8 border-destructive/20 bg-destructive/5 pr-1.5">
+  <CodeBlock variant="destructive" className="shrink-0 shadow-lg">
+    <CodeBlockHeader className="group/section h-10 border-destructive/20 bg-destructive/5 pr-1.5">
       <CodeBlockTitle className="text-destructive">Error</CodeBlockTitle>
       <CodeBlockActions>
         <CodeBlockCopyButton

@@ -107,8 +107,8 @@ type AssistantMessageProps = {
 const REASON_TOOL_LABEL_MAX_LENGTH = 180;
 
 /**
- * The copy controls every Frame panel shares. Declared once so the eight tool
- * branches below state only what differs about them.
+ * The copy controls every rendered Markdown body shares. Declared once so each
+ * branch below states only what differs about it.
  */
 const FRAME_CONTROLS = {
   code: {
@@ -500,25 +500,11 @@ export const AssistantMessage = ({
                     summary={summary}
                     duration={duration}
                   >
-                    <Frame variant="default" overflowBehavior="scroll">
-                      <FrameHeader>
-                        <FrameTitle>Note</FrameTitle>
-                        <div>
-                          <CopyButton
-                            className="text-muted-foreground"
-                            size="icon-sm"
-                            variant="ghost"
-                            label="Copy"
-                            message={part.text}
-                          />
-                        </div>
-                      </FrameHeader>
-                      <FramePanel>
-                        <MessageResponse controls={FRAME_CONTROLS}>
-                          {part.text}
-                        </MessageResponse>
-                      </FramePanel>
-                    </Frame>
+                    <ToolRenderedSection copyValue={part.text} label="Note">
+                      <MessageResponse controls={FRAME_CONTROLS}>
+                        {part.text}
+                      </MessageResponse>
+                    </ToolRenderedSection>
                   </AgentActivityStep>
                 );
               } else if (part.type === "reasoning") {
@@ -535,27 +521,14 @@ export const AssistantMessage = ({
                     summary={summary}
                     duration={duration}
                   >
-                    <Frame variant="default" overflowBehavior="scroll">
-                      <FrameHeader>
-                        <FrameTitle>
-                          <div>Reasoning</div>
-                        </FrameTitle>
-                        <div>
-                          <CopyButton
-                            className="text-muted-foreground"
-                            size="icon-sm"
-                            variant="ghost"
-                            label="Copy"
-                            message={part.text}
-                          />
-                        </div>
-                      </FrameHeader>
-                      <FramePanel>
-                        <MessageResponse controls={FRAME_CONTROLS}>
-                          {part.text}
-                        </MessageResponse>
-                      </FramePanel>
-                    </Frame>
+                    <ToolRenderedSection
+                      copyValue={part.text}
+                      label="Reasoning"
+                    >
+                      <MessageResponse controls={FRAME_CONTROLS}>
+                        {part.text}
+                      </MessageResponse>
+                    </ToolRenderedSection>
                   </AgentActivityStep>
                 );
               } else if (part.type === "tool-read-file") {
@@ -575,7 +548,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>Read</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -607,7 +580,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>Create</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -639,7 +612,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>Delete</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -673,7 +646,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>Edit</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -728,7 +701,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>Grep</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -760,7 +733,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>Glob</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -792,7 +765,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>Fetch</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -824,7 +797,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>
                             Load skill {part.input?.skill}
                           </FrameTitle>
@@ -868,7 +841,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>
                             {getStepLabel(shellAction, part.input?.description)}
                           </FrameTitle>
@@ -933,7 +906,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>
                             {getStepLabel("Task", part.input?.description)}
                           </FrameTitle>
@@ -1053,7 +1026,7 @@ export const AssistantMessage = ({
                         variant="default"
                         overflowBehavior="scroll"
                       >
-                        <FrameHeader className="px-0">
+                        <FrameHeader className="px-3">
                           <FrameTitle>
                             {serverName
                               ? `${serverName} · ${shortName}`
