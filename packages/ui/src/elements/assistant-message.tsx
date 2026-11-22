@@ -1,9 +1,5 @@
-import { getToolName, isAgentToolPart } from "@workspace/agent-client";
-import type {
-  AgentToolSet,
-  AgentAssistantTurn,
-  AgentToolPart,
-} from "@workspace/agent-client";
+import { isAgentToolPart } from "@workspace/agent-client";
+import type { AgentToolSet, AgentAssistantTurn } from "@workspace/agent-client";
 import {
   BotIcon,
   BrainIcon,
@@ -23,7 +19,6 @@ import {
   RotateCwIcon,
   WrenchIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
 
 import {
   AgentActivity,
@@ -40,7 +35,6 @@ import {
   AgentStepTrigger,
 } from "../components/ai-elements/chain-of-turn";
 import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
-import { Button } from "../components/button";
 import { CopyButton } from "../components/copy-button";
 import {
   Frame,
@@ -56,7 +50,6 @@ import {
 } from "../components/tooltip";
 import { useElapsedMs } from "../hooks/use-elapsed-ms";
 import { useTouchPrimary } from "../hooks/use-touch-primary";
-import { toolOutputText } from "../lib/tool-output-text";
 import { cn } from "../lib/utils";
 import { useSubagentPane } from "../stores/subagent-pane";
 import { splitAssistantMessageSteps } from "./assistant-entries";
@@ -73,14 +66,16 @@ import { QuestionnaireCard, QuestionnaireSummary } from "./questionnaire";
 import type { QuestionnairePlacement } from "./questionnaire";
 import { SteeringStep } from "./steering-step";
 import {
-  ToolErrorSection,
-  ToolPanels as ToolPanelsShell,
+  editDiffRows,
+  editDiffText,
+  ToolPanels,
+  ToolPartError,
   ToolRenderedSection,
   ToolSection,
-  languageFromPath,
 } from "./tool-panels";
 import {
   formatDuration,
+  getDisplayedToolName,
   getPartDurationMs,
   getPartStatus,
   getPartSummary,
@@ -164,67 +159,6 @@ const getStepLabel = (action: string, detail?: string) => {
 };
 
 /**
- * 这一行讲的是哪个工具。
- *
- * 转调的调用从模型那边看是一次调用，从工具那边看是另一次：行里写真正跑过的
- * 那个工具，因为 `call-tool` 什么都没说。真名在入参里；还没走到那一步的调用
- * 退回自己的名字。
- */
-const getDisplayedToolName = (part: AgentToolPart<AgentToolSet>): string => {
-  if (part.type !== "tool-call-tool" || !("input" in part)) {
-    return getToolName(part);
-  }
-
-  return part.input?.name || getToolName(part);
-};
-
-/** 把一个替换块摊平成 `-`/`+` 行，让步骤读起来像 diff。 */
-const editDiffLines = (oldString: string, newString: string) => [
-  ...oldString.split("\n").map((text) => ({ sign: "-" as const, text })),
-  ...newString.split("\n").map((text) => ({ sign: "+" as const, text })),
-];
-
-/**
- * 解析工具返回的展示用 diff 行，格式为 `+ 12 content`。
- * 首字符是标记，其余部分（行号 + 内容）原样展示。
- */
-const parseRenderedDiffLine = (line: string) => ({
-  sign: line[0] ?? " ",
-  text: line.slice(1),
-});
-
-type EditFilePart = Extract<
-  AgentToolPart<AgentToolSet>,
-  { type: "tool-edit-file" }
->;
-
-/**
- * 这次编辑要展示的行：工具写入的 diff 优先，流式期间退回入参拼出的预览。
- *
- * 两个来源原来各写一遍渲染，复制按钮也就没有东西可复制；先摊平成行，面板和
- * 剪贴板拿的是同一份。
- */
-const editDiffRows = (part: EditFilePart): { sign: string; text: string }[] => {
-  const actualDiff = part.output?.metadata?.diff;
-
-  if (actualDiff) {
-    return actualDiff.split("\n").map(parseRenderedDiffLine);
-  }
-
-  // 流式输出期间 input 是 DeepPartial，未拼完整的编辑块先不渲染。
-  return (part.input?.edits ?? []).flatMap((block) =>
-    typeof block?.oldText === "string" && typeof block?.newText === "string"
-      ? editDiffLines(block.oldText, block.newText)
-      : []
-  );
-};
-
-const editDiffText = (part: EditFilePart) =>
-  editDiffRows(part)
-    .map((row) => `${row.sign}${row.text}`)
-    .join("\n");
-
-/**
  * The turn's elapsed time, kept in its own component so the once-a-second tick
  * re-renders this span and nothing else. Holding the clock in `AssistantMessage`
  * would re-render every step row on every tick.
@@ -270,139 +204,6 @@ const TURN_HEADING = {
   aborted: "Stopped",
   error: "Failed",
 } as const;
-
-/** 读文件、写文件时入参里的路径；其余工具没有这个字段。 */
-const toolInputPath = (part: AgentToolPart): string | undefined => {
-  if (part.type !== "tool-read-file" && part.type !== "tool-write-file") {
-    return undefined;
-  }
-
-  const input = part.input as { path?: unknown } | undefined;
-
-  return typeof input?.path === "string" ? input.path : undefined;
-};
-
-/**
- * The text a call ends with, and what that end is called.
- *
- * A refusal is not a failure — "ERROR" would blame a tool that never ran. A call
- * the user answered carries the approval, so it was declined; one that no
- * approval reached was refused before it started.
- */
-const toolError = (
-  part: AgentToolPart
-): { label: string; text: string } | undefined => {
-  if (!part.errorText) {
-    return undefined;
-  }
-
-  if (part.state === "output-denied") {
-    return {
-      label: part.approval ? "Declined" : "Refused",
-      text: part.errorText,
-    };
-  }
-
-  if (part.state === "output-error") {
-    return { label: "Error", text: part.errorText };
-  }
-
-  return undefined;
-};
-
-const renderToolError = (part: AgentToolPart) => {
-  const error = toolError(part);
-
-  return error ? (
-    <ToolErrorSection label={error.label} text={error.text} />
-  ) : null;
-};
-
-/** 审批条：一次调用的批准与拒绝。没有待批请求时什么也不画。 */
-const InlineToolApproval = ({
-  part,
-  onRespond,
-}: {
-  part: AgentToolPart;
-  onRespond?: AssistantMessageProps["onRespondToolApproval"];
-}) => {
-  const { approval } = part;
-  if (!approval) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center gap-2 border-t border-border/70 bg-muted/50 px-2.5 py-2">
-      <Button
-        variant={approval.approved === true ? "success" : "default"}
-        onClick={() => onRespond?.(approval.id, true)}
-        size="sm"
-      >
-        {approval.approved ? "Approved" : "Approve"}
-      </Button>
-      {approval.approved === undefined && (
-        <Button
-          onClick={() => onRespond?.(approval.id, false)}
-          size="sm"
-          variant="outline"
-        >
-          Deny
-        </Button>
-      )}
-    </div>
-  );
-};
-
-/**
- * INPUT 与 OUTPUT 的骨架。
- *
- * 十一个工具分支原本各自抄一遍这段：复制按钮、审批条、错误块都在一起。差别
- * 只在标题、图标和中间那一段，所以把中间留给 `children`。
- *
- * 正文交给 `tool-panels`：入参和结果都是代码，画成代码块才有等宽的列和可滚动
- * 的边界；这里只把 part 摊成它要的那几段文本。
- */
-const ToolPanels = ({
-  part,
-  onRespond,
-  children,
-  hideOutput = false,
-  renderOutput,
-}: {
-  part: AgentToolPart;
-  onRespond?: AssistantMessageProps["onRespondToolApproval"];
-  /** INPUT 与 OUTPUT 之间的内容，例如 edit-file 的 diff。 */
-  children?: ReactNode;
-  /** 没有结果可显示时不画 OUTPUT，例如没有启动子会话的 task。 */
-  hideOutput?: boolean;
-  /** 内容需要富文本渲染时替换默认的等宽正文。 */
-  renderOutput?: (text: string) => ReactNode;
-}) => {
-  const error = toolError(part);
-  // A refused call has no result to show: the reason is drawn under the input,
-  // and an empty Output card reads like a result that went missing.
-  const refused = part.state === "output-denied";
-
-  return (
-    <ToolPanelsShell
-      approval={
-        part.approval === undefined ? undefined : (
-          <InlineToolApproval part={part} onRespond={onRespond} />
-        )
-      }
-      errorLabel={error?.label}
-      errorText={error?.text}
-      hideOutput={hideOutput || refused}
-      input={JSON.stringify(part.input, null, 2) ?? ""}
-      output={toolOutputText(part.output)}
-      outputLanguage={languageFromPath(toolInputPath(part))}
-      pending={part.state === "input-streaming"}
-      renderOutput={renderOutput}
-    >
-      {children}
-    </ToolPanelsShell>
-  );
-};
 
 export const AssistantMessage = ({
   turn,
@@ -1124,7 +925,7 @@ export const AssistantMessage = ({
                       </AgentStepTrigger>
                       <AgentStepContent>
                         <QuestionnaireSummary part={part} />
-                        {renderToolError(part)}
+                        <ToolPartError part={part} />
                       </AgentStepContent>
                     </AgentStep>
                     {questionnairePlacement === "inline" && (
@@ -1174,7 +975,7 @@ export const AssistantMessage = ({
                               language="text"
                               value={part.output?.output ?? ""}
                             />
-                            {renderToolError(part)}
+                            <ToolPartError part={part} />
                           </div>
                         </Frame>
                       </AgentStepContent>

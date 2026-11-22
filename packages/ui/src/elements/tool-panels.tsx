@@ -1,6 +1,8 @@
+import type { AgentToolPart, AgentToolSet } from "@workspace/agent-client";
 import { WrapTextIcon } from "lucide-react";
 import * as React from "react";
 
+import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
 import { Button } from "../components/button";
 import {
   CodeBlock,
@@ -12,7 +14,9 @@ import {
   CodeBlockTitle,
 } from "../components/code-block";
 import { useHighlightedCode } from "../hooks/use-highlighted-code";
+import { toolOutputText } from "../lib/tool-output-text";
 import { cn } from "../lib/utils";
+import { getPartError } from "./tool-step";
 
 /**
  * A tool call reads twice: what it was asked, and what it answered. Both are
@@ -314,7 +318,7 @@ type PanelsProps = {
  * The titles sit in the cards, so a call reads as two blocks of the same kind
  * instead of as a floating label over a white panel.
  */
-export function ToolPanels({
+function ToolPanelsBody({
   input,
   output,
   inputLanguage = "json",
@@ -350,3 +354,171 @@ export function ToolPanels({
     </div>
   );
 }
+
+/**
+ * The language to highlight a call's output in.
+ *
+ * Only the two calls that hand back a file's contents have one. The other tools
+ * answer in prose, so `text` is right for them.
+ */
+const outputLanguageFor = (part: AgentToolPart): string => {
+  if (part.type !== "tool-read-file" && part.type !== "tool-write-file") {
+    return "text";
+  }
+
+  const input = part.input as { path?: unknown } | undefined;
+
+  return languageFromPath(
+    typeof input?.path === "string" ? input.path : undefined
+  );
+};
+
+/** The approve and deny buttons of a call that is waiting on the user. */
+const InlineToolApproval = ({
+  part,
+  onRespond,
+}: {
+  part: AgentToolPart;
+  onRespond?: (
+    approvalId: string,
+    approved: boolean,
+    answer?: ToolApprovalAnswer
+  ) => void;
+}) => {
+  const { approval } = part;
+  if (!approval) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-2 border-t border-border/70 bg-muted/50 px-2.5 py-2">
+      <Button
+        variant={approval.approved === true ? "success" : "default"}
+        onClick={() => onRespond?.(approval.id, true)}
+        size="sm"
+      >
+        {approval.approved ? "Approved" : "Approve"}
+      </Button>
+      {approval.approved === undefined && (
+        <Button
+          onClick={() => onRespond?.(approval.id, false)}
+          size="sm"
+          variant="outline"
+        >
+          Deny
+        </Button>
+      )}
+    </div>
+  );
+};
+
+/**
+ * The two ends of a call, from the call itself.
+ *
+ * The body module knows what a tool's input and output are; the caller only says
+ * which part to draw and what sits between the two cards.
+ */
+export function ToolPanels({
+  part,
+  onRespond,
+  children,
+  hideOutput = false,
+  renderOutput,
+}: {
+  part: AgentToolPart;
+  onRespond?: (
+    approvalId: string,
+    approved: boolean,
+    answer?: ToolApprovalAnswer
+  ) => void;
+  /** Drawn between the two cards, for example an edit's diff. */
+  children?: React.ReactNode;
+  /** No result to show, for example a `task` call that started nothing. */
+  hideOutput?: boolean;
+  /** Replaces the plain output body when the result needs rich text. */
+  renderOutput?: (text: string) => React.ReactNode;
+}) {
+  const error = getPartError(part);
+  // A refused call has no result to show: the reason is drawn under the input,
+  // and an empty Output card reads like a result that went missing.
+  const refused = part.state === "output-denied";
+
+  return (
+    <ToolPanelsBody
+      approval={
+        part.approval === undefined ? undefined : (
+          <InlineToolApproval part={part} onRespond={onRespond} />
+        )
+      }
+      errorLabel={error?.label}
+      errorText={error?.text}
+      hideOutput={hideOutput || refused}
+      input={JSON.stringify(part.input, null, 2) ?? ""}
+      output={toolOutputText(part.output)}
+      outputLanguage={outputLanguageFor(part)}
+      pending={part.state === "input-streaming"}
+      renderOutput={renderOutput}
+    >
+      {children}
+    </ToolPanelsBody>
+  );
+}
+
+/** The end of a call that went wrong, on its own — no input or output cards. */
+export function ToolPartError({ part }: { part: AgentToolPart }) {
+  const error = getPartError(part);
+
+  return error === undefined ? null : (
+    <ToolErrorSection label={error.label} text={error.text} />
+  );
+}
+
+type EditFilePart = Extract<
+  AgentToolPart<AgentToolSet>,
+  { type: "tool-edit-file" }
+>;
+
+/** Flattens one replacement block into `-` and `+` rows, so a step reads as a diff. */
+const editDiffLines = (oldString: string, newString: string) => [
+  ...oldString.split("\n").map((text) => ({ sign: "-" as const, text })),
+  ...newString.split("\n").map((text) => ({ sign: "+" as const, text })),
+];
+
+/**
+ * Parses a display diff line the tool returned, in the form `+ 12 content`. The
+ * first character is the sign; the rest — line number and text — is shown as is.
+ */
+const parseRenderedDiffLine = (line: string) => ({
+  sign: line[0] ?? " ",
+  text: line.slice(1),
+});
+
+/**
+ * The rows of an edit's diff: the tool's own diff once it finished, and a
+ * preview built from the input before that.
+ *
+ * The two sources once rendered on their own, so the copy button had nothing to
+ * copy. The rows are the one form that the panel and the clipboard both read.
+ */
+export const editDiffRows = (
+  part: EditFilePart
+): { sign: string; text: string }[] => {
+  const actualDiff = part.output?.metadata?.diff;
+
+  if (actualDiff) {
+    return actualDiff.split("\n").map(parseRenderedDiffLine);
+  }
+
+  // While streaming, `input` is a partial, so an unfinished edit block is not
+  // drawn yet.
+  return (part.input?.edits ?? []).flatMap((block) =>
+    typeof block?.oldText === "string" && typeof block?.newText === "string"
+      ? editDiffLines(block.oldText, block.newText)
+      : []
+  );
+};
+
+export const editDiffText = (part: EditFilePart) =>
+  editDiffRows(part)
+    .map((row) => `${row.sign}${row.text}`)
+    .join("\n");
