@@ -130,12 +130,12 @@ export function FrameHeader({
   className,
   ...props
 }: React.ComponentProps<"header">): React.ReactElement {
-  const { variant } = useFrameContext();
   return (
     <header
-      className={cn("flex flex-row items-center justify-between h-11 px-4", {
-        "border-b": variant === "outline"
-      }, className)}
+      className={cn(
+        "flex h-10 shrink-0 items-center gap-2.5 rounded-lg bg-muted px-3 mb-2",
+        className
+      )}
       data-slot="frame-panel-header"
       {...props}
     />

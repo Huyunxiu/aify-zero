@@ -66,6 +66,13 @@ import { QuestionnaireCard, QuestionnaireSummary } from "./questionnaire";
 import type { QuestionnairePlacement } from "./questionnaire";
 import { SteeringStep } from "./steering-step";
 import {
+  ToolErrorSection,
+  ToolPanels as ToolPanelsShell,
+  ToolRenderedSection,
+  ToolSection,
+  languageFromPath,
+} from "./tool-panels";
+import {
   formatDuration,
   getPartDurationMs,
   getPartStatus,
@@ -100,8 +107,8 @@ type AssistantMessageProps = {
 const REASON_TOOL_LABEL_MAX_LENGTH = 180;
 
 /**
- * The copy controls every Frame panel shares. Declared once so the eight tool
- * branches below state only what differs about them.
+ * The copy controls every rendered Markdown body shares. Declared once so each
+ * branch below states only what differs about it.
  */
 const FRAME_CONTROLS = {
   code: {
@@ -179,6 +186,37 @@ const parseRenderedDiffLine = (line: string) => ({
   text: line.slice(1),
 });
 
+type EditFilePart = Extract<
+  AgentToolPart<AgentToolSet>,
+  { type: "tool-edit-file" }
+>;
+
+/**
+ * 这次编辑要展示的行：工具写入的 diff 优先，流式期间退回入参拼出的预览。
+ *
+ * 两个来源原来各写一遍渲染，复制按钮也就没有东西可复制；先摊平成行，面板和
+ * 剪贴板拿的是同一份。
+ */
+const editDiffRows = (part: EditFilePart): { sign: string; text: string }[] => {
+  const actualDiff = part.output?.metadata?.diff;
+
+  if (actualDiff) {
+    return actualDiff.split("\n").map(parseRenderedDiffLine);
+  }
+
+  // 流式输出期间 input 是 DeepPartial，未拼完整的编辑块先不渲染。
+  return (part.input?.edits ?? []).flatMap((block) =>
+    typeof block?.oldText === "string" && typeof block?.newText === "string"
+      ? editDiffLines(block.oldText, block.newText)
+      : []
+  );
+};
+
+const editDiffText = (part: EditFilePart) =>
+  editDiffRows(part)
+    .map((row) => `${row.sign}${row.text}`)
+    .join("\n");
+
 /**
  * The turn's elapsed time, kept in its own component so the once-a-second tick
  * re-renders this span and nothing else. Holding the clock in `AssistantMessage`
@@ -227,64 +265,52 @@ const TURN_HEADING = {
   error: "Failed",
 } as const;
 
-/**
- * The text a call ends with, under the input: the failure, or the refusal's own
- * sentence. A refusal is not a failure — the label says which one this is, because
- * "ERROR" would blame a tool that never ran.
- */
-const renderToolError = (part: AgentToolPart) => {
-  const failed = part.state === "output-error";
-  const refused = part.state === "output-denied";
-  if ((!failed && !refused) || !part.errorText) {
-    return null;
+/** 读文件、写文件时入参里的路径；其余工具没有这个字段。 */
+const toolInputPath = (part: AgentToolPart): string | undefined => {
+  if (part.type !== "tool-read-file" && part.type !== "tool-write-file") {
+    return undefined;
   }
 
-  return (
-    <>
-      <div className="flex justify-between items-center pl-4 pr-1 mb-1">
-        <div className="text-muted-foreground">
-          {refused ? (part.approval ? "DECLINED" : "REFUSED") : "ERROR"}
-        </div>
-        <div>
-          <CopyButton
-            className="text-muted-foreground"
-            size="icon-sm"
-            variant="ghost"
-            label="Copy"
-            message={part.errorText}
-          />
-        </div>
-      </div>
-      <FramePanel>
-        <div className="whitespace-pre">{part.errorText}</div>
-      </FramePanel>
-    </>
-  );
+  const input = part.input as { path?: unknown } | undefined;
+
+  return typeof input?.path === "string" ? input.path : undefined;
 };
 
-/** 工具面板里的一段：标签，以及有内容时的复制按钮。 */
-const ToolSectionLabel = ({
-  label,
-  copy,
-}: {
-  label: string;
-  copy?: string;
-}) => (
-  <div className="flex items-center justify-between pr-1 pl-4 mb-1">
-    <div className="text-muted-foreground">{label}</div>
-    {copy === undefined ? null : (
-      <div>
-        <CopyButton
-          className="text-muted-foreground"
-          size="icon-sm"
-          variant="ghost"
-          label="Copy"
-          message={copy}
-        />
-      </div>
-    )}
-  </div>
-);
+/**
+ * The text a call ends with, and what that end is called.
+ *
+ * A refusal is not a failure — "ERROR" would blame a tool that never ran. A call
+ * the user answered carries the approval, so it was declined; one that no
+ * approval reached was refused before it started.
+ */
+const toolError = (
+  part: AgentToolPart
+): { label: string; text: string } | undefined => {
+  if (!part.errorText) {
+    return undefined;
+  }
+
+  if (part.state === "output-denied") {
+    return {
+      label: part.approval ? "Declined" : "Refused",
+      text: part.errorText,
+    };
+  }
+
+  if (part.state === "output-error") {
+    return { label: "Error", text: part.errorText };
+  }
+
+  return undefined;
+};
+
+const renderToolError = (part: AgentToolPart) => {
+  const error = toolError(part);
+
+  return error ? (
+    <ToolErrorSection label={error.label} text={error.text} />
+  ) : null;
+};
 
 /** 审批条：一次调用的批准与拒绝。没有待批请求时什么也不画。 */
 const InlineToolApproval = ({
@@ -300,26 +326,24 @@ const InlineToolApproval = ({
   }
 
   return (
-    <FramePanel className="rounded-t-none -mt-1 px-2.5 py-2.5">
-      <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 border-t border-border/70 bg-muted/50 px-2.5 py-2">
+      <Button
+        variant={approval.approved === true ? "success" : "default"}
+        onClick={() => onRespond?.(approval.id, true)}
+        size="sm"
+      >
+        {approval.approved ? "Approved" : "Approve"}
+      </Button>
+      {approval.approved === undefined && (
         <Button
-          variant={approval.approved === true ? "success" : "default"}
-          onClick={() => onRespond?.(approval.id, true)}
+          onClick={() => onRespond?.(approval.id, false)}
           size="sm"
+          variant="outline"
         >
-          {approval.approved ? "Approved" : "Approve"}
+          Deny
         </Button>
-        {approval.approved === undefined && (
-          <Button
-            onClick={() => onRespond?.(approval.id, false)}
-            size="sm"
-            variant="outline"
-          >
-            Deny
-          </Button>
-        )}
-      </div>
-    </FramePanel>
+      )}
+    </div>
   );
 };
 
@@ -328,6 +352,9 @@ const InlineToolApproval = ({
  *
  * 十一个工具分支原本各自抄一遍这段：复制按钮、审批条、错误块都在一起。差别
  * 只在标题、图标和中间那一段，所以把中间留给 `children`。
+ *
+ * 正文交给 `tool-panels`：入参和结果都是代码，画成代码块才有等宽的列和可滚动
+ * 的边界；这里只把 part 摊成它要的那几段文本。
  */
 const ToolPanels = ({
   part,
@@ -345,35 +372,29 @@ const ToolPanels = ({
   /** 内容需要富文本渲染时替换默认的等宽正文。 */
   renderOutput?: (text: string) => ReactNode;
 }) => {
-  const input = JSON.stringify(part.input, null, 2) ?? "";
-  // A refused call has no result to show: the reason belongs in the block below,
-  // and an empty OUTPUT frame reads like a result that went missing.
+  const error = toolError(part);
+  // A refused call has no result to show: the reason is drawn under the input,
+  // and an empty Output card reads like a result that went missing.
   const refused = part.state === "output-denied";
-  // 结构化结果也要能显示：search-tools 的 output 是对象，直接交给 React 会抛错。
-  const output = toolOutputText(part.output);
 
   return (
-    <>
-      <ToolSectionLabel label="INPUT" copy={input} />
-      <FramePanel className={cn({ "rounded-b-none": part.approval })}>
-        <div className="whitespace-pre">{input}</div>
-      </FramePanel>
-      <InlineToolApproval part={part} onRespond={onRespond} />
+    <ToolPanelsShell
+      approval={
+        part.approval === undefined ? undefined : (
+          <InlineToolApproval part={part} onRespond={onRespond} />
+        )
+      }
+      errorLabel={error?.label}
+      errorText={error?.text}
+      hideOutput={hideOutput || refused}
+      input={JSON.stringify(part.input, null, 2) ?? ""}
+      output={toolOutputText(part.output)}
+      outputLanguage={languageFromPath(toolInputPath(part))}
+      pending={part.state === "input-streaming"}
+      renderOutput={renderOutput}
+    >
       {children}
-      {hideOutput || refused ? null : (
-        <>
-          <ToolSectionLabel label="OUTPUT" copy={output} />
-          <FramePanel>
-            {renderOutput ? (
-              renderOutput(output)
-            ) : (
-              <div className="whitespace-pre">{output}</div>
-            )}
-          </FramePanel>
-        </>
-      )}
-      {renderToolError(part)}
-    </>
+    </ToolPanelsShell>
   );
 };
 
@@ -515,25 +536,11 @@ export const AssistantMessage = ({
                     summary={summary}
                     duration={duration}
                   >
-                    <Frame variant="default" overflowBehavior="scroll">
-                      <FrameHeader>
-                        <FrameTitle>Note</FrameTitle>
-                        <div>
-                          <CopyButton
-                            className="text-muted-foreground"
-                            size="icon-sm"
-                            variant="ghost"
-                            label="Copy"
-                            message={part.text}
-                          />
-                        </div>
-                      </FrameHeader>
-                      <FramePanel>
-                        <MessageResponse controls={FRAME_CONTROLS}>
-                          {part.text}
-                        </MessageResponse>
-                      </FramePanel>
-                    </Frame>
+                    <ToolRenderedSection copyValue={part.text} label="Note">
+                      <MessageResponse controls={FRAME_CONTROLS}>
+                        {part.text}
+                      </MessageResponse>
+                    </ToolRenderedSection>
                   </AgentActivityStep>
                 );
               } else if (part.type === "reasoning") {
@@ -550,27 +557,14 @@ export const AssistantMessage = ({
                     summary={summary}
                     duration={duration}
                   >
-                    <Frame variant="default" overflowBehavior="scroll">
-                      <FrameHeader>
-                        <FrameTitle>
-                          <div>Reasoning</div>
-                        </FrameTitle>
-                        <div>
-                          <CopyButton
-                            className="text-muted-foreground"
-                            size="icon-sm"
-                            variant="ghost"
-                            label="Copy"
-                            message={part.text}
-                          />
-                        </div>
-                      </FrameHeader>
-                      <FramePanel>
-                        <MessageResponse controls={FRAME_CONTROLS}>
-                          {part.text}
-                        </MessageResponse>
-                      </FramePanel>
-                    </Frame>
+                    <ToolRenderedSection
+                      copyValue={part.text}
+                      label="Reasoning"
+                    >
+                      <MessageResponse controls={FRAME_CONTROLS}>
+                        {part.text}
+                      </MessageResponse>
+                    </ToolRenderedSection>
                   </AgentActivityStep>
                 );
               } else if (part.type === "tool-read-file") {
@@ -585,8 +579,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>Read</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -613,8 +611,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>Create</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -641,8 +643,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>Delete</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -660,7 +666,6 @@ export const AssistantMessage = ({
               } else if (part.type === "tool-edit-file") {
                 // 执行完成后展示工具实际写入的 diff；流式输出期间 output 还不存在，
                 // 退回用请求参数拼出的预览。
-                const actualDiff = part.output?.metadata?.diff;
                 return (
                   <>
                     <AgentActivityStep
@@ -672,76 +677,40 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>Edit</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
                           part={part}
                           onRespond={onRespondToolApproval}
                         >
-                          <ToolSectionLabel label="DIFF" />
-                          <FramePanel>
-                            <div className="whitespace-pre-wrap wrap-break-word font-mono text-xs">
-                              {actualDiff
-                                ? actualDiff.split("\n").map((line, j) => {
-                                    const { sign, text } =
-                                      parseRenderedDiffLine(line);
-                                    return (
-                                      <div
-                                        key={j}
-                                        className={
-                                          sign === "-"
-                                            ? "text-destructive"
-                                            : sign === "+"
-                                              ? "text-green-600"
-                                              : "text-muted-foreground"
-                                        }
-                                      >
-                                        {sign}
-                                        {text}
-                                      </div>
-                                    );
-                                  })
-                                : (part.input?.edits ?? []).map(
-                                    (block, blockIndex) => {
-                                      // 流式输出期间 input 是 DeepPartial，
-                                      // 未拼完整的编辑块先不渲染。
-                                      if (
-                                        typeof block?.oldText !== "string" ||
-                                        typeof block?.newText !== "string"
-                                      ) {
-                                        return null;
-                                      }
-                                      return (
-                                        <div
-                                          key={blockIndex}
-                                          className={
-                                            blockIndex > 0 ? "mt-2" : undefined
-                                          }
-                                        >
-                                          {editDiffLines(
-                                            block.oldText,
-                                            block.newText
-                                          ).map((line, j) => (
-                                            <div
-                                              key={j}
-                                              className={
-                                                line.sign === "-"
-                                                  ? "text-destructive"
-                                                  : "text-green-600"
-                                              }
-                                            >
-                                              {line.sign}
-                                              {line.text}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      );
-                                    }
-                                  )}
+                          <ToolRenderedSection
+                            copyValue={editDiffText(part)}
+                            label="Diff"
+                          >
+                            <div className="wrap-break-word font-mono text-xs whitespace-pre-wrap">
+                              {editDiffRows(part).map((row, j) => (
+                                <div
+                                  key={j}
+                                  className={
+                                    row.sign === "-"
+                                      ? "text-destructive"
+                                      : row.sign === "+"
+                                        ? "text-green-600"
+                                        : "text-muted-foreground"
+                                  }
+                                >
+                                  {row.sign}
+                                  {row.text}
+                                </div>
+                              ))}
                             </div>
-                          </FramePanel>
+                          </ToolRenderedSection>
                         </ToolPanels>
                       </Frame>
                     </AgentActivityStep>
@@ -763,8 +732,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>Grep</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -791,8 +764,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>Glob</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -819,8 +796,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>Fetch</FrameTitle>
                         </FrameHeader>
                         <ToolPanels
@@ -847,8 +828,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>
                             Load skill {part.input?.skill}
                           </FrameTitle>
@@ -887,8 +872,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>
                             {getStepLabel(shellAction, part.input?.description)}
                           </FrameTitle>
@@ -948,8 +937,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>
                             {getStepLabel("Task", part.input?.description)}
                           </FrameTitle>
@@ -1020,13 +1013,19 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FramePanel>
-                          <div className="whitespace-pre">
-                            {part.output?.output ?? ""}
-                          </div>
-                        </FramePanel>
-                        {renderToolError(part)}
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <div className="flex flex-col gap-1.5 p-1.5">
+                          <ToolSection
+                            label="Output"
+                            language="text"
+                            value={part.output?.output ?? ""}
+                          />
+                          {renderToolError(part)}
+                        </div>
                       </Frame>
                     </AgentActivityStep>
                     <AgentActivityApproval
@@ -1058,8 +1057,12 @@ export const AssistantMessage = ({
                       summary={summary}
                       duration={duration}
                     >
-                      <Frame variant="default" overflowBehavior="scroll">
-                        <FrameHeader>
+                      <Frame
+                        className="bg-transparent shadow-none"
+                        variant="default"
+                        overflowBehavior="scroll"
+                      >
+                        <FrameHeader className="px-3">
                           <FrameTitle>
                             {serverName
                               ? `${serverName} · ${shortName}`
