@@ -2,9 +2,15 @@
   "name": "session-delete",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "会话甲" },
-    { "when": { "stream": true }, "answer": "第一句的回答" },
-    { "when": { "stream": false }, "answer": "会话乙" },
-    { "when": { "stream": true }, "answer": "第二句的回答" }
+    { "when": { "stream": false }, "answer": "Session one" },
+    {
+      "when": { "stream": true },
+      "answer": "The answer to the first message."
+    },
+    { "when": { "stream": false }, "answer": "Session two" },
+    {
+      "when": { "stream": true },
+      "answer": "The answer to the second message."
+    }
   ]
 }

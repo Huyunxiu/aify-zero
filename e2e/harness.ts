@@ -26,7 +26,7 @@ const FAKE_MODEL_ID = "fake-fast";
 export const PROJECT_NAME = "E2E project";
 
 /** 仓库里那个待改文件的初始内容。 */
-const NOTES = "# Notes\n\n第一行\n第二行\n";
+const NOTES = "# Notes\n\nfirst line\nsecond line\n";
 
 export type Stack = {
   readonly fake: FakeProvider;

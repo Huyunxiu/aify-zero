@@ -100,6 +100,7 @@ export const makeAgent = (
 ): { agent: Agent; session: AgentSession } => {
   const session = options.session ?? new AgentSession({ turns: [] });
   const agent = new Agent({
+    approvalPolicy: "edit",
     name: "main",
     sessionId: "session-1",
     session,

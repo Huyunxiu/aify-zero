@@ -15,7 +15,7 @@ import type { Stack } from "./harness";
 /** 编辑框的可访问名取自它自己的占位文案（`prompt-input-tiptap.tsx`）。 */
 const COMPOSER_NAME = "What would you like to know?";
 
-const MESSAGE = "把 notes.md 的第二行改一下";
+const MESSAGE = "Update the second line in notes.md";
 
 test("Main journey: create project → send message → tool edits file → Changes view shows the edited line", async ({
   page,
@@ -57,14 +57,15 @@ test("Main journey: create project → send message → tool edits file → Chan
     // 5. 用户消息出现在会话里。
     await expect(page.getByRole("log").getByText(MESSAGE)).toBeVisible();
 
-    // 6. 工具步骤出现：名字是 `Edit` 加细节，工具真的跑过才可能有这一行。
+    // 6. 工具步骤出现：名字是 `Edit` 加细节。默认策略是「编辑」，改动类直接放行，
+    //    所以这一行不会停在「等待批准」上。
     await expect(
       page.getByRole("button", { name: /^Edit/u }).first()
     ).toBeVisible();
 
-    // 7. 这个回合的终态由页面自己说：`Finished`，回答文字也在里面。
+    // 7. 回合的终态由页面自己说：`Finished`，回答文字也在。
     await expect(page.getByText("Finished", { exact: true })).toBeVisible();
-    await expect(page.getByText("已把第二行改好。")).toBeVisible();
+    await expect(page.getByText("The second line is updated.")).toBeVisible();
 
     // 8. 右侧会话面板默认收起，收起时里面的内容是 `inert`，点不动。先点右上角的
     //    入口把它展开，再选「改动」。侧栏状态不参与断言：一个回合结束后它回到
@@ -77,7 +78,7 @@ test("Main journey: create project → send message → tool edits file → Chan
     const review = page.getByRole("tabpanel", { name: /Changes/u });
     await expect(review).toContainText("1 files changed");
     await review.getByRole("treeitem", { name: /notes\.md/u }).click();
-    await expect(review).toContainText("第二行已改");
+    await expect(review).toContainText("second line edited");
 
     // 请求序列是这一层唯一的硬证据：1 次非流式的标题请求，2 次流式的正文请求
     // （先要工具、再回答）。标题与主回合并发，所以只数次数，不咬死顺序。

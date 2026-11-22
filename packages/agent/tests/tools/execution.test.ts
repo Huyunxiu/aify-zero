@@ -540,6 +540,7 @@ describe(executeToolCalls, () => {
           toolCallId: "call-1",
           toolName: "echo",
           providerExecuted: false,
+          errorText: "not now",
         },
       ]);
       expect(result.outcomes).toStrictEqual([
@@ -549,6 +550,32 @@ describe(executeToolCalls, () => {
           durationMs: expect.any(Number),
         },
       ]);
+      expect(result.toolMessages).toStrictEqual([
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "call-1",
+              toolName: "echo",
+              output: { type: "error-text", value: "not now" },
+            },
+          ],
+        },
+      ]);
+    });
+
+    test("a denial with no reason answers the model with the generic text", async () => {
+      const hooks = new HooksManager();
+      hooks.on("pre_tool_call", () => ({ decision: "deny" }));
+
+      const execute = vi.fn<(input: { value: string }) => EchoOutput>();
+      const { result } = await run(
+        { echo: echoTool(execute) },
+        [{ toolCallId: "call-1", toolName: "echo", input: { value: "hi" } }],
+        hooks
+      );
+
       expect(result.toolMessages).toStrictEqual([
         {
           role: "tool",
@@ -822,7 +849,7 @@ describe(executeToolCalls, () => {
       expect(asked.result.awaitingApproval).toBeTruthy();
     });
 
-    test("a hook's ask outranks the policy's allow", async () => {
+    test("a policy's allow closes a hook's ask", async () => {
       const hooks = new HooksManager();
       hooks.on("pre_tool_call", () => ({ decision: "ask" }));
 
@@ -840,8 +867,9 @@ describe(executeToolCalls, () => {
         () => ({ decision: "allow" })
       );
 
-      expect(ran).toStrictEqual([]);
-      expect(result.awaitingApproval).toBeTruthy();
+      // The policy leads: it covers this class, so the hook's ask closes with it.
+      expect(ran).toStrictEqual(["hi"]);
+      expect(result.awaitingApproval).toBeFalsy();
     });
 
     test("the policy's deny outranks a hook's allow", async () => {

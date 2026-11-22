@@ -2,13 +2,13 @@
   "name": "mid-stream-error",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "假标题" },
+    { "when": { "stream": false }, "answer": "Fake title" },
     {
       "failMidStream": {
-        "text": "先给你半句，",
+        "text": "Half a sentence first, ",
         "error": { "message": "overloaded" }
       }
     },
-    { "answer": "这次说完了。" }
+    { "answer": "That is all this time." }
   ]
 }

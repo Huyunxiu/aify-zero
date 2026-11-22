@@ -3,6 +3,7 @@ import type {
   AgentTextPart,
   AgentTurn,
   AgentTurnStatus,
+  ApprovalPolicy,
 } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
 import type { ToolSet } from "ai";
@@ -135,6 +136,13 @@ export type SubagentParent = {
   toolApprovalPattern?: ToolApprovalPattern;
   /** 父的压缩策略；子 agent 继承它解析出的策略和摘要器。 */
   compaction?: CompactionStrategy;
+  /**
+   * The effective Approval Policy of the parent.
+   *
+   * The row of a child session is its own, and a missing value falls back to Standard
+   * with no error. When the parent tightens to Standard, the child must not be looser.
+   */
+  approvalPolicy: ApprovalPolicy;
 };
 
 export type CreateSubagentOptions = {
@@ -175,6 +183,7 @@ export async function resolveSubagentSession(
     description,
     prompt,
     projectId,
+    approvalPolicy,
   }: {
     parentSessionId: string;
     toolCallId: string;
@@ -182,6 +191,8 @@ export async function resolveSubagentSession(
     prompt: string;
     /** 父会话的项目归属；子会话跟着父走，列表按项目过滤时才不会漏掉它。 */
     projectId?: string;
+    /** The effective policy of the parent. The child row copies it, or it falls back to Standard. */
+    approvalPolicy: ApprovalPolicy;
   }
 ): Promise<{ sessionId: string; turns: AgentTurn<AgentToolSet>[] }> {
   const existing = await store.findSessionByParentToolCall({
@@ -213,6 +224,7 @@ export async function resolveSubagentSession(
     parentSessionId,
     parentToolCallId: toolCallId,
     projectId,
+    approvalPolicy,
   });
 
   return { sessionId, turns: [buildPromptTurn(prompt)] };
@@ -270,6 +282,7 @@ export async function createSubagent(
       description,
       prompt,
       projectId: parent.context.projectId,
+      approvalPolicy: parent.approvalPolicy,
     }
   );
   const session = new AgentSession({ turns });
@@ -305,6 +318,7 @@ export async function createSubagent(
   const agent = new Agent({
     name: `subagent:${definition.name}`,
     sessionId: childSessionId,
+    approvalPolicy: parent.approvalPolicy,
     instructions,
     context,
     session,

@@ -168,6 +168,9 @@ export class AgentRunner {
       title: input.title ?? "",
       metadata: input.metadata ?? {},
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      ...(input.approvalPolicy === undefined
+        ? {}
+        : { approvalPolicy: input.approvalPolicy }),
     });
   }
 

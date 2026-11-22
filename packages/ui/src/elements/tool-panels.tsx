@@ -259,11 +259,20 @@ export function ToolRenderedSection({
   );
 }
 
-/** The error a failed call carries, drawn in the code block's red variant. */
-export const ToolErrorSection = ({ text }: { text: string }) => (
+/**
+ * The text a call ends with, drawn in the code block's red variant. The label
+ * says which end it is: a failure, a refusal, or a decline.
+ */
+export const ToolErrorSection = ({
+  text,
+  label = "Error",
+}: {
+  text: string;
+  label?: string;
+}) => (
   <CodeBlock variant="destructive" className="shrink-0 shadow-lg">
     <CodeBlockHeader className="group/section h-10 border-destructive/20 bg-destructive/5 pr-1.5">
-      <CodeBlockTitle className="text-destructive">Error</CodeBlockTitle>
+      <CodeBlockTitle className="text-destructive">{label}</CodeBlockTitle>
       <CodeBlockActions>
         <CodeBlockCopyButton
           className="text-destructive/70 hover:text-destructive"
@@ -295,6 +304,8 @@ type PanelsProps = {
   /** Extra sections between the two sides — a diff, a table. */
   children?: React.ReactNode;
   errorText?: string;
+  /** What the error block is called; a refusal is not a failure. */
+  errorLabel?: string;
 };
 
 /**
@@ -314,6 +325,7 @@ export function ToolPanels({
   approval,
   children,
   errorText,
+  errorLabel,
 }: PanelsProps) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -332,7 +344,9 @@ export function ToolPanels({
           {renderOutput(output)}
         </ToolRenderedSection>
       )}
-      {errorText === undefined ? null : <ToolErrorSection text={errorText} />}
+      {errorText === undefined ? null : (
+        <ToolErrorSection label={errorLabel} text={errorText} />
+      )}
     </div>
   );
 }

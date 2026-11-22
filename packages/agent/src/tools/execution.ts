@@ -18,7 +18,8 @@ import type {
   ToolCallHookEvent,
   ToolStartDecision,
 } from "../hooks-manager";
-import { resolveToolStartDecision, TOOL_DENIED_TEXT } from "../hooks-manager";
+import { TOOL_DENIED_TEXT } from "../hooks-manager";
+import { resolveCallDecision } from "../tool-approval";
 import type { ToolApprovalPattern } from "../tool-approval";
 import type { AgentToolSet, ToolExposure } from "../types";
 import { getOwn } from "../utils/get-own";
@@ -79,11 +80,11 @@ export type ExecuteToolCallsInput = {
   /** Publishes a protocol event onto the turn's stream. */
   write: (event: AgentStreamEvent<AgentToolSet>) => Promise<void>;
   /**
-   * Agent 注册的审批函数。
+   * The approval function the agent registered.
    *
-   * 它收到和 `pre_tool_call` 相同的调用信息。它的答案和钩子的答案一起
-   * 折叠：函数的 `allow` 不能取消钩子的 `ask` 或 `deny`，函数的 `deny`
-   * 也不会被钩子的 `allow` 取消。
+   * It sees the same call as `pre_tool_call`. The two answers fold together:
+   * a refusal from either side stands, and an `allow` from this function
+   * closes a hook's `ask`.
    */
   decideToolApproval?: ToolApprovalPattern;
   skipApproval?: boolean;
@@ -296,12 +297,12 @@ async function planToolCall(
     request,
     extensionApi
   );
-  // The agent's own function answers for this call. It is folded with the
-  // hooks' answers rather than replacing them: an `allow` cannot undo a hook's
-  // `ask` or `deny`, and a `deny` stops the call whatever a hook said.
-  const policy = await input.decideToolApproval?.(request);
-  const decision = resolveToolStartDecision(
-    policy ? [...decisions, policy] : decisions
+  // The agent's own answer leads this call, and the hooks keep their veto: a
+  // refusal from either side is the answer. An `allow` from the agent closes a
+  // hook's `ask`, because the user asked for that policy in this session.
+  const decision = resolveCallDecision(
+    decisions,
+    (await input.decideToolApproval?.(request)) ?? undefined
   );
 
   return { toolCall, target, decision, startedAt };
@@ -396,6 +397,9 @@ async function runToolCall(
 
   if (decision?.decision === "deny") {
     const durationMs = elapsed(startedAt);
+    // The model reads this sentence alone: a refusal that says nothing leaves it
+    // guessing, and a guess costs a tool call.
+    const text = decision.reason ?? TOOL_DENIED_TEXT;
 
     await write({
       type: "tool.output-denied",
@@ -405,6 +409,7 @@ async function runToolCall(
       toolCallId,
       toolName,
       providerExecuted: false,
+      errorText: text,
     } as AgentStreamEvent<AgentToolSet>);
     await hooks.emit(
       "post_tool_call",
@@ -418,7 +423,7 @@ async function runToolCall(
         type: "tool-result",
         toolCallId,
         toolName,
-        output: { type: "error-text", value: TOOL_DENIED_TEXT },
+        output: { type: "error-text", value: text },
       },
     };
   }

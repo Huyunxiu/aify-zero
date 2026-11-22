@@ -2,9 +2,9 @@
   "name": "retry-then-succeed",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "假标题" },
+    { "when": { "stream": false }, "answer": "Fake title" },
     { "when": { "stream": true }, "fail": 429, "retryAfter": 2 },
     { "when": { "stream": true }, "fail": 429, "retryAfter": 2 },
-    { "when": { "stream": true }, "answer": "重试成功，这是第 3 次请求。" }
+    { "when": { "stream": true }, "answer": "Retry succeeded on request 3." }
   ]
 }

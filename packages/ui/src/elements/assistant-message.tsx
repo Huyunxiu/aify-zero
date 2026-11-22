@@ -276,12 +276,40 @@ const toolInputPath = (part: AgentToolPart): string | undefined => {
   return typeof input?.path === "string" ? input.path : undefined;
 };
 
-const renderToolError = (part: AgentToolPart) => {
-  if (part.state !== "output-error" || !part.errorText) {
-    return null;
+/**
+ * The text a call ends with, and what that end is called.
+ *
+ * A refusal is not a failure — "ERROR" would blame a tool that never ran. A call
+ * the user answered carries the approval, so it was declined; one that no
+ * approval reached was refused before it started.
+ */
+const toolError = (
+  part: AgentToolPart
+): { label: string; text: string } | undefined => {
+  if (!part.errorText) {
+    return undefined;
   }
 
-  return <ToolErrorSection text={part.errorText} />;
+  if (part.state === "output-denied") {
+    return {
+      label: part.approval ? "Declined" : "Refused",
+      text: part.errorText,
+    };
+  }
+
+  if (part.state === "output-error") {
+    return { label: "Error", text: part.errorText };
+  }
+
+  return undefined;
+};
+
+const renderToolError = (part: AgentToolPart) => {
+  const error = toolError(part);
+
+  return error ? (
+    <ToolErrorSection label={error.label} text={error.text} />
+  ) : null;
 };
 
 /** 审批条：一次调用的批准与拒绝。没有待批请求时什么也不画。 */
@@ -343,24 +371,32 @@ const ToolPanels = ({
   hideOutput?: boolean;
   /** 内容需要富文本渲染时替换默认的等宽正文。 */
   renderOutput?: (text: string) => ReactNode;
-}) => (
-  <ToolPanelsShell
-    approval={
-      part.approval === undefined ? undefined : (
-        <InlineToolApproval part={part} onRespond={onRespond} />
-      )
-    }
-    errorText={part.state === "output-error" ? part.errorText : undefined}
-    hideOutput={hideOutput}
-    input={JSON.stringify(part.input, null, 2) ?? ""}
-    output={toolOutputText(part.output)}
-    outputLanguage={languageFromPath(toolInputPath(part))}
-    pending={part.state === "input-streaming"}
-    renderOutput={renderOutput}
-  >
-    {children}
-  </ToolPanelsShell>
-);
+}) => {
+  const error = toolError(part);
+  // A refused call has no result to show: the reason is drawn under the input,
+  // and an empty Output card reads like a result that went missing.
+  const refused = part.state === "output-denied";
+
+  return (
+    <ToolPanelsShell
+      approval={
+        part.approval === undefined ? undefined : (
+          <InlineToolApproval part={part} onRespond={onRespond} />
+        )
+      }
+      errorLabel={error?.label}
+      errorText={error?.text}
+      hideOutput={hideOutput || refused}
+      input={JSON.stringify(part.input, null, 2) ?? ""}
+      output={toolOutputText(part.output)}
+      outputLanguage={languageFromPath(toolInputPath(part))}
+      pending={part.state === "input-streaming"}
+      renderOutput={renderOutput}
+    >
+      {children}
+    </ToolPanelsShell>
+  );
+};
 
 export const AssistantMessage = ({
   turn,

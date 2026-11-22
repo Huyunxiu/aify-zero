@@ -16,19 +16,19 @@ import type { Stack } from "./harness";
 /** 编辑框的可访问名取自它自己的占位文案（`prompt-input-tiptap.tsx`）。 */
 const COMPOSER_NAME = "What would you like to know?";
 
-const MESSAGE = "设一个定时器，一分钟后叫我";
+const MESSAGE = "Set a timer for one minute";
 
 /** 通知块的标签（`timerNotice.marker`）。界面语言走 i18n 默认值 en-US。 */
 const NOTICE_MARKER = "Timer fired";
 
 /** 场景里模型写下的备注；它到点原样回到正文里。 */
-const NOTE = "看看部署好了没有";
+const NOTE = "Check whether the deploy finished";
 
 /** 第一个回合的收尾回答：定时器排好了，然后停在这里。 */
-const FIRST_ANSWER = "定时器设好了，我先停在这里。";
+const FIRST_ANSWER = "The timer is set; I will stop here.";
 
 /** 第二个回合的回答；有这个回合，才说明到点唤醒了一次运行。 */
-const SECOND_ANSWER = "到点了，我接着看。";
+const SECOND_ANSWER = "The timer fired; I will continue.";
 
 /** 到点要等满 60 秒，比默认的断言超时（20 秒）长。 */
 const NOTICE_TIMEOUT_MS = 90_000;
