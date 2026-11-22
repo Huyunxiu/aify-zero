@@ -1,26 +1,21 @@
 import { FilePlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { ToolPanels } from "../tool-panels";
-import { StepFrame, StepLabel, StepShell } from "./shell";
-import { finishedOutput, pendingSummary } from "./summary";
+import { summarizeTool } from "./summary";
+import { ToolCardsStep } from "./tool-cards";
 import type { StepPartOf, StepViewProps } from "./types";
 
 export const writeFileSummary = (
   part: StepPartOf<"tool-write-file">
-): ReactNode | undefined => {
-  const pending = pendingSummary(part);
-  if (pending !== undefined) {
-    return pending;
-  }
-  const metadata = finishedOutput(part)?.metadata;
-  if (!metadata) {
-    return undefined;
-  }
+): ReactNode | undefined =>
+  summarizeTool(part, ({ metadata }) => {
+    if (!metadata) {
+      return;
+    }
 
-  const action = metadata.created ? "created" : "updated";
-  return metadata.lines > 0 ? `${action} · ${metadata.lines} lines` : action;
-};
+    const action = metadata.created ? "created" : "updated";
+    return metadata.lines > 0 ? `${action} · ${metadata.lines} lines` : action;
+  });
 
 /** A file a call created or rewrote in full. */
 export const WriteFileStep = ({
@@ -29,17 +24,13 @@ export const WriteFileStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-write-file">) => (
-  <StepShell
-    approvalPart={part}
-    body={
-      <StepFrame title="Create">
-        <ToolPanels onRespond={onRespond} part={part} />
-      </StepFrame>
-    }
+  <ToolCardsStep
+    action="Create"
+    detail={part.input?.path}
     duration={duration}
     icon={<FilePlusIcon />}
-    label={<StepLabel action="Create" detail={part.input?.path} />}
     onRespond={onRespond}
+    part={part}
     status={status}
     summary={writeFileSummary(part)}
   />

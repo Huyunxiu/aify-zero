@@ -1,10 +1,7 @@
-import type {
-  AgentAssistantStep,
-  AgentPart,
-  AgentToolSet,
-} from "@workspace/agent-client";
+import type { AgentAssistantStep, AgentToolSet } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
+import type { StepPart } from "../src/elements/steps/types";
 import type { StepRow } from "../src/elements/tool-step";
 import {
   formatDuration,
@@ -18,12 +15,12 @@ import {
  * rather than restating it: the module under test is what decides how these are
  * read, and a test that re-declared the shape would agree with itself.
  */
-const part = (fields: Record<string, unknown>): AgentPart<AgentToolSet> =>
+const part = (fields: Record<string, unknown>): StepPart =>
   ({
     rawInput: "",
     toolCallId: "call-1",
     ...fields,
-  }) as AgentPart<AgentToolSet>;
+  }) as StepPart;
 
 const step = (fields: Record<string, unknown> = {}): StepRow["step"] =>
   ({
@@ -41,7 +38,7 @@ const doneTool = (
   type: string,
   metadata: unknown,
   extra: Record<string, unknown> = {}
-): AgentPart<AgentToolSet> =>
+): StepPart =>
   part({
     type,
     state: "output-available",

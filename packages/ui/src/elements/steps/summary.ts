@@ -3,14 +3,16 @@ import type {
   AgentToolPart,
   AgentToolSet,
 } from "@workspace/agent-client";
+import type { ReactNode } from "react";
 
 /**
- * The two judgments every tool view needs before it reads its own metadata.
+ * What a call's row reads before a result exists, and how a view reads the
+ * result once it does.
  *
- * They are shared because neither is about one tool: one is the wording of a
- * call that is still waiting on somebody, the other is what "finished well"
- * means for a call at all. A view that read either on its own would be a second
- * authority for the same sentence.
+ * These are shared because none of them is about one tool: one is the wording of
+ * a call that is still waiting on somebody, the other is what "finished well"
+ * means for a call at all. A view that decided either on its own would be a
+ * second authority for the same sentence — and twelve views needed both.
  */
 
 /**
@@ -55,8 +57,10 @@ type OutputOf<ANSWERED> = ANSWERED extends { output: infer OUTPUT }
  * The result of a call that finished well, or undefined for every other shape.
  *
  * A call that reported `code: "error"` did not succeed — the row's own `Failed`
- * label carries that — and a call still running has nothing to read. One
- * authority for that judgment, so no view repeats the two state names.
+ * label carries that — and a call still running has nothing to read. This is not
+ * `getPartStatus`: a `task` that is only reporting from part-way through is
+ * `running` on the row and still has a result worth reading, so the two
+ * questions stay apart on purpose.
  *
  * The cast at the top names the union member the guard is about to prove. It is
  * the only way to keep the tool's own `output` type through the check: widening
@@ -73,4 +77,25 @@ export const finishedOutput = <P extends AgentStaticToolPart<AgentToolSet>>(
   }
 
   return answered.output as OutputOf<Answered<P>>;
+};
+
+/**
+ * A tool's summary in the one order every tool reads it: what the call says
+ * while it waits, and what its own result says once there is one.
+ *
+ * `read` is where a view states the one thing that is its own — how to word its
+ * metadata. A view that never reaches a result gets nothing to read.
+ */
+export const summarizeTool = <P extends AgentStaticToolPart<AgentToolSet>>(
+  part: P,
+  read: (output: OutputOf<Answered<P>>) => ReactNode | undefined
+): ReactNode | undefined => {
+  const pending = pendingSummary(part);
+  if (pending !== undefined) {
+    return pending;
+  }
+
+  const output = finishedOutput(part);
+
+  return output === undefined ? undefined : read(output);
 };

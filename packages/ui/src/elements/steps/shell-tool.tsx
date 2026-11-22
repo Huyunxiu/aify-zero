@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { ToolPanels } from "../tool-panels";
 import { StepFrame, StepLabel, StepShell } from "./shell";
-import { finishedOutput, pendingSummary } from "./summary";
+import { summarizeTool } from "./summary";
 import type { StepPartOf, StepViewPropsOf } from "./types";
 
 /** The status facts both shell tools report. */
@@ -53,18 +53,8 @@ const summarizeShell = (
 
 type ShellPart = StepPartOf<"tool-bash" | "tool-powershell">;
 
-export const shellSummary = (part: ShellPart): ReactNode | undefined => {
-  const pending = pendingSummary(part);
-  if (pending !== undefined) {
-    return pending;
-  }
-  const output = finishedOutput(part);
-  if (!output) {
-    return undefined;
-  }
-
-  return summarizeShell(output.metadata);
-};
+export const shellSummary = (part: ShellPart): ReactNode | undefined =>
+  summarizeTool(part, ({ metadata }) => summarizeShell(metadata));
 
 /**
  * A command the model ran: `Bash` and `PowerShell`.

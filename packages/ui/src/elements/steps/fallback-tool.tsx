@@ -4,6 +4,7 @@ import { WrenchIcon } from "lucide-react";
 
 import { ToolPanels } from "../tool-panels";
 import { StepFrame, StepLabel, StepShell } from "./shell";
+import { pendingSummary } from "./summary";
 import type { StepViewPropsOf } from "./types";
 
 /**
@@ -63,6 +64,7 @@ export const FallbackToolStep = ({
       }
       onRespond={onRespond}
       status={status}
+      summary={pendingSummary(part)}
     />
   );
 };

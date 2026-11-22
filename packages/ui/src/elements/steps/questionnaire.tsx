@@ -32,9 +32,10 @@ export const questionnaireSummary = (
 /**
  * A questionnaire the model put to the user.
  *
- * The form stands outside the step, where the answer is given: the step itself
- * shows what was asked and what came back. It takes the whole row back from the
- * shell for that second element.
+ * The form stands outside the step, where the answer is given, and the answer
+ * is what feeds the approval — a generic approve-and-deny strip would send a
+ * decision with no answers attached. So this view is the one tool step with no
+ * approval strip, and it takes the whole row back from the shell for its card.
  */
 export const QuestionnaireStep = ({
   part,
@@ -45,7 +46,6 @@ export const QuestionnaireStep = ({
 }: StepViewProps<"tool-questionnaire">) => (
   <>
     <StepShell
-      approvalPart={part}
       body={
         <>
           <QuestionnaireSummary part={part} />
@@ -60,7 +60,6 @@ export const QuestionnaireStep = ({
           detail={part.input?.title ?? part.input?.questions?.[0]?.prompt}
         />
       }
-      onRespond={onRespond}
       status={status}
       summary={questionnaireSummary(part)}
     />

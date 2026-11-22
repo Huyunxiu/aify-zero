@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { ToolPanels, ToolRenderedSection } from "../tool-panels";
 import { StepFrame, StepLabel, StepShell } from "./shell";
-import { finishedOutput, pendingSummary } from "./summary";
+import { summarizeTool } from "./summary";
 import type { StepPartOf, StepViewProps } from "./types";
 
 /** Flattens one replacement block into `-` and `+` rows, so a step reads as a diff. */
@@ -53,29 +53,25 @@ export const editDiffText = (part: StepPartOf<"tool-edit-file">): string =>
 
 export const editFileSummary = (
   part: StepPartOf<"tool-edit-file">
-): ReactNode | undefined => {
-  const pending = pendingSummary(part);
-  if (pending !== undefined) {
-    return pending;
-  }
-  const metadata = finishedOutput(part)?.metadata;
-  if (!metadata) {
-    return undefined;
-  }
+): ReactNode | undefined =>
+  summarizeTool(part, ({ metadata }) => {
+    if (!metadata) {
+      return;
+    }
 
-  return (
-    <>
-      <span className="text-green-600 tabular-nums">
-        +{metadata.linesAdded}
-      </span>
-      <span className="text-destructive tabular-nums">
-        {" −"}
-        {metadata.linesRemoved}
-      </span>
-      {metadata.replacements > 1 && ` · ${metadata.replacements} blocks`}
-    </>
-  );
-};
+    return (
+      <>
+        <span className="text-green-600 tabular-nums">
+          +{metadata.linesAdded}
+        </span>
+        <span className="text-destructive tabular-nums">
+          {" −"}
+          {metadata.linesRemoved}
+        </span>
+        {metadata.replacements > 1 && ` · ${metadata.replacements} blocks`}
+      </>
+    );
+  });
 
 /**
  * A file a call changed in place.

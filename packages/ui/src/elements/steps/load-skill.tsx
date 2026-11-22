@@ -2,26 +2,19 @@ import { SparklesIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { ToolPanels } from "../tool-panels";
-import { summarizeFileRead } from "./file-read";
 import { MarkdownBody } from "./markdown-body";
+import { summarizeFileRead } from "./read-file";
 import { StepFrame, StepLabel, StepShell } from "./shell";
-import { finishedOutput, pendingSummary } from "./summary";
+import { summarizeTool } from "./summary";
 import type { StepPartOf, StepViewProps } from "./types";
 
 export const loadSkillSummary = (
   part: StepPartOf<"tool-load-skill">
-): ReactNode | undefined => {
-  const pending = pendingSummary(part);
-  if (pending !== undefined) {
-    return pending;
-  }
-  const output = finishedOutput(part);
-  if (!output) {
-    return undefined;
-  }
-
-  return part.input?.skill ?? summarizeFileRead(output.metadata);
-};
+): ReactNode | undefined =>
+  summarizeTool(
+    part,
+    (output) => part.input?.skill ?? summarizeFileRead(output.metadata)
+  );
 
 /**
  * A skill the model loaded into context.

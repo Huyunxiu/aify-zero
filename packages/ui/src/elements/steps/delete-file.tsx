@@ -1,25 +1,20 @@
 import { Trash2Icon } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { ToolPanels } from "../tool-panels";
-import { StepFrame, StepLabel, StepShell } from "./shell";
-import { finishedOutput, pendingSummary } from "./summary";
+import { summarizeTool } from "./summary";
+import { ToolCardsStep } from "./tool-cards";
 import type { StepPartOf, StepViewProps } from "./types";
 
 export const deleteFileSummary = (
   part: StepPartOf<"tool-delete-file">
-): ReactNode | undefined => {
-  const pending = pendingSummary(part);
-  if (pending !== undefined) {
-    return pending;
-  }
-  const metadata = finishedOutput(part)?.metadata;
-  if (!metadata) {
-    return undefined;
-  }
+): ReactNode | undefined =>
+  summarizeTool(part, ({ metadata }) => {
+    if (!metadata) {
+      return;
+    }
 
-  return metadata.kind === "directory" ? "directory deleted" : "file deleted";
-};
+    return metadata.kind === "directory" ? "directory deleted" : "file deleted";
+  });
 
 /** A path a call removed, file or directory. */
 export const DeleteFileStep = ({
@@ -28,17 +23,13 @@ export const DeleteFileStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-delete-file">) => (
-  <StepShell
-    approvalPart={part}
-    body={
-      <StepFrame title="Delete">
-        <ToolPanels onRespond={onRespond} part={part} />
-      </StepFrame>
-    }
+  <ToolCardsStep
+    action="Delete"
+    detail={part.input?.path}
     duration={duration}
     icon={<Trash2Icon />}
-    label={<StepLabel action="Delete" detail={part.input?.path} />}
     onRespond={onRespond}
+    part={part}
     status={status}
     summary={deleteFileSummary(part)}
   />

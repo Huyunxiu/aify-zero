@@ -22,9 +22,11 @@ Four rules:
   its own step. A data record for these grows callbacks until it is a badly typed
   component.
 - **The shell owns a row; a view owns its wording.** `steps/shell.tsx` draws the trigger,
-  the row, the frame header, and the approval strip. A view supplies the icon, the label,
-  the summary, and the body, and takes the whole row back only for the two exceptions
-  above.
+  the row, and the approval strip, and `StepFrame` is the shared frame for a call's cards.
+  A view supplies the icon, the label, the summary, and the body, and takes the whole row
+  back only for the two exceptions above. A view whose body is not a call's cards — a
+  note, a retry, a compaction marker — composes its own frame, because a mode switch in
+  `StepFrame` would be one more thing to learn than a second frame is to read.
 - **The protocol reads stay put.** `tool-step.tsx` keeps what the record itself answers —
   state, error wording, timing, the turn's count — because those are judgments about a
   part's shape, not about one tool. The wording that depends on a tool's `metadata` lives

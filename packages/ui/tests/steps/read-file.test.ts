@@ -1,89 +1,62 @@
-import type { AgentToolPart, AgentToolSet } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
-import { outputLanguageOf } from "../../src/elements/steps/file-read";
+import { outputLanguageOf } from "../../src/elements/steps/read-file";
+import type { StepPartOf } from "../../src/elements/steps/types";
 
 /**
- * Builds a part from the fields a case cares about, cast through the real union
- * rather than restating it — a test that re-declared the shape would agree with
- * itself. `tool-step.test.ts` uses the same fixture.
+ * Builds a read part from the fields a case cares about, cast through the real
+ * union rather than restating it: a test that re-declared the shape would agree
+ * with itself.
  */
-const part = (fields: Record<string, unknown>): AgentToolPart<AgentToolSet> =>
+const part = (fields: Record<string, unknown>): StepPartOf<"tool-read-file"> =>
   ({
     rawInput: "",
     toolCallId: "call-1",
     ...fields,
-  }) as AgentToolPart<AgentToolSet>;
+  }) as StepPartOf<"tool-read-file">;
 
-/** A finished call whose output carries `metadata`, in the shape a tool returns. */
-const finished = (
-  type: string,
-  path: string,
-  metadata: unknown
-): AgentToolPart<AgentToolSet> =>
+/** A finished read whose output carries `metadata`, in the shape the tool returns. */
+const finished = (metadata: unknown): StepPartOf<"tool-read-file"> =>
   part({
-    type,
+    type: "tool-read-file",
     state: "output-available",
-    input: { path },
+    input: { path: "src/app.tsx" },
     output: { code: "ok", output: "", metadata },
   });
 
 describe(outputLanguageOf, () => {
   test("should give a language only to the content of a file that was read", () => {
-    const cases: [
-      type: string,
-      path: string,
-      metadata: unknown,
-      lang: string,
-    ][] = [
-      // A read that answers with the file's content.
-      [
-        "tool-read-file",
-        "src/app.tsx",
-        { type: "file", filepath: "src/app.tsx" },
-        "tsx",
-      ],
-      // A read answers four other ways, and each describes what happened
-      // instead of handing back content.
-      ["tool-read-file", "src", { type: "directory", filepath: "src" }, "text"],
-      [
-        "tool-read-file",
-        "logo.png",
-        { type: "attachments", filepath: "logo.png", mime: "image/png" },
-        "text",
-      ],
-      [
-        "tool-read-file",
-        "blob.bin",
-        {
+    // A read that answers with the file's content gets that file's language.
+    expect(
+      outputLanguageOf(finished({ type: "file", filepath: "src/app.tsx" }))
+    ).toBe("tsx");
+
+    // It answers four other ways, and each describes what happened instead of
+    // handing back content.
+    expect(
+      outputLanguageOf(finished({ type: "directory", filepath: "src" }))
+    ).toBe("text");
+    expect(
+      outputLanguageOf(
+        finished({
+          type: "attachments",
+          filepath: "logo.png",
+          mime: "image/png",
+        })
+      )
+    ).toBe("text");
+    expect(
+      outputLanguageOf(
+        finished({
           type: "binary-file",
           filepath: "blob.bin",
           mime: "application/octet-stream",
-        },
-        "text",
-      ],
-      [
-        "tool-read-file",
-        "missing.ts",
-        { type: "miss", filepath: "missing.ts" },
-        "text",
-      ],
-      // A write answers "Wrote file successfully.", not the file it wrote.
-      ["tool-write-file", "src/app.tsx", { filepath: "src/app.tsx" }, "text"],
-      ["tool-edit-file", "src/app.tsx", { filepath: "src/app.tsx" }, "text"],
-      ["tool-delete-file", "src/app.tsx", { filepath: "src/app.tsx" }, "text"],
-      // A skill answers with its own body, which is prose.
-      [
-        "tool-load-skill",
-        "SKILL.md",
-        { type: "file", filepath: "SKILL.md" },
-        "text",
-      ],
-    ];
-
-    for (const [type, path, metadata, lang] of cases) {
-      expect(outputLanguageOf(finished(type, path, metadata))).toBe(lang);
-    }
+        })
+      )
+    ).toBe("text");
+    expect(
+      outputLanguageOf(finished({ type: "miss", filepath: "missing.ts" }))
+    ).toBe("text");
   });
 
   test("should answer text for a turn persisted before metadata existed", () => {

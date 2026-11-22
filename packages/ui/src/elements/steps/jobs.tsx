@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { ToolPartError, ToolSection } from "../tool-panels";
 import { StepFrame, StepShell } from "./shell";
-import { finishedOutput, pendingSummary } from "./summary";
+import { summarizeTool } from "./summary";
 import type { StepPartOf, StepViewPropsOf } from "./types";
 
 type JobPart = StepPartOf<
@@ -21,23 +21,18 @@ const jobLabel = (part: JobPart): string => {
 };
 
 export const jobsSummary = (part: JobPart): ReactNode | undefined => {
-  const pending = pendingSummary(part);
-  if (pending !== undefined) {
-    return pending;
-  }
-
   if (part.type === "tool-job-output") {
-    return finishedOutput(part)?.metadata?.job.status;
+    return summarizeTool(part, ({ metadata }) => metadata?.job.status);
   }
   if (part.type === "tool-job-list") {
-    const metadata = finishedOutput(part)?.metadata;
-    return metadata ? `${metadata.count} jobs` : undefined;
+    return summarizeTool(part, ({ metadata }) =>
+      metadata ? `${metadata.count} jobs` : undefined
+    );
   }
 
-  const metadata = finishedOutput(part)?.metadata;
-  return metadata?.outcome === "cancellation-requested"
-    ? "cancelling"
-    : undefined;
+  return summarizeTool(part, ({ metadata }) =>
+    metadata?.outcome === "cancellation-requested" ? "cancelling" : undefined
+  );
 };
 
 /**

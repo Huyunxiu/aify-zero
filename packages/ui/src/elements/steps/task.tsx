@@ -12,25 +12,16 @@ import { useSubagentPane } from "../../stores/subagent-pane";
 import { ToolPanels } from "../tool-panels";
 import { MarkdownBody } from "./markdown-body";
 import { StepFrame, StepLabel, StepShell } from "./shell";
-import { finishedOutput, pendingSummary } from "./summary";
+import { summarizeTool } from "./summary";
 import type { StepPartOf, StepViewProps } from "./types";
 
+// Which subagent ran. A subagent that ended badly comes back as
+// `code: "error"`, and the shared wrapper has already left the row to say that
+// on its own.
 export const taskSummary = (
   part: StepPartOf<"tool-task">
-): ReactNode | undefined => {
-  const pending = pendingSummary(part);
-  if (pending !== undefined) {
-    return pending;
-  }
-  if (!finishedOutput(part)) {
-    return undefined;
-  }
-
-  // Which subagent ran. A subagent that ended badly comes back as
-  // `code: "error"`, and the guard above has already left the row to say that
-  // on its own.
-  return part.input?.subagent_type;
-};
+): ReactNode | undefined =>
+  summarizeTool(part, () => part.input?.subagent_type);
 
 /**
  * A subagent the model started.
