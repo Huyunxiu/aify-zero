@@ -15,6 +15,8 @@ import type {
 } from "@workspace/agent-client";
 import type { ReactNode } from "react";
 
+import type { AgentStepStatus } from "../components/ai-elements/chain-of-turn";
+
 /** A part as it is rendered, next to the step that owns it. */
 export type StepRow = {
   part: AgentPart<AgentToolSet>;
@@ -22,27 +24,10 @@ export type StepRow = {
 };
 
 /**
- * The states a row can render in. Deliberately not the tool part's own `state`:
- * `output-available` covers both a success and a tool that reported failure
- * through `output.code`, and the row has to tell those apart.
- *
- * `aborted` is the third way a call can end without a result: the turn it
- * belonged to was stopped. It is not `failed` — nothing went wrong — and it is
- * certainly not `complete`.
- */
-export type StepRowStatus =
-  | "running"
-  | "complete"
-  | "failed"
-  | "denied"
-  | "aborted"
-  | "approval";
-
-/**
  * The two states whose row cannot be read off the state name alone: a held call
  * is `approval` when it is the user's turn, and an answered one is `running` or
  * `denied` depending on what the user said. Both are resolved in
- * `getRowStatus`; this is only here so the lookup table stays exhaustive over
+ * `getPartStatus`; this is only here so the lookup table stays exhaustive over
  * the states that are a pure naming of the row.
  */
 type ResolvedToolState = Exclude<
@@ -53,10 +38,10 @@ type ResolvedToolState = Exclude<
 /**
  * A lookup rather than a switch: the record's key type is every state it claims,
  * so a state added to the protocol fails to compile here — either because the
- * table is missing the new key, or because `getRowStatus` can no longer index
+ * table is missing the new key, or because `getPartStatus` can no longer index
  * it — instead of falling through to a default.
  */
-const TOOL_STATE_STATUS: Record<ResolvedToolState, StepRowStatus> = {
+const TOOL_STATE_STATUS: Record<ResolvedToolState, AgentStepStatus> = {
   "input-streaming": "running",
   "input-available": "running",
   "output-available": "complete",
@@ -79,7 +64,7 @@ const TURN_SETTLED = new Set<AgentTurnStatus["status"]>([
 export const getPartStatus = (
   part: AgentPart<AgentToolSet>,
   turnStatus?: AgentTurnStatus["status"]
-): StepRowStatus => {
+): AgentStepStatus => {
   if (part.type === "compaction") {
     // The part exists from `compaction.start`; only the record makes it a
     // marker. Until then the row reports the summarization it is waiting on.

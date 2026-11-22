@@ -30,7 +30,14 @@ import {
   AgentActivityApproval,
   AgentActivityContent,
   AgentActivityHeader,
-  AgentActivityStep,
+  AgentStep,
+  AgentStepButton,
+  AgentStepContent,
+  AgentStepDescription,
+  AgentStepIcon,
+  AgentStepRow,
+  AgentStepTitle,
+  AgentStepTrigger,
 } from "../components/ai-elements/chain-of-turn";
 import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
 import { Button } from "../components/button";
@@ -220,8 +227,7 @@ const editDiffText = (part: EditFilePart) =>
 /**
  * The turn's elapsed time, kept in its own component so the once-a-second tick
  * re-renders this span and nothing else. Holding the clock in `AssistantMessage`
- * would re-render every step row on every tick, and `AgentActivityStep`'s memo
- * would not stop it — its children are fresh elements each time.
+ * would re-render every step row on every tick.
  */
 const TurnElapsed = ({ turn }: { turn: AgentAssistantTurn<AgentToolSet> }) => {
   const running = turn.status === "streaming";
@@ -460,38 +466,47 @@ export const AssistantMessage = ({
                   `${formatTokens(record.tokensBefore)} → ${formatTokens(record.tokensAfter)} tokens`;
 
                 return (
-                  <AgentActivityStep
-                    key={i}
-                    path={`${i}`}
-                    icon={Minimize2Icon}
-                    label={getStepLabel("Compact", trigger)}
-                    status={status}
-                    summary={tokens || summary}
-                    duration={duration}
-                  >
-                    <Frame variant="default" overflowBehavior="scroll">
-                      <FrameHeader>
-                        <FrameTitle>
-                          Compact
-                          {trigger && (
-                            <span className="ml-2 font-normal text-muted-foreground text-xs">
-                              {trigger}
+                  <AgentStep key={i}>
+                    <AgentStepTrigger>
+                      <AgentStepRow status={status} duration={duration}>
+                        <AgentStepIcon>
+                          <Minimize2Icon />
+                        </AgentStepIcon>
+                        <AgentStepTitle>
+                          {getStepLabel("Compact", trigger)}
+                        </AgentStepTitle>
+                        {(tokens || summary) && (
+                          <AgentStepDescription>
+                            {tokens || summary}
+                          </AgentStepDescription>
+                        )}
+                      </AgentStepRow>
+                    </AgentStepTrigger>
+                    <AgentStepContent>
+                      <Frame variant="default" overflowBehavior="scroll">
+                        <FrameHeader>
+                          <FrameTitle>
+                            Compact
+                            {trigger && (
+                              <span className="ml-2 font-normal text-muted-foreground text-xs">
+                                {trigger}
+                              </span>
+                            )}
+                          </FrameTitle>
+                          {tokens && (
+                            <span className="text-muted-foreground text-xs">
+                              {tokens}
                             </span>
                           )}
-                        </FrameTitle>
-                        {tokens && (
-                          <span className="text-muted-foreground text-xs">
-                            {tokens}
-                          </span>
-                        )}
-                      </FrameHeader>
-                      <FramePanel>
-                        <MessageResponse controls={FRAME_CONTROLS}>
-                          {record?.summary ?? ""}
-                        </MessageResponse>
-                      </FramePanel>
-                    </Frame>
-                  </AgentActivityStep>
+                        </FrameHeader>
+                        <FramePanel>
+                          <MessageResponse controls={FRAME_CONTROLS}>
+                            {record?.summary ?? ""}
+                          </MessageResponse>
+                        </FramePanel>
+                      </Frame>
+                    </AgentStepContent>
+                  </AgentStep>
                 );
               }
 
@@ -499,100 +514,132 @@ export const AssistantMessage = ({
                 // 一次重试已经发生：失败的那一步没有留下记录，留下来的是
                 // 这一次。它跟着答复一起进历史，答案慢了才有解释。
                 return (
-                  <AgentActivityStep
-                    key={i}
-                    path={`${i}`}
-                    icon={RotateCwIcon}
-                    label={getStepLabel(
-                      "Retry",
-                      `${part.index}/${part.maxRetries}`
-                    )}
-                    status={status}
-                    summary={part.reason}
-                    duration={duration}
-                  >
-                    <Frame variant="default" overflowBehavior="scroll">
-                      <FramePanel>
-                        <MessageResponse controls={FRAME_CONTROLS}>
-                          {part.reason}
-                        </MessageResponse>
-                      </FramePanel>
-                    </Frame>
-                  </AgentActivityStep>
+                  <AgentStep key={i}>
+                    <AgentStepTrigger>
+                      <AgentStepRow status={status} duration={duration}>
+                        <AgentStepIcon>
+                          <RotateCwIcon />
+                        </AgentStepIcon>
+                        <AgentStepTitle>
+                          {getStepLabel(
+                            "Retry",
+                            `${part.index}/${part.maxRetries}`
+                          )}
+                        </AgentStepTitle>
+                        {part.reason && (
+                          <AgentStepDescription>
+                            {part.reason}
+                          </AgentStepDescription>
+                        )}
+                      </AgentStepRow>
+                    </AgentStepTrigger>
+                    <AgentStepContent>
+                      <Frame variant="default" overflowBehavior="scroll">
+                        <FramePanel>
+                          <MessageResponse controls={FRAME_CONTROLS}>
+                            {part.reason}
+                          </MessageResponse>
+                        </FramePanel>
+                      </Frame>
+                    </AgentStepContent>
+                  </AgentStep>
                 );
               }
 
               if (part.type === "text") {
                 return (
-                  <AgentActivityStep
-                    key={i}
-                    path={`${i}`}
-                    icon={TextIcon}
-                    label={getStepLabel(
-                      "Note",
-                      getPureTextLabel(part.text, "")
-                    )}
-                    status={status}
-                    summary={summary}
-                    duration={duration}
-                  >
-                    <ToolRenderedSection copyValue={part.text} label="Note">
-                      <MessageResponse controls={FRAME_CONTROLS}>
-                        {part.text}
-                      </MessageResponse>
-                    </ToolRenderedSection>
-                  </AgentActivityStep>
+                  <AgentStep key={i}>
+                    <AgentStepTrigger>
+                      <AgentStepRow status={status} duration={duration}>
+                        <AgentStepIcon>
+                          <TextIcon />
+                        </AgentStepIcon>
+                        <AgentStepTitle>
+                          {getStepLabel(
+                            "Note",
+                            getPureTextLabel(part.text, "")
+                          )}
+                        </AgentStepTitle>
+                        {summary && (
+                          <AgentStepDescription>{summary}</AgentStepDescription>
+                        )}
+                      </AgentStepRow>
+                    </AgentStepTrigger>
+                    <AgentStepContent>
+                      <ToolRenderedSection copyValue={part.text} label="Note">
+                        <MessageResponse controls={FRAME_CONTROLS}>
+                          {part.text}
+                        </MessageResponse>
+                      </ToolRenderedSection>
+                    </AgentStepContent>
+                  </AgentStep>
                 );
               } else if (part.type === "reasoning") {
                 return (
-                  <AgentActivityStep
-                    key={i}
-                    path={`${i}`}
-                    icon={BrainIcon}
-                    label={getStepLabel(
-                      "Reasoning",
-                      getPureTextLabel(part.text, "")
-                    )}
-                    status={status}
-                    summary={summary}
-                    duration={duration}
-                  >
-                    <ToolRenderedSection
-                      copyValue={part.text}
-                      label="Reasoning"
-                    >
-                      <MessageResponse controls={FRAME_CONTROLS}>
-                        {part.text}
-                      </MessageResponse>
-                    </ToolRenderedSection>
-                  </AgentActivityStep>
+                  <AgentStep key={i}>
+                    <AgentStepTrigger>
+                      <AgentStepRow status={status} duration={duration}>
+                        <AgentStepIcon>
+                          <BrainIcon />
+                        </AgentStepIcon>
+                        <AgentStepTitle>
+                          {getStepLabel(
+                            "Reasoning",
+                            getPureTextLabel(part.text, "")
+                          )}
+                        </AgentStepTitle>
+                        {summary && (
+                          <AgentStepDescription>{summary}</AgentStepDescription>
+                        )}
+                      </AgentStepRow>
+                    </AgentStepTrigger>
+                    <AgentStepContent>
+                      <ToolRenderedSection
+                        copyValue={part.text}
+                        label="Reasoning"
+                      >
+                        <MessageResponse controls={FRAME_CONTROLS}>
+                          {part.text}
+                        </MessageResponse>
+                      </ToolRenderedSection>
+                    </AgentStepContent>
+                  </AgentStep>
                 );
               } else if (part.type === "tool-read-file") {
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={EyeIcon}
-                      label={getStepLabel("Read", part.input?.path)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>Read</FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <EyeIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel("Read", part.input?.path)}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>Read</FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -602,29 +649,38 @@ export const AssistantMessage = ({
               } else if (part.type === "tool-write-file") {
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={FilePlusIcon}
-                      label={getStepLabel("Create", part.input?.path)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>Create</FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <FilePlusIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel("Create", part.input?.path)}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>Create</FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -634,29 +690,38 @@ export const AssistantMessage = ({
               } else if (part.type === "tool-delete-file") {
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={Trash2Icon}
-                      label={getStepLabel("Delete", part.input?.path)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>Delete</FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <Trash2Icon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel("Delete", part.input?.path)}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>Delete</FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -668,52 +733,61 @@ export const AssistantMessage = ({
                 // 退回用请求参数拼出的预览。
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={FilePenIcon}
-                      label={getStepLabel("Edit", part.input?.path)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>Edit</FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <FilePenIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel("Edit", part.input?.path)}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
                         >
-                          <ToolRenderedSection
-                            copyValue={editDiffText(part)}
-                            label="Diff"
+                          <FrameHeader className="px-3">
+                            <FrameTitle>Edit</FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
                           >
-                            <div className="wrap-break-word font-mono text-xs whitespace-pre-wrap">
-                              {editDiffRows(part).map((row, j) => (
-                                <div
-                                  key={j}
-                                  className={
-                                    row.sign === "-"
-                                      ? "text-destructive"
-                                      : row.sign === "+"
-                                        ? "text-green-600"
-                                        : "text-muted-foreground"
-                                  }
-                                >
-                                  {row.sign}
-                                  {row.text}
-                                </div>
-                              ))}
-                            </div>
-                          </ToolRenderedSection>
-                        </ToolPanels>
-                      </Frame>
-                    </AgentActivityStep>
+                            <ToolRenderedSection
+                              copyValue={editDiffText(part)}
+                              label="Diff"
+                            >
+                              <div className="wrap-break-word font-mono text-xs whitespace-pre-wrap">
+                                {editDiffRows(part).map((row, j) => (
+                                  <div
+                                    key={j}
+                                    className={
+                                      row.sign === "-"
+                                        ? "text-destructive"
+                                        : row.sign === "+"
+                                          ? "text-green-600"
+                                          : "text-muted-foreground"
+                                    }
+                                  >
+                                    {row.sign}
+                                    {row.text}
+                                  </div>
+                                ))}
+                              </div>
+                            </ToolRenderedSection>
+                          </ToolPanels>
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -723,29 +797,38 @@ export const AssistantMessage = ({
               } else if (part.type === "tool-grep") {
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={SearchIcon}
-                      label={getStepLabel("Grep", part.input?.pattern)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>Grep</FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <SearchIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel("Grep", part.input?.pattern)}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>Grep</FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -755,29 +838,38 @@ export const AssistantMessage = ({
               } else if (part.type === "tool-glob") {
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={FolderSearchIcon}
-                      label={getStepLabel("Glob", part.input?.pattern)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>Glob</FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <FolderSearchIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel("Glob", part.input?.pattern)}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>Glob</FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -787,29 +879,38 @@ export const AssistantMessage = ({
               } else if (part.type === "tool-web-fetch") {
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={GlobeIcon}
-                      label={getStepLabel("Fetch", part.input?.url)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>Fetch</FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <GlobeIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel("Fetch", part.input?.url)}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>Fetch</FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -819,36 +920,45 @@ export const AssistantMessage = ({
               } else if (part.type === "tool-load-skill") {
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={SparklesIcon}
-                      label={getStepLabel("Load skill", part.input?.skill)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>
-                            Load skill {part.input?.skill}
-                          </FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                          renderOutput={(text) => (
-                            <MessageResponse controls={FRAME_CONTROLS}>
-                              {text}
-                            </MessageResponse>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <SparklesIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel("Load skill", part.input?.skill)}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
                           )}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>
+                              Load skill {part.input?.skill}
+                            </FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                            renderOutput={(text) => (
+                              <MessageResponse controls={FRAME_CONTROLS}>
+                                {text}
+                              </MessageResponse>
+                            )}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -863,31 +973,43 @@ export const AssistantMessage = ({
                   part.type === "tool-powershell" ? "PowerShell" : "Bash";
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={SquareTerminalIcon}
-                      label={getStepLabel(shellAction, part.input?.description)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <SquareTerminalIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
                             {getStepLabel(shellAction, part.input?.description)}
-                          </FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>
+                              {getStepLabel(
+                                shellAction,
+                                part.input?.description
+                              )}
+                            </FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -909,56 +1031,68 @@ export const AssistantMessage = ({
                 // dialog is where that answer is readable.
                 if (subagentSessionId) {
                   return (
-                    <AgentActivityStep
+                    <AgentStepButton
                       key={i}
-                      path={`${i}`}
-                      icon={BotIcon}
-                      label={getStepLabel("Task", part.input?.description)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
                       selected={selectedSubagentSessionId === subagentSessionId}
-                      onSelect={() => {
-                        console.log(111, subagentSessionId);
-                        selectSubagent(subagentSessionId);
-                      }}
-                    />
+                      onClick={() => selectSubagent(subagentSessionId)}
+                    >
+                      <AgentStepRow status={status} duration={duration}>
+                        <AgentStepIcon>
+                          <BotIcon />
+                        </AgentStepIcon>
+                        <AgentStepTitle>
+                          {getStepLabel("Task", part.input?.description)}
+                        </AgentStepTitle>
+                        {summary && (
+                          <AgentStepDescription>{summary}</AgentStepDescription>
+                        )}
+                      </AgentStepRow>
+                    </AgentStepButton>
                   );
                 }
 
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={BotIcon}
-                      label={getStepLabel("Task", part.input?.description)}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <BotIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
                             {getStepLabel("Task", part.input?.description)}
-                          </FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                          hideOutput={!showResult}
-                          renderOutput={(text) => (
-                            <MessageResponse controls={FRAME_CONTROLS}>
-                              {text}
-                            </MessageResponse>
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
                           )}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>
+                              {getStepLabel("Task", part.input?.description)}
+                            </FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                            hideOutput={!showResult}
+                            renderOutput={(text) => (
+                              <MessageResponse controls={FRAME_CONTROLS}>
+                                {text}
+                              </MessageResponse>
+                            )}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -968,21 +1102,31 @@ export const AssistantMessage = ({
               } else if (part.type === "tool-questionnaire") {
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={ListChecksIcon}
-                      label={getStepLabel(
-                        "Questionnaire",
-                        part.input?.title ?? part.input?.questions?.[0]?.prompt
-                      )}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <QuestionnaireSummary part={part} />
-                      {renderToolError(part)}
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <ListChecksIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel(
+                              "Questionnaire",
+                              part.input?.title ??
+                                part.input?.questions?.[0]?.prompt
+                            )}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <QuestionnaireSummary part={part} />
+                        {renderToolError(part)}
+                      </AgentStepContent>
+                    </AgentStep>
                     {questionnairePlacement === "inline" && (
                       <QuestionnaireCard
                         part={part}
@@ -1004,30 +1148,37 @@ export const AssistantMessage = ({
                     : `${part.type === "tool-job-kill" ? "Kill job" : "Read job"} ${target ?? ""}`;
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={ListChecksIcon}
-                      label={label}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <div className="flex flex-col gap-1.5 p-1.5">
-                          <ToolSection
-                            label="Output"
-                            language="text"
-                            value={part.output?.output ?? ""}
-                          />
-                          {renderToolError(part)}
-                        </div>
-                      </Frame>
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <ListChecksIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>{label}</AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <div className="flex flex-col gap-1.5 p-1.5">
+                            <ToolSection
+                              label="Output"
+                              language="text"
+                              value={part.output?.output ?? ""}
+                            />
+                            {renderToolError(part)}
+                          </div>
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
@@ -1046,35 +1197,46 @@ export const AssistantMessage = ({
                   separator > 0 ? toolName.slice(separator + 2) : toolName;
                 return (
                   <>
-                    <AgentActivityStep
-                      key={i}
-                      path={`${i}`}
-                      icon={WrenchIcon}
-                      label={getStepLabel(
-                        serverName ? `${serverName} · ${shortName}` : shortName
-                      )}
-                      status={status}
-                      summary={summary}
-                      duration={duration}
-                    >
-                      <Frame
-                        className="bg-transparent shadow-none"
-                        variant="default"
-                        overflowBehavior="scroll"
-                      >
-                        <FrameHeader className="px-3">
-                          <FrameTitle>
-                            {serverName
-                              ? `${serverName} · ${shortName}`
-                              : shortName}
-                          </FrameTitle>
-                        </FrameHeader>
-                        <ToolPanels
-                          part={part}
-                          onRespond={onRespondToolApproval}
-                        />
-                      </Frame>
-                    </AgentActivityStep>
+                    <AgentStep key={i}>
+                      <AgentStepTrigger>
+                        <AgentStepRow status={status} duration={duration}>
+                          <AgentStepIcon>
+                            <WrenchIcon />
+                          </AgentStepIcon>
+                          <AgentStepTitle>
+                            {getStepLabel(
+                              serverName
+                                ? `${serverName} · ${shortName}`
+                                : shortName
+                            )}
+                          </AgentStepTitle>
+                          {summary && (
+                            <AgentStepDescription>
+                              {summary}
+                            </AgentStepDescription>
+                          )}
+                        </AgentStepRow>
+                      </AgentStepTrigger>
+                      <AgentStepContent>
+                        <Frame
+                          className="bg-transparent shadow-none"
+                          variant="default"
+                          overflowBehavior="scroll"
+                        >
+                          <FrameHeader className="px-3">
+                            <FrameTitle>
+                              {serverName
+                                ? `${serverName} · ${shortName}`
+                                : shortName}
+                            </FrameTitle>
+                          </FrameHeader>
+                          <ToolPanels
+                            part={part}
+                            onRespond={onRespondToolApproval}
+                          />
+                        </Frame>
+                      </AgentStepContent>
+                    </AgentStep>
                     <AgentActivityApproval
                       part={part}
                       onRespondToolApproval={onRespondToolApproval}
