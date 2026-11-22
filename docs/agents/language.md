@@ -37,7 +37,7 @@ line under the title that names its source:
 - `.agents/worktrees/` and `.claude/worktrees/`: copies of this repository, not sources.
 - `CLAUDE.md`: a symbolic link to `AGENTS.md`.
 
-`skills.md` holds the tracking rule for the skill directory.
+`docs/development/skills.md` holds the tracking rule for the skill directory.
 
 ## Documents that are still Chinese
 

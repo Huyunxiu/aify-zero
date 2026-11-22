@@ -37,7 +37,7 @@
 - `.agents/worktrees/` 与 `.claude/worktrees/`：本仓库的副本，不是源。
 - `CLAUDE.md`：指向 `AGENTS.md` 的符号链接。
 
-技能目录的跟踪规则写在 `skills.md`。
+技能目录的跟踪规则写在 `docs/development/skills.md`。
 
 ## 还是中文的文档
 
