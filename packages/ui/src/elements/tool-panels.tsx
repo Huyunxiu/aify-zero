@@ -1,4 +1,8 @@
-import type { AgentToolPart, AgentToolSet } from "@workspace/agent-client";
+import type {
+  AgentToolPart,
+  AgentToolSet,
+  FileReadMetadata,
+} from "@workspace/agent-client";
 import { WrapTextIcon } from "lucide-react";
 import * as React from "react";
 
@@ -358,19 +362,20 @@ function ToolPanelsBody({
 /**
  * The language to highlight a call's output in.
  *
- * Only the two calls that hand back a file's contents have one. The other tools
- * answer in prose, so `text` is right for them.
+ * Only a `read-file` that answered with a file's content has a language. A
+ * directory, an attachment, a binary file, and a miss each answer with a
+ * description of what happened, and every other tool answers with prose.
  */
-const outputLanguageFor = (part: AgentToolPart): string => {
-  if (part.type !== "tool-read-file" && part.type !== "tool-write-file") {
-    return "text";
+export const outputLanguageOf = (part: AgentToolPart<AgentToolSet>): string => {
+  if (part.type === "tool-read-file") {
+    const metadata: FileReadMetadata | undefined = part.output?.metadata;
+
+    if (metadata?.type === "file") {
+      return languageFromPath(metadata.filepath);
+    }
   }
 
-  const input = part.input as { path?: unknown } | undefined;
-
-  return languageFromPath(
-    typeof input?.path === "string" ? input.path : undefined
-  );
+  return "text";
 };
 
 /** The approve and deny buttons of a call that is waiting on the user. */
@@ -378,7 +383,7 @@ const InlineToolApproval = ({
   part,
   onRespond,
 }: {
-  part: AgentToolPart;
+  part: AgentToolPart<AgentToolSet>;
   onRespond?: (
     approvalId: string,
     approved: boolean,
@@ -425,7 +430,7 @@ export function ToolPanels({
   hideOutput = false,
   renderOutput,
 }: {
-  part: AgentToolPart;
+  part: AgentToolPart<AgentToolSet>;
   onRespond?: (
     approvalId: string,
     approved: boolean,
@@ -455,7 +460,7 @@ export function ToolPanels({
       hideOutput={hideOutput || refused}
       input={JSON.stringify(part.input, null, 2) ?? ""}
       output={toolOutputText(part.output)}
-      outputLanguage={outputLanguageFor(part)}
+      outputLanguage={outputLanguageOf(part)}
       pending={part.state === "input-streaming"}
       renderOutput={renderOutput}
     >
@@ -465,7 +470,7 @@ export function ToolPanels({
 }
 
 /** The end of a call that went wrong, on its own — no input or output cards. */
-export function ToolPartError({ part }: { part: AgentToolPart }) {
+export function ToolPartError({ part }: { part: AgentToolPart<AgentToolSet> }) {
   const error = getPartError(part);
 
   return error === undefined ? null : (
