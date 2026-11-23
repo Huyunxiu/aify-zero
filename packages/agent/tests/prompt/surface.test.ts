@@ -75,7 +75,7 @@ describe("the session prompt", () => {
   test("opens with the agent identity", async () => {
     const agent = await makeAgent();
 
-    expect(agent.instructions).toMatch(/^You are a coding agent/);
+    expect(agent.instructions).toMatch(/^You are an agent/);
   });
 
   test("reads the rules before the facts", async () => {

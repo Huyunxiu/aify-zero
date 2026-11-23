@@ -8,7 +8,7 @@ import { Extension } from "../types";
  * starts from its own preamble instead. Everything else about how to work lives
  * in a section, so a subagent reads it too.
  */
-export const MAIN_INSTRUCTIONS = `You are a coding agent working in a session with the user. Use your tools instead of guessing.`;
+export const MAIN_INSTRUCTIONS = `You are an agent working in a session with the user. Use your tools instead of guessing.`;
 
 /**
  * The rules that no single tool owns.
