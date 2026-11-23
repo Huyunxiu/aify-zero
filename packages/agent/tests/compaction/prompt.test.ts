@@ -47,4 +47,43 @@ describe(createSummarizationPrompt, () => {
     expect(prompt.prompt).not.toContain("message-0-");
     expect(prompt.prompt).toContain("message-19-");
   });
+
+  test("asks for the state a resumed session cannot rebuild", () => {
+    const prompt = createSummarizationPrompt({
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    // A job that is still running, a question the user has not answered, and a
+    // change nobody verified all survive the conversation and none of them can
+    // be read back from the files.
+    for (const section of [
+      "## Open Questions",
+      "## Verification",
+      "## External State",
+    ]) {
+      expect(prompt.prompt).toContain(section);
+    }
+  });
+
+  test("carries the previous checkpoint forward", () => {
+    const prompt = createSummarizationPrompt({
+      messages: [{ role: "user", content: "hello" }],
+      previousSummary: "older summary",
+    });
+
+    expect(prompt.prompt).toContain(
+      "Keep every fact in the previous checkpoint that still holds."
+    );
+  });
+
+  test("fixes the headings and lets the prose follow the conversation", () => {
+    const prompt = createSummarizationPrompt({
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(prompt.prompt).toContain(
+      "Keep the headings exactly as written, in English."
+    );
+    expect(prompt.prompt).toContain("in the language of the conversation");
+  });
 });
