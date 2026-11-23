@@ -16,7 +16,11 @@ Four rules:
 - **One table, keyed by the part's `type`, exhaustive over the protocol.** The table is a
   `Record`, not a `Partial`, and `dynamic-tool` has an entry of its own. A part type added
   to the protocol fails to compile until it has a view. `custom` and `session.title` have
-  views that render nothing: silence is a decision, not an omission.
+  views that render nothing: silence is a decision, not an omission. Dispatch still falls
+  back for a name the table cannot know, because a transcript is data and not a type: a
+  host tool arrives as `tool-<server>__<tool>`, and a turn written by another version
+  carries that version's tools. Such a call reads as a call, through the same catch-all
+  view; a part that cannot be named and is not a call draws nothing.
 - **A view is a component, not a descriptor.** `task` draws a row that selects the pane
   beside the transcript instead of opening a dialog; `questionnaire` draws a form outside
   its own step. A data record for these grows callbacks until it is a badly typed

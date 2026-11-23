@@ -1,3 +1,4 @@
+import { isAgentToolPart } from "@workspace/agent-client";
 import type { ComponentType } from "react";
 
 import { CompactionStep } from "./compaction";
@@ -65,15 +66,38 @@ export const stepViews: StepViews = {
 };
 
 /**
+ * The view for one part.
+ *
+ * The table is exhaustive over the parts the protocol declares, and a part type
+ * added there fails to compile. A transcript can still hold a call the union
+ * cannot name: a host tool arrives as `tool-<server>__<tool>`, and a turn written
+ * by another version carries whatever tools that version had. Those are still
+ * calls, so they read as one. A part the table cannot name that is not a call
+ * draws nothing — which is what the chain did before this table existed.
+ */
+export const viewFor = (part: StepPart): ComponentType<StepViewProps> => {
+  const view = (
+    stepViews as Record<string, ComponentType<StepViewProps> | undefined>
+  )[part.type];
+
+  if (view !== undefined) {
+    return view;
+  }
+
+  return isAgentToolPart(part)
+    ? (FallbackToolStep as ComponentType<StepViewProps>)
+    : NothingStep;
+};
+
+/**
  * Draws one step of the chain.
  *
- * The table correlates each key with that part's own shape, which TypeScript
- * cannot follow through a run-time lookup. The cast closes that gap in one
- * place; the table's own type is what keeps it honest, because every entry
- * accepts exactly the part its key names.
+ * The cast in `viewFor` closes the one gap TypeScript cannot: a key looked up at
+ * run time. The table's own type is what keeps that cast honest, because every
+ * entry accepts exactly the part its key names.
  */
 export const StepView = ({ part, ...props }: StepViewProps) => {
-  const View = stepViews[part.type] as ComponentType<StepViewProps>;
+  const View = viewFor(part);
 
   return <View part={part} {...props} />;
 };
