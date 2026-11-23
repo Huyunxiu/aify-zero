@@ -95,6 +95,7 @@ const DESCRIPTION = [
   "- Returns matching lines with file paths and line numbers.",
   "- Use this tool when you need to find files containing specific patterns.",
   "- Call this tool in parallel when you have multiple independent searches.",
+  "- Files ignored by .gitignore and .ignore files are not searched.",
   `- Each line is truncated to ${MAX_LINE_LENGTH} characters if needed.`,
   `- Output is capped at ${MAX_BYTES / 1024} KB total.`,
   `- Returns at most ${DEFAULT_LIMIT} matching lines in total (max ${MAX_LIMIT}), across all files.`,
@@ -116,10 +117,10 @@ interface BuildCommandInput {
 }
 
 /**
- * Builds the ripgrep form of the grep command. Preferred whenever
- * `rg` is on PATH — ripgrep respects `.gitignore` out of the box,
- * handles hidden-file semantics cleanly, and is substantially faster
- * than GNU grep on large repositories.
+ * Builds the grep command. It is the only form: ripgrep respects
+ * `.gitignore` out of the box and handles hidden files the same way on every
+ * host. A `grep -rn` fallback used to search other files, so one call could
+ * return two different answers.
  *
  * `--no-messages` is intentionally *not* passed — we want ripgrep's
  * error messages to flow through stderr so callers can distinguish a
@@ -160,49 +161,10 @@ function buildRipgrepCommand(input: BuildCommandInput): string {
   return parts.join(" ");
 }
 
-/**
- * Builds the POSIX fallback form of the grep command using `grep -rn`.
- */
-function buildPosixGrepCommand(input: BuildCommandInput): string {
-  const parts: string[] = [
-    "grep",
-    "-r",
-    "-n",
-    "--color=never",
-    "--exclude-dir=.git",
-  ];
-
-  if (input.ignoreCase) {
-    parts.push("-i");
-  }
-
-  if (input.literal) {
-    parts.push("-F");
-  } else {
-    // Default to ERE so the pattern semantics line up with ripgrep's
-    // default (which uses a Rust regex dialect close to ERE).
-    parts.push("-E");
-  }
-
-  if (input.glob !== undefined) {
-    parts.push(`--include=${shellQuote(input.glob)}`);
-  }
-
-  if (input.contextLines > 0) {
-    parts.push(`-C ${input.contextLines}`);
-  }
-
-  // `-m` limits matches per file, analogous to ripgrep's `--max-count`.
-  parts.push(`-m ${input.effectiveLimit}`);
-  parts.push("--");
-  parts.push(shellQuote(input.pattern));
-  parts.push(shellQuote(input.normalizedPath));
-
-  return parts.join(" ");
-}
-
 type CreateGrepToolProps = {
   agentContext: ToolEnvironment;
+  /** Whether ripgrep can run. A test passes its own answer. */
+  ripgrepAvailable?: () => Promise<boolean>;
 };
 
 /**
@@ -218,7 +180,10 @@ const emptyMetadata = (path: string, exitCode: number | null) => ({
   exitCode,
 });
 
-const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
+const createGrepTool = ({
+  agentContext,
+  ripgrepAvailable = getRipgrepAvailable,
+}: CreateGrepToolProps) =>
   tool<GrepToolInput, GrepToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: GREP_TOOL_INPUT_SCHEMA,
@@ -231,26 +196,26 @@ const createGrepTool = ({ agentContext }: CreateGrepToolProps) =>
       );
       const contextLines = input.context ?? 0;
 
-      const useRipgrep = await getRipgrepAvailable();
-      const command = useRipgrep
-        ? buildRipgrepCommand({
-            contextLines,
-            effectiveLimit,
-            glob: input.glob,
-            ignoreCase: input.ignoreCase ?? false,
-            literal: input.literal ?? false,
-            normalizedPath,
-            pattern: input.pattern,
-          })
-        : buildPosixGrepCommand({
-            contextLines,
-            effectiveLimit,
-            glob: input.glob,
-            ignoreCase: input.ignoreCase ?? false,
-            literal: input.literal ?? false,
-            normalizedPath,
-            pattern: input.pattern,
-          });
+      // One behaviour: without ripgrep the search cannot run the way the
+      // description says, so it says so instead of searching other files.
+      if (!(await ripgrepAvailable())) {
+        return {
+          output:
+            "Grep needs ripgrep, which cannot run here. Nothing was searched.",
+          code: "error",
+          metadata: emptyMetadata(normalizedPath, null),
+        };
+      }
+
+      const command = buildRipgrepCommand({
+        contextLines,
+        effectiveLimit,
+        glob: input.glob,
+        ignoreCase: input.ignoreCase ?? false,
+        literal: input.literal ?? false,
+        normalizedPath,
+        pattern: input.pattern,
+      });
 
       let stdout = "";
       let stderr = "";

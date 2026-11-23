@@ -66,6 +66,7 @@ const DESCRIPTION = [
   '- Supports glob patterns like "**/*.js" or "src/**/*.ts".',
   "- Returns matching file paths.",
   "- Use this tool when you need to find files by name patterns.",
+  "- Files ignored by .gitignore and .ignore files are not searched.",
   "- A search with no match is a normal result, not an error.",
   "- Call this tool in parallel when you know there are multiple patterns to search for.",
 ].join("\n");
@@ -80,8 +81,9 @@ interface BuildCommandInput {
 }
 
 /**
- * Builds the ripgrep form of the glob command. Preferred whenever
- * `rg` is on PATH.
+ * Builds the glob command. It is the only form: a POSIX fallback used to
+ * search with different ignore rules, so the same call could return two
+ * different answers.
  *
  * Truncation is enforced in JavaScript rather than via a shell `| head`
  * pipe: piping would mask ripgrep's exit code (the pipeline would adopt
@@ -98,59 +100,14 @@ function buildRipgrepCommand(input: BuildCommandInput): string {
   ].join(" ");
 }
 
-// POSIX fallback used when ripgrep is unavailable. Globstars collapse
-// to GNU find's slash-spanning `*`; brace expansion is not supported.
-function buildPosixFindCommand(input: BuildCommandInput): string {
-  const translatedPattern = translateGlobToFindPattern(input.pattern);
-
-  // If the translated pattern has no slash after translation, it is
-  // a basename-only pattern — match against `-name` which is faster
-  // and semantically cleaner than `-path`. Otherwise match against
-  // the full path with `-path` (note: `-path` requires the full path
-  // prefix to match, so we include `*/` to anchor anywhere in the
-  // tree).
-  const isBasenameOnly = !translatedPattern.includes("/");
-  const matchExpression = isBasenameOnly
-    ? `-name ${shellQuote(translatedPattern)}`
-    : `-path ${shellQuote(`*/${translatedPattern}`)}`;
-
-  return [
-    `find ${shellQuote(input.normalizedPath)}`,
-    "-type f",
-    "-not -path '*/.git/*'",
-    matchExpression,
-  ].join(" ");
-}
-
-// Translates a ripgrep-style glob pattern to a POSIX `find`-compatible
-// pattern.
-//
-//   - A globstar (two `*` in a row) matches any number of directory
-//     segments. POSIX `find`'s single `*` also crosses `/` boundaries
-//     (unlike bash globs), so a globstar collapses to one `*`.
-//   - A leading globstar-slash prefix is equivalent to "at any
-//     depth". When the rest of the pattern has no directory
-//     component we return just the basename, letting the caller use
-//     `-name` for efficiency.
-function translateGlobToFindPattern(pattern: string): string {
-  // Collapse `**` to `*` since find's `*` already crosses `/`.
-  let translated = pattern.replaceAll("**", "*");
-
-  // Strip a leading `*/` so a globstar-prefixed pattern like
-  // `**/*.ts` becomes `*.ts` (basename match).
-  while (translated.startsWith("*/")) {
-    translated = translated.slice(2);
-  }
-
-  return translated;
-}
-
 // ---------------------------------------------------------------------------
 // Tool factory
 // ---------------------------------------------------------------------------
 
 type CreateGlobToolProps = {
   agentContext: ToolEnvironment;
+  /** Whether ripgrep can run. A test passes its own answer. */
+  ripgrepAvailable?: () => Promise<boolean>;
 };
 
 /** 没有结果时的元数据；失败、取消、没找到都走这一个形状。 */
@@ -162,7 +119,10 @@ const emptyMetadata = (path: string, exitCode: number | null) => ({
   exitCode,
 });
 
-const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
+const createGlobTool = ({
+  agentContext,
+  ripgrepAvailable = getRipgrepAvailable,
+}: CreateGlobToolProps) =>
   tool<GlobToolInput, GlobToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: GLOB_TOOL_INPUT_SCHEMA,
@@ -174,10 +134,21 @@ const createGlobTool = ({ agentContext }: CreateGlobToolProps) =>
         MAX_LIMIT
       );
 
-      const useRipgrep = await getRipgrepAvailable();
-      const command = useRipgrep
-        ? buildRipgrepCommand({ normalizedPath, pattern: input.pattern })
-        : buildPosixFindCommand({ normalizedPath, pattern: input.pattern });
+      // One behaviour: without ripgrep the search cannot run the way the
+      // description says, so it says so instead of searching other files.
+      if (!(await ripgrepAvailable())) {
+        return {
+          output:
+            "Glob needs ripgrep, which cannot run here. Nothing was searched.",
+          code: "error",
+          metadata: emptyMetadata(normalizedPath, null),
+        };
+      }
+
+      const command = buildRipgrepCommand({
+        normalizedPath,
+        pattern: input.pattern,
+      });
 
       let stdout = "";
       let stderr = "";
