@@ -1,16 +1,17 @@
 import { type } from "@orpc/server";
 import { FileSystemContextSource, loadContextFiles } from "@workspace/agent";
+import { DEFAULT_BOT_ID } from "@workspace/agent-client";
 import { SkillManager, SKILL_DIRS } from "@workspace/agent/skill";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
+import { resolveSessionDirectories } from "../../session/directories";
 import { encodeSessionCursor } from "../../storage/session-cursor";
 import {
   DEFAULT_SESSION_PAGE_SIZE,
   SQLiteStore,
 } from "../../storage/sqlite-store";
-import { getPrimaryProjectDir } from "../project/project.service";
 import { approvalPolicySchema, listSessionTurnsSchema } from "./session.schema";
 
 /**
@@ -41,12 +42,14 @@ export const listSessions = publicProcedure
       cursor?: string;
       limit?: number;
       direction?: "asc" | "desc";
-      /** 只列这个项目的会话；省略时跨项目列出。 */
+      /** Filter to one Project when provided. */
       projectId?: string;
+      /** Filter to one Bot when provided. */
+      botId?: string;
     }>()
   )
   .handler(async ({ input }) => {
-    const { cursor, limit, direction, projectId } = input;
+    const { cursor, limit, direction, projectId, botId } = input;
     const pageSize = limit ?? DEFAULT_SESSION_PAGE_SIZE;
     const store = new SQLiteStore();
     const sessions = await store.listSessions({
@@ -55,6 +58,7 @@ export const listSessions = publicProcedure
       direction,
       kind: "main",
       projectId,
+      botId,
     });
     // 游标由服务端给出，不由客户端从最后一行反推：排序键是 (updatedAt, id)，
     // 客户端只拿到行、拼不出这个键。不足一页说明到底了，就不发游标。
@@ -120,22 +124,41 @@ export const listSessionTurns = publicProcedure
 
 export const listSessionResources = publicProcedure
   .route({ method: "GET", path: "/sessions/{sessionId}/resources" })
-  .input(z.object({ sessionId: z.string() }))
+  .input(
+    z.object({
+      sessionId: z.string(),
+      botId: z.string().min(1).optional(),
+      projectId: z.string().min(1).optional(),
+    })
+  )
   .handler(async ({ input }) => {
-    // 资源与建会话时用的项目保持一致；会话还没落库时退回到默认项目。
     const store = new SQLiteStore();
     const session = await store.getSessionById(input.sessionId);
-    const projectDir = await getPrimaryProjectDir(
-      session?.projectId ?? undefined
-    );
-    const skillManager = new SkillManager({ dirs: SKILL_DIRS });
-    await skillManager.loadSkills(projectDir);
+    const botId = session?.botId ?? input.botId ?? DEFAULT_BOT_ID;
+    const projectId = session
+      ? (session.projectId ?? undefined)
+      : input.projectId;
+    const dirs = await resolveSessionDirectories({ botId, projectId });
 
-    // 与技能一样，上下文文件每次请求都从源重新读取，保证界面看到的是磁盘
-    // 当前内容（AGENTS.md / CLAUDE.md 可能在会话期间被编辑）。
-    const context = await loadContextFiles([new FileSystemContextSource()], {
-      projectDir,
+    const skillManager = new SkillManager({ dirs: SKILL_DIRS });
+    await skillManager.loadSkills({
+      projectDir: dirs.primaryDir,
+      botSkillsDir: dirs.botSkillsDir,
+      scanProject: dirs.hasProject,
+      globalMode: dirs.bot.skills.globalMode,
+      globalNames: dirs.bot.skills.globalNames,
     });
+
+    const context = await loadContextFiles(
+      [
+        new FileSystemContextSource({
+          globalDirs: dirs.bot.includeGlobalContext ? undefined : [],
+          botHomeDir: dirs.botHomeDir,
+          scanProject: dirs.hasProject,
+        }),
+      ],
+      { projectDir: dirs.primaryDir }
+    );
 
     return { skills: skillManager.listUserAvailableSkills(), context };
   });

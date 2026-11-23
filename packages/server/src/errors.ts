@@ -49,6 +49,22 @@ export const ErrorMap = {
     message: "The requested chat was not found.",
     data: z.object({ sessionId: z.string() }),
   },
+  BOT_NOT_FOUND: {
+    status: 404,
+    message: "The requested Bot was not found.",
+    data: z.object({ botId: z.string() }),
+  },
+  BOT_BUSY: {
+    status: 409,
+    message:
+      "This Bot has an active or awaiting-approval session. Wait for it to settle and try again.",
+    data: z.object({ botId: z.string(), sessionId: z.string() }),
+  },
+  CANNOT_DELETE_DEFAULT_BOT: {
+    status: 400,
+    message: "The Default Bot cannot be deleted.",
+    data: z.object({ botId: z.string() }),
+  },
   PROJECT_NOT_FOUND: {
     status: 404,
     message: "The requested project was not found.",

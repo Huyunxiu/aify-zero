@@ -1,6 +1,7 @@
 import { type } from "@orpc/server";
 import { AgentRunnerError, NothingToCompactError } from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
+import { DEFAULT_BOT_ID } from "@workspace/agent-client";
 import type {
   AgentTurn,
   AgentUserTurn,
@@ -19,6 +20,9 @@ import {
   requestedEffort,
   unsupportedInput,
 } from "../../session/model-rules";
+import { SQLiteStore } from "../../storage/sqlite-store";
+import { resolveBotForRun } from "../bot/bot.service";
+import { findProjectById } from "../project/project.repository";
 import { modelRefSchema } from "../settings/settings.schema";
 import { findConfiguredModel } from "../settings/settings.service";
 import { streamSessionEvents } from "./session.events";
@@ -97,6 +101,7 @@ function toApiError(error: unknown): never {
 const createSession = publicProcedure
   .route({ method: "POST", path: "/sessions" })
   .errors({
+    BOT_NOT_FOUND: ErrorMap.BOT_NOT_FOUND,
     MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
     MODEL_UNSUPPORTED_INPUT: ErrorMap.MODEL_UNSUPPORTED_INPUT,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
@@ -110,6 +115,7 @@ const createSession = publicProcedure
       approvals?: TextStreamToolApprovalResponseEvent[];
       model: ModelRef;
       modelEffort?: string;
+      botId?: string;
       projectId?: string;
       inboxId?: string;
       /** The Approval Policy for the first write. The layer ignores it when the row exists; use setApprovalPolicy then. */
@@ -167,13 +173,37 @@ const createSession = publicProcedure
       });
     }
 
-    // 会话行先落库：收件箱按会话归属，运行器也要靠这一行看项目和状态。
-    // 已删的会话不是「已存在」，这里会报 SESSION_NOT_FOUND（ADR 0022）。
+    const store = new SQLiteStore();
+    const existingRow = await store.findSessionRow(sessionId);
+    const hasActiveRow = existingRow !== null && existingRow.deletedAt === null;
+    const bot = await resolveBotForRun(
+      hasActiveRow ? existingRow.botId : (input.botId ?? DEFAULT_BOT_ID)
+    );
+
+    const effectiveProjectId = hasActiveRow
+      ? (existingRow.projectId ?? undefined)
+      : (projectId ?? bot.defaultProjectId ?? undefined);
+    if (!hasActiveRow && effectiveProjectId !== undefined) {
+      const project = await findProjectById(effectiveProjectId);
+      if (!project) {
+        throw new ApiError("PROJECT_NOT_FOUND", {
+          data: { projectId: effectiveProjectId },
+        });
+      }
+    }
+    const effectiveApprovalPolicy = hasActiveRow
+      ? existingRow.approvalPolicy
+      : (approvalPolicy ?? bot.defaultApprovalPolicy);
+
+    // Write session row first (idempotent); deleted sessions still throw SESSION_NOT_FOUND (ADR 0022).
     try {
       await agentRunner.createSession({
         sessionId,
-        ...(projectId === undefined ? {} : { projectId }),
-        ...(approvalPolicy === undefined ? {} : { approvalPolicy }),
+        botId: bot.id,
+        ...(effectiveProjectId === undefined
+          ? {}
+          : { projectId: effectiveProjectId }),
+        approvalPolicy: effectiveApprovalPolicy,
       });
     } catch (error) {
       toApiError(error);
@@ -188,7 +218,9 @@ const createSession = publicProcedure
         turn: lastTurn as AgentUserTurn,
         model,
         ...(effort === undefined ? {} : { effort }),
-        ...(projectId === undefined ? {} : { projectId }),
+        ...(effectiveProjectId === undefined
+          ? {}
+          : { projectId: effectiveProjectId }),
         mode: "followup",
       });
     } else {

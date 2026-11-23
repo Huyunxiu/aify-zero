@@ -32,6 +32,7 @@ import { createAuthStore } from "./auth-store";
 import { issueLoginLink, resolveLoginWebOrigin } from "./login-link";
 import { setMcpOAuthRedirectUrl } from "./mcp/oauth";
 import { shutdownMcp } from "./mcp/registry";
+import { ensureDefaultBot } from "./routers/bot/bot.service";
 import { agentRunner, outboxDispatcher, timerScheduler } from "./runtime";
 import { attachWebSocket } from "./ws";
 
@@ -114,6 +115,7 @@ export async function startServer(
   if (options.migrate !== false) {
     await migrateDb();
   }
+  await ensureDefaultBot();
 
   // 启动时内存里的流注册表是空的，任何 activeStreamId 都属于已经退出的进程。
   // 恢复失败不阻塞启动：`start()` 把原因放进报告，下一次启动会再试。
