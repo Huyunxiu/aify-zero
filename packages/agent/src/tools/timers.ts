@@ -32,7 +32,7 @@ const TIMER_SET_DESCRIPTION = `
 Set a one-shot timer that wakes this session later.
 
 - It fires once, at least \`afterSeconds\` from now and ${LATE_TEXT}. It is not a precise alarm.
-- When it fires, a new message arrives in this session carrying your \`note\`. Do not sleep or poll for it: end the turn, or keep working on something else.
+- When it fires, a new message arrives in this session carrying your \`note\`.
 - Write the note for your future self — what you intend to check, and what to do with the result.
 `;
 

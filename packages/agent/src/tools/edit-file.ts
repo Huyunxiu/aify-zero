@@ -22,23 +22,19 @@ import { withFileMutationQueue } from "./file-mutation-queue";
 import type { ToolOutput } from "./types";
 
 const DESCRIPTION = `
-Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file.
+Edit one file with one or more text replacements.
 
 Usage:
-- Read the file first to get the exact text to replace.
-- The read tool prefixes each line with "<line>: " (for example "1: content"). Never include that prefix in oldText or newText.
-- When changing several separate places in one file, send one edit call with multiple entries in edits[] instead of several calls.
-- Every oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.
-- Keep oldText as small as possible while still being unique; add surrounding lines only when needed to disambiguate.
-- Each oldText must be unique in the file. If a snippet appears more than once, include more context.
+- Every edits[].oldText is matched against the original file, before any other edit in the same call is applied. Do not emit overlapping or nested edits; merge nearby changes into one edit.
+- A match is exact first. If no exact match is found, the tool compares normalised text instead: line endings as LF, no leading BOM, and quotes or surrounding whitespace may be corrected. The matched lines are then rewritten with your newText.
+- Keep oldText as small as possible while it stays unique; add surrounding lines only when needed to disambiguate.
+- The read tool prefixes each line with "<line>: ". Never include that prefix in oldText or newText.
+- When changing several separate places in one file, send one edit call with several entries in edits[].
+- The result reports the diff and the number of lines added and removed.
 `;
 
 const EDIT_ENTRY_SCHEMA = z.object({
-  oldText: z
-    .string()
-    .describe(
-      "The exact text to find and replace. Must be unique in the original file and must not overlap with any other edits[].oldText in this call."
-    ),
+  oldText: z.string().describe("The text to find and replace."),
   newText: z.string().describe("The text to replace this oldText with"),
 });
 
@@ -47,9 +43,7 @@ const EDIT_FILE_INPUT_SCHEMA = z.object({
   edits: z
     .array(EDIT_ENTRY_SCHEMA)
     .min(1)
-    .describe(
-      "One or more targeted replacements, all matched against the original file."
-    ),
+    .describe("One or more replacements, applied to the original file."),
 });
 
 type EditFileInput = z.infer<typeof EDIT_FILE_INPUT_SCHEMA>;

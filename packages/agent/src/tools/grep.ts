@@ -51,7 +51,7 @@ const GREP_TOOL_INPUT_SCHEMA = z.object({
     .optional()
     .default(DEFAULT_LIMIT)
     .describe(
-      `Maximum number of matches to return per file. Defaults to ${DEFAULT_LIMIT}, max ${MAX_LIMIT}.`
+      `Maximum number of matching lines to return in total. Defaults to ${DEFAULT_LIMIT}, max ${MAX_LIMIT}.`
     ),
   literal: z
     .boolean()
@@ -97,7 +97,8 @@ const DESCRIPTION = [
   "- Call this tool in parallel when you have multiple independent searches.",
   `- Each line is truncated to ${MAX_LINE_LENGTH} characters if needed.`,
   `- Output is capped at ${MAX_BYTES / 1024} KB total.`,
-  `- Default limit is ${DEFAULT_LIMIT} matches per file (max ${MAX_LIMIT}).`,
+  `- Returns at most ${DEFAULT_LIMIT} matching lines in total (max ${MAX_LIMIT}), across all files.`,
+  "- A search with no match is a normal result, not an error.",
 ].join("\n");
 
 // ---------------------------------------------------------------------------

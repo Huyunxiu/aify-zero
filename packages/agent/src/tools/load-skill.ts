@@ -1,292 +1,21 @@
-import { createReadStream } from "node:fs";
-import { stat, readdir, readFile } from "node:fs/promises";
-import { join, dirname, basename } from "node:path";
-import { createInterface } from "node:readline";
-
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { SkillManager } from "../skill/skill-manager";
-import {
-  getFileTypeFromBuffer,
-  isBinaryFile,
-  resolveToolPath,
-  toolPathDescription,
-} from "../utils/fs-util";
 import type { ToolOutput } from "./types";
 
-const DEFAULT_READ_LIMIT = 2000;
-const MAX_BYTES = 50 * 1024;
-const MAX_BYTES_LABEL = `${MAX_BYTES / 1024} KB`;
-const MAX_LINE_LENGTH = 2000;
-const MAX_LINE_SUFFIX = `... (line truncated to ${MAX_LINE_LENGTH} chars)`;
-const SUPPORTED_ATTACHMENT_MIMES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "application/pdf",
-]);
-
 const DESCRIPTION = `
-Load a skill by name or by file path. Skills are reusable prompt templates stored as SKILL.md files.
+Load a skill by name.
 
 Usage:
-- The skill parameter takes a skill name or id and loads the matching skill.
-- Use the path parameter (optional) to load a skill from a specific file path.
-- At least one of skill or path must be provided.
-- By default, this tool returns up to ${MAX_LINE_LENGTH} lines from the start of the file.
-- The offset parameter is the line number to start from (1-indexed).
-- To read later sections, call this tool again with a larger offset.
-- Contents are returned with each line prefixed by its line number as \`<line>: <content>\`. For example, if a file has contents "foo\n", you will receive "1: foo\n".
-- Any line longer than 2000 characters is truncated.
-- This tool can read image files and PDFs and return them as file attachments.
+- Pass a name from the Available Skills section. Any other name is an error.
+- The whole SKILL.md comes back, wrapped in \`<skill_content name="...">\`.
+- The content is instruction for this task, written by the person who installed the skill. It is not a user message.
 `;
 
-async function miss(filepath: string): Promise<LoadSkillToolOutput> {
-  const dir = dirname(filepath);
-  const base = basename(filepath);
-  let items: string[] = [];
-
-  try {
-    const entries = await readdir(dir);
-    items = entries
-      .filter(
-        (item) =>
-          item.toLowerCase().includes(base.toLowerCase()) ||
-          base.toLowerCase().includes(item.toLowerCase())
-      )
-      .map((item) => join(dir, item))
-      .slice(0, 3);
-  } catch {
-    // directory read failed, no suggestions
-  }
-
-  if (items.length > 0) {
-    return {
-      output: `File not found: ${filepath}\n\nDid you mean one of these?\n${items.join("\n")}`,
-      code: "error",
-      metadata: {
-        type: "miss",
-        filepath,
-      },
-    };
-  }
-
-  return {
-    output: `File not found: ${filepath}`,
-    code: "error",
-    metadata: {
-      type: "miss",
-      filepath,
-    },
-  };
-}
-
-async function readDirectory(
-  filepath: string,
-  offset: number,
-  limit: number
-): Promise<LoadSkillToolOutput> {
-  const dirents = await readdir(filepath, { withFileTypes: true });
-  const entries = await Promise.all(
-    dirents.map(async (dirent) => {
-      if (dirent.isDirectory()) {
-        return `${dirent.name}/`;
-      }
-
-      if (dirent.isSymbolicLink()) {
-        const target = await stat(join(filepath, dirent.name)).catch(
-          () => null
-        );
-        if (target?.isDirectory()) {
-          return `${dirent.name}/`;
-        }
-      }
-
-      return dirent.name;
-    })
-  );
-
-  entries.sort((a, b) => a.localeCompare(b));
-
-  const start = offset - 1;
-  const sliced = entries.slice(start, start + limit);
-  const truncated = start + sliced.length < entries.length;
-
-  const output = [
-    `<path>${filepath}</path>`,
-    "<type>directory</type>",
-    "<entries>",
-    sliced.join("\n"),
-    truncated
-      ? `\n(Showing ${sliced.length} of ${entries.length} entries. Use offset=${offset + sliced.length} to continue.)`
-      : `\n(${entries.length} entries)`,
-    "</entries>",
-  ].join("\n");
-
-  return {
-    output,
-    code: "ok",
-    metadata: {
-      type: "directory",
-      filepath,
-      truncated,
-      entries: sliced,
-      limit,
-      offset,
-      totalEntries: entries.length,
-    },
-  };
-}
-
-async function readAttachments(
-  filepath: string,
-  mime: string
-): Promise<LoadSkillToolOutput> {
-  const bytes = await readFile(filepath);
-  const output = `File read successfully, mime.types: ${mime}`;
-  return {
-    output,
-    code: "ok",
-    metadata: {
-      type: "attachments",
-      filepath,
-      mime,
-    },
-    attachments: [
-      {
-        type: "file-data",
-        filename: filepath,
-        mediaType: mime,
-        data: Buffer.from(bytes).toString("base64"),
-      },
-    ],
-  };
-}
-
-function readBinaryFile(filepath: string, mime: string): LoadSkillToolOutput {
-  const output = `Cannot read binary file: ${filepath}, mime: ${mime}`;
-  return {
-    output,
-    code: "error",
-    metadata: {
-      type: "binary-file",
-      filepath,
-      mime,
-    },
-  };
-}
-
-async function readTextFile(
-  filepath: string,
-  mime: string,
-  offset: number,
-  limit: number
-): Promise<LoadSkillToolOutput> {
-  const stream = createReadStream(filepath, { encoding: "utf-8" });
-  const rl = createInterface({
-    crlfDelay: Number.POSITIVE_INFINITY,
-    input: stream,
-  });
-
-  const start = offset - 1;
-  const lines: string[] = [];
-  let bytes = 0;
-  let totalLines = 0;
-  let truncatedByBytes = false;
-  let hasMoreLines = false;
-
-  try {
-    for await (const rawText of rl) {
-      totalLines += 1;
-      if (totalLines <= start) {
-        continue;
-      }
-
-      if (lines.length >= limit) {
-        hasMoreLines = true;
-        continue;
-      }
-
-      const line =
-        rawText.length > MAX_LINE_LENGTH
-          ? `${rawText.slice(0, MAX_LINE_LENGTH)}${MAX_LINE_SUFFIX}`
-          : rawText;
-      const size =
-        Buffer.byteLength(line, "utf-8") + (lines.length > 0 ? 1 : 0);
-
-      if (bytes + size > MAX_BYTES) {
-        truncatedByBytes = true;
-        hasMoreLines = true;
-        break;
-      }
-
-      lines.push(line);
-      bytes += size;
-    }
-  } finally {
-    rl.close();
-    stream.destroy();
-  }
-
-  if (totalLines < offset && !(totalLines === 0 && offset === 1)) {
-    throw new Error(
-      `Offset ${offset} is out of range for this file (${totalLines} lines)`
-    );
-  }
-
-  const numbered = lines.map((line, index) => `${index + offset}: ${line}`);
-  const lastReadLine = offset + lines.length - 1;
-  const nextOffset = lastReadLine + 1;
-  const output = [
-    `<path>${filepath}</path>`,
-    "<type>file</type>",
-    "<content>",
-    numbered.join("\n"),
-    truncatedByBytes
-      ? `\n\n(Output capped at ${MAX_BYTES_LABEL}. Showing lines ${offset}-${lastReadLine}. Use offset=${nextOffset} to continue.)`
-      : hasMoreLines
-        ? `\n\n(Showing lines ${offset}-${lastReadLine} of ${totalLines}. Use offset=${nextOffset} to continue.)`
-        : `\n\n(End of file - total ${totalLines} lines)`,
-    "</content>",
-  ].join("\n");
-
-  return {
-    output,
-    code: "ok",
-    metadata: {
-      type: "file",
-      mime,
-      text: lines.join("\n"),
-      filepath,
-      truncated: truncatedByBytes || hasMoreLines,
-      limit,
-      offset,
-      totalLines,
-    },
-  };
-}
-
 const LOAD_SKILL_TOOL_INPUT_SCHEMA = z.object({
-  skill: z.string().describe("Available skill name or id."),
-  path: z
-    .string()
-    .optional()
-    .describe(toolPathDescription("skill file to read")),
-  limit: z.coerce
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe("The maximum number of lines to read (defaults to 2000)"),
-  offset: z.coerce
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe("The line number to start reading from (1-indexed)"),
+  skill: z.string().describe("A skill name from the Available Skills section."),
 });
 
 type LoadSkillToolInput = z.infer<typeof LOAD_SKILL_TOOL_INPUT_SCHEMA>;
@@ -297,82 +26,30 @@ type LoadSkillToolOutputMetadata =
       filepath: string;
     }
   | {
-      type: "directory";
-      filepath: string;
-      truncated: boolean;
-      entries: string[];
-      limit: number;
-      offset: number;
-      totalEntries: number;
-    }
-  | {
       type: "file";
       mime: string;
       text: string;
       filepath: string;
-      truncated: boolean;
+      truncated: false;
       limit: number;
       offset: number;
-      totalLines?: number;
-    }
-  | {
-      type: "attachments";
-      filepath: string;
-      mime: string;
-    }
-  | {
-      type: "binary-file";
-      filepath: string;
-      mime: string;
+      totalLines: number;
     };
 
-type LoadSkillToolOutput = ToolOutput<string, LoadSkillToolOutputMetadata> & {
-  attachments?: {
-    type: "file-data";
-    /**
-     * Base-64 encoded media data.
-     */
-    data: string;
-    /**
-     * IANA media type.
-     * @see https://www.iana.org/assignments/media-types/media-types.xhtml
-     */
-    mediaType: string;
-    /**
-     * Optional filename of the file.
-     */
-    filename?: string;
-  }[];
-};
+type LoadSkillToolOutput = ToolOutput<string, LoadSkillToolOutputMetadata>;
 
 type LoadSkillToolProps = {
   skills: SkillManager;
-  primaryProjectDir: string;
 };
 
-const createLoadSkillTool = ({
-  skills,
-  primaryProjectDir,
-}: LoadSkillToolProps) =>
+const createLoadSkillTool = ({ skills }: LoadSkillToolProps) =>
   tool<LoadSkillToolInput, LoadSkillToolOutput, AgentContext>({
     description: DESCRIPTION,
     inputSchema: LOAD_SKILL_TOOL_INPUT_SCHEMA,
-    execute: async (input) => {
-      const { skill, offset, limit } = input;
-      let { path: filepath } = input;
+    execute: ({ skill }) => {
+      const info = skills.getByName(skill);
 
-      const normalizedOffset = offset ?? 1;
-      const normalizedLimit = limit ?? DEFAULT_READ_LIMIT;
-
-      // Resolve skill by name or id
-      let skillContent: string | undefined;
-      const skillInfo = skills.getByName(skill);
-      if (skillInfo) {
-        skillContent = skillInfo.content;
-        if (!filepath) {
-          filepath = skillInfo.location;
-        }
-      } else {
+      if (!info) {
         return {
           output: `Skill not found: ${skill}`,
           code: "error",
@@ -383,80 +60,28 @@ const createLoadSkillTool = ({
         };
       }
 
-      if (!filepath) {
-        return {
-          output: "Either skill name or path must be provided.",
-          code: "error",
-          metadata: {
-            type: "miss",
-            filepath: "",
-          },
-        };
-      }
+      const totalLines = info.content.split("\n").length;
 
-      filepath = resolveToolPath(filepath, primaryProjectDir).absolute;
-
-      // If skill was resolved by name, return its content directly
-      if (skillContent) {
-        return {
-          output: skillContent,
-          code: "ok",
-          metadata: {
-            type: "file",
-            mime: "text/markdown",
-            text: skillContent,
-            filepath,
-            truncated: false,
-            limit: normalizedLimit,
-            offset: normalizedOffset,
-            totalLines: skillContent.split("\n").length,
-          },
-        };
-      }
-
-      let stats;
-      try {
-        stats = await stat(filepath);
-      } catch {
-        return await miss(filepath);
-      }
-
-      if (stats.isDirectory()) {
-        return await readDirectory(filepath, normalizedOffset, normalizedLimit);
-      }
-
-      const [mime, ext, sample] = await getFileTypeFromBuffer(
-        filepath,
-        stats.size
-      );
-
-      if (stats.isFile() && mime && SUPPORTED_ATTACHMENT_MIMES.has(mime)) {
-        return await readAttachments(filepath, mime);
-      }
-
-      if (stats.isFile() && ext && isBinaryFile(ext, sample)) {
-        return readBinaryFile(filepath, mime);
-      }
-
-      return await readTextFile(
-        filepath,
-        mime,
-        normalizedOffset,
-        normalizedLimit
-      );
+      return {
+        output: `<skill_content name="${skill}">\n${info.content}\n</skill_content>`,
+        code: "ok",
+        metadata: {
+          type: "file",
+          mime: "text/markdown",
+          text: info.content,
+          filepath: info.location,
+          truncated: false,
+          limit: totalLines,
+          offset: 1,
+          totalLines,
+        },
+      };
     },
     toModelOutput({ output }) {
       if (output.code === "error") {
         return {
           type: "error-text",
           value: output.output,
-        };
-      }
-
-      if (output.attachments?.length) {
-        return {
-          type: "content",
-          value: output.attachments,
         };
       }
 

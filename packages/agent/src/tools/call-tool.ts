@@ -35,7 +35,6 @@ function createCallTool() {
     description: [
       "Call a tool that is not in your list. Use the exact name from search-tools.",
       "The input must match the parameters you were given.",
-      "Choose a connected service before web search or general knowledge, when the request is about it.",
     ].join("\n"),
     inputSchema: callToolInputSchema,
     execute: (input: CallToolInput): ToolOutput => {
