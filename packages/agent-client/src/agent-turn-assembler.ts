@@ -1185,12 +1185,13 @@ function toolModule<TOOLS extends ToolSet>() {
 
         if (isAgentDynamicToolPart(part)) {
           part.state = "output-denied";
+          part.errorText = event.errorText;
           part.toolCallId = event.toolCallId;
           part.toolName = event.toolName;
           part.providerExecuted = event.providerExecuted;
         } else if (isAgentStaticToolPart(part)) {
           part.state = "output-denied";
-          part.errorText = undefined;
+          part.errorText = event.errorText;
           part.toolCallId = event.toolCallId;
           part.providerExecuted = event.providerExecuted;
         }

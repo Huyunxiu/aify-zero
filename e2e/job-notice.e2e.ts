@@ -14,7 +14,7 @@ import type { Stack } from "./harness";
 /** 编辑框的可访问名取自它自己的占位文案（`prompt-input-tiptap.tsx`）。 */
 const COMPOSER_NAME = "What would you like to know?";
 
-const MESSAGE = "在后台跑一条命令";
+const MESSAGE = "Run a command in the background";
 
 /** 通知块的标签（`jobNotice.marker`）。界面语言走 i18n 默认值 en-US。 */
 const NOTICE_MARKER = "Background job finished";
@@ -29,10 +29,10 @@ const JOB_STATUS = "[status: completed, exit code: 0]";
 const JOB_COMMAND = "sleep 5";
 
 /** 第一个回合的收尾回答。 */
-const FIRST_ANSWER = "已经在后台跑起来了。";
+const FIRST_ANSWER = "It is now running in the background.";
 
 /** 第二个回合的回答；有这个回合，才说明通知唤醒了一次运行。 */
-const SECOND_ANSWER = "后台任务跑完了。";
+const SECOND_ANSWER = "The background job finished.";
 
 test("Job notice: a background job finishes → the notice wakes the idle session → the model answers again", async ({
   page,

@@ -2,17 +2,19 @@
   "name": "edit-then-answer",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "改一行" },
+    { "when": { "stream": false }, "answer": "Edit one line" },
     {
       "when": { "stream": true },
       "toolCall": {
         "name": "edit-file",
         "args": {
           "path": "notes.md",
-          "edits": [{ "oldText": "第二行", "newText": "第二行已改" }]
+          "edits": [
+            { "oldText": "second line", "newText": "second line edited" }
+          ]
         }
       }
     },
-    { "when": { "stream": true }, "answer": "已把第二行改好。" }
+    { "when": { "stream": true }, "answer": "The second line is updated." }
   ]
 }

@@ -7,7 +7,10 @@ import type {
   ToolApprovalDecision,
   ToolApprovalPattern,
 } from "../src/tool-approval.js";
-import { evaluateToolApproval } from "../src/tool-approval.js";
+import {
+  evaluateToolApproval,
+  resolveCallDecision,
+} from "../src/tool-approval.js";
 
 const DEFAULT_INPUT = { path: "notes.md" };
 
@@ -100,5 +103,31 @@ describe(resolveToolStartDecision, () => {
     expect(
       resolveToolStartDecision([{ decision: "allow" }, { decision: "allow" }])
     ).toStrictEqual({ decision: "allow" });
+  });
+});
+
+describe(resolveCallDecision, () => {
+  test("an allow from the agent closes a hook's ask", () => {
+    expect(
+      resolveCallDecision([{ decision: "ask" }], { decision: "allow" })
+    ).toStrictEqual({ decision: "allow" });
+  });
+
+  test("a refusal from either side stands", () => {
+    expect(
+      resolveCallDecision([{ decision: "deny", reason: "hook" }], {
+        decision: "allow",
+      })
+    ).toStrictEqual({ decision: "deny", reason: "hook" });
+    expect(
+      resolveCallDecision([{ decision: "allow" }], { decision: "deny" })
+    ).toStrictEqual({ decision: "deny" });
+  });
+
+  test("an abstaining agent leaves the hooks' answer", () => {
+    expect(resolveCallDecision([{ decision: "ask" }])).toStrictEqual({
+      decision: "ask",
+    });
+    expect(resolveCallDecision([])).toBeUndefined();
   });
 });

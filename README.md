@@ -151,6 +151,8 @@ Set `DATABASE_URL` to target another database.
 - [Desktop shell and API](docs/development/desktop-and-api.md): server modes,
   sign-in, migrations, environment variables.
 - [Packaging](docs/development/packaging.md): the desktop and server artifacts.
+- [Skills](docs/development/skills.md): installed skills stay out of git; one command
+  restores them.
 - [Sandbox](packages/sandbox/README.md): where tools run and what they write.
 - [Fake provider](docs/testing/fake-provider.md): provider scenarios and
   recordings.

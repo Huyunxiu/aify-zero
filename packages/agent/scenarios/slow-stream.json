@@ -2,9 +2,9 @@
   "name": "slow-stream",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "假标题" },
+    { "when": { "stream": false }, "answer": "Fake title" },
     {
-      "answer": "慢一点的回答。",
+      "answer": "A slower answer.",
       "slow": { "firstChunkMs": 1500, "chunkMs": 120 }
     }
   ]

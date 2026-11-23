@@ -16,12 +16,6 @@ import * as React from "react";
 import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
 import { Button } from "../components/button";
 import {
-  Frame,
-  FrameHeader,
-  FramePanel,
-  FrameTitle,
-} from "../components/frame";
-import {
   Questionnaire,
   QuestionnaireActions,
   QuestionnaireChoice,
@@ -38,6 +32,7 @@ import {
   QuestionnaireSubmit,
   QuestionnaireTitle,
 } from "../components/questionnaire";
+import { RenderedSection } from "./tool-panels";
 
 type QuestionnairePart = Extract<
   AgentStaticToolPart<AgentToolSet>,
@@ -326,64 +321,61 @@ export const QuestionnaireSummary = ({ part }: QuestionnaireSummaryProps) => {
   const declined = isDeclined(part);
 
   return (
-    <Frame variant="default" overflowBehavior="scroll">
-      <FrameHeader>
-        <FrameTitle>{part.input?.title ?? "Questionnaire"}</FrameTitle>
-      </FrameHeader>
-      <FramePanel>
-        <div className="flex flex-col gap-4">
-          {part.input?.description && (
-            <p className="text-sm text-pretty text-muted-foreground">
-              {part.input.description}
-            </p>
-          )}
-          {questions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              The questionnaire has no questions yet.
-            </p>
-          ) : (
-            <ol className="flex flex-col gap-3">
-              {questions.map((question, index) => {
-                const values = answers?.[question.id] ?? [];
-                return (
-                  <li key={question.id} className="flex flex-col gap-1">
-                    <div className="text-sm font-medium">
-                      {index + 1}. {question.prompt}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {values.length > 0
-                        ? values
-                            .map((value) => answerLabel(question, value))
-                            .join(", ")
-                        : declined
-                          ? "Declined"
-                          : part.state === "approval-requested"
-                            ? "Awaiting answer"
-                            : question.required
-                              ? "Unanswered"
-                              : "Skipped"}
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-          {declined && (
-            <p className="text-sm text-muted-foreground">{DECLINED_REASON}</p>
-          )}
-          {part.state === "output-available" &&
-            part.output.code === "error" && (
-              <p className="whitespace-pre-wrap text-sm text-destructive">
-                {part.output.output}
-              </p>
-            )}
-          {part.state === "approval-requested" && (
-            <p className="text-sm text-muted-foreground">
-              Answer the questionnaire in the conversation to continue.
-            </p>
-          )}
-        </div>
-      </FramePanel>
-    </Frame>
+    <RenderedSection label="Questionnaire">
+      <div className="flex flex-col gap-4">
+        {part.input?.title && (
+          <p className="text-sm font-medium">{part.input.title}</p>
+        )}
+        {part.input?.description && (
+          <p className="text-sm text-pretty text-muted-foreground">
+            {part.input.description}
+          </p>
+        )}
+        {questions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            The questionnaire has no questions yet.
+          </p>
+        ) : (
+          <ol className="flex flex-col gap-3">
+            {questions.map((question, index) => {
+              const values = answers?.[question.id] ?? [];
+              return (
+                <li key={question.id} className="flex flex-col gap-1">
+                  <div className="text-sm font-medium">
+                    {index + 1}. {question.prompt}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {values.length > 0
+                      ? values
+                          .map((value) => answerLabel(question, value))
+                          .join(", ")
+                      : declined
+                        ? "Declined"
+                        : part.state === "approval-requested"
+                          ? "Awaiting answer"
+                          : question.required
+                            ? "Unanswered"
+                            : "Skipped"}
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        {declined && (
+          <p className="text-sm text-muted-foreground">{DECLINED_REASON}</p>
+        )}
+        {part.state === "output-available" && part.output.code === "error" && (
+          <p className="whitespace-pre-wrap text-sm text-destructive">
+            {part.output.output}
+          </p>
+        )}
+        {part.state === "approval-requested" && (
+          <p className="text-sm text-muted-foreground">
+            Answer the questionnaire in the conversation to continue.
+          </p>
+        )}
+      </div>
+    </RenderedSection>
   );
 };

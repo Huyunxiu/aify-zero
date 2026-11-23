@@ -33,9 +33,11 @@
 
 ## 规则之外的路径
 
-- `.agents/skills/`：从别的仓库装进来的。`skills-lock.json` 锁着哈希。不要翻这些文件。
+- `.agents/skills/`：从别的仓库装进来的技能，git 不跟踪。
 - `.agents/worktrees/` 与 `.claude/worktrees/`：本仓库的副本，不是源。
 - `CLAUDE.md`：指向 `AGENTS.md` 的符号链接。
+
+技能目录的跟踪规则写在 `docs/development/skills.md`。
 
 ## 还是中文的文档
 

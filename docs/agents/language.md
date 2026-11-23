@@ -33,10 +33,11 @@ line under the title that names its source:
 
 ## What is outside the rule
 
-- `.agents/skills/`: installed from other repositories. `skills-lock.json` holds the
-  hashes. Do not translate these files.
+- `.agents/skills/`: skills installed from other repositories, which git does not track.
 - `.agents/worktrees/` and `.claude/worktrees/`: copies of this repository, not sources.
 - `CLAUDE.md`: a symbolic link to `AGENTS.md`.
+
+`docs/development/skills.md` holds the tracking rule for the skill directory.
 
 ## Documents that are still Chinese
 

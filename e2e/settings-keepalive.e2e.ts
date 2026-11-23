@@ -17,9 +17,9 @@ import type { Stack } from "./harness";
 /** The composer takes its accessible name from its own placeholder. */
 const COMPOSER_NAME = "What would you like to know?";
 
-const MESSAGE = "先处理这一条";
-const DRAFT = "这是还没发出去的草稿。";
-const ANSWER = "第一句收到。";
+const MESSAGE = "Handle this one first";
+const DRAFT = "This draft is not sent yet.";
+const ANSWER = "Got the first message.";
 
 test("Settings covers the session without unmounting it", async ({ page }) => {
   let stack: Stack | undefined;

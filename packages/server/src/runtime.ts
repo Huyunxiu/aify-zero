@@ -48,6 +48,7 @@ export const agentRunner = createAgentRunner({
     streams,
     jobs,
     steering,
+    approvalPolicy,
   }) => {
     const configured = await findConfiguredModel(model);
     if (!configured) {
@@ -66,6 +67,7 @@ export const agentRunner = createAgentRunner({
       streams,
       jobs,
       steering,
+      approvalPolicy,
     });
   },
 });

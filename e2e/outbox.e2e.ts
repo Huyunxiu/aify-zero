@@ -34,10 +34,10 @@ const SESSION_ID = "e2e-outbox-session";
 const TURN_ID = "e2e-outbox-turn";
 
 /** 场景 `outbox` 里模型的回答；投递的正文就是它。 */
-const ANSWER = "跑完了，结果在会话里。";
+const ANSWER = "It finished; the result is in the session.";
 
 /** 会话标题：非流式那一次请求的回答。通知带着它，用户才知道是哪条会话。 */
-const TITLE = "发件箱";
+const TITLE = "Outbox";
 
 /** 同一条只推一次；等三个扫描周期看有没有第二批。 */
 const QUIET_MS = 3000;
@@ -49,7 +49,13 @@ const userTurn = (): AgentUserTurn => {
   return {
     content: [
       {
-        content: [{ createdAt: now, text: "跑这条后台的活", type: "text" }],
+        content: [
+          {
+            createdAt: now,
+            text: "Run this job in the background",
+            type: "text",
+          },
+        ],
         createdAt: now,
         id: `${TURN_ID}-step`,
         status: "done",

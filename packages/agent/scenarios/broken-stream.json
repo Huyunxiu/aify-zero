@@ -2,7 +2,7 @@
   "name": "broken-stream",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "假标题" },
+    { "when": { "stream": false }, "answer": "Fake title" },
     { "corrupt": true }
   ]
 }

@@ -148,6 +148,7 @@ vp run db:check    # schema 改了却没有迁移时报错
 - [桌面外壳与 API](docs/development/desktop-and-api.md)：server 模式、登录、
   迁移、环境变量。
 - [打包](docs/development/packaging.md)：桌面端和 server 的产物。
+- [技能](docs/development/skills.md)：装进来的技能不进 git，一条命令装回来。
 - [沙箱](packages/sandbox/README.md)：工具在哪跑，能写哪些文件。
 - [假供应商](docs/testing/fake-provider.md)：供应商场景与录制回放。
 - [ADR](docs/adr)：每个决定的原因。

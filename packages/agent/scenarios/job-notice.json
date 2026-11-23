@@ -2,7 +2,10 @@
   "name": "job-notice",
   "models": ["fake-fast"],
   "rules": [
-    { "when": { "stream": false }, "answer": "后台跑一条命令" },
+    {
+      "when": { "stream": false },
+      "answer": "Run a command in the background"
+    },
     {
       "when": { "stream": true },
       "toolCall": {
@@ -14,8 +17,11 @@
         }
       }
     },
-    { "when": { "stream": true }, "answer": "已经在后台跑起来了。" },
-    { "when": { "stream": true }, "answer": "后台任务跑完了。" },
-    { "when": { "stream": false }, "answer": "后台任务" }
+    {
+      "when": { "stream": true },
+      "answer": "It is now running in the background."
+    },
+    { "when": { "stream": true }, "answer": "The background job finished." },
+    { "when": { "stream": false }, "answer": "Background job" }
   ]
 }

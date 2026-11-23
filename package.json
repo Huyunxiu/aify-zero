@@ -21,6 +21,7 @@
     "package:desktop": "vp run desktop#package",
     "package:server": "vp run @workspace/server-app#package",
     "check:docs": "tsx scripts/check-doc-pairs.ts",
+    "skills:install": "npx --yes skills@1.9.0 install --frozen-lockfile --agent universal",
     "prepare": "vp config"
   },
   "dependencies": {

@@ -53,6 +53,7 @@ async function startSubagent(
     toolCallId: request.toolCallId,
     toolApprovalPattern: agent.toolApprovalPattern,
     compaction: agent.extensions.capability(Capabilities.compaction),
+    approvalPolicy: agent.approvalPolicy,
   };
 
   const { agent: subagent, turns } = await createSubagent(parent, {

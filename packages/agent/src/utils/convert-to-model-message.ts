@@ -360,7 +360,10 @@ export async function convertToModelMessages<TOOLS extends ToolSet>(
                       toolName: getToolName(toolPart),
                       output: {
                         type: "error-text" as const,
-                        value: toolPart.approval?.reason ?? TOOL_DENIED_TEXT,
+                        value:
+                          toolPart.errorText ??
+                          toolPart.approval?.reason ??
+                          TOOL_DENIED_TEXT,
                       },
                       ...(toolPart.callProviderMetadata
                         ? { providerOptions: toolPart.callProviderMetadata }

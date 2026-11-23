@@ -1,6 +1,7 @@
 import { logger } from "@workspace/shared/logger";
 
 import type { ToolCallHookEvent, ToolStartDecision } from "./hooks-manager";
+import { resolveToolStartDecision } from "./hooks-manager";
 
 /** 审批函数可以弃权：null 和 undefined 都表示没有意见。 */
 export type ToolApprovalDecision = ToolStartDecision | null | undefined;
@@ -36,4 +37,30 @@ export async function evaluateToolApproval(
     logger.warn("[tool-approval] pattern failed", error);
     return undefined;
   }
+}
+
+/**
+ * Folds the hooks' answers and the agent's own answer into the call's decision.
+ *
+ * One veto survives everything else: a refusal. A refusal from either side is
+ * the answer, and no later allow talks it out of it. Otherwise the agent's
+ * answer leads: when it says allow, the `ask` a hook raised closes with it;
+ * when it says ask, the call still waits for the user. An agent that abstains
+ * leaves the hooks' answer in place.
+ */
+export function resolveCallDecision(
+  hookDecisions: readonly ToolStartDecision[],
+  decision?: ToolStartDecision
+): ToolStartDecision | undefined {
+  const hooks = resolveToolStartDecision(hookDecisions);
+
+  if (decision?.decision === "deny") {
+    return decision;
+  }
+
+  if (hooks?.decision === "deny") {
+    return hooks;
+  }
+
+  return decision ?? hooks;
 }

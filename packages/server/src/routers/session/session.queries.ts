@@ -3,7 +3,7 @@ import { FileSystemContextSource, loadContextFiles } from "@workspace/agent";
 import { SkillManager, SKILL_DIRS } from "@workspace/agent/skill";
 import z from "zod";
 
-import { ApiError } from "../../errors";
+import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
 import { encodeSessionCursor } from "../../storage/session-cursor";
 import {
@@ -11,7 +11,7 @@ import {
   SQLiteStore,
 } from "../../storage/sqlite-store";
 import { getPrimaryProjectDir } from "../project/project.service";
-import { listSessionTurnsSchema } from "./session.schema";
+import { approvalPolicySchema, listSessionTurnsSchema } from "./session.schema";
 
 /**
  * Marks the finished turn a session is showing as read.
@@ -138,4 +138,33 @@ export const listSessionResources = publicProcedure
     });
 
     return { skills: skillManager.listUserAvailableSkills(), context };
+  });
+
+/**
+ * Change the Approval Policy of a session.
+ *
+ * It changes this column only and does not touch the Run state: a policy change does not stop
+ * the running Turn; the next Run assembles with the new value. A deleted session counts as absent.
+ */
+export const setApprovalPolicy = publicProcedure
+  .route({ method: "PUT", path: "/sessions/{sessionId}/approval-policy" })
+  .input(
+    z.object({
+      sessionId: z.string(),
+      approvalPolicy: approvalPolicySchema,
+    })
+  )
+  .errors({ SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND })
+  .handler(async ({ input }) => {
+    const { sessionId, approvalPolicy } = input;
+    const store = new SQLiteStore();
+
+    const existing = await store.getSessionById(sessionId);
+    if (!existing) {
+      throw new ApiError("SESSION_NOT_FOUND", { data: { sessionId } });
+    }
+
+    await store.setSessionApprovalPolicy(sessionId, approvalPolicy);
+
+    return { sessionId, approvalPolicy };
   });

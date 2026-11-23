@@ -13,36 +13,21 @@ import type {
   AgentToolPart,
   AgentTurnStatus,
 } from "@workspace/agent-client";
-import type { ReactNode } from "react";
+
+import type { AgentStepStatus } from "../components/ai-elements/chain-of-turn";
+import type { StepPart } from "./steps/types";
 
 /** A part as it is rendered, next to the step that owns it. */
 export type StepRow = {
-  part: AgentPart<AgentToolSet>;
+  part: StepPart;
   step: AgentAssistantStep<AgentToolSet> | AgentCompactionStep;
 };
-
-/**
- * The states a row can render in. Deliberately not the tool part's own `state`:
- * `output-available` covers both a success and a tool that reported failure
- * through `output.code`, and the row has to tell those apart.
- *
- * `aborted` is the third way a call can end without a result: the turn it
- * belonged to was stopped. It is not `failed` — nothing went wrong — and it is
- * certainly not `complete`.
- */
-export type StepRowStatus =
-  | "running"
-  | "complete"
-  | "failed"
-  | "denied"
-  | "aborted"
-  | "approval";
 
 /**
  * The two states whose row cannot be read off the state name alone: a held call
  * is `approval` when it is the user's turn, and an answered one is `running` or
  * `denied` depending on what the user said. Both are resolved in
- * `getRowStatus`; this is only here so the lookup table stays exhaustive over
+ * `getPartStatus`; this is only here so the lookup table stays exhaustive over
  * the states that are a pure naming of the row.
  */
 type ResolvedToolState = Exclude<
@@ -53,10 +38,10 @@ type ResolvedToolState = Exclude<
 /**
  * A lookup rather than a switch: the record's key type is every state it claims,
  * so a state added to the protocol fails to compile here — either because the
- * table is missing the new key, or because `getRowStatus` can no longer index
+ * table is missing the new key, or because `getPartStatus` can no longer index
  * it — instead of falling through to a default.
  */
-const TOOL_STATE_STATUS: Record<ResolvedToolState, StepRowStatus> = {
+const TOOL_STATE_STATUS: Record<ResolvedToolState, AgentStepStatus> = {
   "input-streaming": "running",
   "input-available": "running",
   "output-available": "complete",
@@ -79,7 +64,7 @@ const TURN_SETTLED = new Set<AgentTurnStatus["status"]>([
 export const getPartStatus = (
   part: AgentPart<AgentToolSet>,
   turnStatus?: AgentTurnStatus["status"]
-): StepRowStatus => {
+): AgentStepStatus => {
   if (part.type === "compaction") {
     // The part exists from `compaction.start`; only the record makes it a
     // marker. Until then the row reports the summarization it is waiting on.
@@ -137,76 +122,31 @@ export const getPartStatus = (
 };
 
 /**
- * The metadata of a `read-file` or `load-skill` call, which share one union.
- * Restated here rather than imported because the agent package keeps it
- * private; structural typing means a new member over there fails to compile
- * here, which is the drift check we want.
+ * The text a call ends with, and what that end is called.
+ *
+ * A refusal is not a failure — "ERROR" would blame a tool that never ran. A call
+ * the user answered carries the approval, so it was declined; one that no
+ * approval reached was refused before it started.
  */
-type FileReadMetadata =
-  | { type: "miss"; filepath: string }
-  | {
-      type: "directory";
-      filepath: string;
-      truncated: boolean;
-      entries: string[];
-      limit: number;
-      offset: number;
-      totalEntries: number;
-    }
-  | {
-      type: "file";
-      mime: string;
-      text: string;
-      filepath: string;
-      truncated: boolean;
-      limit: number;
-      offset: number;
-      totalLines?: number;
-    }
-  | { type: "attachments"; filepath: string; mime: string }
-  | { type: "binary-file"; filepath: string; mime: string };
-
-/**
- * Summarizes a file read. `totalLines` is optional, and absent exactly when the
- * byte cap cut the file off before its end was known — so a truncated read with
- * no total says `truncated` rather than inventing a number, and the known-total
- * case says how much of the file is missing without claiming which lines were
- * shown (the read may have been offset into the middle of the file).
- */
-const summarizeFileRead = (
-  metadata: FileReadMetadata | undefined
-): string | undefined => {
-  if (!metadata) {
+export const getPartError = (
+  part: AgentToolPart
+): { label: string; text: string } | undefined => {
+  if (!part.errorText) {
     return undefined;
   }
-  switch (metadata.type) {
-    case "file": {
-      if (metadata.totalLines === undefined) {
-        return metadata.truncated ? "truncated" : undefined;
-      }
-      return metadata.truncated
-        ? `${metadata.totalLines} lines · partial`
-        : `${metadata.totalLines} lines`;
-    }
-    case "directory": {
-      return metadata.truncated
-        ? `${metadata.entries.length} of ${metadata.totalEntries} entries`
-        : `${metadata.totalEntries} entries`;
-    }
-    case "miss": {
-      return "not found";
-    }
-    case "attachments": {
-      return metadata.mime;
-    }
-    case "binary-file": {
-      return "binary file";
-    }
 
-    default: {
-      return undefined;
-    }
+  if (part.state === "output-denied") {
+    return {
+      label: part.approval ? "Declined" : "Refused",
+      text: part.errorText,
+    };
   }
+
+  if (part.state === "output-error") {
+    return { label: "Error", text: part.errorText };
+  }
+
+  return undefined;
 };
 
 /** The three tools whose input names a file they changed. */
@@ -227,271 +167,6 @@ const editedPath = (
   part: AgentStaticToolPart<AgentToolSet>
 ): string | undefined =>
   isFileEditingPart(part) ? part.input?.path : undefined;
-
-/** The status facts both shell tools report. */
-type ShellSummaryMetadata = {
-  /** Absent on turns persisted before background execution existed. */
-  kind?: "foreground" | "background";
-  timeout?: boolean;
-  aborted?: boolean;
-  exitCode?: number | null;
-  signal?: string | null;
-  truncated?: boolean;
-};
-
-/**
- * One summary for both shell dialects. A non-zero exit is reported here rather
- * than as a failed row: the tool treats it as an ordinary result, and so should
- * the chain. A truncation hint rides along because the model-facing body says
- * so too.
- */
-const summarizeShell = (
-  metadata: ShellSummaryMetadata | undefined
-): string | undefined => {
-  if (!metadata) {
-    return undefined;
-  }
-  let summary: string | undefined;
-  if (metadata.timeout) {
-    summary = "timed out";
-  } else if (metadata.aborted) {
-    summary = "aborted";
-  } else if (metadata.signal !== null && metadata.signal !== undefined) {
-    summary = `killed by ${metadata.signal}`;
-  } else if (
-    metadata.exitCode !== null &&
-    metadata.exitCode !== undefined &&
-    metadata.exitCode !== 0
-  ) {
-    summary = `exit ${metadata.exitCode}`;
-  }
-  if (metadata.truncated === true) {
-    return summary === undefined
-      ? "output truncated"
-      : `${summary} · output truncated`;
-  }
-  return summary;
-};
-
-/**
- * A short, honest note about what a tool achieved — `650 lines`, `+12 −4`,
- * `exit 1` — or undefined when there is nothing worth saying.
- *
- * Only a tool that finished successfully gets one: while a tool is running its
- * outcome is unknown, and on failure the row's `Failed` label already carries
- * the meaning, so a summary would only repeat it.
- *
- * Every metadata read is optional-chained. The field is required by the tool
- * types, but turns persisted before those tools carried metadata are already in
- * the database without it, and they have to render.
- */
-export const getPartSummary = (
-  part: AgentPart<AgentToolSet>
-): ReactNode | undefined => {
-  if (part.type === "compaction") {
-    return part.record ? "context compacted" : undefined;
-  }
-
-  if (isAgentToolPart(part) && part.state === "approval-requested") {
-    // The row's own status carries the waiting; the dialog is where the
-    // decision is made, so the row only says that one is owed.
-    if (part.approval.isAutomatic) {
-      return undefined;
-    }
-    return part.type === "tool-questionnaire"
-      ? "awaiting answers"
-      : "awaiting approval";
-  }
-
-  if (part.type === "tool-questionnaire") {
-    if (part.state === "approval-responded") {
-      return part.approval.approved ? "answers submitted" : "declined";
-    }
-    if (part.state === "output-denied") {
-      return "declined";
-    }
-  }
-
-  // A `task` call is the one row worth reading before it has finished: its
-  // label holds the description the model wrote, which does not say which
-  // subagent is at work. Nothing else is summarized while it runs.
-  if (part.type === "tool-task" && part.state === "input-available") {
-    return part.input?.subagent_type;
-  }
-
-  if (!isAgentToolPart(part) || !isAgentStaticToolPart(part)) {
-    return undefined;
-  }
-  if (part.state !== "output-available" || part.output.code !== "ok") {
-    return undefined;
-  }
-
-  // Read the metadata per case, not once above: a single `const metadata =
-  // part.output.metadata` widens to the union of every tool's metadata, and the
-  // switch below can no longer narrow it.
-  switch (part.type) {
-    case "tool-read-file": {
-      return summarizeFileRead(part.output.metadata);
-    }
-
-    case "tool-load-skill": {
-      return part.input?.skill ?? summarizeFileRead(part.output.metadata);
-    }
-
-    case "tool-grep": {
-      // `matchCount` is the number of *rendered output lines*, not matches: it
-      // is capped by the limit, and with `context > 0` a match contributes its
-      // surrounding lines too. So the label says lines, and says so louder when
-      // a cap was hit, because then the real number is only a lower bound.
-      const { metadata } = part.output;
-      if (!metadata) {
-        return undefined;
-      }
-      if (metadata.matchCount === 0) {
-        return "no matches";
-      }
-      const count =
-        metadata.truncatedByBytes || metadata.truncatedByLines
-          ? `${metadata.matchCount}+`
-          : `${metadata.matchCount}`;
-      return (part.input?.context ?? 0) > 0
-        ? `${count} lines (with context)`
-        : `${count} matching lines`;
-    }
-
-    case "tool-glob": {
-      // Same caveat as grep: `count` is capped by the limit.
-      const { metadata } = part.output;
-      if (!metadata) {
-        return undefined;
-      }
-      if (metadata.count === 0) {
-        return "no files";
-      }
-      return metadata.truncatedByBytes || metadata.truncatedByLines
-        ? `${metadata.count}+ files`
-        : `${metadata.count} files`;
-    }
-
-    case "tool-bash":
-    case "tool-powershell": {
-      return summarizeShell(part.output.metadata);
-    }
-
-    case "tool-job-output": {
-      return part.output.metadata?.job.status;
-    }
-
-    case "tool-job-list": {
-      const { metadata } = part.output;
-      if (!metadata) {
-        return undefined;
-      }
-      return `${metadata.count} jobs`;
-    }
-
-    case "tool-job-kill": {
-      const { metadata } = part.output;
-      if (!metadata) {
-        return undefined;
-      }
-      return metadata.outcome === "cancellation-requested"
-        ? "cancelling"
-        : undefined;
-    }
-
-    case "tool-web-fetch": {
-      const { metadata } = part.output;
-      if (!metadata) {
-        return undefined;
-      }
-      const label = metadata.title || metadata.url;
-      return metadata.truncated ? `${label} (truncated)` : label;
-    }
-
-    case "tool-edit-file": {
-      const { metadata } = part.output;
-      if (!metadata) {
-        return undefined;
-      }
-      return (
-        <>
-          <span className="text-green-600 tabular-nums">
-            +{metadata.linesAdded}
-          </span>
-          <span className="text-destructive tabular-nums">
-            {" −"}
-            {metadata.linesRemoved}
-          </span>
-          {metadata.replacements > 1 && ` · ${metadata.replacements} blocks`}
-        </>
-      );
-    }
-
-    case "tool-write-file": {
-      const { metadata } = part.output;
-      if (!metadata) {
-        return undefined;
-      }
-      const action = metadata.created ? "created" : "updated";
-      return metadata.lines > 0
-        ? `${action} · ${metadata.lines} lines`
-        : action;
-    }
-
-    case "tool-delete-file": {
-      const { metadata } = part.output;
-      if (!metadata) {
-        return undefined;
-      }
-      return metadata.kind === "directory"
-        ? "directory deleted"
-        : "file deleted";
-    }
-
-    case "tool-task": {
-      // Which subagent ran, whether the call is done or only reporting from
-      // part-way through. A subagent that ended badly comes back as
-      // `code: "error"`, and the guard above has already left the row to say
-      // that on its own.
-      return part.input?.subagent_type;
-    }
-
-    case "tool-questionnaire": {
-      const { metadata } = part.output;
-      if (!metadata || metadata.status !== "submitted") {
-        return undefined;
-      }
-      return `${metadata.answered}/${metadata.total} answered`;
-    }
-
-    case "tool-search-tools":
-    case "tool-call-tool": {
-      // 目录工具没有可摘要的结果：一行的标题就是它在干什么。
-      return undefined;
-    }
-
-    default: {
-      return undefined;
-    }
-  }
-};
-
-/**
- * The approval fields a row can show, whichever state holds them. Restated here
- * for the same reason as the metadata types above: the protocol keeps the shape
- * of its own `approval`, and a change to it should fail to compile here rather
- * than leave a panel blank.
- */
-export type RowApproval = {
-  id: string;
-  approved?: boolean;
-  descriptor?: unknown;
-  requestReason?: string;
-  isAutomatic?: boolean;
-  signature?: string;
-  inputSchemaInput?: unknown;
-};
 
 /**
  * How long a row took, in milliseconds, or undefined when that is not known.

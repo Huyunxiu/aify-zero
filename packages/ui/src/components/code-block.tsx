@@ -11,7 +11,7 @@ import { Button } from "./button"
 import { ScrollArea } from "./scroll-area"
 
 const codeBlockVariants = cva(
-  "group/code-block relative flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-neutral-12 text-sm has-[[data-slot=scroll-area-viewport]:focus-visible]:border-ring",
+  "group/code-block relative flex w-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-neutral-0 text-sm has-[[data-slot=scroll-area-viewport]:focus-visible]:border-ring",
   {
     variants: {
       variant: {
@@ -46,7 +46,7 @@ function CodeBlockHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="code-block-header"
       className={cn(
-        "flex h-8 shrink-0 items-center gap-2.5 border-b border-border bg-muted/50 px-3",
+        "flex h-8 shrink-0 items-center gap-2.5 border-b border-border bg-muted/40 px-3",
         className
       )}
       {...props}
@@ -59,7 +59,7 @@ function CodeBlockTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="code-block-title"
       className={cn(
-        "min-w-0 truncate font-mono text-[11px] tracking-[0.12em] text-muted-foreground uppercase group-data-[variant=destructive]/code-block:text-destructive",
+        "min-w-0 truncate font-mono text-[11px] tracking-[0.12em] text-accent-foreground uppercase group-data-[variant=destructive]/code-block:text-destructive",
         className
       )}
       {...props}
@@ -142,7 +142,7 @@ function CodeBlockContent({
         dir="ltr"
         style={{ counterReset: `line ${startLine - 1}`, ...style }}
         className={cn(
-          "min-h-0 min-w-0 px-3 py-1.5 text-start font-mono text-xs leading-[1.6] outline-none data-wrap:wrap-break-word data-wrap:whitespace-pre-wrap",
+          "min-h-0 min-w-0 px-3 py-3 text-start font-mono text-xs leading-[1.6] outline-none data-wrap:wrap-break-word data-wrap:whitespace-pre-wrap",
           className
         )}
         {...props}
