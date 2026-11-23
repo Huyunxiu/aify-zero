@@ -1,38 +1,59 @@
-# 已读以页面可见为准
+# The read mark requires a visible page
 
-发件箱用 `session.status` 的 `done` 回答「有没有人在看」。ADR 0019 的推演里，桌面关窗
-之后渲染进程就不在了；实际上 macOS 上关窗只是 `hide()`，托盘留着进程，页面也留着一条
-到会话事件的连接。回合落定时，隐藏的页面照样收到 `run.end`、照样把会话标记为 `idle`。
-投递器于是把「刚跑完但没人看见」读成「有人看过」，系统通知永远不弹——而关窗后的通知
-正是这个功能存在的理由。
+The outbox answers "is anybody watching" with the `done` status of a session. In
+the reasoning of ADR 0019, the renderer is gone once the desktop window closes.
+In practice, closing a window on macOS is only a `hide()`: the tray keeps the
+process, and the page keeps a connection to the session events. When a turn
+settles, the hidden page still receives `run.end` and still marks the session
+`idle`. The dispatcher then reads "it just finished and nobody saw it" as
+"somebody saw it", and the system notice never fires — while a notice after a
+closed window is the reason this feature exists.
 
-## 决定
+## Decision
 
-页面只在 `document.visibilityState === "visible"` 时标记已读。隐藏时不动；
-`visibilitychange` 回到可见时再补做。
+A page marks a session read only while `document.visibilityState === "visible"`.
+It does nothing while hidden, and catches up on `visibilitychange` when the page
+comes back.
 
-标记已读时，服务端同时把这个会话还没投出去的发件行写成 `expired_at`：这些行指向的
-回合就在用户刚刚看到的会话记录里。不这样做，下一次运行把会话重新写成 `done` 之后，
-旧行会和新行一起弹出来。发件箱的取件查询本身不变，仍是会话为 `done`、越过竞态余量、
-不早于连接登记时刻；变的是「有人看」会提前清掉待投的行。
+Marking read also writes `expired_at` on every outbox row of that session that
+has not been delivered yet: those rows point at turns the user has just seen.
+Without this, the next run sets the session `done` again and the old rows pop up
+beside the new one. The outbox query itself does not change: the session is
+`done`, the race margin has passed, and the connection was registered earlier.
+What changes is that "somebody watched" expires the pending rows early.
 
-「读过」的前提是人看得见。页面存在不等于人看得见；唯一知道这件事的是页面自己。
+"Read" assumes that a person can see. A page that exists is not a page that a
+person sees; the page itself is the only thing that knows.
+
+A session that another route covers counts as unseen. Settings covers the
+session, and the session keeps streaming behind it (ADR 0027). The page is
+visible; the session is not. A covered session is therefore not read either.
 
 ## Considered Options
 
-- **让桌面主进程在隐藏时告诉服务端**：多一条 IPC 和一份服务端状态。主进程还得知道
-  用户正看着哪条会话，而它今天不知道；页面本来就知道。
-- **不看已读，有订阅就投**：窗口开着、正看着这条会话时也会弹。要消掉这份噪音，最终
-  仍要回到可见性判断。
-- **把「可见」做成服务端概念**：服务端看不到窗口，只能让客户端上报，等于第一个选项
-  再加一层。
+- **Let the desktop main process report visibility to the server**: one more IPC
+  channel and one more piece of server state. The main process would also have to
+  know which session the user is looking at, and today it does not; the page
+  already knows.
+- **Ignore the read mark and deliver to every subscriber**: a notice would then
+  fire while the window is open and the session is on screen. Removing that noise
+  leads back to visibility in the end.
+- **Make "visible" a server concept**: the server cannot see a window, so it
+  would ask the client to report it — the first option with an extra layer.
 
 ## Consequences
 
-- 关进托盘、最小化期间落定的回合保持 `done`，回到前台才标记已读；侧栏的勾在那之前
-  留着。
-- 标记已读会让该会话待投的发件行过期；`delivered_at` 与 `expired_at` 仍然分开记账。
-- 窗口可见但停在别的会话时，这条会话仍算没看过，仍然发系统通知。这和既有行为一致。
-- 窗口完全被别的窗口遮住时，Chromium 可能仍报 `visible`。这是可见性 API 的边界，
-  不在本决定内。
-- 浏览器里不订阅发件箱；这条规则只影响桌面与浏览器共用的会话页面。
+- A turn that settles while the window is in the tray or minimized stays `done`;
+  the page marks it read when it comes back to the front, and the tick in the
+  sidebar stays until then.
+- Marking read expires the session's undelivered outbox rows. `delivered_at` and
+  `expired_at` stay separate accounts.
+- A window that is visible but parked on another session still counts as unseen
+  for the first session, so its notice still fires. This matches the behaviour
+  before this decision.
+- A window that is fully covered by another window may still report `visible`.
+  That is the edge of the visibility API and is outside this decision.
+- A session covered by a route stays unread: a turn that ends behind settings
+  still produces its notice.
+- The browser does not subscribe to the outbox. This rule only affects the
+  session screen that the desktop and the browser share.

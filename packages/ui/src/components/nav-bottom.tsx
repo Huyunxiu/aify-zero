@@ -1,35 +1,30 @@
-import { useState } from "react";
-import { Bolt, UserCog, Palette, Bot } from "lucide-react"
+import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@workspace/ui/components/sidebar"
-import { Dialog, DialogContent, DialogTrigger } from "@workspace/ui/components/dialog";
-import { Settings } from "../elements/settings/settings"
+} from "@workspace/ui/components/sidebar";
+import { Bolt } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function NavBottom() {
-  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const matchRoute = useMatchRoute();
+  const { t } = useTranslation();
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <Dialog modal={true} onOpenChange={setOpen} open={open}>
-          <DialogTrigger
-            render={
-              <SidebarMenuButton>
-                <Bolt strokeWidth={1.5} />
-                <span>Setting</span>
-              </SidebarMenuButton>
-            }
-          />
-          <DialogContent
-            className="h-screen max-h-none w-screen overflow-hidden rounded-none bg-sidebar p-0 sm:max-w-none"
-            showCloseButton={false}
-          >
-            <Settings onClose={() => setOpen(false)} />
-          </DialogContent>
-        </Dialog>
+        <SidebarMenuButton
+          isActive={Boolean(matchRoute({ fuzzy: true, to: "/settings" }))}
+          onClick={() => {
+            void navigate({ to: "/settings" });
+          }}
+        >
+          <Bolt strokeWidth={1.5} />
+          <span>{t("settings.title")}</span>
+        </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>
-  )
+  );
 }

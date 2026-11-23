@@ -14,6 +14,8 @@ export type SessionContainerProps = {
   questionnairePlacement?: QuestionnairePlacement;
   /** Closes the pane showing this session, when it can be pointed elsewhere. */
   onClose?: () => void;
+  /** Whether an opaque layer stands between the reader and this session. */
+  covered: boolean;
 };
 
 export function SessionContainer({
@@ -22,6 +24,7 @@ export function SessionContainer({
   readOnly,
   questionnairePlacement,
   onClose,
+  covered,
 }: SessionContainerProps) {
   const listSessionTurnsQuery = useQuery({
     queryKey: ["listSessionTurns", sessionId],
@@ -51,6 +54,7 @@ export function SessionContainer({
       readOnly={readOnly}
       questionnairePlacement={questionnairePlacement}
       onClose={onClose}
+      covered={covered}
     />
   );
 }
