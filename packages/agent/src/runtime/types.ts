@@ -54,6 +54,7 @@ export type RunnerState = {
 export type CreateSessionInput = {
   sessionId: string;
   title?: string;
+  botId?: string;
   projectId?: string;
   metadata?: unknown;
   /**
@@ -97,6 +98,7 @@ export type BuildAgentInput = {
   session: AgentSession;
   model: ModelRef;
   effort?: ModelEffort;
+  botId?: string;
   projectId?: string;
   /** 子会话工厂复用它，否则子会话会绕过运行器的锁。 */
   streams: StreamEventRegistry<AgentToolSet>;

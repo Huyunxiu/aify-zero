@@ -53,17 +53,49 @@ function detectEnvironment(now: Date): EnvironmentInfo {
  * 路径来自沙箱的自我描述，不写死宿主目录：换一个适配器，模型看到的就是那个
  * 环境里真实存在的路径。
  */
-export function renderEnvironment(
-  description: SandboxDescription,
-  sessionDir: string,
-  info: EnvironmentInfo
-): string {
-  const primary = description.cwd;
-  const additional = description.roots.filter(
-    (dir) => dir !== primary && dir !== sessionDir
-  );
+export interface EnvironmentRenderOptions {
+  readonly botWorkspaceDir?: string;
+  readonly projectDirs?: readonly string[];
+}
 
-  // 单目录时用单数形式，避免提示词里出现一个只有一项的列表。
+function renderWorkspaceLines(
+  primary: string,
+  candidateRoots: readonly string[],
+  sessionDir: string,
+  botWorkspaceDir?: string
+): string[] {
+  if (botWorkspaceDir === undefined) {
+    const additional = candidateRoots.filter(
+      (dir) => dir !== primary && dir !== sessionDir
+    );
+    // 单目录时用单数形式，避免提示词里出现一个只有一项的列表。
+    return additional.length === 0
+      ? [`- Project directory: ${primary} (relative paths resolve here)`]
+      : [
+          "- Project directories:",
+          `  - ${primary} (primary; relative paths resolve here)`,
+          ...additional.map((dir) => `  - ${dir}`),
+        ];
+  }
+
+  if (primary === botWorkspaceDir) {
+    const extraProjects = candidateRoots.filter(
+      (dir) => dir !== primary && dir !== sessionDir && dir !== botWorkspaceDir
+    );
+    return [
+      `- Bot workspace directory: ${botWorkspaceDir} (relative paths resolve here)`,
+      ...(extraProjects.length === 0
+        ? []
+        : [
+            "- Additional project directories:",
+            ...extraProjects.map((dir) => `  - ${dir}`),
+          ]),
+    ];
+  }
+
+  const additional = candidateRoots.filter(
+    (dir) => dir !== primary && dir !== sessionDir && dir !== botWorkspaceDir
+  );
   const projectLines =
     additional.length === 0
       ? [`- Project directory: ${primary} (relative paths resolve here)`]
@@ -74,9 +106,30 @@ export function renderEnvironment(
         ];
 
   return [
+    ...projectLines,
+    `- Bot workspace directory: ${botWorkspaceDir} (persistent workspace for this Bot)`,
+  ];
+}
+
+export function renderEnvironment(
+  description: SandboxDescription,
+  sessionDir: string,
+  info: EnvironmentInfo,
+  options: EnvironmentRenderOptions = {}
+): string {
+  const primary = description.cwd;
+  const candidateRoots = options.projectDirs ?? description.roots;
+  const workspaceLines = renderWorkspaceLines(
+    primary,
+    candidateRoots,
+    sessionDir,
+    options.botWorkspaceDir
+  );
+
+  return [
     "# Environment",
     "",
-    ...projectLines,
+    ...workspaceLines,
     `- Session directory: ${sessionDir} (session-scoped scratch space for temporary files and artifacts)`,
     // 只有沙箱自己说了限制才渲染这一行：本机直跑没有要提前告诉模型的边界。
     ...(description.note === undefined
@@ -111,7 +164,11 @@ export class EnvironmentExtension extends Extension {
     const rendered = renderEnvironment(
       api.environment.sandbox.describe(),
       api.agent.sessionDir,
-      this.#info
+      this.#info,
+      {
+        botWorkspaceDir: api.environment.botWorkspaceDir,
+        projectDirs: api.agent.projectDirs,
+      }
     );
 
     api.instructionsSection({

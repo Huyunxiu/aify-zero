@@ -11,6 +11,7 @@ const session = (id: string): SessionRecord => ({
   id,
   title: "",
   metadata: {},
+  botId: "default",
   projectId: "p1",
   kind: "main",
   activeHeadId: null,

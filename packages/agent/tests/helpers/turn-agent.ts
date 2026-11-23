@@ -21,6 +21,7 @@ export class FakeStore {
     id: string;
     title: string;
     metadata: Record<string, never>;
+    botId: string;
     projectId: null;
     kind: "main";
     activeHeadId: null;
@@ -73,6 +74,7 @@ const sessionRow = {
   id: "session-1",
   title: "Test session",
   metadata: {},
+  botId: "default",
   projectId: null,
   kind: "main" as const,
   activeHeadId: null,

@@ -1,3 +1,4 @@
+import type { BotGlobalSkillsMode } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 import { SKILL_DIRS, SkillManager } from "../skill/skill-manager";
@@ -36,16 +37,32 @@ export async function loadSkills(
   return skills;
 }
 
+export type FileSystemSkillSourceOptions = {
+  dirs?: readonly string[];
+  botSkillsDir?: string;
+  scanProject?: boolean;
+  globalMode?: BotGlobalSkillsMode;
+  globalNames?: readonly string[];
+};
+
 /** 从文件系统加载技能，包住现有的 `SkillManager.scan`。 */
 export class FileSystemSkillSource implements SkillSource {
-  readonly #dirs: readonly string[];
+  readonly #options: FileSystemSkillSourceOptions;
 
-  constructor(options: { dirs?: readonly string[] } = {}) {
-    this.#dirs = options.dirs ?? SKILL_DIRS;
+  constructor(options: FileSystemSkillSourceOptions = {}) {
+    this.#options = options;
   }
 
   load(context: ResourceLoadContext): Promise<SkillInfo[]> {
-    const manager = new SkillManager({ dirs: this.#dirs });
-    return manager.scan(context.projectDir);
+    const manager = new SkillManager({
+      dirs: this.#options.dirs ?? SKILL_DIRS,
+    });
+    return manager.scan({
+      projectDir: context.projectDir,
+      scanProject: this.#options.scanProject,
+      botSkillsDir: this.#options.botSkillsDir,
+      globalMode: this.#options.globalMode,
+      globalNames: this.#options.globalNames,
+    });
   }
 }

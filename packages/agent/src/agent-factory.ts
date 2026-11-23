@@ -1,5 +1,8 @@
-import type { ApprovalPolicy } from "@workspace/agent-client";
-import { DEFAULT_APPROVAL_POLICY } from "@workspace/agent-client";
+import type { ApprovalPolicy, BotToolGroups } from "@workspace/agent-client";
+import {
+  DEFAULT_APPROVAL_POLICY,
+  DEFAULT_BOT_TOOL_GROUPS,
+} from "@workspace/agent-client";
 import type { Sandbox } from "@workspace/sandbox";
 import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
@@ -92,6 +95,12 @@ export interface SessionAgentOptions {
   /** 当前会话的私有目录。 */
   sessionDir: string;
   projectId?: string;
+  /** Owning Bot identifier. */
+  botId?: string;
+  /** Persistent workspace directory of the owning Bot. */
+  botWorkspaceDir?: string;
+  /** Built-in tool groups enabled for this Bot; defaults to all enabled. */
+  enabledToolGroups?: Partial<BotToolGroups>;
   /** 用户设置里的压缩开关；阈值由压缩策略按模型窗口解析。 */
   compactionOverrides?: CompactionPolicyOverrides;
   /** 每个已配置模型的上下文窗口，按供应商和模型两级索引。 */
@@ -153,11 +162,17 @@ export interface SessionAgentOptions {
 export async function createSessionAgent(
   options: SessionAgentOptions
 ): Promise<Agent> {
+  const toolGroups: BotToolGroups = {
+    ...DEFAULT_BOT_TOOL_GROUPS,
+    ...options.enabledToolGroups,
+  };
+  const jobsEnabled = toolGroups.jobs && toolGroups.shell;
+
   // 定时器的视图在这里绑死：会话 id 和起跑配置由装配处决定，工具拿不到它们，
   // 也就排不出属于别的会话、用别的模型的定时器。到期那次运行用的是**设定时器
   // 时**的模型——进程重启之后内存里没有别的来源（ADR 0016）。
   const timers =
-    options.timers === undefined
+    !toolGroups.timers || options.timers === undefined
       ? undefined
       : bindSessionTimers(options.timers, {
           sessionId: options.sessionId,
@@ -178,11 +193,13 @@ export async function createSessionAgent(
     projectDirs: options.projectDirs,
     sessionDir: options.sessionDir,
     projectId: options.projectId,
+    botId: options.botId,
+    botWorkspaceDir: options.botWorkspaceDir,
     model: options.model.ref,
     modelEffort: options.model.effort,
     compactionOverrides: options.compactionOverrides,
     modelContextWindows: options.modelContextWindows,
-    jobs: options.jobs,
+    jobs: jobsEnabled ? options.jobs : undefined,
     timers,
     steering: options.steering,
     sandbox: options.sandbox,
@@ -200,14 +217,18 @@ export async function createSessionAgent(
     model: options.model.ref,
     modelEffort: options.model.effort,
     resolveModel: options.resolveModel,
-    subagentFactory: (owner) =>
-      createSubagentFactory({
-        agent: owner,
-        store: options.store,
-        registry:
-          options.streamRegistry ??
-          (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
-      }),
+    ...(toolGroups.subagent
+      ? {
+          subagentFactory: (owner) =>
+            createSubagentFactory({
+              agent: owner,
+              store: options.store,
+              registry:
+                options.streamRegistry ??
+                (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
+            }),
+        }
+      : {}),
   });
 
   try {
@@ -231,22 +252,34 @@ export async function createSessionAgent(
       new CompactionExtension({ id: "compaction" })
     );
     await agent.registerExtension(new TitleExtension({ id: "title" }));
-    await agent.registerExtension(new FileToolsExtension());
-    await agent.registerExtension(new ShellToolsExtension());
-    await agent.registerExtension(new WebToolsExtension());
-    await agent.registerExtension(
-      new JobsToolsExtension({
-        id: "jobs-tools",
-        ...(options.jobTools === undefined
-          ? {}
-          : { toolOptions: options.jobTools }),
-      })
-    );
-    await agent.registerExtension(
-      new TimersToolsExtension({ id: "timers-tools" })
-    );
+    if (toolGroups.files) {
+      await agent.registerExtension(new FileToolsExtension());
+    }
+    if (toolGroups.shell) {
+      await agent.registerExtension(new ShellToolsExtension());
+    }
+    if (toolGroups.web) {
+      await agent.registerExtension(new WebToolsExtension());
+    }
+    if (jobsEnabled) {
+      await agent.registerExtension(
+        new JobsToolsExtension({
+          id: "jobs-tools",
+          ...(options.jobTools === undefined
+            ? {}
+            : { toolOptions: options.jobTools }),
+        })
+      );
+    }
+    if (toolGroups.timers) {
+      await agent.registerExtension(
+        new TimersToolsExtension({ id: "timers-tools" })
+      );
+    }
     await agent.registerExtension(new QuestionnaireExtension());
-    await agent.registerExtension(new SubagentExtension());
+    if (toolGroups.subagent) {
+      await agent.registerExtension(new SubagentExtension());
+    }
     // 宿主扩展（MCP 等）在这一句之后注册，所以 `entries` 读的必须是活的工具集，
     // 而不是此刻的条目快照。
     await agent.registerExtension(
@@ -265,7 +298,9 @@ export async function createSessionAgent(
     throw error;
   }
 
-  agent.instructions = appendSubagentPrompt(options.instructions ?? "");
+  agent.instructions = toolGroups.subagent
+    ? appendSubagentPrompt(options.instructions ?? "")
+    : (options.instructions ?? "");
 
   return agent;
 }

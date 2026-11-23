@@ -182,6 +182,7 @@ export async function resolveSubagentSession(
     toolCallId,
     description,
     prompt,
+    botId,
     projectId,
     approvalPolicy,
   }: {
@@ -189,6 +190,8 @@ export async function resolveSubagentSession(
     toolCallId: string;
     description: string;
     prompt: string;
+    /** Owning Bot of the parent session. */
+    botId?: string;
     /** 父会话的项目归属；子会话跟着父走，列表按项目过滤时才不会漏掉它。 */
     projectId?: string;
     /** The effective policy of the parent. The child row copies it, or it falls back to Standard. */
@@ -223,6 +226,7 @@ export async function resolveSubagentSession(
     kind: "subagent",
     parentSessionId,
     parentToolCallId: toolCallId,
+    ...(botId === undefined ? {} : { botId }),
     projectId,
     approvalPolicy,
   });
@@ -281,6 +285,7 @@ export async function createSubagent(
       toolCallId: parent.toolCallId,
       description,
       prompt,
+      botId: parent.context.botId,
       projectId: parent.context.projectId,
       approvalPolicy: parent.approvalPolicy,
     }
@@ -293,6 +298,8 @@ export async function createSubagent(
     projectDirs: parent.context.projectDirs,
     // 子 agent 共享父会话的目录：它产出的临时文件属于同一个会话。
     sessionDir: parent.context.sessionDir,
+    botId: parent.context.botId,
+    botWorkspaceDir: parent.context.botWorkspaceDir,
     projectId: parent.context.projectId,
     model: resolvedModel,
     modelEffort: parent.context.modelEffort,

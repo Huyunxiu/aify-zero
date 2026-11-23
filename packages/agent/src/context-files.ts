@@ -23,6 +23,10 @@ export interface LoadProjectContextFilesOptions {
    * 省略时使用 `~/.aify-studio`、`~/.agents`；传 `[]` 可以完全关闭全局加载。
    */
   globalDirs?: string[];
+  /** Bot Home directory holding Bot-level `AGENTS.md` / `CLAUDE.md`. */
+  botHomeDir?: string;
+  /** Whether to walk ancestor directories from `cwd` (defaults to `true`). */
+  scanProject?: boolean;
 }
 
 /** 用户级上下文目录名，按优先级排列。 */
@@ -211,6 +215,18 @@ export function loadProjectContextFiles(
       contextFiles.push(globalContext);
       seenPaths.add(globalContext.path);
     }
+  }
+
+  if (options.botHomeDir) {
+    const botContext = loadContextFileFromDir(resolveInput(options.botHomeDir));
+    if (botContext && !seenPaths.has(botContext.path)) {
+      contextFiles.push(botContext);
+      seenPaths.add(botContext.path);
+    }
+  }
+
+  if (options.scanProject === false) {
+    return contextFiles;
   }
 
   const ancestorContextFiles: ContextFile[] = [];

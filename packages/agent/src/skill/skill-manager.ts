@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import type { BotGlobalSkillsMode } from "@workspace/agent-client";
 import { glob } from "glob";
 import matter from "gray-matter";
 
@@ -8,11 +10,25 @@ import {
   getGlobalResourceRoots,
   getProjectResourceRoots,
 } from "../resource-dirs";
-import type { SkillInfo, SkillMetadata } from "./skill-types";
+import type { SkillCategory, SkillInfo, SkillMetadata } from "./skill-types";
 
 /** 技能目录，按优先级排列：越靠前优先级越高。 */
 export const SKILL_DIRS = [".aify-studio", ".agents"];
 export const SKILL_PATTERN = "skills/**/SKILL.md";
+export const BOT_SKILL_PATTERN = "**/SKILL.md";
+
+export type SkillScanOptions = {
+  /** Project directory to scan for `.aify-studio/skills` and `.agents/skills`. */
+  projectDir?: string;
+  /** Whether to scan `projectDir` (defaults to true when `projectDir` is set). */
+  scanProject?: boolean;
+  /** Bot private skills directory (`<botHome>/skills`). */
+  botSkillsDir?: string;
+  /** How host global skills are inherited (`none` | `all` | `selected`; defaults to `all`). */
+  globalMode?: BotGlobalSkillsMode;
+  /** Allowed host global skill names when `globalMode === "selected"`. */
+  globalNames?: readonly string[];
+};
 
 /** Front matter can parse to anything; only a mapping carries metadata. */
 function toMetadata(data: unknown): SkillMetadata {
@@ -33,9 +49,26 @@ function getStringField(value: unknown): string | undefined {
 /** A skill paired with the rank that decides where it sits in the lookup order. */
 type RankedSkill = { skill: SkillInfo; rank: [number, number, number] };
 
+function categoryRank(category: SkillCategory): number {
+  switch (category) {
+    case "project": {
+      return 0;
+    }
+    case "bot": {
+      return 1;
+    }
+    case "global": {
+      return 2;
+    }
+    default: {
+      return 3;
+    }
+  }
+}
+
 /**
  * Where a skill sits in the lookup order，依次比较：
- * 1. scope：project 压过 global
+ * 1. scope：project 压过 bot，bot 压过 global
  * 2. source 优先级：数值越小越强，用来决定数据库和文件系统谁覆盖谁
  * 3. 目录：同一个 source 内，`dirs` 里靠前的目录赢
  */
@@ -43,7 +76,7 @@ function skillRank(
   skill: SkillInfo,
   dirs: readonly string[]
 ): [number, number, number] {
-  const level = skill.category === "project" ? 0 : 1;
+  const level = categoryRank(skill.category);
   const source = skill.priority ?? 0;
   const index = dirs.indexOf(skill.dir);
   // A dir outside `dirs` can only come from a hand-built fixture; it ranks last.
@@ -91,21 +124,50 @@ export class SkillManager {
     return manager;
   }
 
-  async loadSkills(projectDir: string) {
-    this.skills = await this.scan(projectDir);
+  async loadSkills(input: string | SkillScanOptions) {
+    this.skills = await this.scan(input);
   }
 
-  async scan(projectDir: string): Promise<SkillInfo[]> {
-    const levels = [
-      {
-        category: "global" as const,
+  async scan(input: string | SkillScanOptions): Promise<SkillInfo[]> {
+    const options: SkillScanOptions =
+      typeof input === "string" ? { projectDir: input } : input;
+    const globalMode = options.globalMode ?? "all";
+    const selectedGlobal =
+      globalMode === "selected" ? new Set(options.globalNames) : undefined;
+
+    type ScanLevel = {
+      category: SkillCategory;
+      pattern: string;
+      roots: readonly { dir: string; root: string }[];
+      allowedNames?: ReadonlySet<string>;
+    };
+
+    const levels: ScanLevel[] = [];
+
+    if (globalMode !== "none") {
+      levels.push({
+        category: "global",
+        pattern: SKILL_PATTERN,
         roots: getGlobalResourceRoots(this.dirs),
-      },
-      {
-        category: "project" as const,
-        roots: getProjectResourceRoots(projectDir, this.dirs),
-      },
-    ];
+        allowedNames: selectedGlobal,
+      });
+    }
+
+    if (options.botSkillsDir && existsSync(options.botSkillsDir)) {
+      levels.push({
+        category: "bot",
+        pattern: BOT_SKILL_PATTERN,
+        roots: [{ dir: "skills", root: options.botSkillsDir }],
+      });
+    }
+
+    if (options.scanProject !== false && options.projectDir) {
+      levels.push({
+        category: "project",
+        pattern: SKILL_PATTERN,
+        roots: getProjectResourceRoots(options.projectDir, this.dirs),
+      });
+    }
 
     const skills: SkillInfo[] = [];
 
@@ -113,7 +175,7 @@ export class SkillManager {
       for (const { dir, root } of level.roots) {
         let matches: string[] = [];
         try {
-          matches = await glob(SKILL_PATTERN, {
+          matches = await glob(level.pattern, {
             cwd: root,
             absolute: true,
             nodir: true,
@@ -140,13 +202,18 @@ export class SkillManager {
           }
 
           const metadata = toMetadata(parsed.data);
+          const name =
+            getStringField(metadata.name) ??
+            path.basename(path.dirname(location));
+
+          if (level.allowedNames && !level.allowedNames.has(name)) {
+            continue;
+          }
 
           skills.push({
             // A skill is identified by its front matter name, or by the
             // directory it lives in when the field is missing.
-            name:
-              getStringField(metadata.name) ??
-              path.basename(path.dirname(location)),
+            name,
             description: getStringField(metadata.description) ?? "",
             location,
             dir,
@@ -162,10 +229,7 @@ export class SkillManager {
     return skills;
   }
 
-  query(filters?: {
-    name?: string;
-    category?: "global" | "project";
-  }): SkillInfo[] {
+  query(filters?: { name?: string; category?: SkillCategory }): SkillInfo[] {
     let results = [...this.skills];
 
     const name = filters?.name;

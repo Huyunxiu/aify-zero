@@ -312,6 +312,7 @@ export class RunController {
         id: this.#deps.sessionId,
         title: "",
         metadata: {},
+        ...(context.botId === undefined ? {} : { botId: context.botId }),
         projectId: context.projectId,
       });
     }

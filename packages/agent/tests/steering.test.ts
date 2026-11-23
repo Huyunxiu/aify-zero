@@ -62,6 +62,7 @@ const sessionRow: SessionRecord = {
   id: "session-1",
   title: "Test session",
   metadata: {},
+  botId: "default",
   projectId: null,
   kind: "main",
   activeHeadId: null,

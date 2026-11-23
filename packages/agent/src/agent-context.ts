@@ -55,6 +55,10 @@ export type AgentContextOptions = AgentStateOptions & {
    * 没有项目归属的调用方可以省略。
    */
   projectId?: string;
+  /** Owning Bot identifier for this session. */
+  botId?: string;
+  /** Persistent workspace directory of the owning Bot. */
+  botWorkspaceDir?: string;
   /**
    * 启动时注册的系统提示片段。子 agent 从这里继承，保证主会话和子会话
    * 看到同一套说明。
@@ -106,6 +110,8 @@ export class AgentContext extends AgentState {
   sessionId: string;
   sessionDir: string;
   projectId?: string;
+  botId?: string;
+  botWorkspaceDir?: string;
   instructionsSections: readonly InstructionsSection[];
   compaction?: ResolvedCompactionPolicy;
   compactionOverrides?: CompactionPolicyOverrides;
@@ -134,6 +140,8 @@ export class AgentContext extends AgentState {
     this.sessionId = options.sessionId;
     this.sessionDir = options.sessionDir;
     this.projectId = options.projectId;
+    this.botId = options.botId;
+    this.botWorkspaceDir = options.botWorkspaceDir;
     this.instructionsSections = options.instructionsSections ?? [];
     this.compaction = options.compaction;
     this.compactionOverrides = options.compactionOverrides;

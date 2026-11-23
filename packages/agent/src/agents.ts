@@ -179,6 +179,12 @@ export class Agent {
       ...(this.context.projectId === undefined
         ? {}
         : { projectId: this.context.projectId }),
+      ...(this.context.botId === undefined
+        ? {}
+        : { botId: this.context.botId }),
+      ...(this.context.botWorkspaceDir === undefined
+        ? {}
+        : { botWorkspaceDir: this.context.botWorkspaceDir }),
       ...(this.context.jobs === undefined ? {} : { jobs: this.context.jobs }),
       ...(this.context.timers === undefined
         ? {}
