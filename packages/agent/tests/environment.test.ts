@@ -82,12 +82,11 @@ describe(EnvironmentExtension, () => {
     await manager.add(
       new EnvironmentExtension({
         id: "environment",
-        // 10 月是 9，验证本地日期格式化成 YYYY-MM-DD。
+        // October is month 9: the date proves the local YYYY-MM-DD format.
         clock: () => new Date(2026, 9, 21),
         info: {
           operatingSystem: "linux 6.8",
           architecture: "x64",
-          shell: "/bin/zsh",
           nodeVersion: "v22.0.0",
         },
       })
@@ -102,7 +101,6 @@ describe(EnvironmentExtension, () => {
         `- Project directory: ${projectDir} (relative paths resolve here)`,
         "- Operating system: linux 6.8",
         "- Architecture: x64",
-        "- Shell: /bin/zsh",
         "- Node.js: v22.0.0",
         "",
         "## This session",
@@ -188,7 +186,6 @@ describe(EnvironmentExtension, () => {
       {
         operatingSystem: "darwin 27.0.0",
         architecture: "arm64",
-        shell: "/bin/zsh",
         nodeVersion: "v22.0.0",
       }
     );
@@ -206,7 +203,6 @@ describe(EnvironmentExtension, () => {
     const info = {
       operatingSystem: "linux 6.8",
       architecture: "x64",
-      shell: "/bin/zsh",
       nodeVersion: "v22.0.0",
     };
 
@@ -280,7 +276,6 @@ describe(EnvironmentExtension, () => {
       {
         operatingSystem: "darwin 27.0.0",
         architecture: "arm64",
-        shell: "/bin/zsh",
         nodeVersion: "v22.0.0",
       },
       {
@@ -309,7 +304,6 @@ describe(EnvironmentExtension, () => {
       {
         operatingSystem: "darwin 27.0.0",
         architecture: "arm64",
-        shell: "/bin/zsh",
         nodeVersion: "v22.0.0",
       },
       {

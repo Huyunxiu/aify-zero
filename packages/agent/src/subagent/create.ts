@@ -31,17 +31,22 @@ import type { SubagentDefinition } from "./definitions";
  *
  * A section that speaks about a tool or an owner the subagent does not share
  * gives it its own text; one that has nothing to say to a subagent returns an
- * empty block, and the join leaves it out. This is the only place that decides,
- * so the test reads the same seam the runtime uses.
+ * empty block, and the join leaves it out. `tools` is what the section needs to
+ * decide: a rule about editing a file is not for an agent that cannot edit one.
+ * This is the only place that decides, so the test reads the same seam the
+ * runtime uses.
  */
 export function renderSubagentInstructions(
   sections: readonly InstructionsSection[],
-  instruction: string
+  instruction: string,
+  tools: readonly string[]
 ): string {
   return joinBlocks([
     instruction,
     ...sections.map((section) =>
-      section.renderForSubagent ? section.renderForSubagent() : section.render()
+      section.renderForSubagent
+        ? section.renderForSubagent(tools)
+        : section.render()
     ),
   ]);
 }
@@ -337,13 +342,14 @@ export async function createSubagent(
     sandbox: parent.context.sandbox,
   });
 
+  const subagentTools = selectSubagentTools(tools ?? parent.tools, definition);
+
   let { instructions } = definition;
   instructions = renderSubagentInstructions(
     parent.context.instructionsSections,
-    instructions
+    instructions,
+    Object.keys(subagentTools)
   );
-
-  const subagentTools = selectSubagentTools(tools ?? parent.tools, definition);
 
   const agent = new Agent({
     name: `subagent:${definition.name}`,

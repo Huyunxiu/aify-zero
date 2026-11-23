@@ -1,6 +1,6 @@
 # 会话归属 Bot 且内置默认 Bot，项目保持正交可挂载
 
-> 中文副本。以 `0030-bot-owns-sessions-with-a-builtin-default.md` 为准。
+> 中文副本。以 `0032-bot-owns-sessions-with-a-builtin-default.md` 为准。
 
 每条会话都归属于一个 Bot（`session.bot_id` 非空），系统内置一个不可删除的默认 Bot
 （`id = "default"`），统一承接开箱会话与升级后的历史会话。项目保持正交可挂载的工作区概念：

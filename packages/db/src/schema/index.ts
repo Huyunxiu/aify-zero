@@ -58,7 +58,7 @@ export type BotCompactionColumn = {
 };
 
 /**
- * Persistent Bot definitions (ADR 0030, ADR 0031).
+ * Persistent Bot definitions (ADR 0032, ADR 0033).
  *
  * The built-in Default Bot uses `id = "default"` and must never be soft-deleted.
  * Literal enums and JSON shapes align with `@workspace/agent-client` (`bot.ts`,
@@ -184,7 +184,7 @@ export const session_table = sqliteTable(
     title: text("title").notNull(),
     metadata: text("metadata", { mode: "json" }),
     /**
-     * Owning Bot of this session (ADR 0030).
+     * Owning Bot of this session (ADR 0032).
      *
      * Defaults to `"default"` (the built-in Default Bot) so existing rows and
      * subagents without an explicit override always belong to a valid Bot.
