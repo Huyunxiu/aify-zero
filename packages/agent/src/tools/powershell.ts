@@ -23,7 +23,7 @@ const DESCRIPTION = `Execute a PowerShell command (\`pwsh -Command\`) in the wor
 - UTF-8 output is pinned, so non-ASCII output is not garbled.
 - A non-zero exit is reported as \`[exit code: N]\`; a terminated command as \`[killed by signal: X]\` or \`[timed out after Nms]\`.
 - Commands that run longer than the timeout are terminated (default: 2 minutes).
-- Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked.`;
+`;
 
 export const createPowerShellTool = ({
   agentContext,
