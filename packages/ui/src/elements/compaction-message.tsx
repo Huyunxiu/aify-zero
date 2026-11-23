@@ -9,14 +9,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../components/dialog";
-import {
-  Frame,
-  FrameHeader,
-  FramePanel,
-  FrameTitle,
-} from "../components/frame";
 import { Marker, MarkerContent, MarkerIcon } from "../components/marker";
 import { MessageResponse } from "./message";
+import { RenderedSection } from "./tool-panels";
 
 export function formatTokens(tokens: number): string {
   if (tokens >= 1000) {
@@ -26,11 +21,11 @@ export function formatTokens(tokens: number): string {
 }
 
 /**
- * 手工压缩在 transcript 里的样子：一条 Marker，点开是装着摘要的弹窗。
+ * 手工压缩在会话记录里的样子：一条 Marker，点开是装着摘要的弹窗。
  *
- * Marker 说明这一段历史被替换过、省下了多少；摘要太长，不放回行内，点开
- * 在弹窗里读——弹窗里的 Frame 和 assistant turn 里 compaction step 看到的
- * 面板一致。只用在独立的 compaction turn 上。
+ * The marker says this stretch of history was replaced and how much it freed.
+ * The summary is too long for the row, so it opens in a dialog — in the same
+ * card the inline compaction step uses. Used on a compaction turn of its own.
  */
 export function CompactionMessage({ record }: { record?: CompactionRecord }) {
   const { t } = useTranslation();
@@ -45,6 +40,7 @@ export function CompactionMessage({ record }: { record?: CompactionRecord }) {
     after: formatTokens(record.tokensAfter),
     before: formatTokens(record.tokensBefore),
   });
+  const detail = `${trigger} · ${tokens}`;
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>
@@ -78,20 +74,18 @@ export function CompactionMessage({ record }: { record?: CompactionRecord }) {
       >
         <DialogTitle className="sr-only">{t("compaction.title")}</DialogTitle>
         <div className="my-auto flex min-w-[70dvw] flex-col gap-4 px-5">
-          <Frame variant="default" overflowBehavior="scroll">
-            <FrameHeader>
-              <FrameTitle>
+          <RenderedSection
+            label={
+              <>
                 {t("compaction.title")}
-                <span className="ml-2 font-normal text-muted-foreground text-xs">
-                  {trigger}
+                <span className="ml-2 font-sans font-normal text-muted-foreground text-xs normal-case tracking-normal">
+                  {detail}
                 </span>
-              </FrameTitle>
-              <span className="text-muted-foreground text-xs">{tokens}</span>
-            </FrameHeader>
-            <FramePanel>
-              <MessageResponse>{record.summary}</MessageResponse>
-            </FramePanel>
-          </Frame>
+              </>
+            }
+          >
+            <MessageResponse>{record.summary}</MessageResponse>
+          </RenderedSection>
         </div>
       </DialogContent>
     </Dialog>

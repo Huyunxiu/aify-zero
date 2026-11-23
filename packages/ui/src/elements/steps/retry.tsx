@@ -1,6 +1,6 @@
 import { RotateCwIcon } from "lucide-react";
 
-import { Frame, FramePanel } from "../../components/frame";
+import { RenderedSection } from "../tool-panels";
 import { MarkdownBody } from "./markdown-body";
 import { StepLabel, StepShell } from "./shell";
 import type { StepViewProps } from "./types";
@@ -17,11 +17,9 @@ export const RetryStep = ({
 }: StepViewProps<"retry">) => (
   <StepShell
     body={
-      <Frame overflowBehavior="scroll" variant="default">
-        <FramePanel>
-          <MarkdownBody text={part.reason} />
-        </FramePanel>
-      </Frame>
+      <RenderedSection label="Reason">
+        <MarkdownBody text={part.reason} />
+      </RenderedSection>
     }
     duration={duration}
     icon={<RotateCwIcon />}

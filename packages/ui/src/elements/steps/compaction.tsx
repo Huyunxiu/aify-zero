@@ -1,12 +1,7 @@
 import { Minimize2Icon } from "lucide-react";
 
-import {
-  Frame,
-  FrameHeader,
-  FramePanel,
-  FrameTitle,
-} from "../../components/frame";
 import { formatTokens } from "../compaction-message";
+import { RenderedSection } from "../tool-panels";
 import { MarkdownBody } from "./markdown-body";
 import { StepLabel, StepShell } from "./shell";
 import type { StepPartOf, StepViewProps } from "./types";
@@ -50,28 +45,27 @@ export const CompactionStep = ({
   const tokens =
     record &&
     `${formatTokens(record.tokensBefore)} → ${formatTokens(record.tokensAfter)} tokens`;
+  const detail = [trigger, tokens]
+    .filter((value) => value !== undefined)
+    .join(" · ");
 
   return (
     <StepShell
       body={
-        <Frame overflowBehavior="scroll" variant="default">
-          <FrameHeader>
-            <FrameTitle>
+        <RenderedSection
+          label={
+            <>
               Compact
-              {trigger && (
-                <span className="ml-2 font-normal text-muted-foreground text-xs">
-                  {trigger}
+              {detail && (
+                <span className="ml-2 font-sans font-normal text-muted-foreground text-xs normal-case tracking-normal">
+                  {detail}
                 </span>
               )}
-            </FrameTitle>
-            {tokens && (
-              <span className="text-muted-foreground text-xs">{tokens}</span>
-            )}
-          </FrameHeader>
-          <FramePanel>
-            <MarkdownBody text={record?.summary ?? ""} />
-          </FramePanel>
-        </Frame>
+            </>
+          }
+        >
+          <MarkdownBody text={record?.summary ?? ""} />
+        </RenderedSection>
       }
       duration={duration}
       icon={<Minimize2Icon />}

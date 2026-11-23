@@ -29,8 +29,9 @@ Four rules:
   the row, and the approval strip, and `StepFrame` is the shared frame for a call's cards.
   A view supplies the icon, the label, the summary, and the body, and takes the whole row
   back only for the two exceptions above. A view whose body is not a call's cards — a
-  note, a retry, a compaction marker — composes its own frame, because a mode switch in
-  `StepFrame` would be one more thing to learn than a second frame is to read.
+  note, a retry, a compaction marker — draws it with the transcript's card primitives
+  directly. `StepFrame` stays the frame for a call's cards alone: a mode switch in it
+  would be one more thing to learn than a second card is to read.
 - **The protocol reads stay put.** `tool-step.tsx` keeps what the record itself answers —
   state, error wording, timing, the turn's count — because those are judgments about a
   part's shape, not about one tool. The wording that depends on a tool's `metadata` lives

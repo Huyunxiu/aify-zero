@@ -1,7 +1,7 @@
 import { FilePenIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { ToolPanels, ToolRenderedSection } from "../tool-panels";
+import { ToolPanels, RenderedSection } from "../tool-panels";
 import { StepFrame, StepLabel, StepShell } from "./shell";
 import { summarizeTool } from "./summary";
 import type { StepPartOf, StepViewProps } from "./types";
@@ -90,7 +90,7 @@ export const EditFileStep = ({
     body={
       <StepFrame title="Edit">
         <ToolPanels onRespond={onRespond} part={part}>
-          <ToolRenderedSection copyValue={editDiffText(part)} label="Diff">
+          <RenderedSection copyValue={editDiffText(part)} label="Diff">
             <div className="wrap-break-word font-mono text-xs whitespace-pre-wrap">
               {editDiffRows(part).map((row, index) => (
                 <div
@@ -108,7 +108,7 @@ export const EditFileStep = ({
                 </div>
               ))}
             </div>
-          </ToolRenderedSection>
+          </RenderedSection>
         </ToolPanels>
       </StepFrame>
     }

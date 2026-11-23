@@ -12,7 +12,6 @@ import {
   AgentStepTrigger,
 } from "../../components/ai-elements/chain-of-turn";
 import type { AgentStepStatus } from "../../components/ai-elements/chain-of-turn";
-import { Frame, FrameHeader, FrameTitle } from "../../components/frame";
 import type { ToolRespond } from "./types";
 
 /**
@@ -102,7 +101,8 @@ export const StepLabel = ({
  * inside it are the surface.
  *
  * `title` is the frame's header. A body without one — the jobs list — leaves it
- * out.
+ * out. The header is the only thing that says which step a full-screen dialog
+ * belongs to, so it stays a bar of its own rather than moving into the cards.
  */
 export const StepFrame = ({
   title,
@@ -111,16 +111,14 @@ export const StepFrame = ({
   title?: ReactNode;
   children: ReactNode;
 }) => (
-  <Frame
-    className="bg-transparent shadow-none"
-    overflowBehavior="scroll"
-    variant="default"
-  >
+  <div className="relative flex flex-col overflow-hidden rounded-[calc(var(--radius-xl)-2px)]">
     {title === undefined ? null : (
-      <FrameHeader className="px-3">
-        <FrameTitle>{title}</FrameTitle>
-      </FrameHeader>
+      <div className="mb-2 flex h-10 shrink-0 items-center gap-2.5 rounded-lg bg-muted px-3">
+        <div className="font-medium text-sm text-accent-foreground">
+          {title}
+        </div>
+      </div>
     )}
     {children}
-  </Frame>
+  </div>
 );

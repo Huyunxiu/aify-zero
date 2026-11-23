@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { AgentStepStatus } from "../../components/ai-elements/chain-of-turn";
-import { ToolRenderedSection } from "../tool-panels";
+import { RenderedSection } from "../tool-panels";
 import { MarkdownBody } from "./markdown-body";
 import { StepLabel, StepShell } from "./shell";
 
@@ -46,9 +46,9 @@ export const MarkdownStep = ({
 }) => (
   <StepShell
     body={
-      <ToolRenderedSection copyValue={part.text} label={action}>
+      <RenderedSection copyValue={part.text} label={action}>
         <MarkdownBody text={part.text} />
-      </ToolRenderedSection>
+      </RenderedSection>
     }
     duration={duration}
     icon={icon}

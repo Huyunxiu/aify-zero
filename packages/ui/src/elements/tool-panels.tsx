@@ -186,14 +186,21 @@ export function ToolSection({
   );
 }
 
-/** A section whose body is richer than text — markdown, a diff, a table. */
-export function ToolRenderedSection({
+/**
+ * A card whose body is richer than text — markdown, a diff, a table.
+ *
+ * It serves more than a tool's body now: a note, a retry's reason, a compaction
+ * summary, a questionnaire. So the title is a node — a card that has to say two
+ * things up there says them in its own label.
+ */
+export function RenderedSection({
   label,
   copyValue,
   children,
   footer,
 }: {
-  label: string;
+  label: React.ReactNode;
+  /** What the copy button hands over. No button without it. */
   copyValue?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -298,9 +305,9 @@ function ToolPanelsBody({
       {hideOutput ? null : renderOutput === undefined ? (
         <ToolSection label="Output" language={outputLanguage} value={output} />
       ) : (
-        <ToolRenderedSection copyValue={output} label="Output">
+        <RenderedSection copyValue={output} label="Output">
           {renderOutput(output)}
-        </ToolRenderedSection>
+        </RenderedSection>
       )}
       {errorText === undefined ? null : (
         <ToolErrorSection label={errorLabel} text={errorText} />
