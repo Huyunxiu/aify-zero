@@ -779,6 +779,25 @@ describe(executeToolCalls, () => {
       expect(result.awaitingApproval).toBeFalsy();
     });
 
+    test("leaves the rest of the batch for after the answer", async () => {
+      const ran: string[] = [];
+      const { result } = await run(
+        { echo: recordingTool(ran), risky: recordingTool(ran) },
+        [
+          { toolCallId: "call-1", toolName: "echo", input: { value: "run" } },
+          { toolCallId: "call-2", toolName: "risky", input: { value: "ask" } },
+        ],
+        new HooksManager(),
+        ({ toolName }) =>
+          toolName === "risky" ? { decision: "ask" } : undefined
+      );
+
+      // The user answers about the step's calls as a whole: the allowed call
+      // waits for that answer rather than running first.
+      expect(ran).toStrictEqual([]);
+      expect(result.awaitingApproval).toBeTruthy();
+    });
+
     test("does not know tool names on its own", async () => {
       const ran: string[] = [];
       const { result } = await run({ "write-file": recordingTool(ran) }, [

@@ -18,6 +18,10 @@ import {
   selectSubagentTools,
 } from "../src/subagent/create.js";
 import type { SubagentDefinition } from "../src/subagent/definitions.js";
+import {
+  getSubagentDefinition,
+  SUBAGENT_DEFINITIONS,
+} from "../src/subagent/definitions.js";
 import type { CallTargetResolver } from "../src/tools/execution.js";
 import type { AgentToolSet } from "../src/types.js";
 import { testModel, testResolveModel } from "./helpers/model-target.js";
@@ -238,7 +242,6 @@ describe(selectSubagentTools, () => {
     questionnaire: {},
     task: {},
   } as unknown as Parameters<typeof selectSubagentTools>[0];
-
   test("always drops task and questionnaire", () => {
     expect(Object.keys(selectSubagentTools(tools, definition))).toStrictEqual([
       "bash",
@@ -256,6 +259,27 @@ describe(selectSubagentTools, () => {
   test("drops task even when the allow-list asks for it", () => {
     const narrowed: SubagentDefinition = { ...definition, tools: ["task"] };
     expect(Object.keys(selectSubagentTools(tools, narrowed))).toStrictEqual([]);
+  });
+});
+
+describe("the built-in subagents", () => {
+  test("the read-only ones cannot write, edit, or run a command", () => {
+    for (const name of ["explore", "plan"]) {
+      expect(getSubagentDefinition(name)?.tools).toStrictEqual([
+        "read-file",
+        "glob",
+        "grep",
+        "load-skill",
+      ]);
+    }
+  });
+
+  test("each one is told its last message must be the report", () => {
+    for (const subagent of SUBAGENT_DEFINITIONS) {
+      expect(subagent.instructions).toContain(
+        "Your last message must be the text report itself."
+      );
+    }
   });
 });
 
