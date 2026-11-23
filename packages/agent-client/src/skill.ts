@@ -8,13 +8,15 @@ export type SkillMetadata = Record<string, unknown>;
 /** 技能从哪里加载。以后接数据库时用 `database`，不影响排序语义。 */
 export type SkillSourceKind = "filesystem" | "database";
 
+export type SkillCategory = "project" | "bot" | "global";
+
 export type SkillInfo = {
   name: string;
   description: string;
   location: string;
   dir: string;
   content: string;
-  category: "global" | "project";
+  category: SkillCategory;
   metadata: SkillMetadata;
   source: SkillSourceKind;
   /**
@@ -28,7 +30,7 @@ export type CreateSkillInput = {
   name: string;
   description: string;
   content: string;
-  category?: "global" | "project";
+  category?: SkillCategory;
   skillDir?: string;
 };
 
