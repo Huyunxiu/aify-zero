@@ -1,5 +1,6 @@
 export * from "./approval-notice";
 export * from "./compaction";
+export * from "./core-instructions";
 export * from "./file-tools";
 export * from "./jobs-tools";
 export * from "./questionnaire";

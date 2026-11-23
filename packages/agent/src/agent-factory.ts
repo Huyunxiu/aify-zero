@@ -18,6 +18,7 @@ import type { CompactionPolicyOverrides } from "./compaction/types";
 import {
   ApprovalPolicyExtension,
   CompactionExtension,
+  CoreInstructionsExtension,
   FileToolsExtension,
   JobsToolsExtension,
   QuestionnaireExtension,
@@ -28,6 +29,7 @@ import {
   ToolCatalogExtension,
   WebToolsExtension,
 } from "./extensions/builtin";
+import { MAIN_INSTRUCTIONS } from "./extensions/builtin/core-instructions";
 import { EnvironmentExtension } from "./extensions/environment";
 import type { Extension } from "./extensions/types";
 import type { SteeringSignal } from "./inbox/steering";
@@ -36,7 +38,6 @@ import type { ModelTargetResolver } from "./kernel/model-gateway";
 import type { AgentStore } from "./storage";
 import type { StreamEventRegistry } from "./stream-registry";
 import { STREAM_REGISTRY } from "./stream-registry";
-import { appendSubagentPrompt } from "./subagent/definitions";
 import { createSubagentFactory } from "./subagent/factory";
 import { bindSessionTimers } from "./timers/session-timers";
 import type { TimerStore } from "./timers/types";
@@ -146,7 +147,7 @@ export interface SessionAgentOptions {
    * injects this. Without it an MCP Tool falls to unknown, and the policy has no opinion.
    */
   resolveApprovalClass?: ApprovalClassResolver;
-  /** 系统提示的起点；子 agent 说明会追加在后面。 */
+  /** The base system prompt; omitted means the main agent's identity. */
   instructions?: string;
   /** 宿主扩展，在默认扩展之后注册。 */
   extensions?: readonly Extension[];
@@ -245,6 +246,10 @@ export async function createSessionAgent(
     await agent.registerExtension(
       new EnvironmentExtension({ id: "environment" })
     );
+    // The rules come before the environment facts: how to work, then where.
+    await agent.registerExtension(
+      new CoreInstructionsExtension({ id: "core-instructions" })
+    );
     await agent.registerExtension(
       new ApprovalPolicyExtension({ id: "approval", policy: approvalPolicy })
     );
@@ -298,9 +303,7 @@ export async function createSessionAgent(
     throw error;
   }
 
-  agent.instructions = toolGroups.subagent
-    ? appendSubagentPrompt(options.instructions ?? "")
-    : (options.instructions ?? "");
+  agent.instructions = options.instructions ?? MAIN_INSTRUCTIONS;
 
   return agent;
 }

@@ -1,6 +1,6 @@
 # Bot 结构化配置存 SQLite，文件型资源落 Bot 主目录
 
-> 中文副本。以 `0029-bot-config-in-sqlite-files-in-bot-home.md` 为准。
+> 中文副本。以 `0031-bot-config-in-sqlite-files-in-bot-home.md` 为准。
 
 Bot 的结构化配置（身份、默认模型引用与档位、系统提示词、工具组开关、默认审批策略、沙箱配置、环境变量、
 MCP 服务器定义、全局资源继承模式及默认项目）统一以 SQLite（`bot` 表）为唯一真源。文件型资源

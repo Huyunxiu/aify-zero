@@ -11,6 +11,7 @@ import type { ToolSet } from "ai";
 import { AgentContext } from "../agent-context";
 import { AgentSession } from "../agent-session";
 import { Agent } from "../agents";
+import type { InstructionsSection } from "../extensions/types";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { ModelTargetResolver } from "../kernel/model-gateway";
 import type { AgentStore } from "../storage";
@@ -23,6 +24,27 @@ import {
   generateTurnId,
 } from "../utils/id-util";
 import type { SubagentDefinition } from "./definitions";
+
+/**
+ * The prompt a subagent reads: its own instruction, then every parent section.
+ *
+ * A section that speaks about a tool or an owner the subagent does not share
+ * gives it its own text; one that has nothing to say to a subagent returns the
+ * prompt unchanged. This is the only place that decides, so the test reads the
+ * same seam the runtime uses.
+ */
+export function renderSubagentInstructions(
+  sections: readonly InstructionsSection[],
+  instruction: string
+): string {
+  let prompt = instruction;
+  for (const section of sections) {
+    prompt = section.renderForSubagent
+      ? section.renderForSubagent(prompt)
+      : section.render(prompt);
+  }
+  return prompt;
+}
 
 /**
  * A subagent may not delegate again, and it has no user to answer a
@@ -316,9 +338,10 @@ export async function createSubagent(
   });
 
   let { instructions } = definition;
-  for (const section of parent.context.instructionsSections) {
-    instructions = section.render(instructions);
-  }
+  instructions = renderSubagentInstructions(
+    parent.context.instructionsSections,
+    instructions
+  );
 
   const subagentTools = selectSubagentTools(tools ?? parent.tools, definition);
 

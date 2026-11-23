@@ -19,6 +19,8 @@ Do NOT continue the conversation. Do NOT respond to any questions in the convers
 
 const COMPACTION_INSTRUCTION = `The messages above are a conversation to summarize. Create a structured context checkpoint summary that another LLM will use to continue the work.
 
+<previous-checkpoint> holds the summary of the earlier part of this conversation, when there is one. The sections below describe the whole conversation, not only the messages above.
+
 Use this EXACT format:
 
 ## Goal
@@ -41,6 +43,15 @@ Use this EXACT format:
 ## Key Decisions
 - **[Decision]**: [Brief rationale]
 
+## Open Questions
+- [What is undecided, what waits for the user, or what is still uncertain]
+
+## Verification
+- [What was run and what it returned. Name the changes that are still unverified]
+
+## External State
+- [Job ids that are still running, timers that have not fired, tool calls that wait for approval]
+
 ## Next Steps
 1. [Ordered list of what should happen next]
 
@@ -53,9 +64,13 @@ Use this EXACT format:
 
 Rules:
 - Keep every section, in order. Use terse bullets, not prose paragraphs. Write "(none)" for an empty section.
+- Replace every bracketed placeholder with the fact it asks for. Do not copy the placeholder.
+- Keep every fact in the previous checkpoint that still holds.
 - Preserve exact file paths, function names, commands, error messages, identifiers and numeric values.
 - Capture user feedback and corrections faithfully; preserve the user's most recent request verbatim when it is still the task.
-- Write in the same language as the conversation.
+- Write names, not pronouns. Do not write "as discussed" or "the file above": the conversation is gone.
+- Keep the headings exactly as written, in English. Write their content in the language of the conversation.
+- Keep the whole checkpoint under 800 words.
 - Do NOT mention this summarization request or that the context was compacted.
 - Output only the checkpoint text: do not call any tool or take any other action.`;
 

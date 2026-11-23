@@ -71,7 +71,6 @@ export class SkillExtension extends Extension {
       "load-skill",
       createLoadSkillTool({
         skills: manager,
-        primaryProjectDir: api.environment.primaryProjectDir,
       })
     );
 

@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentContext } from "../src/agent-context.js";
 import { AgentSession } from "../src/agent-session.js";
 import { Agent } from "../src/agents.js";
+import type { RuntimeSettingsPatch } from "../src/hooks-manager.js";
 import type { AgentInbox } from "../src/inbox/agent-inbox.js";
 import type { AgentStore } from "../src/storage/index.js";
 import type { SessionRecord } from "../src/storage/types.js";
@@ -209,15 +210,21 @@ describe("start hook patches", () => {
     } as never);
   });
 
-  test("turn_start can replace the model and append to the system prompt", async () => {
+  test("turn_start can replace the model, and cannot replace the prompt", async () => {
     const { agent } = makeAgent();
-    agent.hooks.on("turn_start", (event) => ({
-      model: {
-        providerId: event.model.providerId,
-        modelId: `${event.model.modelId}-switched`,
-      },
-      instructions: (prompt) => `${prompt}\n\n# Injected turn note`,
-    }));
+    agent.hooks.on(
+      "turn_start",
+      (event) =>
+        ({
+          model: {
+            providerId: event.model.providerId,
+            modelId: `${event.model.modelId}-switched`,
+          },
+          // A plugin written in JavaScript can send this key. The merge ignores
+          // it, so the prompt keeps the writer that assembled it.
+          instructions: "# Injected turn note",
+        }) as unknown as RuntimeSettingsPatch
+    );
 
     script(stepResult({ text: "Done." }));
     const events = await runTurn(agent, asTurns(userTurn("u1", "Start.")));
@@ -227,7 +234,7 @@ describe("start hook patches", () => {
       type: "step.start",
       model: "test-model-switched",
     });
-    expect(instructionsOf(0)).toBe("\n\n# Injected turn note");
+    expect(instructionsOf(0)).toBe("");
   });
 
   test("step_start only changes the step it fired for", async () => {
@@ -239,10 +246,7 @@ describe("start hook patches", () => {
       }
       assistantSteps += 1;
       return assistantSteps === 1
-        ? {
-            model: { providerId: "test-provider", modelId: "step-model" },
-            instructions: "step instructions",
-          }
+        ? { model: { providerId: "test-provider", modelId: "step-model" } }
         : undefined;
     });
 
@@ -253,26 +257,22 @@ describe("start hook patches", () => {
     expect(steps).toHaveLength(2);
     expect(steps[0]).toMatchObject({ model: "step-model" });
     expect(steps[1]).toMatchObject({ model: "test-model" });
-    expect(instructionsOf(0)).toBe("step instructions");
-    // 补丁没有写回 #instructions，下一步回到 turn 的默认提示。
-    expect(instructionsOf(1)).toBe("");
   });
 
   test("merges every handler's patch in registration order", async () => {
     const { agent } = makeAgent();
     agent.hooks.on("turn_start", () => ({
-      instructions: (prompt) => `${prompt}A`,
+      model: { providerId: "test-provider", modelId: "first-model" },
     }));
     agent.hooks.on("turn_start", () => ({
       model: { providerId: "test-provider", modelId: "second-model" },
-      instructions: (prompt) => `${prompt}B`,
     }));
 
     script(stepResult({ text: "Done." }));
     const events = await runTurn(agent, asTurns(userTurn("u1", "Start.")));
 
     expect(stepStarts(events)[0]).toMatchObject({ model: "second-model" });
-    expect(instructionsOf(0)).toBe("AB");
+    expect(instructionsOf(0)).toBe("");
   });
 
   test("leaves the turn untouched when a handler has no opinion", async () => {
@@ -302,21 +302,5 @@ describe("start hook patches", () => {
     expect(events.some((event) => event.type === "step.finish")).toBeTruthy();
     expect(stepStarts(events)[0]).toMatchObject({ model: "test-model" });
     warn.mockRestore();
-  });
-
-  test("re-renders the turn prompt from extensions on the next turn", async () => {
-    const { agent } = makeAgent();
-    let turns = 0;
-    agent.hooks.on("turn_start", () => {
-      turns += 1;
-      return turns === 1 ? { instructions: "first turn only" } : undefined;
-    });
-
-    script(stepResult({ text: "First." }), stepResult({ text: "Second." }));
-    await runTurn(agent, asTurns(userTurn("u1", "Start.")));
-    const second = await runTurn(agent, asTurns(userTurn("u2", "Again.")));
-
-    expect(instructionsOf(1)).toBe("");
-    expect(stepStarts(second)[0]).toMatchObject({ model: "test-model" });
   });
 });

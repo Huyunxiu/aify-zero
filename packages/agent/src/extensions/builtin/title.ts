@@ -20,13 +20,36 @@ import type { EventWriter } from "../capabilities";
 import type { ExtensionAPI } from "../types";
 import { Extension } from "../types";
 
-export const TITLE_PROMPT = `Generate a very short session title (2-5 words max) based on the user's message.
+/** The most characters a session title may hold. */
+const MAX_TITLE_LENGTH = 30;
+
+export const TITLE_PROMPT = `Generate a very short session title based on the user's message.
 Rules:
-- Maximum 30 characters
+- Maximum ${MAX_TITLE_LENGTH} characters
 - No quotes, colons, hashtags, or markdown
 - Just the topic/intent, not a full sentence
 - If the message is a greeting like "hi" or "hello", respond with just "New conversation"
 - Be concise: "Weather in NYC" not "User asking about the weather in New York City"`;
+
+/** Counts what a reader calls one character, so an emoji is not cut in half. */
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * The title the session stores, from whatever the model wrote.
+ *
+ * The prompt asks for one short line, but a prompt is not a check: a model that
+ * answers with a paragraph would otherwise become the title. Whitespace is
+ * folded into single spaces, and the text is cut at the limit on a character
+ * boundary.
+ */
+export function sessionTitle(text: string): string {
+  const folded = text.replace(/\s+/gu, " ").trim();
+  const characters = [...GRAPHEMES.segment(folded)].map(
+    ({ segment }) => segment
+  );
+
+  return characters.slice(0, MAX_TITLE_LENGTH).join("").trimEnd();
+}
 
 /** hook 处理器拿不到宿主上下文，这里给一个空实现。 */
 const NO_HOOK_CONTEXT: HookContext = {};
@@ -137,7 +160,7 @@ export class TitleExtension extends Extension {
         // 标题是后台任务；回合被停时它没有理由继续跑。
         ...(signal ? { abortSignal: signal } : {}),
       });
-      const title = generated.text;
+      const title = sessionTitle(generated.text);
 
       await deps.store.updateSessionById(sessionId, title);
 

@@ -28,17 +28,28 @@ export interface InstructionsSection {
   /** 数值越小越先执行，默认 0。 */
   priority?: number;
   render(prompt: string): string;
+  /**
+   * The text a subagent reads instead, when the section says something the
+   * subagent cannot act on.
+   *
+   * A subagent re-renders every section of its parent, and some sections speak
+   * about tools or ownership the subagent does not share. Absent means `render`.
+   * Return the prompt unchanged to leave the section out of the subagent prompt.
+   */
+  renderForSubagent?(prompt: string): string;
 }
 
 /**
- * 扩展在 `init` 里能做的事情。
+ * What an extension can do in `init`.
  *
- * 工具、hook 和提示片段立即生效。技能、上下文文件这类资源由扩展自己加载
- * 并保存在实例里，Agent 不需要知道它们的具体类型，只负责按顺序拼接
- * {@link InstructionsSection}。
+ * Tools, hooks, and instructions sections take effect at once. Resources such as
+ * skills and context files are loaded by the extension itself and kept on the
+ * instance: the Agent does not need their types, only the sections to concatenate
+ * in order ({@link InstructionsSection}).
  *
- * 工具的权限模式（deny / ask / allow）只能通过 `pre_tool_call` 决定；扩展
- * 不保存审批名单，也不按工具名询问。
+ * The approval stance of a tool (deny / ask / allow) is decided only through
+ * `pre_tool_call`; an extension does not keep an approval list and does not ask
+ * about a tool name.
  */
 export interface ExtensionAPI {
   readonly agent: Readonly<ExtensionAgentInfo>;

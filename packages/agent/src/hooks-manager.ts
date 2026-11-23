@@ -107,11 +107,16 @@ export type RuntimeSettings = {
 };
 
 /**
- * `turn_start` / `step_start` 处理器能改什么。返回 `undefined`（或 `null`）
- * 表示无意见；多个处理器都用 {@link HooksManager.emitAsyncHooks} 收集，
- * 再按注册顺序合并。
+ * `turn_start` / `step_start` 处理器能改什么。
+ *
+ * The system prompt is not here. It is assembled from instructions sections when
+ * the turn starts, and it has one writer; a patch that could replace it would
+ * delete the environment, the project instructions, and every section without
+ * saying so (see `docs/adr/0028`). A patch changes the call, not the prompt.
  */
-export type RuntimeSettingsPatch = Patch<RuntimeSettings>;
+export type RuntimeSettingsPatch = {
+  model?: PatchValue<ModelRef>;
+};
 
 export type TitleGeneratedEvent = {
   sessionId: string;
@@ -299,10 +304,14 @@ export type HookResultsOf<K extends HookEventName> = Exclude<
   null | undefined
 >[];
 
-/** `RuntimeSettings` 里空字符串不应覆盖的字段。 */
-const RUNTIME_SETTINGS_PATCH_RULES: PatchRules<RuntimeSettings> = {
-  instructions: { skipBlank: true },
-};
+/**
+ * The fields a start patch may change.
+ *
+ * A plugin written in JavaScript can send any key, so the merge filters on this
+ * list instead of trusting the type. `instructions` is absent on purpose: the
+ * system prompt has one writer, and it is not a patch.
+ */
+const PATCHABLE_RUNTIME_FIELDS: ReadonlySet<string> = new Set(["model"]);
 
 /**
  * 合并 `turn_start` / `step_start` 补丁。
@@ -314,7 +323,16 @@ export function applyRuntimeSettingsPatches(
   base: RuntimeSettings,
   patches: readonly RuntimeSettingsPatch[]
 ): RuntimeSettings {
-  return applyPatches(base, patches, RUNTIME_SETTINGS_PATCH_RULES);
+  const patchable = patches.map(
+    (patch) =>
+      Object.fromEntries(
+        Object.entries(patch).filter(([field]) =>
+          PATCHABLE_RUNTIME_FIELDS.has(field)
+        )
+      ) as RuntimeSettingsPatch
+  );
+
+  return applyPatches(base, patchable);
 }
 
 /**
