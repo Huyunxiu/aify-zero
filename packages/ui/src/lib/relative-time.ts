@@ -63,7 +63,7 @@ export function relativeTimeBucket(
     return { kind: "days", count: days };
   }
 
-  return { kind: "date", text: formatDate(at, now, lang) };
+  return { kind: "date", text: formatShortDate(at, now, lang) };
 }
 
 /**
@@ -91,7 +91,8 @@ const DATE_FORMATTERS: Record<Lang, (at: Date, now: Date) => string> = {
   },
 };
 
-function formatDate(at: number, now: number, lang: Lang): string {
+/** 只写日期、不写钟点；跨年才带年份。会话大纲的悬停时间也复用它。 */
+export function formatShortDate(at: number, now: number, lang: Lang): string {
   return DATE_FORMATTERS[lang](new Date(at), new Date(now));
 }
 

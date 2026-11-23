@@ -7,11 +7,9 @@ import {
   generateSessionId,
   generateStepId,
   generateTurnId,
-  isAgentTextPart,
 } from "@workspace/agent-client";
 import type {
   AgentToolSet,
-  AgentAssistantTurn,
   AgentStreamEvent,
   AgentTurn,
   AgentUserPart,
@@ -75,12 +73,14 @@ import {
 } from "../components/resizable";
 import { toastManager } from "../components/toast";
 import ProximitySidebar from "../components/ui/proximity-sidebar";
-import type { ProximitySection } from "../components/ui/proximity-sidebar";
 import { useAgentSession } from "../hooks/use-agent-session";
 import type { SubmitMode } from "../hooks/use-agent-session";
+import { DEFAULT_LANG, isLang } from "../i18n";
 import { approvalPolicyTarget } from "../lib/approval-policy-target";
 import { flattenModels, parseModelRef, sameModel } from "../lib/models";
 import { client, queryClient } from "../lib/orpc";
+import { buildSessionOutline } from "../lib/session-outline";
+import type { SessionOutlineSection } from "../lib/session-outline";
 import { cn } from "../lib/utils";
 import { ApprovalPolicySelect } from "./approval-policy-select";
 import { AssistantMessage } from "./assistant-message";
@@ -251,71 +251,46 @@ async function openEvents(
   return eventIteratorToUnproxiedDataStream(stream);
 }
 
-const OUTLINE_LABEL_MAX = 48;
-
-type OutlineTurn = AgentUserTurn | AgentAssistantTurn<AgentToolSet>;
-
-/**
- * 轮次在大纲里的名字。
- *
- * 取它写下的文本并压成一行；只发了附件、或答复还没写出文字的轮次，
- * 用序号代替。名字只用来做读屏标签和悬停提示，不出现在页面上。
- */
-function getOutlineLabel(turn: OutlineTurn, index: number): string {
-  const textParts: string[] = [];
-
-  for (const step of turn.content) {
-    if (step.type === "compaction") {
-      continue;
-    }
-
-    // 引导消息是回合中用户插的话，不进入回复的大纲标题。
-    if (step.type === "steering") {
-      continue;
-    }
-
-    for (const part of step.content) {
-      if (isAgentTextPart(part)) {
-        textParts.push(part.text);
-      }
-    }
-  }
-
-  const text = textParts.join(" ").replace(/\s+/g, " ").trim();
-
-  if (text.length === 0) {
-    return `#${index + 1}`;
-  }
-
-  return text.length > OUTLINE_LABEL_MAX
-    ? `${text.slice(0, OUTLINE_LABEL_MAX)}…`
-    : text;
-}
-
 interface SessionOutlineProps {
-  sections: ProximitySection[];
+  /**
+   * 全部用户轮次的 id，按发生顺序。
+   *
+   * 被跳过的系统轮次也是滚动锚点，所以活动标记要拿它来判断当前锚点落在哪一节
+   * 之后，不能只看节本身。
+   */
+  anchors: string[];
+  sections: SessionOutlineSection[];
 }
 
 /**
  * 会话大纲：标出读者正在看的那一条，点一下就跳过去。
  *
- * 大纲里有答复，而滚动锚点只标用户轮次。所以位置取可见消息里的第一条：
- * 它正好压在视口上方的阅读线上，答复滚到那里时也会接替前一问。
+ * 一节是一次提问，滚动锚点也只标用户轮次，所以活动节就是阅读线上方最后一个
+ * 提问。锚点落在被跳过的系统轮次上时，取它之前最近的一节。
  * 跳转交给 scrollToMessage，和“跳到某条消息”是同一个动作。
  */
-function SessionOutline({ sections }: SessionOutlineProps) {
+function SessionOutline({ anchors, sections }: SessionOutlineProps) {
   const { t } = useTranslation();
-  const { currentAnchorId, visibleMessageIds } = useMessageScrollerVisibility();
+  const { currentAnchorId } = useMessageScrollerVisibility();
   const { scrollToMessage } = useMessageScroller();
 
-  const sectionIds = React.useMemo(
-    () => new Set(sections.map((section) => section.id)),
-    [sections]
-  );
-  const activeId =
-    visibleMessageIds.find((id) => sectionIds.has(id)) ??
-    currentAnchorId ??
-    sections[0]?.id;
+  const activeId = React.useMemo(() => {
+    const first = sections[0]?.id;
+
+    if (!currentAnchorId) {
+      return first;
+    }
+
+    const anchorIndex = anchors.indexOf(currentAnchorId);
+    if (anchorIndex === -1) {
+      return first;
+    }
+
+    return (
+      sections.findLast((section) => section.anchorIndex <= anchorIndex)?.id ??
+      first
+    );
+  }, [anchors, currentAnchorId, sections]);
 
   return (
     <ProximitySidebar
@@ -341,7 +316,8 @@ export function Session({
   covered,
 }: SessionProps) {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang = isLang(i18n.language) ? i18n.language : DEFAULT_LANG;
 
   const getSettingsQuery = useQuery({
     queryKey: ["settings"],
@@ -752,41 +728,36 @@ export function Session({
   const finalError =
     sessionError ?? turns.findLast((turn) => turn.status === "error")?.error;
 
-  // 大纲列出提问和答复。答复在流式输出时文字一直在变；按轮次 id 和状态
-  // 命中缓存，只在答复落定时重取一次名字，侧边栏不跟着每个 token 重建。
+  // 大纲把会话记录压成「一问一节」。答复在流式输出时文字一直在变；按轮次 id、
+  // 状态和语言命中缓存，只在答复落定时重取一次，侧边栏不跟着每个 token 重建。
   //
   // 滚动锚点仍然只给用户轮次：MessageScroller 用锚点决定新内容的落点，
   // 把答复也标成锚点会让每段答复都往视口顶上跳。
   const outlineCacheRef = React.useRef<{
     key: string;
-    sections: ProximitySection[];
+    sections: SessionOutlineSection[];
   }>({ key: "", sections: [] });
 
   const outlineSections = React.useMemo(() => {
-    const outlineTurns = turns.filter(
-      (turn): turn is OutlineTurn =>
-        turn.type === "user" || turn.type === "assistant"
-    );
-    const key = outlineTurns
-      .map(
-        (turn) => `${turn.id}:${turn.type === "assistant" ? turn.status : ""}`
-      )
-      .join("|");
+    const key = `${lang}|${turns
+      .map((turn) => `${turn.id}:${turn.type}:${turn.status}`)
+      .join("|")}`;
 
     if (outlineCacheRef.current.key === key) {
       return outlineCacheRef.current.sections;
     }
 
-    const sections = outlineTurns.map((turn, index) => ({
-      id: turn.id,
-      kind: "title" as const,
-      label: getOutlineLabel(turn, index),
-      level: 1 as const,
-    }));
+    const sections = buildSessionOutline(turns, Date.now(), lang);
 
     outlineCacheRef.current = { key, sections };
     return sections;
-  }, [turns]);
+  }, [turns, lang]);
+
+  // 每个用户轮次都是一个滚动锚点；节只是其中一部分，活动标记靠锚点序号对齐。
+  const outlineAnchors = React.useMemo(
+    () => turns.filter((turn) => turn.type === "user").map((turn) => turn.id),
+    [turns]
+  );
 
   // 大纲和滚动容器是并排的两个盒子；滚轮落在大纲上时要交回聊天记录。
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -1213,7 +1184,10 @@ export function Session({
                             ?.scrollBy({ top: event.deltaY });
                         }}
                       >
-                        <SessionOutline sections={outlineSections} />
+                        <SessionOutline
+                          anchors={outlineAnchors}
+                          sections={outlineSections}
+                        />
                       </div>
                     )}
                   </MessageScrollerProvider>
