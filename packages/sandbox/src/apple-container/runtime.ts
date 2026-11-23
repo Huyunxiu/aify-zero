@@ -40,6 +40,39 @@ export interface ContainerMount {
   /** 宿主路径；容器里挂到同一个绝对路径（ADR-0007）。 */
   readonly hostPath: string;
   readonly containerPath: string;
+  /** Mount as read-only inside the container when true. */
+  readonly readOnly?: boolean;
+}
+
+/** Build `container run` CLI arguments for a container spec. */
+export function buildStartArgs(spec: ContainerSpec): string[] {
+  const args = [
+    "run",
+    // 短选项与 Apple CLI 文档一致；`container run` 是唯一有 `-d` 的地方。
+    "-d",
+    "--name",
+    spec.name,
+    "--workdir",
+    spec.workdir,
+  ];
+
+  for (const [key, value] of Object.entries(spec.env ?? {})) {
+    if (value !== undefined) {
+      args.push("--env", `${key}=${value}`);
+    }
+  }
+  for (const mount of spec.mounts) {
+    if (mount.readOnly === true) {
+      args.push(
+        "--mount",
+        `type=bind,source=${mount.hostPath},target=${mount.containerPath},readonly`
+      );
+    } else {
+      args.push("--volume", `${mount.hostPath}:${mount.containerPath}`);
+    }
+  }
+  args.push(spec.image, ...spec.command);
+  return args;
 }
 
 export interface ContainerSpec {
@@ -175,25 +208,7 @@ export function createAppleContainerRuntime(
     },
 
     start: async (spec: ContainerSpec): Promise<void> => {
-      const args = [
-        "run",
-        // 短选项与 Apple CLI 文档一致；`container run` 是唯一有 `-d` 的地方。
-        "-d",
-        "--name",
-        spec.name,
-        "--workdir",
-        spec.workdir,
-      ];
-
-      for (const [key, value] of Object.entries(spec.env ?? {})) {
-        if (value !== undefined) {
-          args.push("--env", `${key}=${value}`);
-        }
-      }
-      for (const mount of spec.mounts) {
-        args.push("--volume", `${mount.hostPath}:${mount.containerPath}`);
-      }
-      args.push(spec.image, ...spec.command);
+      const args = buildStartArgs(spec);
 
       const { result, stderr } = await cli(args, {
         timeoutMs: START_TIMEOUT_MS,

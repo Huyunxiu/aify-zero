@@ -471,6 +471,49 @@ describe("host sandbox", () => {
       );
       expect(sandbox.resolvePath("~")).toBe(sandbox.resolvePath(homedir()));
     });
+
+    test("applies readOnlyDirs, env, and homeDir overrides without mutating process.env", async () => {
+      const { root, session } = await createTempRoots();
+      const roDir = join(root, "ro");
+      const customHome = join(root, "bot-home");
+      await mkdir(roDir, { recursive: true });
+      await mkdir(customHome, { recursive: true });
+
+      const { sandbox } = await createHostSandboxAdapter().acquire({
+        id: "session-bot",
+        projectDirs: [root],
+        sessionDir: session,
+        readOnlyDirs: [roDir, root],
+        env: { AIFY_BOT_VAR: "bot-value", AIFY_OVERRIDE: "base" },
+        homeDir: customHome,
+      });
+
+      expect(sandbox.describe().roots).toStrictEqual([
+        root,
+        session,
+        roDir,
+        customHome,
+      ]);
+      expect(sandbox.resolvePath("~/notes.md")).toBe(
+        join(customHome, "notes.md")
+      );
+
+      const out: string[] = [];
+      await sandbox.exec(
+        'printf "%s|%s|%s" "$AIFY_BOT_VAR" "$AIFY_OVERRIDE" "$HOME"',
+        {
+          env: { AIFY_OVERRIDE: "call" },
+          onData: (channel, chunk) => {
+            if (channel === "stdout") {
+              out.push(chunk.toString("utf-8"));
+            }
+          },
+        }
+      );
+
+      expect(out.join("")).toBe(`bot-value|call|${customHome}`);
+      expect(process.env.AIFY_BOT_VAR).toBeUndefined();
+    });
   });
 
   // 共享契约：所有适配器都要过这一份，断言只取自 types.ts 的文档注释。

@@ -90,6 +90,7 @@ class HostSandbox implements Sandbox {
   readonly #cwd: string;
   readonly #roots: readonly string[];
   readonly #home: string;
+  readonly #baseEnv: NodeJS.ProcessEnv;
 
   constructor(input: AcquireSandboxInput) {
     const [cwd] = input.projectDirs;
@@ -97,8 +98,23 @@ class HostSandbox implements Sandbox {
       throw new Error("A sandbox needs at least one project directory.");
     }
     this.#cwd = cwd;
-    this.#roots = [...input.projectDirs, input.sessionDir];
-    this.#home = homedir();
+    const roots = new Set<string>();
+    for (const dir of [
+      ...input.projectDirs,
+      input.sessionDir,
+      ...(input.readOnlyDirs ?? []),
+      ...(input.homeDir === undefined ? [] : [input.homeDir]),
+    ]) {
+      if (dir.length > 0) {
+        roots.add(dir);
+      }
+    }
+    this.#roots = [...roots];
+    this.#home = input.homeDir ?? homedir();
+    this.#baseEnv = {
+      ...input.env,
+      ...(input.homeDir === undefined ? {} : { HOME: input.homeDir }),
+    };
   }
 
   describe(): SandboxDescription {
@@ -122,7 +138,7 @@ class HostSandbox implements Sandbox {
       args: [...args],
       cwd:
         options.cwd === undefined ? this.#cwd : this.resolvePath(options.cwd),
-      env: { ...process.env, ...options.env },
+      env: { ...process.env, ...this.#baseEnv, ...options.env },
       timeoutMs: options.timeoutMs,
       signal: options.signal,
       onData: (channel, chunk) => {

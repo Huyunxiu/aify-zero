@@ -154,6 +154,7 @@ export function createIsolatedSandboxAdapter(
       const roots = buildWritePolicy({
         projectDirs: input.projectDirs,
         sessionDir: input.sessionDir,
+        ...(input.homeDir === undefined ? {} : { homeDir: input.homeDir }),
         ...(options.extraWritableRoots === undefined
           ? {}
           : { extra: options.extraWritableRoots }),
@@ -167,7 +168,7 @@ export function createIsolatedSandboxAdapter(
       }
 
       return {
-        sandbox: new IsolatedSandbox(host, probe.backend, roots),
+        sandbox: new IsolatedSandbox(host, probe.backend, roots, input),
       };
     },
   };
@@ -179,16 +180,22 @@ class IsolatedSandbox implements Sandbox {
   readonly #backend: IsolationBackend;
   readonly #roots: readonly string[];
   readonly #home: string;
+  readonly #baseEnv: NodeJS.ProcessEnv;
 
   constructor(
     host: Sandbox,
     backend: IsolationBackend,
-    roots: readonly string[]
+    roots: readonly string[],
+    input: AcquireSandboxInput
   ) {
     this.#host = host;
     this.#backend = backend;
     this.#roots = roots;
-    this.#home = homedir();
+    this.#home = input.homeDir ?? homedir();
+    this.#baseEnv = {
+      ...input.env,
+      ...(input.homeDir === undefined ? {} : { HOME: input.homeDir }),
+    };
   }
 
   describe(): SandboxDescription {
@@ -218,7 +225,7 @@ class IsolatedSandbox implements Sandbox {
       file: invocation.file,
       args: [...invocation.args],
       cwd,
-      env: { ...process.env, ...options.env },
+      env: { ...process.env, ...this.#baseEnv, ...options.env },
       timeoutMs: options.timeoutMs,
       signal: options.signal,
       onData: (channel, chunk) => {

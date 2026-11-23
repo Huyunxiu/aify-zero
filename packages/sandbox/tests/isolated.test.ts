@@ -79,14 +79,16 @@ describe(buildWritePolicy, () => {
     expect(roots.every((root) => root.length > 0)).toBeTruthy();
   });
 
-  test("should append extra roots", () => {
+  test("should append extra roots and homeDir while excluding readOnlyDirs", () => {
     const roots = buildWritePolicy({
       projectDirs: ["/work/alpha"],
       sessionDir: "/tmp/s1",
       extra: ["/work/cache"],
+      homeDir: "/work/bot-home",
     });
 
     expect(roots).toContain("/work/cache");
+    expect(roots).toContain("/work/bot-home");
   });
 });
 
@@ -330,6 +332,54 @@ describe("isolated adapter", () => {
       } finally {
         await rm(outside, { force: true });
       }
+    }
+  );
+
+  test(
+    "should allow reading readOnlyDirs, deny writing them, and apply homeDir and env",
+    { skip: !probe.available },
+    async () => {
+      const project = await createTempDir();
+      // Place skillsDir outside $TMPDIR because buildWritePolicy allows $TMPDIR for build tools.
+      const skillsDir = await mkdtemp(join(homedir(), ".aify-sbx-ro-"));
+      tempDirs.push(skillsDir);
+      const botHome = await createTempDir();
+      const skillFile = join(skillsDir, "SKILL.md");
+      await writeFile(skillFile, "# skill", "utf-8");
+
+      const { sandbox } = await createIsolatedSandboxAdapter().acquire({
+        id: "s-bot",
+        projectDirs: [project],
+        sessionDir: project,
+        readOnlyDirs: [skillsDir],
+        homeDir: botHome,
+        env: { BOT_ENV_TEST: "from-bot" },
+      });
+
+      await expect(sandbox.readFile(skillFile)).resolves.toBe("# skill");
+      await expectPathDenied(
+        sandbox.writeFile(join(skillsDir, "hack.txt"), "nope"),
+        "writeFile"
+      );
+      await expectPathDenied(sandbox.mkdir(join(skillsDir, "sub")), "mkdir");
+      await expectPathDenied(sandbox.rm(skillFile), "rm");
+
+      expect(sandbox.resolvePath("~/data.txt")).toBe(join(botHome, "data.txt"));
+      await sandbox.writeFile("~/data.txt", "ok");
+      await expect(sandbox.readFile(join(botHome, "data.txt"))).resolves.toBe(
+        "ok"
+      );
+
+      const stdout: string[] = [];
+      const res = await sandbox.exec('printf "%s|%s" "$BOT_ENV_TEST" "$HOME"', {
+        onData: (channel, chunk) => {
+          if (channel === "stdout") {
+            stdout.push(chunk.toString("utf-8"));
+          }
+        },
+      });
+      expect(res.exitCode).toBe(0);
+      expect(stdout.join("")).toBe(`from-bot|${botHome}`);
     }
   );
 });
