@@ -70,9 +70,6 @@ You are the planning subagent. Read enough of the codebase to be concrete, then 
   },
 ];
 
-/** The subagent a call falls back to when it names one that does not exist. */
-export const DEFAULT_SUBAGENT_NAME = "general";
-
 export function getSubagentDefinition(
   name: string | undefined
 ): SubagentDefinition | undefined {

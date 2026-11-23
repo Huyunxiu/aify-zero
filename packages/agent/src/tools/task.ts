@@ -8,7 +8,6 @@ import type {
   SubagentFactory,
   TranscriptReader,
 } from "../extensions/capabilities";
-import { DEFAULT_SUBAGENT_NAME } from "../subagent/definitions";
 import type { SubagentDefinition } from "../subagent/definitions";
 import type { ToolOutput } from "./types";
 
@@ -58,9 +57,9 @@ export const createTaskTool = ({
 }: TaskToolRuntime): Tool<TaskToolInput, TaskToolOutput, AgentContext> => {
   const names = definitions.map((definition) => definition.name).join(", ");
 
+  /** The definition the call names, or nothing. A misspelt name is not a different agent. */
   const resolveDefinition = (name: string): SubagentDefinition | undefined =>
-    definitions.find((definition) => definition.name === name) ??
-    definitions.find((definition) => definition.name === DEFAULT_SUBAGENT_NAME);
+    definitions.find((definition) => definition.name === name);
 
   const description = `Delegate a self-contained task to a subagent. It works in its own transcript, inside this session's sandbox and session directory, and reports back one final answer.
 
