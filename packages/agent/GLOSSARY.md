@@ -1,7 +1,7 @@
 # Agent
 
 The model loop in a session. A session holds turns. A turn holds steps. One run drives one
-assistant turn. Tools, hooks, and prompt fragments enter this loop at assembly.
+assistant turn. Tools, hooks, and instructions sections enter this loop at assembly.
 
 ## Language
 
@@ -151,9 +151,29 @@ third-party server. The second only proves that the request comes from the local
 _Avoid_: 密钥、apiKey
 
 **Extension (扩展)**:
-One piece of code that registers tools, hooks, or prompt fragments at session assembly. An
+One piece of code that registers tools, hooks, or instructions sections at session assembly. An
 extension can register more than one tool. An MCP server is not an extension.
 _Avoid_: 插件、模块、集成
+
+**System Prompt (系统提示)**:
+The text a session sends as the model's instructions with every step request. It starts with an
+identity: the main session reads `MAIN_INSTRUCTIONS`, and a subagent reads its own preamble. Each
+instructions section then appends to it in priority order. The code names this field
+`instructions`.
+_Avoid_: 提示词、提示片段、系统消息、system message
+
+**Instructions Section (指令段)**:
+One fragment that an extension appends to the system prompt at assembly. It holds an id, a
+priority, and a render function; a lower number renders earlier. A section belongs to the
+extension that registers it. It gives a subagent different text through `renderForSubagent`
+when what it says does not hold for a subagent.
+_Avoid_: 提示片段、prompt fragment、prompt block
+
+**Skill (技能)**:
+A set of instructions stored as a `SKILL.md` file in a skill directory, which one session loads on
+demand with the `load-skill` tool. The system prompt lists the available skills with their
+descriptions; the body enters the conversation only when the model loads it.
+_Avoid_: 提示模板、prompt template、插件
 
 **Retry (重试)**:
 One new request with the same history in the same turn, after a step fails. A retry is a
