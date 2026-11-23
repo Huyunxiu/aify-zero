@@ -1,7 +1,10 @@
 import type { AgentStreamEvent, AgentUserTurn } from "@workspace/agent-client";
 import { describe, expect, test, vi } from "vitest";
 
-import { TitleExtension } from "../src/extensions/builtin/title.js";
+import {
+  TitleExtension,
+  sessionTitle,
+} from "../src/extensions/builtin/title.js";
 import { Capabilities } from "../src/extensions/capabilities.js";
 import type { ExtensionAPI } from "../src/extensions/types.js";
 import { HooksManager } from "../src/hooks-manager.js";
@@ -162,6 +165,49 @@ describe(TitleExtension, () => {
     });
     expect(prompts[0]).toContain("what is the weather in NYC");
     expect(prompts[0]).not.toContain("timer fired");
+  });
+
+  test("keeps the title inside the limit the prompt asks for", async () => {
+    const { store, titles } = makeStore("");
+    const model: ModelGateway = {
+      languageModel: () => {
+        throw new Error("the title task does not stream");
+      },
+      generateText: () =>
+        Promise.resolve(
+          generated(
+            "  User   asking about\n the weather in New York City, in detail  "
+          )
+        ),
+    };
+
+    const handlers = await install(
+      new TitleExtension({ id: "title" }),
+      new Map<string, unknown>([
+        [Capabilities.model.id, model],
+        [Capabilities.store.id, store],
+        [Capabilities.events.id, { write: () => Promise.resolve() }],
+        [Capabilities.hooks.id, new HooksManager()],
+        [Capabilities.transcript.id, { turns: userTurns }],
+        [Capabilities.abortSignal.id, () => {}],
+      ])
+    );
+
+    handlers.get("turn_created")?.(turnCreatedEvent, {});
+
+    // The prompt asks for one short line. A prompt is not a check: a model that
+    // answers with a paragraph still has to land inside the limit.
+    await vi.waitFor(() => {
+      expect(titles).toStrictEqual(["User asking about the weather"]);
+    });
+  });
+
+  test("cuts the title on a character boundary", () => {
+    const family = "👩‍👩‍👧‍👦";
+    const kept = `${"a".repeat(29)}${family}`;
+
+    // The family is one character to a reader and seven code points to a string.
+    expect(sessionTitle(`${kept}b`)).toBe(kept);
   });
 
   test("keeps an existing title", async () => {
