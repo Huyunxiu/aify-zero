@@ -36,10 +36,11 @@ export interface InstructionsSection {
    * subagent cannot act on.
    *
    * A subagent re-renders every section of its parent, and some sections speak
-   * about tools or ownership the subagent does not share. Absent means `render`.
-   * An empty string leaves the section out of the subagent prompt.
+   * about tools or ownership the subagent does not share; `tools` names the tools
+   * it runs with, so the section can leave out what does not apply. Absent means
+   * `render`. An empty string leaves the section out of the subagent prompt.
    */
-  renderForSubagent?(): string;
+  renderForSubagent?(tools: readonly string[]): string;
 }
 
 /**

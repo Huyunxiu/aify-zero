@@ -13,7 +13,6 @@ import { Extension } from "./types";
 export interface EnvironmentInfo {
   operatingSystem: string;
   architecture: string;
-  shell: string;
   nodeVersion: string;
 }
 
@@ -39,7 +38,6 @@ function detectEnvironment(): EnvironmentInfo {
   return {
     operatingSystem: `${platform()} ${release()}`,
     architecture: arch(),
-    shell: process.env.SHELL ?? process.env.ComSpec ?? "unknown",
     nodeVersion: process.version,
   };
 }
@@ -49,7 +47,7 @@ function detectEnvironment(): EnvironmentInfo {
  *
  * The project directories are the paths the model needs first: the first one is
  * the base for every relative path, and the rest are reachable by absolute path.
- * The machine facts let it choose the right commands for the shell and platform.
+ * The machine facts let it choose the right commands for the platform.
  *
  * The paths come from the sandbox describing itself, never from the host, so a
  * different adapter shows the model the paths that exist in that environment.
@@ -88,7 +86,6 @@ export function renderEnvironment(
       : [`- Sandbox: ${description.note}`]),
     `- Operating system: ${info.operatingSystem}`,
     `- Architecture: ${info.architecture}`,
-    `- Shell: ${info.shell}`,
     `- Node.js: ${info.nodeVersion}`,
   ].join("\n");
 }

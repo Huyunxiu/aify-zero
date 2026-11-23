@@ -21,8 +21,7 @@ const DESCRIPTION = `Execute a bash command (\`bash -c\`) in the working directo
 - Each call runs in a fresh shell; pass \`workdir\` instead of using \`cd\` commands.
 - Output is truncated to its tail (${MAX_OUTPUT_LINES} lines or ${MAX_OUTPUT_BYTES / 1024} KB per stream, whichever comes first). When truncated, the full output is saved to a file whose path is reported.
 - A non-zero exit is reported as \`[exit code: N]\`; a terminated command as \`[killed by signal: X]\` or \`[timed out after Nms]\`. Investigate failures before continuing.
-- Commands that run longer than the timeout are terminated (default: 2 minutes).
-- Before any delete or move, verify that the resolved absolute target path is the intended one; never run it against a computed path you have not checked.`;
+- Commands that run longer than the timeout are terminated (default: 2 minutes).`;
 
 export const createBashTool = ({
   agentContext,
