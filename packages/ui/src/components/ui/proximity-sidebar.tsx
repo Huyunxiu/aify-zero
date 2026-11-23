@@ -19,6 +19,10 @@ export type ProximitySection = {
   label: string;
   kind?: SectionKind;
   level?: SectionLevel;
+  /** 悬停卡片里的补充说明，例如这一节的答复。 */
+  description?: string;
+  /** 悬停卡片底部的弱化文字，例如这一节的时间。 */
+  meta?: string;
 };
 
 /**
@@ -240,7 +244,17 @@ const Dash = ({
         side={side === "right" ? "left" : "right"}
         sideOffset={-80}
       >
-        <p className="line-clamp-4">{section.label}</p>
+        <p className="line-clamp-1 wrap-break-word">{section.label}</p>
+        {section.description ? (
+          <p className="mt-1.5 line-clamp-3 wrap-break-word text-muted-foreground">
+            {section.description}
+          </p>
+        ) : null}
+        {section.meta ? (
+          <p className="mt-2 text-xs text-muted-foreground/70 tabular-nums">
+            {section.meta}
+          </p>
+        ) : null}
       </HoverCardContent>
     </HoverCard>
   );

@@ -5,26 +5,28 @@ import type { SandboxDescription } from "@workspace/sandbox";
 import type { ExtensionAPI, ExtensionOptions } from "./types";
 import { Extension } from "./types";
 
-/** 系统信息，宿主探测一次后写进提示词；测试可以直接覆盖。 */
+/**
+ * What the host detects once about the machine. Tests can override it.
+ *
+ * The date is not here: it changes on its own, so the renderer reads it.
+ */
 export interface EnvironmentInfo {
   operatingSystem: string;
   architecture: string;
   shell: string;
   nodeVersion: string;
-  /** `YYYY-MM-DD`，本地时区。 */
-  date: string;
 }
 
 export interface EnvironmentExtensionOptions extends ExtensionOptions {
-  /** 提示片段的位置，默认 -10（排在所有片段最前面）。 */
+  /** Where the environment block runs. Defaults to -10, ahead of every other block. */
   sectionPriority?: number;
-  /** 覆盖探测到的系统信息，主要给测试用。 */
+  /** Overrides the detected machine facts. Tests use it. */
   info?: Partial<EnvironmentInfo>;
-  /** 覆盖当前时间，主要给测试用。 */
-  now?: Date;
+  /** The clock the date is read from at render time. Tests move it. */
+  clock?: () => Date;
 }
 
-/** 用本地时区格式化成 `YYYY-MM-DD`，避免 `toISOString` 的 UTC 偏移。 */
+/** Formats a local date as `YYYY-MM-DD`, so the UTC offset cannot shift the day. */
 function formatDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -32,26 +34,28 @@ function formatDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-function detectEnvironment(now: Date): EnvironmentInfo {
+/** Reads what does not change while the process runs. */
+function detectEnvironment(): EnvironmentInfo {
   return {
     operatingSystem: `${platform()} ${release()}`,
     architecture: arch(),
     shell: process.env.SHELL ?? process.env.ComSpec ?? "unknown",
     nodeVersion: process.version,
-    date: formatDate(now),
   };
 }
 
 /**
- * 渲染 Environment 段。
+ * Renders the environment block.
  *
- * 项目目录和会话目录是模型最需要知道的路径：项目目录的第一项是所有相对
- * 路径的基准，其余目录只能通过绝对路径访问；会话目录是它可以随便写临时
- * 文件、artifact 的地方。系统信息用来让模型选对命令（比如 shell 语法和
- * 平台差异）。
+ * The project directories are the paths the model needs first: the first one is
+ * the base for every relative path, and the rest are reachable by absolute path.
+ * The machine facts let it choose the right commands for the shell and platform.
  *
- * 路径来自沙箱的自我描述，不写死宿主目录：换一个适配器，模型看到的就是那个
- * 环境里真实存在的路径。
+ * The paths come from the sandbox describing itself, never from the host, so a
+ * different adapter shows the model the paths that exist in that environment.
+ *
+ * The session directory is not a project directory: it has its own block, so this
+ * function only excludes it from the roots.
  */
 export interface EnvironmentRenderOptions {
   readonly botWorkspaceDir?: string;
@@ -68,7 +72,7 @@ function renderWorkspaceLines(
     const additional = candidateRoots.filter(
       (dir) => dir !== primary && dir !== sessionDir
     );
-    // 单目录时用单数形式，避免提示词里出现一个只有一项的列表。
+    // A single directory reads as one line, not as a list with one entry.
     return additional.length === 0
       ? [`- Project directory: ${primary} (relative paths resolve here)`]
       : [
@@ -130,8 +134,8 @@ export function renderEnvironment(
     "## Environment",
     "",
     ...workspaceLines,
-    `- Session directory: ${sessionDir} (session-scoped scratch space for temporary files and artifacts)`,
-    // 只有沙箱自己说了限制才渲染这一行：本机直跑没有要提前告诉模型的边界。
+    // Only a sandbox that states a limit renders this line: a local run has no
+    // boundary worth telling the model about up front.
     ...(description.note === undefined
       ? []
       : [`- Sandbox: ${description.note}`]),
@@ -139,31 +143,61 @@ export function renderEnvironment(
     `- Architecture: ${info.architecture}`,
     `- Shell: ${info.shell}`,
     `- Node.js: ${info.nodeVersion}`,
-    `- Current date: ${info.date}`,
+  ].join("\n");
+}
+
+/** The heading of the block that changes on its own. */
+export const SESSION_HEADING = "## This session";
+
+/**
+ * The block that changes while nothing else does.
+ *
+ * It carries the session directory, which is new for every session, and the date,
+ * which is new every day. It runs last so that either change rewrites only this
+ * block: everything before it is the prefix a provider has already cached.
+ */
+export function renderSessionSection(sessionDir: string, date: Date): string {
+  return [
+    SESSION_HEADING,
+    "",
+    `- Session directory: ${sessionDir} (session-scoped scratch space for temporary files and artifacts)`,
+    `- Current date: ${formatDate(date)}`,
   ].join("\n");
 }
 
 /**
- * 环境扩展：注册一段 Environment 提示，告诉模型它在哪个项目、哪个会话
- * 目录里工作，以及当前的系统环境。
+ * Runs after every built-in block: the subagent catalogue is 90.
+ *
+ * A host block registered above 100 follows this one, and so does the environment
+ * block when a host raises its own priority past 100. Either way the prefix is
+ * stable only up to that block, which is the host's choice to make.
+ */
+const SESSION_SECTION_PRIORITY = 100;
+
+/**
+ * The environment extension: two blocks.
+ *
+ * `Environment` describes the project and the machine, and stays the same for as
+ * long as the host does. `This session` carries the session directory and the
+ * date, the two values that move on their own, so it goes last.
  */
 export class EnvironmentExtension extends Extension {
   readonly #sectionPriority: number;
   readonly #info: EnvironmentInfo;
+  readonly #clock: () => Date;
 
   constructor(options: EnvironmentExtensionOptions) {
     super(options);
     this.#sectionPriority = options.sectionPriority ?? -10;
-    this.#info = {
-      ...detectEnvironment(options.now ?? new Date()),
-      ...options.info,
-    };
+    this.#info = { ...detectEnvironment(), ...options.info };
+    this.#clock = options.clock ?? (() => new Date());
   }
 
   init(api: ExtensionAPI): void {
+    const { sessionDir } = api.agent;
     const rendered = renderEnvironment(
       api.environment.sandbox.describe(),
-      api.agent.sessionDir,
+      sessionDir,
       this.#info,
       {
         botWorkspaceDir: api.environment.botWorkspaceDir,
@@ -175,6 +209,12 @@ export class EnvironmentExtension extends Extension {
       id: `${this.id}:environment`,
       priority: this.#sectionPriority,
       render: () => rendered,
+    });
+
+    api.instructionsSection({
+      id: `${this.id}:session`,
+      priority: SESSION_SECTION_PRIORITY,
+      render: () => renderSessionSection(sessionDir, this.#clock()),
     });
   }
 }

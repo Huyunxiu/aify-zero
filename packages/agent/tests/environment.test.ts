@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   EnvironmentExtension,
   renderEnvironment,
+  SESSION_HEADING,
 } from "../src/extensions/environment.js";
 import { ExtensionManager } from "../src/extensions/manager.js";
 import type { ExtensionAPI } from "../src/extensions/types.js";
@@ -11,10 +12,22 @@ import { Extension } from "../src/extensions/types.js";
 import { HooksManager } from "../src/hooks-manager.js";
 import { testSandbox } from "./helpers/sandbox.js";
 
+/** Everything the prompt says before the block that changes on its own. */
+const beforeSession = (prompt: string): string => {
+  const index = prompt.indexOf(SESSION_HEADING);
+  if (index === -1) {
+    throw new Error("the session block is missing from the prompt");
+  }
+  return prompt.slice(0, index);
+};
+
+/** A clock that stays put, for a test that does not care about the time. */
+const fixedClock = (): Date => new Date(2026, 9, 21);
+
 const projectDir = "/repo";
 const sessionDir = "/home/user/.aify-zero/sessions/session-1";
 
-const makeManager = (): ExtensionManager => {
+const makeManager = (dir: string = sessionDir): ExtensionManager => {
   const tools: ToolSet = {};
 
   return new ExtensionManager({
@@ -22,14 +35,14 @@ const makeManager = (): ExtensionManager => {
       name: "main",
       sessionId: "session-1",
       projectDirs: [projectDir],
-      sessionDir,
+      sessionDir: dir,
     },
     environment: {
       sessionId: "session-1",
       projectDirs: [projectDir],
       primaryProjectDir: projectDir,
-      sessionDir,
-      sandbox: testSandbox(projectDir, sessionDir),
+      sessionDir: dir,
+      sandbox: testSandbox(projectDir, dir),
     },
     tools,
     registerTool: (name, tool) => {
@@ -63,14 +76,14 @@ class SectionExtension extends Extension {
 }
 
 describe(EnvironmentExtension, () => {
-  test("renders both directories and the detected system info", async () => {
+  test("renders the project directory and the detected system info", async () => {
     const manager = makeManager();
 
     await manager.add(
       new EnvironmentExtension({
         id: "environment",
         // 10 月是 9，验证本地日期格式化成 YYYY-MM-DD。
-        now: new Date(2026, 9, 21),
+        clock: () => new Date(2026, 9, 21),
         info: {
           operatingSystem: "linux 6.8",
           architecture: "x64",
@@ -87,13 +100,79 @@ describe(EnvironmentExtension, () => {
         "## Environment",
         "",
         `- Project directory: ${projectDir} (relative paths resolve here)`,
-        `- Session directory: ${sessionDir} (session-scoped scratch space for temporary files and artifacts)`,
         "- Operating system: linux 6.8",
         "- Architecture: x64",
         "- Shell: /bin/zsh",
         "- Node.js: v22.0.0",
+        "",
+        "## This session",
+        "",
+        `- Session directory: ${sessionDir} (session-scoped scratch space for temporary files and artifacts)`,
         "- Current date: 2026-10-21",
       ].join("\n")
+    );
+  });
+
+  test("reads the date when it renders, not when it is constructed", async () => {
+    let now = new Date(2026, 9, 21, 23, 55);
+    const manager = makeManager();
+    await manager.add(
+      new EnvironmentExtension({ id: "environment", clock: () => now })
+    );
+
+    const before = manager.renderInstructions();
+    now = new Date(2026, 9, 22, 0, 5);
+    const after = manager.renderInstructions();
+
+    expect(before).toContain("- Current date: 2026-10-21");
+    expect(after).toContain("- Current date: 2026-10-22");
+  });
+
+  test("leaves everything before the session block alone when the date turns", async () => {
+    let now = new Date(2026, 9, 21, 23, 55);
+    const manager = makeManager();
+    await manager.add(
+      new EnvironmentExtension({ id: "environment", clock: () => now })
+    );
+    await manager.add(new SectionExtension("project", 0, "project notes"));
+
+    const before = manager.renderInstructions();
+    now = new Date(2026, 9, 22, 0, 5);
+    const after = manager.renderInstructions();
+    expect(beforeSession(after)).toBe(beforeSession(before));
+    expect(after).not.toBe(before);
+  });
+
+  test("keeps the same prefix in two sessions of one project", async () => {
+    const one = makeManager("/sessions/one");
+    const other = makeManager("/sessions/two");
+    await one.add(
+      new EnvironmentExtension({ id: "environment", clock: fixedClock })
+    );
+    await other.add(
+      new EnvironmentExtension({ id: "environment", clock: fixedClock })
+    );
+
+    const first = one.renderInstructions();
+    const second = other.renderInstructions();
+
+    expect(first).not.toBe(second);
+    expect(beforeSession(first)).toBe(beforeSession(second));
+    expect(first).toContain("- Session directory: /sessions/one");
+    expect(second).toContain("- Session directory: /sessions/two");
+  });
+
+  test("runs after the subagent catalogue", async () => {
+    const manager = makeManager();
+    await manager.add(
+      new SectionExtension("catalogue", 90, "## Available Subagents")
+    );
+    await manager.add(new EnvironmentExtension({ id: "environment" }));
+
+    const prompt = manager.renderInstructions();
+
+    expect(prompt.indexOf("## Available Subagents")).toBeLessThan(
+      prompt.indexOf(SESSION_HEADING)
     );
   });
 
@@ -111,7 +190,6 @@ describe(EnvironmentExtension, () => {
         architecture: "arm64",
         shell: "/bin/zsh",
         nodeVersion: "v22.0.0",
-        date: "2026-10-21",
       }
     );
 
@@ -130,7 +208,6 @@ describe(EnvironmentExtension, () => {
       architecture: "x64",
       shell: "/bin/zsh",
       nodeVersion: "v22.0.0",
-      date: "2026-10-21",
     };
 
     const confined = renderEnvironment(
@@ -205,7 +282,6 @@ describe(EnvironmentExtension, () => {
         architecture: "arm64",
         shell: "/bin/zsh",
         nodeVersion: "v22.0.0",
-        date: "2026-10-21",
       },
       {
         botWorkspaceDir,
@@ -235,7 +311,6 @@ describe(EnvironmentExtension, () => {
         architecture: "arm64",
         shell: "/bin/zsh",
         nodeVersion: "v22.0.0",
-        date: "2026-10-21",
       },
       {
         botWorkspaceDir,
