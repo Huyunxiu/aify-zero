@@ -195,12 +195,12 @@ describe(ExtensionManager, () => {
         api.instructionsSection({
           id: "late",
           priority: 10,
-          render: (prompt) => `${prompt}A`,
+          render: () => "A",
         });
         api.instructionsSection({
           id: "early",
           priority: 0,
-          render: (prompt) => `${prompt}B`,
+          render: () => "B",
         });
       })
     );
@@ -208,17 +208,30 @@ describe(ExtensionManager, () => {
       new TestExtension("second", (api) =>
         api.instructionsSection({
           id: "same-priority",
-          render: (prompt) => `${prompt}C`,
+          render: () => "C",
         })
       )
     );
 
-    expect(manager.renderInstructions("base")).toBe("baseBCA");
+    expect(manager.renderInstructions("base")).toBe("base\n\nB\n\nC\n\nA");
     expect(manager.listSections().map((section) => section.id)).toStrictEqual([
       "early",
       "same-priority",
       "late",
     ]);
+  });
+
+  test("leaves no gap for a section that contributes nothing", async () => {
+    const { deps } = makeDeps();
+    const manager = new ExtensionManager(deps);
+
+    await manager.add(
+      new TestExtension("quiet", (api) =>
+        api.instructionsSection({ id: "quiet", render: () => "" })
+      )
+    );
+
+    expect(manager.renderInstructions("base")).toBe("base");
   });
 
   test("rejects a prompt section id that is already registered", async () => {
@@ -229,7 +242,7 @@ describe(ExtensionManager, () => {
       new TestExtension("first", (api) =>
         api.instructionsSection({
           id: "shared",
-          render: (prompt) => prompt,
+          render: () => "",
         })
       )
     );
@@ -239,7 +252,7 @@ describe(ExtensionManager, () => {
         new TestExtension("second", (api) =>
           api.instructionsSection({
             id: "shared",
-            render: (prompt) => prompt,
+            render: () => "",
           })
         )
       )
@@ -256,7 +269,7 @@ describe(ExtensionManager, () => {
         api.tool("owned-tool", tool);
         api.instructionsSection({
           id: "owned-section",
-          render: (prompt) => `${prompt}owned`,
+          render: () => "owned",
         });
       })
     );
@@ -328,7 +341,7 @@ describe(ExtensionManager, () => {
           api.on("turn_start", handler);
           api.instructionsSection({
             id: "broken-section",
-            render: (prompt) => prompt,
+            render: () => "",
           });
           throw new Error("boom");
         })
@@ -391,7 +404,15 @@ describe(SkillExtension, () => {
       extension.manager.listUserAvailableSkills().map((skill) => skill.name)
     ).toStrictEqual(["review"]);
     expect(manager.renderInstructions("base")).toBe(
-      "base\n## Available Skills\n- **review**: review description"
+      [
+        "base",
+        "",
+        "## Available Skills",
+        "",
+        "A description is a summary: load the skill with load-skill before you follow it.",
+        "",
+        "- **review**: review description",
+      ].join("\n")
     );
   });
 
@@ -438,7 +459,7 @@ describe(ContextExtension, () => {
       [
         "base",
         "",
-        "Project-specific instructions and guidelines:",
+        "## Project instructions",
         "",
         '<project_instructions path="/repo/AGENTS.md">',
         "Always run the tests.",

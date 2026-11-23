@@ -493,8 +493,7 @@ describe("subagent 继承项目说明", () => {
   ];
   const projectSection = {
     id: "project",
-    render: (prompt: string): string =>
-      `${prompt}\n\n${renderProjectContext(parentContextFiles)}`,
+    render: (): string => renderProjectContext(parentContextFiles),
   };
 
   const buildParent = (): Agent =>

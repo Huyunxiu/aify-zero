@@ -4,11 +4,18 @@ import { Extension } from "../types";
 
 const DEFAULT_OPTIONS: ExtensionOptions = { id: "timers-tools" };
 
+/** The heading every variant of this section carries. */
+const HEADING = "## Timers";
+
 /** 定时器的使用说明；只在绑定了会话定时器时出现。 */
-const TIMERS_GUIDANCE = `A timer wakes this session later. Set one with timer-set when the next step depends on something that has not happened yet — a deploy, a build, a reply. Set a schedule with schedule-set when the user wants to be woken on a cadence, such as every day at nine. Do not sleep or poll waiting for either: end the turn and it brings you back.`;
+const TIMERS_GUIDANCE = `${HEADING}
+
+A timer wakes this session later. Set one with timer-set when the next step depends on something that has not happened yet — a deploy, a build, a reply. Set a schedule with schedule-set when the user wants to be woken on a cadence, such as every day at nine. Do not sleep or poll waiting for either: end the turn and it brings you back.`;
 
 /** A subagent inherits this section, but a timer it sets is not its own. */
-const SUBAGENT_OWNERSHIP = `A timer you set from here wakes the parent session, not this subagent.`;
+const SUBAGENT_OWNERSHIP = `${HEADING}
+
+A timer you set from here wakes the parent session, not this subagent.`;
 
 /**
  * The timers extension.
@@ -37,11 +44,9 @@ export class TimersToolsExtension extends Extension {
       id: `${this.id}:guidance`,
       // 和任务提示同档：它讲的是这一轮的工具行为。
       priority: 50,
-      render: (prompt) =>
-        prompt ? `${prompt}\n\n${TIMERS_GUIDANCE}` : TIMERS_GUIDANCE,
+      render: () => TIMERS_GUIDANCE,
       // 子 agent 继承父的工具集，排出来的定时器落在父会话里。
-      renderForSubagent: (prompt) =>
-        prompt ? `${prompt}\n\n${SUBAGENT_OWNERSHIP}` : SUBAGENT_OWNERSHIP,
+      renderForSubagent: () => SUBAGENT_OWNERSHIP,
     });
   }
 }

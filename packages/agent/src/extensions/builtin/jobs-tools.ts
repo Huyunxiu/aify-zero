@@ -10,8 +10,13 @@ export type JobsToolsExtensionOptions = ExtensionOptions & {
 
 const DEFAULT_OPTIONS: JobsToolsExtensionOptions = { id: "jobs-tools" };
 
+/** The heading every variant of this section carries. */
+const HEADING = "## Background jobs";
+
 /** 后台任务的使用说明；只在有注册表时出现。 */
-const JOBS_GUIDANCE = `Track every background job id you start. A completion notice arrives when a job finishes — do not poll or sleep on one; keep working on independent steps and do not duplicate a running job's work. Before a final answer, collect every still-relevant job with job-output (set wait: true only when you are blocked on it), and job-kill jobs that no longer matter.`;
+const JOBS_GUIDANCE = `${HEADING}
+
+Track every background job id you start. A completion notice arrives when a job finishes — do not poll or sleep on one; keep working on independent steps and do not duplicate a running job's work. Before a final answer, collect every still-relevant job with job-output (set wait: true only when you are blocked on it), and job-kill jobs that no longer matter.`;
 
 /**
  * What a subagent reads instead.
@@ -20,7 +25,9 @@ const JOBS_GUIDANCE = `Track every background job id you start. A completion not
  * starts belongs to the parent session, and it has no inbox to receive the
  * completion notice.
  */
-const SUBAGENT_GUIDANCE = `A background job you start belongs to the parent session, and its completion notice does not come back to you. Collect what you need before your report, and put the job id in the report so the parent can collect the rest.`;
+const SUBAGENT_GUIDANCE = `${HEADING}
+
+A background job you start belongs to the parent session, and its completion notice does not come back to you. Collect what you need before your report, and put the job id in the report so the parent can collect the rest.`;
 
 /**
  * 后台任务控制扩展。
@@ -55,10 +62,8 @@ export class JobsToolsExtension extends Extension {
       id: `${this.id}:guidance`,
       // 排在资源类片段之后：它讲的是这一轮的工具行为。
       priority: 50,
-      render: (prompt) =>
-        prompt ? `${prompt}\n\n${JOBS_GUIDANCE}` : JOBS_GUIDANCE,
-      renderForSubagent: (prompt) =>
-        prompt ? `${prompt}\n\n${SUBAGENT_GUIDANCE}` : SUBAGENT_GUIDANCE,
+      render: () => JOBS_GUIDANCE,
+      renderForSubagent: () => SUBAGENT_GUIDANCE,
     });
   }
 }

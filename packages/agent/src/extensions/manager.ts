@@ -14,6 +14,7 @@ import type {
 } from "../hooks-manager";
 import type { CallTargetResolver } from "../tools/execution";
 import type { AgentToolSet, ToolExposure } from "../types";
+import { joinBlocks } from "./block";
 import type { CapabilityToken, ToolEnvironment } from "./capabilities";
 import type {
   Extension,
@@ -370,14 +371,10 @@ function isolateAssembler(
   };
 }
 
-/** Applies every section to `base`, in priority order. */
+/** Joins the blocks of every section after `base`, in priority order. */
 export function renderSections(
   sections: readonly InstructionsSection[],
   base = ""
 ): string {
-  let prompt = base;
-  for (const section of sections) {
-    prompt = section.render(prompt);
-  }
-  return prompt;
+  return joinBlocks([base, ...sections.map((section) => section.render())]);
 }

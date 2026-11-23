@@ -74,7 +74,7 @@ export function renderEnvironment(
         ];
 
   return [
-    "# Environment",
+    "## Environment",
     "",
     ...projectLines,
     `- Session directory: ${sessionDir} (session-scoped scratch space for temporary files and artifacts)`,
@@ -117,7 +117,7 @@ export class EnvironmentExtension extends Extension {
     api.instructionsSection({
       id: `${this.id}:environment`,
       priority: this.#sectionPriority,
-      render: (prompt) => (prompt ? `${prompt}\n\n${rendered}` : rendered),
+      render: () => rendered,
     });
   }
 }

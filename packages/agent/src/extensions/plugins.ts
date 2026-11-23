@@ -77,7 +77,7 @@ export class SkillExtension extends Extension {
     api.instructionsSection({
       id: `${this.id}:skills`,
       priority: this.#sectionPriority,
-      render: (prompt) => manager.appendPrompt(prompt),
+      render: () => manager.promptBlock(),
     });
   }
 }
@@ -114,7 +114,7 @@ export class ContextExtension extends Extension {
     api.instructionsSection({
       id: `${this.id}:context`,
       priority: this.#sectionPriority,
-      render: (prompt) => (prompt ? `${prompt}\n\n${rendered}` : rendered),
+      render: () => rendered,
     });
   }
 }
