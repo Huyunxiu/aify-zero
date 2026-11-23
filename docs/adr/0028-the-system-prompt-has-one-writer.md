@@ -14,6 +14,14 @@ add that a section cannot say.
 A patch now carries only what one call needs at that moment: the model. A field that is not on
 the patchable list is ignored, so a plugin written in JavaScript cannot reach the prompt either.
 
+The same rule reaches inside a section. A section used to receive the prompt so far and return
+the whole string, so each one wrote its own separator: two of them added a heading after a single
+newline, and the rest after a blank line. A section now returns only its own block, and the writer
+trims it, drops it when it is empty, and joins what is left with a blank line. An empty block is
+how a section says it has nothing to add, which also removed the "return the prompt unchanged"
+variant a subagent section needed. Every top-level block carries a second-level heading, so the
+document outline matches the sections and no block inherits the heading above it.
+
 ## Considered Options
 
 - **Keep replace and document it.** The cost of a mistake is a prompt with no environment and no
@@ -30,3 +38,5 @@ the patchable list is ignored, so a plugin written in JavaScript cannot reach th
   has the field, and the merge filters unknown keys.
 - A test that proved a patch does not persist to the next turn now proves that a patch cannot
   apply at all.
+- A section tests as a block: what it says, and what it says to a subagent. The join has one
+  test, and both assembly points — the session prompt and the subagent prompt — use it.

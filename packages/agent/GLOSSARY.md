@@ -165,16 +165,18 @@ _Avoid_: 插件、模块、集成
 **System Prompt (系统提示)**:
 The text a session sends as the model's instructions with every step request. It starts with an
 identity: the main session reads `MAIN_INSTRUCTIONS`, and a subagent reads its own preamble. Each
-instructions section then appends to it in priority order. Nothing else writes it: a start patch
+instructions section then contributes its block, in priority order. Nothing else writes it: a start patch
 changes the call, not the prompt. The code names this field `instructions`.
 _Avoid_: 提示词、提示片段、系统消息、system message
 
 **Instructions Section (指令段)**:
-One fragment that an extension appends to the system prompt at assembly. It holds an id, a
-priority, and a render function; a lower number renders earlier. A section belongs to the
-extension that registers it. It gives a subagent different text through `renderForSubagent`
-when what it says does not hold for a subagent.
-_Avoid_: 提示片段、prompt fragment、prompt block
+One block of system prompt text that an extension contributes at assembly. It holds an id, a
+priority, and a render function; a lower number renders earlier. The function returns the
+section's own block and nothing else: the writer joins the blocks, so no section writes a
+separator. A section belongs to the extension that registers it. It gives a subagent different
+text through `renderForSubagent` when what it says does not hold for a subagent, and an empty
+block means the subagent does not read it at all.
+_Avoid_: 提示片段、prompt fragment
 
 **Skill (技能)**:
 A set of instructions stored as a `SKILL.md` file in a skill directory, which one session loads on

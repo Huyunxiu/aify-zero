@@ -46,7 +46,7 @@ export class SubagentExtension extends Extension {
       priority: 90,
       render: renderSubagentCatalogue,
       // A subagent has no task tool, so the catalogue tells it nothing it can do.
-      renderForSubagent: (prompt) => prompt,
+      renderForSubagent: () => "",
     });
   }
 }

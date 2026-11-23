@@ -84,16 +84,16 @@ export function getSubagentDefinition(
  * belongs here, where the parent reads it; the subagent's own copy lives in its
  * preamble, where the subagent reads it.
  */
-export function renderSubagentCatalogue(prompt: string): string {
-  const catalogue = [
-    "",
+export function renderSubagentCatalogue(): string {
+  return [
     "## Available Subagents",
+    "",
     "Use the `task` tool to delegate a self-contained piece of work — one that would otherwise fill this conversation with searching or reading. Give it the whole task, not a single step, and write the brief so it stands alone: a subagent cannot ask the user anything.",
+    "",
     "Start independent delegations in the same message; they then run at the same time. Do not delegate the same work twice.",
+    "",
     ...SUBAGENT_DEFINITIONS.map(
       (definition) => `- **${definition.name}**: ${definition.description}`
     ),
   ].join("\n");
-
-  return prompt + catalogue;
 }

@@ -84,11 +84,44 @@ describe("the session prompt", () => {
     const prompt = await parentPrompt();
 
     expect(prompt.indexOf("## How to work")).toBeLessThan(
-      prompt.indexOf("# Environment")
+      prompt.indexOf("## Environment")
     );
-    expect(prompt.indexOf("# Environment")).toBeLessThan(
+    expect(prompt.indexOf("## Environment")).toBeLessThan(
       prompt.indexOf("## Available Subagents")
     );
+  });
+
+  test("separates the blocks with one blank line", async () => {
+    const prompt = await parentPrompt();
+
+    expect(prompt).toContain("\n\n## Available Subagents");
+    expect(prompt).not.toContain("\n\n\n");
+  });
+
+  test("heads the blocks in the order the sections run", async () => {
+    const prompt = await parentPrompt();
+
+    const headings = prompt
+      .split("\n")
+      .filter((line: string) => line.startsWith("## "));
+
+    expect(headings).toStrictEqual([
+      "## How to work",
+      "## Environment",
+      "## Background jobs",
+      "## Timers",
+      "## Available Subagents",
+    ]);
+  });
+
+  test("keeps every heading at the second level", async () => {
+    const prompt = await parentPrompt();
+
+    const firstLevel = prompt
+      .split("\n")
+      .filter((line: string) => line.startsWith("# "));
+
+    expect(firstLevel).toStrictEqual([]);
   });
 
   test.each(RULES)("states the rule: %s", async (rule) => {
@@ -127,6 +160,13 @@ describe("the prompt a subagent reads", () => {
 
     expect(prompt).toContain("## How to work");
     expect(prompt).toContain("Use read-file for text, glob for file names");
+  });
+
+  test("leaves no gap where a section says nothing", async () => {
+    const prompt = await explorePrompt();
+
+    expect(prompt).not.toContain("\n\n\n");
+    expect(prompt).toContain("\n\n## How to work");
   });
 
   test("drops the catalogue, which offers a tool it does not have", async () => {

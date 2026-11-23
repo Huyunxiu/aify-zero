@@ -194,10 +194,8 @@ describe(ToolCatalogExtension, () => {
     const { sections } = mount();
 
     expect(sections).toHaveLength(1);
-    expect(sections[0]?.render("base")).toBe(
+    expect(sections[0]?.render()).toBe(
       [
-        "base",
-        "",
         "## Tool catalog",
         "",
         "Some tools are not in your list. They belong to these servers.",
@@ -218,6 +216,6 @@ describe(ToolCatalogExtension, () => {
 
     extension.init(harness.api);
 
-    expect(harness.sections[0]?.render("base")).toBe("base");
+    expect(harness.sections[0]?.render()).toBe("");
   });
 });

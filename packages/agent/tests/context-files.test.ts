@@ -378,7 +378,7 @@ describe("context files", () => {
         ])
       ).toBe(
         [
-          "Project-specific instructions and guidelines:",
+          "## Project instructions",
           '<project_instructions path="/global/AGENTS.md">\nglobal\n</project_instructions>',
           '<project_instructions path="/repo/AGENTS.md">\nrepo\n</project_instructions>',
         ].join("\n\n")

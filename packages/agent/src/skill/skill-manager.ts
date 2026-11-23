@@ -222,16 +222,30 @@ export class SkillManager {
     );
   }
 
-  appendPrompt(prompt: string): string {
-    const skillPrompt = [
-      "",
+  /**
+   * The block that lists the skills the model may load, or nothing when there
+   * are none to offer.
+   *
+   * A description is one line: it says when to reach for the skill, not how to
+   * do the work. The line below it exists so the model loads the skill instead
+   * of acting on the title.
+   */
+  promptBlock(): string {
+    const skills = this.listModelAvailableSkills();
+    if (skills.length === 0) {
+      return "";
+    }
+
+    return [
       "## Available Skills",
-      ...this.listModelAvailableSkills().map((skill) =>
+      "",
+      "A description is a summary: load the skill with load-skill before you follow it.",
+      "",
+      ...skills.map((skill) =>
         skill.description
           ? `- **${skill.name}**: ${skill.description}`
           : `- **${skill.name}**`
       ),
     ].join("\n");
-    return prompt + skillPrompt;
   }
 }
