@@ -1,8 +1,9 @@
 import { GlobeIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ToolPanels } from "../tool-panels";
+import { StepFrame, StepLabel, StepShell } from "./shell";
 import { summarizeTool } from "./summary";
-import { ToolCardsStep } from "./tool-cards";
 import type { StepPartOf, StepViewProps } from "./types";
 
 export const webFetchSummary = (
@@ -24,13 +25,17 @@ export const WebFetchStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-web-fetch">) => (
-  <ToolCardsStep
-    action="Fetch"
-    detail={part.input?.url}
+  <StepShell
+    approvalPart={part}
+    body={
+      <StepFrame title="Fetch">
+        <ToolPanels onRespond={onRespond} part={part} />
+      </StepFrame>
+    }
     duration={duration}
     icon={<GlobeIcon />}
+    label={<StepLabel action="Fetch" detail={part.input?.url} />}
     onRespond={onRespond}
-    part={part}
     status={status}
     summary={webFetchSummary(part)}
   />

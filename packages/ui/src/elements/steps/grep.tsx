@@ -1,8 +1,9 @@
 import { SearchIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ToolPanels } from "../tool-panels";
+import { StepFrame, StepLabel, StepShell } from "./shell";
 import { summarizeTool } from "./summary";
-import { ToolCardsStep } from "./tool-cards";
 import type { StepPartOf, StepViewProps } from "./types";
 
 export const grepSummary = (
@@ -35,13 +36,17 @@ export const GrepStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-grep">) => (
-  <ToolCardsStep
-    action="Grep"
-    detail={part.input?.pattern}
+  <StepShell
+    approvalPart={part}
+    body={
+      <StepFrame title="Grep">
+        <ToolPanels onRespond={onRespond} part={part} />
+      </StepFrame>
+    }
     duration={duration}
     icon={<SearchIcon />}
+    label={<StepLabel action="Grep" detail={part.input?.pattern} />}
     onRespond={onRespond}
-    part={part}
     status={status}
     summary={grepSummary(part)}
   />

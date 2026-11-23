@@ -2,8 +2,9 @@ import type { FileReadMetadata } from "@workspace/agent-client";
 import { EyeIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ToolPanels } from "../tool-panels";
+import { StepFrame, StepLabel, StepShell } from "./shell";
 import { summarizeTool } from "./summary";
-import { ToolCardsStep } from "./tool-cards";
 import type { StepPartOf, StepViewProps } from "./types";
 
 /**
@@ -136,14 +137,21 @@ export const ReadFileStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-read-file">) => (
-  <ToolCardsStep
-    action="Read"
-    detail={part.input?.path}
+  <StepShell
+    approvalPart={part}
+    body={
+      <StepFrame title="Read">
+        <ToolPanels
+          onRespond={onRespond}
+          outputLanguage={outputLanguageOf(part)}
+          part={part}
+        />
+      </StepFrame>
+    }
     duration={duration}
     icon={<EyeIcon />}
+    label={<StepLabel action="Read" detail={part.input?.path} />}
     onRespond={onRespond}
-    outputLanguage={outputLanguageOf(part)}
-    part={part}
     status={status}
     summary={readFileSummary(part)}
   />

@@ -1,8 +1,9 @@
 import { Trash2Icon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ToolPanels } from "../tool-panels";
+import { StepFrame, StepLabel, StepShell } from "./shell";
 import { summarizeTool } from "./summary";
-import { ToolCardsStep } from "./tool-cards";
 import type { StepPartOf, StepViewProps } from "./types";
 
 export const deleteFileSummary = (
@@ -23,13 +24,17 @@ export const DeleteFileStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-delete-file">) => (
-  <ToolCardsStep
-    action="Delete"
-    detail={part.input?.path}
+  <StepShell
+    approvalPart={part}
+    body={
+      <StepFrame title="Delete">
+        <ToolPanels onRespond={onRespond} part={part} />
+      </StepFrame>
+    }
     duration={duration}
     icon={<Trash2Icon />}
+    label={<StepLabel action="Delete" detail={part.input?.path} />}
     onRespond={onRespond}
-    part={part}
     status={status}
     summary={deleteFileSummary(part)}
   />

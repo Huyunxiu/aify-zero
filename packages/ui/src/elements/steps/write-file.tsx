@@ -1,8 +1,9 @@
 import { FilePlusIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ToolPanels } from "../tool-panels";
+import { StepFrame, StepLabel, StepShell } from "./shell";
 import { summarizeTool } from "./summary";
-import { ToolCardsStep } from "./tool-cards";
 import type { StepPartOf, StepViewProps } from "./types";
 
 export const writeFileSummary = (
@@ -24,13 +25,17 @@ export const WriteFileStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-write-file">) => (
-  <ToolCardsStep
-    action="Create"
-    detail={part.input?.path}
+  <StepShell
+    approvalPart={part}
+    body={
+      <StepFrame title="Create">
+        <ToolPanels onRespond={onRespond} part={part} />
+      </StepFrame>
+    }
     duration={duration}
     icon={<FilePlusIcon />}
+    label={<StepLabel action="Create" detail={part.input?.path} />}
     onRespond={onRespond}
-    part={part}
     status={status}
     summary={writeFileSummary(part)}
   />

@@ -1,8 +1,9 @@
 import { FolderSearchIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { ToolPanels } from "../tool-panels";
+import { StepFrame, StepLabel, StepShell } from "./shell";
 import { summarizeTool } from "./summary";
-import { ToolCardsStep } from "./tool-cards";
 import type { StepPartOf, StepViewProps } from "./types";
 
 export const globSummary = (
@@ -28,13 +29,17 @@ export const GlobStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-glob">) => (
-  <ToolCardsStep
-    action="Glob"
-    detail={part.input?.pattern}
+  <StepShell
+    approvalPart={part}
+    body={
+      <StepFrame title="Glob">
+        <ToolPanels onRespond={onRespond} part={part} />
+      </StepFrame>
+    }
     duration={duration}
     icon={<FolderSearchIcon />}
+    label={<StepLabel action="Glob" detail={part.input?.pattern} />}
     onRespond={onRespond}
-    part={part}
     status={status}
     summary={globSummary(part)}
   />
