@@ -7,6 +7,7 @@ import { createSessionAgent } from "../src/agent-factory.js";
 import { AgentSession } from "../src/agent-session.js";
 import { resolvePolicy } from "../src/compaction/policy.js";
 import { Capabilities } from "../src/extensions/capabilities.js";
+import { renderSections } from "../src/extensions/manager.js";
 import type { ExtensionAPI } from "../src/extensions/types.js";
 import { Extension } from "../src/extensions/types.js";
 import type { ToolCallHookEvent } from "../src/hooks-manager.js";
@@ -90,10 +91,7 @@ const decide = async (
 describe("the approval notice in the prompt", () => {
   test("a read-only session tells the model what it refuses", async () => {
     const agent = await makeAgent({ approvalPolicy: "readonly" });
-    let rendered = "";
-    for (const section of agent.context.instructionsSections) {
-      rendered = section.render(rendered);
-    }
+    const rendered = renderSections(agent.context.instructionsSections);
 
     expect(rendered).toContain(
       "This session refuses writes to disk and shell commands"

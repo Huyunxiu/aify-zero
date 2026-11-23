@@ -184,13 +184,13 @@ describe(SkillManager, () => {
     });
   });
 
-  describe("appendPrompt", () => {
+  describe("promptBlock", () => {
     test("should list a skill without a description by name only", async () => {
       await writeSkill(projectDir, "plain", "# Just a body\n");
       const manager = new SkillManager({ dirs: DIRS });
       await manager.loadSkills(projectDir);
 
-      const lines = manager.appendPrompt("base").split("\n");
+      const lines = manager.promptBlock().split("\n");
 
       expect(lines).toContain("- **plain**");
     });
@@ -201,8 +201,15 @@ describe(SkillManager, () => {
         description: "",
       });
 
-      expect(manager.appendPrompt("base")).toBe(
-        "base\n## Available Skills\n- **alpha**: alpha description\n- **plain**"
+      expect(manager.promptBlock()).toBe(
+        [
+          "## Available Skills",
+          "",
+          "A description is a summary: load the skill with load-skill before you follow it.",
+          "",
+          "- **alpha**: alpha description",
+          "- **plain**",
+        ].join("\n")
       );
     });
 
@@ -213,21 +220,21 @@ describe(SkillManager, () => {
       );
 
       const lines = manager
-        .appendPrompt("base")
+        .promptBlock()
         .split("\n")
         .filter((line) => line.startsWith("- "));
 
       expect(lines).toStrictEqual(["- **dup**: dup description"]);
     });
 
-    test("should keep the heading when every skill opts out", () => {
+    test("should contribute nothing when every skill opts out", () => {
       const manager = managerWith(
         makeSkill("off", "global", ".agents", {
           "disable-model-invocation": true,
         })
       );
 
-      expect(manager.appendPrompt("base")).toBe("base\n## Available Skills");
+      expect(manager.promptBlock()).toBe("");
     });
   });
 

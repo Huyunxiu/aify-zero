@@ -57,7 +57,7 @@ class SectionExtension extends Extension {
     api.instructionsSection({
       id: `${this.id}:section`,
       priority: this.#priority,
-      render: (prompt) => `${prompt}\n\n${this.#text}`,
+      render: () => this.#text,
     });
   }
 }
@@ -84,7 +84,7 @@ describe(EnvironmentExtension, () => {
       [
         "base",
         "",
-        "# Environment",
+        "## Environment",
         "",
         `- Project directory: ${projectDir} (relative paths resolve here)`,
         `- Session directory: ${sessionDir} (session-scoped scratch space for temporary files and artifacts)`,
@@ -171,7 +171,7 @@ describe(EnvironmentExtension, () => {
 
     const prompt = manager.renderInstructions("base");
 
-    expect(prompt.indexOf("# Environment")).toBeLessThan(
+    expect(prompt.indexOf("## Environment")).toBeLessThan(
       prompt.indexOf("project notes")
     );
   });

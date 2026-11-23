@@ -272,7 +272,7 @@ export function renderProjectContext(files: ContextFile[]): string {
   }
 
   return [
-    "Project-specific instructions and guidelines:",
+    "## Project instructions",
     ...files.map(
       ({ path, content }) =>
         `<project_instructions path="${path}">\n${content}\n</project_instructions>`

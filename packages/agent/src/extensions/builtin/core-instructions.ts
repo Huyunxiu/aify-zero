@@ -47,7 +47,7 @@ export class CoreInstructionsExtension extends Extension {
     api.instructionsSection({
       id: `${this.id}:rules`,
       priority: -20,
-      render: (prompt) => (prompt ? `${prompt}\n\n${RULES}` : RULES),
+      render: () => RULES,
     });
   }
 }

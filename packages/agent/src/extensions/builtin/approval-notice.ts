@@ -97,17 +97,9 @@ export class ApprovalPolicyExtension extends Extension {
       // Right after the environment, which is the other set of facts about the
       // world this session runs in.
       priority: -5,
-      render: (prompt) => (prompt ? `${prompt}\n\n${notice}` : notice),
-      renderForSubagent: (prompt) => {
-        const forSubagent = renderApprovalNotice(this.#policy, {
-          subagent: true,
-        });
-        return forSubagent
-          ? prompt
-            ? `${prompt}\n\n${forSubagent}`
-            : forSubagent
-          : prompt;
-      },
+      render: () => notice,
+      renderForSubagent: () =>
+        renderApprovalNotice(this.#policy, { subagent: true }) ?? "",
     };
 
     api.instructionsSection(section);

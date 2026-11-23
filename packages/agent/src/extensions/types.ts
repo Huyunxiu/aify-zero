@@ -16,27 +16,30 @@ export interface ExtensionAgentInfo {
 }
 
 /**
- * 一段追加到系统提示里的内容。
+ * One block of the system prompt.
  *
- * `render` 收到当前已经拼好的提示词，返回新的提示词；多个片段按
- * `priority`（数值小的先执行）和注册顺序依次套用。返回值是同步的：提示词
- * 必须在发起模型调用前就绪。
+ * `render` returns this section's own text: no leading newline, and no sight of
+ * the whole prompt. The writer joins the blocks and owns the separator between
+ * them. Sections run in `priority` order (a lower number first) and then in
+ * registration order. The return is synchronous: the prompt must be ready before
+ * the model call.
  */
 export interface InstructionsSection {
-  /** 唯一 id，重复注册会抛错。 */
+  /** Unique id; registering it twice throws. */
   id: string;
-  /** 数值越小越先执行，默认 0。 */
+  /** Lower runs first. Defaults to 0. */
   priority?: number;
-  render(prompt: string): string;
+  /** This section's text. An empty string means the section does not appear. */
+  render(): string;
   /**
    * The text a subagent reads instead, when the section says something the
    * subagent cannot act on.
    *
    * A subagent re-renders every section of its parent, and some sections speak
    * about tools or ownership the subagent does not share. Absent means `render`.
-   * Return the prompt unchanged to leave the section out of the subagent prompt.
+   * An empty string leaves the section out of the subagent prompt.
    */
-  renderForSubagent?(prompt: string): string;
+  renderForSubagent?(): string;
 }
 
 /**

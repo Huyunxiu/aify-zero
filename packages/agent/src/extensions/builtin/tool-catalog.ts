@@ -51,7 +51,7 @@ export class ToolCatalogExtension extends Extension {
       id: "tool-catalog",
       // 排在资源类片段之后：它讲的是这一轮有哪些工具可搜，不是项目背景。
       priority: 50,
-      render: (prompt) => prompt + renderSection(this.#entries()),
+      render: () => renderSection(this.#entries()),
     });
   }
 }
@@ -89,8 +89,6 @@ function renderSection(entries: readonly CatalogEntry[]): string {
   }
 
   return [
-    "",
-    "",
     "## Tool catalog",
     "",
     "Some tools are not in your list. They belong to these servers.",
