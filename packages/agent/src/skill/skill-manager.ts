@@ -67,10 +67,10 @@ function categoryRank(category: SkillCategory): number {
 }
 
 /**
- * Where a skill sits in the lookup order，依次比较：
- * 1. scope：project 压过 bot，bot 压过 global
- * 2. source 优先级：数值越小越强，用来决定数据库和文件系统谁覆盖谁
- * 3. 目录：同一个 source 内，`dirs` 里靠前的目录赢
+ * Where a skill sits in the lookup order, compared in sequence:
+ * 1. Scope: project overrides bot, and bot overrides global.
+ * 2. Source priority: smaller numbers override larger numbers across sources.
+ * 3. Directory order: within one source, earlier entries in `dirs` win.
  */
 function skillRank(
   skill: SkillInfo,

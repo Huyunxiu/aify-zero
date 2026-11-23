@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { BotCompactionOverride } from "@workspace/agent-client";
+import { DEFAULT_BOT_COMPACTION_OVERRIDE } from "@workspace/agent-client";
 import { ModelEffort } from "@workspace/shared/constants";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -24,22 +24,11 @@ import {
 } from "../settings/setting-frame";
 import type { BotSectionProps } from "./types";
 
-const DEFAULT_OVERRIDE: Required<BotCompactionOverride> = {
-  auto: true,
-  thresholdRatio: 0.8,
-  reserveTokens: 16_384,
-  keepRecentTokens: 20_000,
-  pruneToolResults: true,
-  maxSummaryTokens: 8192,
-};
-
 export function BotModelSection({ bot, isSaving, onUpdate }: BotSectionProps) {
   const { t } = useTranslation();
   const [instructions, setInstructions] = useState(bot.instructions ?? "");
-  const [compactionDraft, setCompactionDraft] = useState<
-    Required<BotCompactionOverride>
-  >({
-    ...DEFAULT_OVERRIDE,
+  const [compactionDraft, setCompactionDraft] = useState({
+    ...DEFAULT_BOT_COMPACTION_OVERRIDE,
     ...bot.compaction,
   });
 
@@ -49,7 +38,7 @@ export function BotModelSection({ bot, isSaving, onUpdate }: BotSectionProps) {
 
   useEffect(() => {
     setCompactionDraft({
-      ...DEFAULT_OVERRIDE,
+      ...DEFAULT_BOT_COMPACTION_OVERRIDE,
       ...bot.compaction,
     });
   }, [bot.id, bot.compaction]);
@@ -78,20 +67,23 @@ export function BotModelSection({ bot, isSaving, onUpdate }: BotSectionProps) {
   const compactionCustom = bot.compaction !== null;
   const compactionDirty =
     compactionCustom &&
-    (compactionDraft.auto !== (bot.compaction?.auto ?? DEFAULT_OVERRIDE.auto) ||
+    (compactionDraft.auto !==
+      (bot.compaction?.auto ?? DEFAULT_BOT_COMPACTION_OVERRIDE.auto) ||
       compactionDraft.pruneToolResults !==
         (bot.compaction?.pruneToolResults ??
-          DEFAULT_OVERRIDE.pruneToolResults) ||
+          DEFAULT_BOT_COMPACTION_OVERRIDE.pruneToolResults) ||
       compactionDraft.thresholdRatio !==
-        (bot.compaction?.thresholdRatio ?? DEFAULT_OVERRIDE.thresholdRatio) ||
+        (bot.compaction?.thresholdRatio ??
+          DEFAULT_BOT_COMPACTION_OVERRIDE.thresholdRatio) ||
       compactionDraft.reserveTokens !==
-        (bot.compaction?.reserveTokens ?? DEFAULT_OVERRIDE.reserveTokens) ||
+        (bot.compaction?.reserveTokens ??
+          DEFAULT_BOT_COMPACTION_OVERRIDE.reserveTokens) ||
       compactionDraft.keepRecentTokens !==
         (bot.compaction?.keepRecentTokens ??
-          DEFAULT_OVERRIDE.keepRecentTokens) ||
+          DEFAULT_BOT_COMPACTION_OVERRIDE.keepRecentTokens) ||
       compactionDraft.maxSummaryTokens !==
         (bot.compaction?.maxSummaryTokens ??
-          DEFAULT_OVERRIDE.maxSummaryTokens));
+          DEFAULT_BOT_COMPACTION_OVERRIDE.maxSummaryTokens));
 
   return (
     <div className="mx-auto flex w-2xl flex-col gap-6">
@@ -174,7 +166,6 @@ export function BotModelSection({ bot, isSaving, onUpdate }: BotSectionProps) {
                     trimmedInstructions === "" ? null : instructions,
                 });
               }}
-              className="transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:transform-none"
             >
               {t("bots.actions.save")}
             </Button>
@@ -249,7 +240,7 @@ export function BotModelSection({ bot, isSaving, onUpdate }: BotSectionProps) {
                 onCheckedChange={(checked) => {
                   if (checked) {
                     const next = {
-                      ...DEFAULT_OVERRIDE,
+                      ...DEFAULT_BOT_COMPACTION_OVERRIDE,
                       ...settingsQuery.data?.compaction,
                     };
                     setCompactionDraft(next);

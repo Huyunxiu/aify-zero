@@ -539,7 +539,7 @@ export class SessionLifecycle {
       activeHeadId: copies.at(-1)?.id ?? null,
       forkedFromSessionId: source.id,
       forkedFromMessageId: messageId ?? prefix.at(-1)?.id,
-      // fork 出来的会话留在源会话的 Bot 和项目里，否则列表过滤时会凭空少一条。
+      // Keep the forked session under the source session's Bot and project so filtered lists stay consistent.
       botId: source.botId,
       projectId: source.projectId,
       // A fork continues the same posture: what the source session lets pass must not ask again in the branch.

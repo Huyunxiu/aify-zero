@@ -117,7 +117,18 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
     createMutation.mutate();
   };
 
-  const projects = projectsQuery.data?.projects ?? [];
+  const projectsData = projectsQuery.data?.projects;
+  const projectItems = useMemo(
+    () => [
+      { value: NO_PROJECT_VALUE, label: t("projects.none") },
+      ...(projectsData ?? []).map((project) => ({
+        value: project.id,
+        label: project.name,
+      })),
+    ],
+    [projectsData, t]
+  );
+  const projects = projectsData ?? [];
 
   return (
     <Dialog
@@ -195,6 +206,7 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
                 {t("bots.fields.defaultProject")}
               </FieldLabel>
               <Select
+                items={projectItems}
                 value={defaultProjectId ?? NO_PROJECT_VALUE}
                 onValueChange={(value) => {
                   setDefaultProjectId(
@@ -274,7 +286,6 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
             form={formId}
             loading={createMutation.isPending}
             disabled={createMutation.isPending}
-            className="transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:transform-none"
           >
             {t("bots.createDialog.submit")}
           </Button>

@@ -350,4 +350,32 @@ describe(McpManager, () => {
     expect(spies.close).toHaveBeenCalledOnce();
     expect(manager.statuses([server])[0]?.status).toBe("idle");
   });
+
+  test("removeServer closes an idle server immediately and forgets it", async () => {
+    const spies = createSpies();
+    const { manager } = createManager(spies);
+    const lease = await manager.acquire(server);
+    lease.release();
+
+    await manager.removeServer(server.id);
+
+    expect(spies.close).toHaveBeenCalledOnce();
+    expect(manager.hasServer(server.name)).toBeFalsy();
+  });
+
+  test("removeServer closes a leased server after its active lease releases", async () => {
+    const spies = createSpies();
+    const { manager } = createManager(spies);
+    const lease = await manager.acquire(server);
+
+    await manager.removeServer(server.id);
+
+    expect(spies.close).not.toHaveBeenCalled();
+    expect(manager.hasServer(server.name)).toBeTruthy();
+
+    lease.release();
+
+    expect(spies.close).toHaveBeenCalledOnce();
+    expect(manager.hasServer(server.name)).toBeFalsy();
+  });
 });

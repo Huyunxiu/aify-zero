@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { FileSystemSkillSource } from "@workspace/agent";
 import type { McpServerConfig } from "@workspace/agent";
 import type {
   BotCompactionOverride,
@@ -14,17 +13,18 @@ import type {
 import {
   botCompactionOverrideSchema,
   botEffortSchema,
-  botMcpConfigSchema,
   botSandboxConfigSchema,
   botSkillsConfigSchema,
   botToolGroupsSchema,
   DEFAULT_APPROVAL_POLICY,
   DEFAULT_BOT_ID,
   DEFAULT_BOT_MCP_CONFIG,
+  DEFAULT_BOT_NAME,
   DEFAULT_BOT_SANDBOX_CONFIG,
   DEFAULT_BOT_SKILLS_CONFIG,
   DEFAULT_BOT_TOOL_GROUPS,
 } from "@workspace/agent-client";
+import { SKILL_DIRS, SkillManager } from "@workspace/agent/skill";
 import type { SkillInfo } from "@workspace/agent/skill";
 import type { BotModel } from "@workspace/db";
 import type { ModelEffort } from "@workspace/shared/constants";
@@ -33,7 +33,6 @@ import type { ModelRef } from "@workspace/shared/model";
 import {
   ensureBotDirs,
   getBotHomeDir,
-  getBotIsolatedHomeDir,
   getBotSkillsDir,
   getBotWorkspaceDir,
 } from "../../config";
@@ -42,7 +41,11 @@ import { hasMcpTokens } from "../../mcp/credentials";
 import { dropStaleMcpCredentials } from "../../mcp/credentials-cleanup";
 import { mcpAuthorizationFlows } from "../../mcp/oauth";
 import { getMcpManager } from "../../mcp/registry";
-import { assertUniqueMcpAcrossGlobalAndBots } from "../../mcp/validate";
+import {
+  assertUniqueMcpAcrossGlobalAndBots,
+  parseBotMcpConfig,
+  selectInheritedGlobalMcpServers,
+} from "../../mcp/validate";
 import { findProjectById } from "../project/project.repository";
 import { getUserSettings } from "../settings/settings.service";
 import {
@@ -96,7 +99,6 @@ export function normalizeBotRow(row: BotModel): NormalizedBot {
   const parsedEffort = botEffortSchema.safeParse(row.defaultEffort);
   const parsedSandbox = botSandboxConfigSchema.safeParse(row.sandbox);
   const parsedSkills = botSkillsConfigSchema.safeParse(row.skills);
-  const parsedMcp = botMcpConfigSchema.safeParse(row.mcp);
   const parsedCompaction = row.compaction
     ? botCompactionOverrideSchema.safeParse(row.compaction)
     : undefined;
@@ -121,7 +123,7 @@ export function normalizeBotRow(row: BotModel): NormalizedBot {
     skills: parsedSkills.success
       ? parsedSkills.data
       : { ...DEFAULT_BOT_SKILLS_CONFIG },
-    mcp: parsedMcp.success ? parsedMcp.data : { ...DEFAULT_BOT_MCP_CONFIG },
+    mcp: parseBotMcpConfig(row.mcp),
     includeGlobalContext: row.includeGlobalContext,
     compaction: parsedCompaction?.success ? parsedCompaction.data : null,
     createdAt: row.createdAt.getTime(),
@@ -202,12 +204,7 @@ export function resolveEffectiveMcpServers(
   bot: NormalizedBot,
   globalServers: readonly McpServerConfig[]
 ): McpServerConfig[] {
-  const inherited =
-    bot.mcp.globalMode === "all"
-      ? globalServers
-      : globalServers.filter((server) =>
-          bot.mcp.globalServerIds.includes(server.id)
-        );
+  const inherited = selectInheritedGlobalMcpServers(bot.mcp, globalServers);
 
   const privates = bot.mcp.servers.map((server) =>
     resolveBotStdioServer(server, bot)
@@ -224,7 +221,7 @@ export async function ensureDefaultBot(): Promise<NormalizedBot> {
 
   const inserted = await insertBot({
     id: DEFAULT_BOT_ID,
-    name: "Default Bot",
+    name: DEFAULT_BOT_NAME,
     defaultApprovalPolicy: DEFAULT_APPROVAL_POLICY,
     toolGroups: { ...DEFAULT_BOT_TOOL_GROUPS },
     sandbox: { ...DEFAULT_BOT_SANDBOX_CONFIG },
@@ -436,7 +433,9 @@ export async function updateBot(input: UpdateBotInput): Promise<BotDetail> {
     );
     for (const prev of current.mcp.servers) {
       const nextServer = nextById.get(prev.id);
-      if (!nextServer || mcpServersDiffer(prev, nextServer)) {
+      if (!nextServer) {
+        await mcpManager.removeServer(prev.id);
+      } else if (mcpServersDiffer(prev, nextServer)) {
         mcpManager.invalidateServer(prev.id);
       }
     }
@@ -463,24 +462,26 @@ export async function listBotSkills(botId: string): Promise<{
   const bot = await resolveBotForRun(botId);
   const dirs = ensureBotDirs(bot.id, { isolateHome: bot.sandbox.isolateHome });
 
-  const botSource = new FileSystemSkillSource({
-    botSkillsDir: dirs.skillsDir,
-    scanProject: false,
-    globalMode: "none",
-  });
-  const globalSource = new FileSystemSkillSource({
-    scanProject: false,
-    globalMode: "all",
-  });
+  const botManager = new SkillManager({ dirs: SKILL_DIRS });
+  const globalManager = new SkillManager({ dirs: SKILL_DIRS });
 
-  const [botSkills, globalSkills] = await Promise.all([
-    botSource.load({ projectDir: dirs.workspaceDir }),
-    globalSource.load({ projectDir: dirs.workspaceDir }),
+  await Promise.all([
+    botManager.loadSkills({
+      projectDir: dirs.workspaceDir,
+      botSkillsDir: dirs.skillsDir,
+      scanProject: false,
+      globalMode: "none",
+    }),
+    globalManager.loadSkills({
+      projectDir: dirs.workspaceDir,
+      scanProject: false,
+      globalMode: "all",
+    }),
   ]);
 
   return {
-    botSkills,
-    globalSkills,
+    botSkills: botManager.listUserAvailableSkills(),
+    globalSkills: globalManager.listUserAvailableSkills(),
     skillsDir: dirs.skillsDir,
     homeDir: dirs.homeDir,
   };
@@ -537,9 +538,4 @@ export async function findActiveBotMcpServer(
     }
   }
   return undefined;
-}
-
-/** Resolve Bot Home isolated path helper when sandbox `isolateHome` is active. */
-export function botIsolatedHomeDirFor(bot: NormalizedBot): string | undefined {
-  return bot.sandbox.isolateHome ? getBotIsolatedHomeDir(bot.id) : undefined;
 }

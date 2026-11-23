@@ -1,12 +1,16 @@
 import { type } from "@orpc/server";
-import { FileSystemContextSource, loadContextFiles } from "@workspace/agent";
+import { loadContextFiles } from "@workspace/agent";
 import { DEFAULT_BOT_ID } from "@workspace/agent-client";
 import { SkillManager, SKILL_DIRS } from "@workspace/agent/skill";
 import z from "zod";
 
 import { ApiError, ErrorMap } from "../../errors";
 import { publicProcedure } from "../../index";
-import { resolveSessionDirectories } from "../../session/directories";
+import {
+  buildBotSkillLoadOptions,
+  createBotContextSource,
+  resolveSessionDirectories,
+} from "../../session/directories";
 import { encodeSessionCursor } from "../../storage/session-cursor";
 import {
   DEFAULT_SESSION_PAGE_SIZE,
@@ -141,24 +145,11 @@ export const listSessionResources = publicProcedure
     const dirs = await resolveSessionDirectories({ botId, projectId });
 
     const skillManager = new SkillManager({ dirs: SKILL_DIRS });
-    await skillManager.loadSkills({
-      projectDir: dirs.primaryDir,
-      botSkillsDir: dirs.botSkillsDir,
-      scanProject: dirs.hasProject,
-      globalMode: dirs.bot.skills.globalMode,
-      globalNames: dirs.bot.skills.globalNames,
-    });
+    await skillManager.loadSkills(buildBotSkillLoadOptions(dirs));
 
-    const context = await loadContextFiles(
-      [
-        new FileSystemContextSource({
-          globalDirs: dirs.bot.includeGlobalContext ? undefined : [],
-          botHomeDir: dirs.botHomeDir,
-          scanProject: dirs.hasProject,
-        }),
-      ],
-      { projectDir: dirs.primaryDir }
-    );
+    const context = await loadContextFiles([createBotContextSource(dirs)], {
+      projectDir: dirs.primaryDir,
+    });
 
     return { skills: skillManager.listUserAvailableSkills(), context };
   });

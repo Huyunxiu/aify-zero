@@ -16,7 +16,7 @@ import { toastManager } from "@workspace/ui/components/toast";
 import { openLocalPath } from "@workspace/ui/lib/desktop";
 import { client } from "@workspace/ui/lib/orpc";
 import { FolderOpenIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -54,7 +54,18 @@ export function BotGeneralSection({
     queryKey: ["list_projects"],
     queryFn: () => client.project.list(),
   });
-  const projects = projectsQuery.data?.projects ?? [];
+  const projectsData = projectsQuery.data?.projects;
+  const projectItems = useMemo(
+    () => [
+      { value: NO_PROJECT_VALUE, label: t("projects.none") },
+      ...(projectsData ?? []).map((project) => ({
+        value: project.id,
+        label: project.name,
+      })),
+    ],
+    [projectsData, t]
+  );
+  const projects = projectsData ?? [];
 
   const trimmedName = name.trim();
   const trimmedAvatar = avatar.trim();
@@ -103,7 +114,6 @@ export function BotGeneralSection({
               onClick={() => {
                 void saveIdentity();
               }}
-              className="transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:transform-none"
             >
               {t("bots.actions.save")}
             </Button>
@@ -172,6 +182,7 @@ export function BotGeneralSection({
             </SettingItemContent>
             <SettingItemActions>
               <Select
+                items={projectItems}
                 value={bot.defaultProjectId ?? NO_PROJECT_VALUE}
                 disabled={isSaving}
                 onValueChange={(value) => {

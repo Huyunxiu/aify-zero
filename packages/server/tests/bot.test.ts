@@ -344,4 +344,27 @@ describe("bot router", () => {
 
     expect(existsSync(wipeFilesBot.homeDir)).toBeFalsy();
   });
+
+  test("listSkills deduplicates global skills across multiple global directories", async () => {
+    const aifySkillDir = path.join(dir, ".aify-studio", "skills", "dup-skill");
+    const agentsSkillDir = path.join(dir, ".agents", "skills", "dup-skill");
+    mkdirSync(aifySkillDir, { recursive: true });
+    mkdirSync(agentsSkillDir, { recursive: true });
+    writeFileSync(
+      path.join(aifySkillDir, "SKILL.md"),
+      "---\nname: dup-skill\ndescription: studio wins\n---\nbody\n"
+    );
+    writeFileSync(
+      path.join(agentsSkillDir, "SKILL.md"),
+      "---\nname: dup-skill\ndescription: agents loses\n---\nbody\n"
+    );
+
+    const { globalSkills } = await client.bot.listSkills({
+      botId: DEFAULT_BOT_ID,
+    });
+    const matches = globalSkills.filter((skill) => skill.name === "dup-skill");
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.description).toBe("studio wins");
+  });
 });

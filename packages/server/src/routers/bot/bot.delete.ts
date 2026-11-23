@@ -88,7 +88,7 @@ export async function deleteBot(input: {
   for (const server of bot.mcp.servers) {
     await clearMcpCredentials(server.id);
     mcpAuthorizationFlows.forget(server.id);
-    mcpManager.invalidateServer(server.id, { resetStatus: true });
+    await mcpManager.removeServer(server.id);
   }
 
   if (deleteFiles === true) {

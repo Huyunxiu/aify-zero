@@ -41,5 +41,5 @@
   「沙箱」「沙箱适配器」只按 `packages/sandbox/GLOSSARY.md` 的说法用，不叫「提供方」——
   那个词在 `packages/server/GLOSSARY.md` 里已经归模型。
 - **packages/server → packages/agent, packages/ui**：「Bot」「默认 Bot」「Bot 主目录」「Bot 工作目录」
-  定义在 `packages/server/GLOSSARY.md`。「Agent」和「Subagent」留在 `packages/agent/GLOSSARY.md`，
-  界面沿用 `Bot`，不叫「Agent」或「智能体」。
+  定义在 `packages/server/GLOSSARY.md`。它们区别于模型循环（`packages/agent/GLOSSARY.md`），
+  界面统一使用 `Bot`，不叫「Agent」或「智能体」。

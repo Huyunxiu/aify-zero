@@ -269,6 +269,31 @@ export class McpManager {
   }
 
   /**
+   * Retire and remove a server entry.
+   *
+   * Closes immediately when no leases are active; otherwise marks it retired so
+   * the final lease release closes the connection cleanly.
+   */
+  async removeServer(serverId: string): Promise<void> {
+    const entry = this.#entries.get(serverId);
+    if (entry === undefined) {
+      return;
+    }
+
+    entry.retired = true;
+    entry.stale = true;
+    this.#clearIdle(entry);
+    this.#entries.delete(serverId);
+
+    if (entry.refs === 0) {
+      await this.#closeEntry(entry);
+      return;
+    }
+
+    this.#retired.add(entry);
+  }
+
+  /**
    * 标记所有连接失效。
    *
    * 只打标记，不动连接和工具表：正在跑的回合手里的调用还要用它，审批也要靠
@@ -289,7 +314,8 @@ export class McpManager {
    * 否则配置保存后，正在跑的回合会突然「查不到注解」。
    */
   resolveTool(
-    fullName: string
+    fullName: string,
+    serverIds?: ReadonlySet<string>
   ): { server: McpServerConfig; definition: McpToolDefinition } | undefined {
     const parsed = splitMcpToolName(fullName);
     if (!parsed) {
@@ -297,6 +323,9 @@ export class McpManager {
     }
 
     for (const entry of this.#knownEntries()) {
+      if (serverIds !== undefined && !serverIds.has(entry.server.id)) {
+        continue;
+      }
       if (entry.server.name !== parsed.serverName) {
         continue;
       }
@@ -313,9 +342,11 @@ export class McpManager {
   }
 
   /** 这个前缀是不是一个已知的服务器；用来区分「别人的工具」和「自己的旧工具」。 */
-  hasServer(serverName: string): boolean {
+  hasServer(serverName: string, serverIds?: ReadonlySet<string>): boolean {
     return this.#knownEntries().some(
-      (entry) => entry.server.name === serverName
+      (entry) =>
+        entry.server.name === serverName &&
+        (serverIds === undefined || serverIds.has(entry.server.id))
     );
   }
 

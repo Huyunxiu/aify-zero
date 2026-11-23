@@ -25,4 +25,4 @@ CREATE INDEX `idx_bot_deleted_created` ON `bot` (`deleted_at`,`created_at`);--> 
 DROP TABLE `agent`;--> statement-breakpoint
 ALTER TABLE `session` ADD `bot_id` text DEFAULT 'default' NOT NULL;--> statement-breakpoint
 CREATE INDEX `idx_session_bot_kind_updated` ON `session` (`bot_id`,`kind`,`updated_at`);--> statement-breakpoint
-INSERT OR IGNORE INTO `bot` (`id`, `name`, `skills`, `mcp`, `include_global_context`) VALUES ('default', 'Default', '{"globalMode":"all","globalNames":[]}', '{"globalMode":"all","globalServerIds":[],"servers":[]}', 1);
+INSERT OR IGNORE INTO `bot` (`id`, `name`, `skills`, `mcp`, `include_global_context`) VALUES ('default', 'Default Bot', '{"globalMode":"all","globalNames":[]}', '{"globalMode":"all","globalServerIds":[],"servers":[]}', 1);

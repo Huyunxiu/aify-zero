@@ -219,9 +219,9 @@ class AppleContainerSandbox implements Sandbox {
   readonly #host: Sandbox;
   /** 挂载集，按原样：这是模型的视图，也是 `describe().roots`。 */
   readonly #mounts: readonly string[];
-  /** 判断可读的根：挂载集加上它们的真实路径。 */
+  /** Readable roots: all mounts plus their real paths. */
   readonly #readRoots: readonly string[];
-  /** 判断可写的根：非只读挂载集加上它们的真实路径。 */
+  /** Writable roots: non-read-only mounts plus their real paths. */
   readonly #writeRoots: readonly string[];
   readonly #cwd: string;
   readonly #home: string;

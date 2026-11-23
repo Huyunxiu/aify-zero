@@ -116,7 +116,8 @@ const createSession = publicProcedure
       model: ModelRef;
       modelEffort?: string;
       botId?: string;
-      projectId?: string;
+      /** `null` explicitly detaches any project; `undefined` inherits the Bot default. */
+      projectId?: string | null;
       inboxId?: string;
       /** The Approval Policy for the first write. The layer ignores it when the row exists; use setApprovalPolicy then. */
       approvalPolicy?: string;
@@ -174,15 +175,17 @@ const createSession = publicProcedure
     }
 
     const store = new SQLiteStore();
-    const existingRow = await store.findSessionRow(sessionId);
-    const hasActiveRow = existingRow !== null && existingRow.deletedAt === null;
+    const existingRow = await store.getSessionById(sessionId);
+    const hasActiveRow = existingRow !== null;
     const bot = await resolveBotForRun(
       hasActiveRow ? existingRow.botId : (input.botId ?? DEFAULT_BOT_ID)
     );
 
     const effectiveProjectId = hasActiveRow
       ? (existingRow.projectId ?? undefined)
-      : (projectId ?? bot.defaultProjectId ?? undefined);
+      : projectId === null
+        ? undefined
+        : (projectId ?? bot.defaultProjectId ?? undefined);
     if (!hasActiveRow && effectiveProjectId !== undefined) {
       const project = await findProjectById(effectiveProjectId);
       if (!project) {

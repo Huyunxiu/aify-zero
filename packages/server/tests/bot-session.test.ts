@@ -286,4 +286,47 @@ describe("bot session integration", () => {
     expect(agent.context.sandbox.describe().cwd).toBe(bot.workspaceDir);
     expect(envOut).toBe(`xyz|${path.join(bot.homeDir, "home")}`);
   });
+
+  test("createSession allows explicitly detaching a project when the Bot has a defaultProjectId", async () => {
+    const { resolveSessionWorkspace } =
+      await import("../src/routers/workspace/workspace.service");
+
+    const { bot } = await client.bot.create({
+      name: "Project Default Bot",
+      defaultProjectId: projectId,
+    });
+
+    await client.session.createSession({
+      sessionId: "detached-s1",
+      botId: bot.id,
+      projectId: null,
+      model: TEST_MODEL,
+      turns: [
+        {
+          id: "t-detach",
+          type: "user",
+          createdAt: Date.now(),
+          status: "done",
+          content: [
+            {
+              id: "st-detach",
+              type: "user",
+              createdAt: Date.now(),
+              status: "done",
+              content: [{ type: "text", text: "hi", createdAt: Date.now() }],
+            },
+          ],
+        },
+      ],
+    });
+
+    const { session } = await client.session.getSession({
+      sessionId: "detached-s1",
+    });
+    const workspace = await resolveSessionWorkspace("detached-s1");
+
+    expect(session?.botId).toBe(bot.id);
+    expect(session?.projectId).toBeNull();
+    expect(workspace.primaryDir).toBe(bot.workspaceDir);
+  });
 });

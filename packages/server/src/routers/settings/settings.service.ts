@@ -1,14 +1,13 @@
 import { timeZoneOrHost } from "@workspace/agent";
-import {
-  botMcpConfigSchema,
-  DEFAULT_BOT_MCP_CONFIG,
-} from "@workspace/agent-client";
 
 import { publicProcedure } from "../../index";
 import { dropStaleMcpCredentials } from "../../mcp/credentials-cleanup";
 import { mcpAuthorizationFlows } from "../../mcp/oauth";
 import { getMcpManager } from "../../mcp/registry";
-import { assertUniqueMcpAcrossGlobalAndBots } from "../../mcp/validate";
+import {
+  assertUniqueMcpAcrossGlobalAndBots,
+  parseBotMcpConfig,
+} from "../../mcp/validate";
 import { listActiveBots } from "../bot/bot.repository";
 import {
   createDict,
@@ -77,13 +76,10 @@ export const updateUserSettingsRoute = publicProcedure
     if (touchedMcp) {
       // Check uniqueness across globals and every active Bot when global MCP servers change.
       const activeRows = await listActiveBots();
-      const bots = activeRows.map((row) => {
-        const parsed = botMcpConfigSchema.safeParse(row.mcp);
-        return {
-          id: row.id,
-          mcp: parsed.success ? parsed.data : DEFAULT_BOT_MCP_CONFIG,
-        };
-      });
+      const bots = activeRows.map((row) => ({
+        id: row.id,
+        mcp: parseBotMcpConfig(row.mcp),
+      }));
       assertUniqueMcpAcrossGlobalAndBots({
         globalServers: merged.mcpServers,
         bots,

@@ -59,5 +59,5 @@ and the other contexts use the same word.
   `packages/sandbox/GLOSSARY.md`, and they are not "provider": that word already belongs to
   the model in `packages/server/GLOSSARY.md`.
 - **packages/server → packages/agent, packages/ui**: `Bot`, `Default Bot`, `Bot Home`, and
-  `Bot Workspace` are defined in `packages/server/GLOSSARY.md`. `Agent` and `Subagent` stay in
-  `packages/agent/GLOSSARY.md`, and UI views keep `Bot` rather than naming it `Agent`.
+  `Bot Workspace` are defined in `packages/server/GLOSSARY.md`. They are distinct from the
+  model loop (`packages/agent/GLOSSARY.md`), and UI views use `Bot` rather than `Agent`.

@@ -576,16 +576,25 @@ export function Session({
       setApprovalPolicy(activeBot.defaultApprovalPolicy);
     }
 
-    if (!modelSeededRef.current && getSettingsQuery.isSuccess) {
-      modelSeededRef.current = true;
+    if (
+      !userPickedModel &&
+      !rowSaved &&
+      !modelSeededRef.current &&
+      getSettingsQuery.isSuccess
+    ) {
       if (activeBot.defaultModel !== null) {
         const available = models.some((option) =>
           sameModel(option.ref, activeBot.defaultModel ?? undefined)
         );
         setSelectedModel(available ? activeBot.defaultModel : undefined);
-        if (available && activeBot.defaultEffort) {
-          setSelectedModelEffort(activeBot.defaultEffort);
+        if (available) {
+          if (activeBot.defaultEffort) {
+            setSelectedModelEffort(activeBot.defaultEffort);
+          }
+          modelSeededRef.current = true;
         }
+      } else {
+        modelSeededRef.current = true;
       }
     }
   }, [
@@ -597,12 +606,18 @@ export function Session({
     models,
     rowSaved,
     sessionRowReady,
+    userPickedModel,
   ]);
 
-  // Fallback for active model selection when not blocked by a missing Bot defaultModel.
+  // Fallback for active model selection once Bot model seeding has settled (unless blocked by a missing Bot defaultModel).
   React.useEffect(() => {
     if (
       missingBotModel ||
+      !sessionRowReady ||
+      (!getSessionQuery.data?.session &&
+        !rowSaved &&
+        !userPickedModel &&
+        !modelSeededRef.current) ||
       models.length === 0 ||
       models.some((option) => sameModel(option.ref, selectedModel))
     ) {
@@ -614,10 +629,16 @@ export function Session({
     );
     setSelectedModel(fallback?.ref ?? models[0]!.ref);
   }, [
+    activeBot?.defaultModel,
+    activeBot?.id,
+    getSessionQuery.data?.session,
+    getSettingsQuery.data?.defaultModel,
     missingBotModel,
     models,
+    rowSaved,
     selectedModel,
-    getSettingsQuery.data?.defaultModel,
+    sessionRowReady,
+    userPickedModel,
   ]);
 
   React.useEffect(() => {
@@ -702,7 +723,11 @@ export function Session({
       // 项目随消息发出，不能从 store 的闭包里读：store 在挂载时就建好了，
       // 那时还没选项目。hook 只把 payload 当不透明数据，所以这里收窄再传。
       const projectId =
-        typeof options.projectId === "string" ? options.projectId : undefined;
+        options.projectId === null
+          ? null
+          : typeof options.projectId === "string"
+            ? options.projectId
+            : undefined;
       // The policy also travels in the payload: the hook builds its store at mount, so the
       // closure cannot read a later choice. Narrow the values here; treat anything else as absent.
       const requestedPolicy = APPROVAL_POLICIES.find(
@@ -720,7 +745,7 @@ export function Session({
           model: options.model as ModelRef,
           modelEffort: options.modelEffort as string,
           botId,
-          // 项目只在会话首次落库时写入；省略它，会话就落到默认项目。
+          // Written on first save only: null explicitly detaches any project; undefined falls back to the Bot default.
           projectId,
           // The policy also applies only on a new row: when the row exists, setApprovalPolicy decides.
           approvalPolicy: requestedPolicy,
@@ -1085,7 +1110,10 @@ export function Session({
           model,
           modelEffort: selectedModelEffort,
           botId: effectiveBotId,
-          projectId: selectedProjectId,
+          projectId:
+            projectSeededRef.current || selectedProjectId !== undefined
+              ? (selectedProjectId ?? null)
+              : undefined,
           approvalPolicy,
         },
       });

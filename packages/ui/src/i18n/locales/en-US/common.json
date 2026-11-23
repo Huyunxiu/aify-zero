@@ -445,7 +445,7 @@
     },
     "createDialog": {
       "title": "New Bot",
-      "namePlaceholder": "Research Assistant",
+      "namePlaceholder": "Code Reviewer",
       "nameRequired": "Bot name is required.",
       "submit": "Create Bot"
     },
@@ -516,8 +516,8 @@
       "isolateHome": "Isolate HOME directory",
       "adapters": {
         "inherit": "Inherit server default",
-        "host": "Host",
-        "isolated": "Isolated",
+        "host": "Host Adapter",
+        "isolated": "Native Isolation Adapter",
         "apple-container": "Apple Container"
       },
       "envTitle": "Environment variables",

@@ -445,7 +445,7 @@
     },
     "createDialog": {
       "title": "新建 Bot",
-      "namePlaceholder": "研究助手",
+      "namePlaceholder": "代码评审",
       "nameRequired": "请填写 Bot 名称。",
       "submit": "创建 Bot"
     },
@@ -516,8 +516,8 @@
       "isolateHome": "隔离 HOME 目录",
       "adapters": {
         "inherit": "跟随服务端默认",
-        "host": "宿主直跑",
-        "isolated": "系统隔离",
+        "host": "本机适配器",
+        "isolated": "原生隔离适配器",
         "apple-container": "Apple Container"
       },
       "envTitle": "环境变量",

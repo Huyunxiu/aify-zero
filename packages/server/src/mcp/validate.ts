@@ -1,8 +1,30 @@
 import type { McpServerConfig } from "@workspace/agent";
+import {
+  botMcpConfigSchema,
+  DEFAULT_BOT_MCP_CONFIG,
+} from "@workspace/agent-client";
 import type { BotMcpConfig } from "@workspace/agent-client";
 import { findMcpServerProblems } from "@workspace/agent/mcp";
 
 import { ApiError } from "../errors";
+
+/** Parse stored JSON into a valid Bot MCP configuration with canonical defaults. */
+export function parseBotMcpConfig(raw: unknown): BotMcpConfig {
+  const parsed = botMcpConfigSchema.safeParse(raw);
+  return parsed.success ? parsed.data : { ...DEFAULT_BOT_MCP_CONFIG };
+}
+
+/** Return the global MCP servers inherited by a Bot under its `globalMode` rule. */
+export function selectInheritedGlobalMcpServers(
+  botMcp: Pick<BotMcpConfig, "globalMode" | "globalServerIds">,
+  globalServers: readonly McpServerConfig[]
+): McpServerConfig[] {
+  return botMcp.globalMode === "all"
+    ? [...globalServers]
+    : globalServers.filter((server) =>
+        botMcp.globalServerIds.includes(server.id)
+      );
+}
 
 /**
  * Reject overlapping MCP server configurations before saving.
@@ -56,12 +78,10 @@ export function assertUniqueMcpAcrossGlobalAndBots(input: {
       seenIds.add(server.id);
     }
 
-    const inheritedGlobals =
-      bot.mcp.globalMode === "all"
-        ? input.globalServers
-        : input.globalServers.filter((server) =>
-            bot.mcp.globalServerIds.includes(server.id)
-          );
+    const inheritedGlobals = selectInheritedGlobalMcpServers(
+      bot.mcp,
+      input.globalServers
+    );
 
     const effective = [...inheritedGlobals, ...bot.mcp.servers];
     const [problem] = findMcpServerProblems(effective);

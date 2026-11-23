@@ -5,8 +5,6 @@ import {
   createMcpToolApprovalPattern,
   createSessionAgent,
   ContextExtension,
-  FileSystemContextSource,
-  FileSystemSkillSource,
   mcpApprovalClass,
   McpExtension,
   SkillExtension,
@@ -31,7 +29,11 @@ import type { ConfiguredModel } from "../routers/settings/settings.schema";
 import { getUserSettings } from "../routers/settings/settings.service";
 import { acquireSessionSandbox } from "../sandbox/registry";
 import type { SQLiteStore } from "../storage/sqlite-store";
-import { resolveSessionDirectories } from "./directories";
+import {
+  createBotContextSource,
+  createBotSkillSource,
+  resolveSessionDirectories,
+} from "./directories";
 import {
   createModelTargetResolver,
   modelContextWindows,
@@ -94,6 +96,9 @@ export async function buildSessionAgent({
     bot,
     settings.mcpServers
   );
+  const effectiveMcpServerIds = new Set(
+    effectiveMcpServers.map((server) => server.id)
+  );
   const compactionOverrides = bot.compaction
     ? { ...settings.compaction, ...bot.compaction }
     : settings.compaction;
@@ -118,9 +123,15 @@ export async function buildSessionAgent({
     timeZone,
     steering,
     sandbox,
-    toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),
+    toolApprovalPattern: createMcpToolApprovalPattern(
+      mcpManager,
+      effectiveMcpServerIds
+    ),
     approvalPolicy,
-    resolveApprovalClass: resolveApprovalClass(mcpManager),
+    resolveApprovalClass: resolveApprovalClass(
+      mcpManager,
+      effectiveMcpServerIds
+    ),
     instructions: bot.instructions?.trim() ? bot.instructions : undefined,
     extensions: [
       new McpExtension({
@@ -130,31 +141,21 @@ export async function buildSessionAgent({
       }),
       new SkillExtension({
         id: "filesystem-skills",
-        sources: [
-          new FileSystemSkillSource({
-            botSkillsDir: dirs.botSkillsDir,
-            scanProject: dirs.hasProject,
-            globalMode: bot.skills.globalMode,
-            globalNames: bot.skills.globalNames,
-          }),
-        ],
+        sources: [createBotSkillSource(dirs)],
       }),
       new ContextExtension({
         id: "filesystem-context",
-        sources: [
-          new FileSystemContextSource({
-            globalDirs: bot.includeGlobalContext ? undefined : [],
-            botHomeDir: dirs.botHomeDir,
-            scanProject: dirs.hasProject,
-          }),
-        ],
+        sources: [createBotContextSource(dirs)],
       }),
     ],
   });
 }
 
-function resolveApprovalClass(mcpManager: McpManager): ApprovalClassResolver {
+function resolveApprovalClass(
+  mcpManager: McpManager,
+  serverIds: ReadonlySet<string>
+): ApprovalClassResolver {
   return (request) =>
-    mcpApprovalClass(mcpManager, request.toolName) ??
+    mcpApprovalClass(mcpManager, request.toolName, serverIds) ??
     classifyTool(request.toolName);
 }

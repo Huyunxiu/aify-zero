@@ -10,6 +10,9 @@ import type { McpServerConfig } from "./mcp-config";
 /** Built-in Default Bot identifier. Cannot be deleted. */
 export const DEFAULT_BOT_ID = "default";
 
+/** Canonical display name for the built-in Default Bot. */
+export const DEFAULT_BOT_NAME = "Default Bot";
+
 /** Built-in tool capability groups that a Bot can toggle independently. */
 export const BOT_TOOL_GROUPS = [
   "files",
@@ -132,6 +135,17 @@ export const botCompactionOverrideSchema = z
   .strict();
 
 export type BotCompactionOverride = z.infer<typeof botCompactionOverrideSchema>;
+
+/** Authoritative default values used when compaction overrides are customized. */
+export const DEFAULT_BOT_COMPACTION_OVERRIDE: Required<BotCompactionOverride> =
+  {
+    auto: true,
+    thresholdRatio: 0.8,
+    reserveTokens: 16_384,
+    keepRecentTokens: 20_000,
+    pruneToolResults: true,
+    maxSummaryTokens: 8192,
+  };
 
 export const botModelRefSchema = z
   .object({

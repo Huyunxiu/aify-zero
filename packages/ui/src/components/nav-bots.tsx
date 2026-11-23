@@ -54,7 +54,7 @@ function BotItem({ bot, onConfigure, onDelete }: BotItemProps) {
       <div className="group/item relative flex items-center">
         <CollapsibleTrigger
           render={
-            <SidebarMenuButton className="cursor-pointer pr-14 group-has-data-[sidebar=menu-action]/menu-item:pr-14 transition-[background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.98] motion-reduce:transition-none motion-reduce:transform-none" />
+            <SidebarMenuButton className="cursor-pointer pr-14 group-has-data-[sidebar=menu-action]/menu-item:pr-14 transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none" />
           }
         >
           <BotAvatar avatar={bot.avatar} name={bot.name} size="sm" />
@@ -65,7 +65,7 @@ function BotItem({ bot, onConfigure, onDelete }: BotItemProps) {
             render={
               <SidebarMenuAction
                 aria-label={t("bots.newSession")}
-                className="right-8 opacity-0 pointer-events-none after:inset-0 group-focus-within/item:pointer-events-auto group-focus-within/item:opacity-100 group-hover/item:pointer-events-auto group-hover/item:opacity-100 max-md:pointer-events-auto max-md:opacity-100"
+                className="right-8 opacity-0 pointer-events-none after:inset-0 group-focus-within/item:pointer-events-auto group-focus-within/item:opacity-100 [@media(hover:hover)]:group-hover/item:pointer-events-auto [@media(hover:hover)]:group-hover/item:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100"
                 onClick={() => {
                   setOpen(true);
                   void navigate({

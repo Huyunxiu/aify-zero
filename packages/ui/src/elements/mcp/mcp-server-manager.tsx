@@ -64,7 +64,7 @@ import {
   PlusIcon,
   Trash,
 } from "lucide-react";
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -289,6 +289,22 @@ export function McpServerManager({
 }: McpServerManagerProps) {
   const { t } = useTranslation();
   const formId = useId();
+  const transportItems = useMemo(
+    () => [
+      { value: "stdio", label: t("settings.mcp.transports.stdio") },
+      { value: "http", label: t("settings.mcp.transports.http") },
+      { value: "sse", label: t("settings.mcp.transports.sse") },
+    ],
+    [t]
+  );
+  const authItems = useMemo(
+    () => [
+      { value: "none", label: t("settings.mcp.auth.none") },
+      { value: "headers", label: t("settings.mcp.auth.headers") },
+      { value: "oauth", label: t("settings.mcp.auth.oauth") },
+    ],
+    [t]
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -357,11 +373,7 @@ export function McpServerManager({
     <div className="flex flex-col">
       <SettingGroupHeader className="flex-row items-center justify-between">
         <SettingGroupTitle className="text-base">{title}</SettingGroupTitle>
-        <Button
-          size="sm"
-          className="transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:transform-none"
-          onClick={openCreate}
-        >
+        <Button size="sm" onClick={openCreate}>
           <PlusIcon />
           {t("settings.mcp.addServer")}
         </Button>
@@ -622,6 +634,7 @@ export function McpServerManager({
                         {t("settings.mcp.transport")}
                       </FieldLabel>
                       <Select
+                        items={transportItems}
                         value={field.state.value}
                         onValueChange={(value) => {
                           field.handleChange(toTransportType(value ?? "stdio"));
@@ -803,6 +816,7 @@ export function McpServerManager({
                                 {t("settings.mcp.auth.type")}
                               </FieldLabel>
                               <Select
+                                items={authItems}
                                 value={field.state.value}
                                 onValueChange={(value) => {
                                   field.handleChange(

@@ -14,7 +14,7 @@ import {
 } from "@workspace/ui/components/select";
 import { Switch } from "@workspace/ui/components/switch";
 import { PlusIcon, Trash2Icon } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ApprovalPolicySelect } from "../approval-policy-select";
@@ -45,6 +45,15 @@ export function BotRuntimeSection({
   const [image, setImage] = useState(bot.sandbox.image ?? "");
   const [newEnvKey, setNewEnvKey] = useState("");
   const [newEnvValue, setNewEnvValue] = useState("");
+
+  const adapterItems = useMemo(
+    () =>
+      BOT_SANDBOX_ADAPTERS.map((adapter) => ({
+        value: adapter,
+        label: t(`bots.runtime.adapters.${adapter}`),
+      })),
+    [t]
+  );
 
   useEffect(() => {
     setImage(bot.sandbox.image ?? "");
@@ -140,6 +149,7 @@ export function BotRuntimeSection({
             </SettingItemContent>
             <SettingItemActions>
               <Select
+                items={adapterItems}
                 value={bot.sandbox.adapter}
                 disabled={isSaving}
                 onValueChange={(value) => {
@@ -295,7 +305,6 @@ export function BotRuntimeSection({
                 onClick={() => {
                   void handleAddEnv();
                 }}
-                className="transition-transform duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.97] motion-reduce:transition-none motion-reduce:transform-none"
               >
                 <PlusIcon />
                 {t("bots.actions.add")}
