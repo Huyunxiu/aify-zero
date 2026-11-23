@@ -14,7 +14,7 @@ import { testSandbox } from "../helpers/sandbox.js";
 
 /**
  * The most the assembled prompt may cost before a project instruction or a skill
- * list joins it. Measured at about 2.5 k characters, or 0.7 k tokens.
+ * list joins it. Measured at about 2.6 k characters, or 0.7 k tokens.
  */
 const PROMPT_BUDGET = 2800;
 
@@ -111,6 +111,7 @@ describe("the session prompt", () => {
       "## Background jobs",
       "## Timers",
       "## Available Subagents",
+      "## This session",
     ]);
   });
 
