@@ -761,7 +761,8 @@ export function Session({
 
   // 大纲和滚动容器是并排的两个盒子；滚轮落在大纲上时要交回聊天记录。
   const contentRef = React.useRef<HTMLDivElement>(null);
-  const hasOutline = outlineSections.length > 1;
+  // 只有一个提问也显示：长答复里可以从底部一下跳回提问。
+  const hasOutline = outlineSections.length > 0;
 
   const tokenUsage =
     turns.findLast((turn) => turn.usage)?.usage || defaultTokenUsage;
