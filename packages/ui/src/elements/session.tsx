@@ -4,6 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   APPROVAL_POLICIES,
   DEFAULT_APPROVAL_POLICY,
+  DEFAULT_BOT_ID,
   generateSessionId,
   generateStepId,
   generateTurnId,
@@ -24,7 +25,12 @@ import { getErrorMessage } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
 import type { LanguageModelUsage } from "ai";
-import { MessageSquareIcon, PanelRightIcon, XIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  MessageSquareIcon,
+  PanelRightIcon,
+  XIcon,
+} from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -49,6 +55,7 @@ import {
   ContextReasoningUsage,
   ContextTrigger,
 } from "../components/ai-elements/token-context";
+import { BotAvatar } from "../components/bot-avatar";
 import { Button } from "../components/button";
 import { ButtonGroup } from "../components/button-group";
 import {
@@ -193,6 +200,8 @@ export type AgentCommand = {
 export type SessionProps = React.ComponentProps<"div"> & {
   sessionId: string | undefined;
   initialTurns?: AgentTurn<AgentToolSet>[];
+  /** Pre-selected Bot for an unsaved session; existing session row always wins. */
+  initialBotId?: string;
   /**
    * 新建会话时预选的项目。
    *
@@ -334,6 +343,7 @@ function SessionOutline({ sections }: SessionOutlineProps) {
 export function Session({
   sessionId,
   initialTurns = [],
+  initialBotId,
   initialProjectId,
   readOnly = false,
   questionnairePlacement = "composer",
@@ -348,12 +358,6 @@ export function Session({
     queryFn: async () => await client.setting.get(),
   });
 
-  const listSessionResourcesQuery = useQuery({
-    queryKey: ["listSessionResources", sessionId],
-    queryFn: async () =>
-      await client.session.listSessionResources({ sessionId: sessionId ?? "" }),
-  });
-
   // A turn outlives the page that asked for it, so a page entering a session
   // asks what that session is up to rather than assuming it is idle.
   const getSessionQuery = useQuery({
@@ -362,6 +366,15 @@ export function Session({
       await client.session.getSession({ sessionId: sessionId ?? "" }),
     enabled: Boolean(sessionId),
   });
+
+  const effectiveBotId =
+    getSessionQuery.data?.session?.botId ?? initialBotId ?? DEFAULT_BOT_ID;
+
+  const getBotQuery = useQuery({
+    queryKey: ["bot", effectiveBotId],
+    queryFn: async () => await client.bot.get({ botId: effectiveBotId }),
+  });
+  const activeBot = getBotQuery.data?.bot;
 
   // Same query key as the sidebar, so creating a project there makes it
   // selectable here without another round trip.
@@ -402,6 +415,20 @@ export function Session({
       ? (stored as ModelEffort)
       : "default";
   });
+  const [userPickedModel, setUserPickedModel] = React.useState(false);
+  const modelSeededRef = React.useRef(false);
+
+  const missingBotModel =
+    !readOnly &&
+    !userPickedModel &&
+    getSettingsQuery.isSuccess &&
+    activeBot?.defaultModel !== undefined &&
+    activeBot.defaultModel !== null &&
+    !models.some((option) =>
+      sameModel(option.ref, activeBot.defaultModel ?? undefined)
+    )
+      ? activeBot.defaultModel
+      : undefined;
 
   // 运行中按 Enter 的默认投递方式；空闲时这个值不参与发送。默认 steering，
   // 与产品的选择一致。
@@ -451,27 +478,14 @@ export function Session({
     }
   }, [panelOpen, panelRef]);
 
-  // 恢复上次用的模型。顺序：上次的选择 → 设置里的默认模型 → 第一个。
-  React.useEffect(() => {
-    if (
-      models.length === 0 ||
-      models.some((option) => sameModel(option.ref, selectedModel))
-    ) {
-      return;
-    }
-    const preferred = getSettingsQuery.data?.defaultModel;
-    const fallback = models.find((option) =>
-      sameModel(option.ref, preferred ?? undefined)
-    );
-    setSelectedModel(fallback?.ref ?? models[0]!.ref);
-  }, [models, selectedModel, getSettingsQuery.data?.defaultModel]);
-
   const handleModelChange = (next: ModelRef) => {
+    setUserPickedModel(true);
     localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_ID, JSON.stringify(next));
     setSelectedModel(next);
   };
 
   const handleModelEffortChange = (effort: ModelEffort) => {
+    setUserPickedModel(true);
     localStorage.setItem(LOCAL_STORAGE_KEYS.MODEL_EFFORT, effort);
     setSelectedModelEffort(effort);
   };
@@ -484,6 +498,27 @@ export function Session({
   const [selectedProjectId, setSelectedProjectId] = React.useState<
     string | undefined
   >(initialProjectId);
+  const projectSeededRef = React.useRef(initialProjectId !== undefined);
+
+  const handleProjectChange = (next: string | undefined) => {
+    projectSeededRef.current = true;
+    setSelectedProjectId(next);
+  };
+
+  const listSessionResourcesQuery = useQuery({
+    queryKey: [
+      "listSessionResources",
+      sessionId,
+      effectiveBotId,
+      selectedProjectId,
+    ],
+    queryFn: async () =>
+      await client.session.listSessionResources({
+        sessionId: sessionId ?? "",
+        botId: effectiveBotId,
+        ...(selectedProjectId ? { projectId: selectedProjectId } : {}),
+      }),
+  });
 
   // An existing session's row is the source of truth: `session.create` writes
   // the project on insert only, so a reloaded page has to read it back from
@@ -494,6 +529,7 @@ export function Session({
 
   React.useEffect(() => {
     if (getSessionQuery.data?.session) {
+      projectSeededRef.current = true;
       setSelectedProjectId(sessionProjectId);
     }
   }, [getSessionQuery.data?.session, sessionProjectId]);
@@ -516,13 +552,80 @@ export function Session({
   // The home route has no session id, but the row exists after the first message is stored.
   // Use state, not a ref: the write triggers a render, so the policy reaches that row and does not wait for a refresh.
   const [rowSaved, setRowSaved] = React.useState(false);
+  const policySeededRef = React.useRef(false);
   const sessionApprovalPolicy = getSessionQuery.data?.session?.approvalPolicy;
+  const sessionRowReady = !sessionId || getSessionQuery.isFetched;
+
+  React.useEffect(() => {
+    if (
+      !sessionRowReady ||
+      getSessionQuery.data?.session ||
+      !activeBot ||
+      activeBot.id !== effectiveBotId
+    ) {
+      return;
+    }
+
+    if (!projectSeededRef.current && initialProjectId === undefined) {
+      projectSeededRef.current = true;
+      setSelectedProjectId(activeBot.defaultProjectId ?? undefined);
+    }
+
+    if (!policySeededRef.current && !rowSaved) {
+      policySeededRef.current = true;
+      setApprovalPolicy(activeBot.defaultApprovalPolicy);
+    }
+
+    if (!modelSeededRef.current && getSettingsQuery.isSuccess) {
+      modelSeededRef.current = true;
+      if (activeBot.defaultModel !== null) {
+        const available = models.some((option) =>
+          sameModel(option.ref, activeBot.defaultModel ?? undefined)
+        );
+        setSelectedModel(available ? activeBot.defaultModel : undefined);
+        if (available && activeBot.defaultEffort) {
+          setSelectedModelEffort(activeBot.defaultEffort);
+        }
+      }
+    }
+  }, [
+    activeBot,
+    effectiveBotId,
+    getSessionQuery.data?.session,
+    getSettingsQuery.isSuccess,
+    initialProjectId,
+    models,
+    rowSaved,
+    sessionRowReady,
+  ]);
+
+  // Fallback for active model selection when not blocked by a missing Bot defaultModel.
+  React.useEffect(() => {
+    if (
+      missingBotModel ||
+      models.length === 0 ||
+      models.some((option) => sameModel(option.ref, selectedModel))
+    ) {
+      return;
+    }
+    const preferred = getSettingsQuery.data?.defaultModel;
+    const fallback = models.find((option) =>
+      sameModel(option.ref, preferred ?? undefined)
+    );
+    setSelectedModel(fallback?.ref ?? models[0]!.ref);
+  }, [
+    missingBotModel,
+    models,
+    selectedModel,
+    getSettingsQuery.data?.defaultModel,
+  ]);
 
   React.useEffect(() => {
     const saved = APPROVAL_POLICIES.find(
       (policy) => policy === sessionApprovalPolicy
     );
     if (saved) {
+      policySeededRef.current = true;
       setApprovalPolicy(saved);
     }
   }, [sessionApprovalPolicy]);
@@ -535,6 +638,7 @@ export function Session({
 
   const handleApprovalPolicyChange = React.useCallback(
     (next: ApprovalPolicy) => {
+      policySeededRef.current = true;
       setApprovalPolicy(next);
       // Send no request while the row does not exist: the first message carries the policy with it.
       if (!policyTarget) {
@@ -593,6 +697,8 @@ export function Session({
         return;
       }
 
+      const botId =
+        typeof options.botId === "string" ? options.botId : effectiveBotId;
       // 项目随消息发出，不能从 store 的闭包里读：store 在挂载时就建好了，
       // 那时还没选项目。hook 只把 payload 当不透明数据，所以这里收窄再传。
       const projectId =
@@ -613,6 +719,7 @@ export function Session({
           turns: options.approvals?.length ? [] : [options.turns.at(-1)!],
           model: options.model as ModelRef,
           modelEffort: options.modelEffort as string,
+          botId,
           // 项目只在会话首次落库时写入；省略它，会话就落到默认项目。
           projectId,
           // The policy also applies only on a new row: when the row exists, setApprovalPolicy decides.
@@ -977,6 +1084,7 @@ export function Session({
         payload: {
           model,
           modelEffort: selectedModelEffort,
+          botId: effectiveBotId,
           projectId: selectedProjectId,
           approvalPolicy,
         },
@@ -1093,6 +1201,25 @@ export function Session({
             <div className="@container flex h-full min-w-0 flex-col">
               {/* session header */}
               <TitleBar className="sticky top-0 flex h-12 items-center gap-2 px-4">
+                {!onClose && activeBot ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigate({
+                        to: "/bots/$botId",
+                        params: { botId: activeBot.id },
+                      });
+                    }}
+                    className="[-webkit-app-region:no-drag] inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground active:scale-[0.97] transition-[transform,background-color,color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none motion-reduce:transform-none"
+                  >
+                    <BotAvatar
+                      avatar={activeBot.avatar}
+                      name={activeBot.name}
+                      size="sm"
+                    />
+                    <span className="max-w-32 truncate">{activeBot.name}</span>
+                  </button>
+                ) : null}
                 {sessionId && (
                   <div className="min-w-0 truncate text-foreground text-sm max-w-md">
                     {onClose
@@ -1228,6 +1355,34 @@ export function Session({
                     )}
                   >
                     <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 border-t-0 pt-1 px-4 pb-4">
+                      {missingBotModel ? (
+                        <div
+                          className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-900 text-xs dark:text-amber-200"
+                          role="alert"
+                        >
+                          <div className="flex items-center gap-2">
+                            <AlertTriangleIcon className="size-4 shrink-0" />
+                            <span>
+                              {t("bots.model.missingWarning", {
+                                model: `${missingBotModel.providerId}/${missingBotModel.modelId}`,
+                              })}
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => {
+                              void navigate({
+                                to: "/bots/$botId",
+                                params: { botId: effectiveBotId },
+                              });
+                            }}
+                          >
+                            {t("bots.actions.configure")}
+                          </Button>
+                        </div>
+                      ) : null}
                       <InboxDock
                         busy={isGenerating}
                         messages={pendingMessages}
@@ -1283,7 +1438,7 @@ export function Session({
                                 </PromptInputActionMenu>
                                 <ProjectSelect
                                   locked={isProjectLocked}
-                                  onProjectChange={setSelectedProjectId}
+                                  onProjectChange={handleProjectChange}
                                   projectId={selectedProjectId}
                                   projects={projects}
                                 />

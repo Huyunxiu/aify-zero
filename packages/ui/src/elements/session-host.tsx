@@ -5,7 +5,7 @@ import {
   IslandHandle,
 } from "@workspace/ui/elements/island";
 import { SessionContainer } from "@workspace/ui/elements/session-container";
-import { readProjectId } from "@workspace/ui/lib/session-search";
+import { readBotId, readProjectId } from "@workspace/ui/lib/session-search";
 import { useSubagentPane } from "@workspace/ui/stores/subagent-pane";
 import * as React from "react";
 
@@ -90,12 +90,14 @@ export function SessionHost({ covered }: SessionHostProps) {
   }
 
   const projectId = readProjectId(search);
+  const botId = readBotId(search);
 
   return (
     <IslandGroup orientation="horizontal">
       <Island defaultSize={subagentSessionId ? "50%" : "100%"}>
         <SessionContainer
           covered={covered}
+          initialBotId={botId}
           initialProjectId={projectId}
           sessionId={activeSessionId}
         />

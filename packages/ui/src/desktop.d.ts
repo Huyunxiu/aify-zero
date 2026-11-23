@@ -18,6 +18,8 @@ declare global {
       offOpenSession?(id: number): void;
       /** 界面语言；托盘这类原生界面按它换文案。 */
       setLanguage?(language: string): void;
+      /** Open a local directory or file in the OS file manager. */
+      openPath?(targetPath: string): Promise<string>;
     };
   }
 }

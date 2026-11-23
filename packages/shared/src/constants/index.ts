@@ -83,6 +83,8 @@ export const IPC_CHANNELS = {
   OPEN_SESSION: "open-session",
   /** 渲染端 -> 主进程：界面语言变了，原生界面跟着换。 */
   LANGUAGE: "app-language",
+  /** Renderer -> main process: open a local folder or file in the OS file manager. */
+  OPEN_PATH: "open-path",
 };
 
 /**

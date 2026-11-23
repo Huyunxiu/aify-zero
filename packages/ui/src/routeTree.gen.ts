@@ -12,7 +12,7 @@ import { Route as rootRouteImport } from "./routes/__root"
 import { Route as IndexRouteImport } from "./routes/index"
 import { Route as ShellRouteImport } from "./routes/_shell"
 import { Route as ShellSettingsRouteImport } from "./routes/_shell/settings"
-import { Route as AgentsAgentIdRouteImport } from "./routes/agents/$agentId"
+import { Route as ShellBotsBotIdRouteImport } from "./routes/_shell/bots/$botId"
 import { Route as ShellSessionsIndexRouteImport } from "./routes/_shell/sessions/index"
 import { Route as ShellSessionsSessionIdRouteImport } from "./routes/_shell/sessions/$sessionId"
 import { Route as ShellSettingsIndexRouteImport } from "./routes/_shell/settings/index"
@@ -35,10 +35,10 @@ const ShellSettingsRoute = ShellSettingsRouteImport.update({
   path: "/settings",
   getParentRoute: () => ShellRoute,
 } as any)
-const AgentsAgentIdRoute = AgentsAgentIdRouteImport.update({
-  id: "/agents/$agentId",
-  path: "/agents/$agentId",
-  getParentRoute: () => rootRouteImport,
+const ShellBotsBotIdRoute = ShellBotsBotIdRouteImport.update({
+  id: "/bots/$botId",
+  path: "/bots/$botId",
+  getParentRoute: () => ShellRoute,
 } as any)
 const ShellSessionsIndexRoute = ShellSessionsIndexRouteImport.update({
   id: "/sessions/",
@@ -79,7 +79,7 @@ const ShellSettingsProviderRoute = ShellSettingsProviderRouteImport.update({
 export interface FileRoutesByFullPath {
   "/": typeof IndexRoute
   "/settings": typeof ShellSettingsRouteWithChildren
-  "/agents/$agentId": typeof AgentsAgentIdRoute
+  "/bots/$botId": typeof ShellBotsBotIdRoute
   "/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
   "/settings/appearance": typeof ShellSettingsAppearanceRoute
   "/settings/general": typeof ShellSettingsGeneralRoute
@@ -90,7 +90,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   "/": typeof IndexRoute
-  "/agents/$agentId": typeof AgentsAgentIdRoute
+  "/bots/$botId": typeof ShellBotsBotIdRoute
   "/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
   "/settings/appearance": typeof ShellSettingsAppearanceRoute
   "/settings/general": typeof ShellSettingsGeneralRoute
@@ -104,7 +104,7 @@ export interface FileRoutesById {
   "/": typeof IndexRoute
   "/_shell": typeof ShellRouteWithChildren
   "/_shell/settings": typeof ShellSettingsRouteWithChildren
-  "/agents/$agentId": typeof AgentsAgentIdRoute
+  "/_shell/bots/$botId": typeof ShellBotsBotIdRoute
   "/_shell/sessions/$sessionId": typeof ShellSessionsSessionIdRoute
   "/_shell/settings/appearance": typeof ShellSettingsAppearanceRoute
   "/_shell/settings/general": typeof ShellSettingsGeneralRoute
@@ -118,7 +118,7 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/settings"
-    | "/agents/$agentId"
+    | "/bots/$botId"
     | "/sessions/$sessionId"
     | "/settings/appearance"
     | "/settings/general"
@@ -129,7 +129,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | "/"
-    | "/agents/$agentId"
+    | "/bots/$botId"
     | "/sessions/$sessionId"
     | "/settings/appearance"
     | "/settings/general"
@@ -142,7 +142,7 @@ export interface FileRouteTypes {
     | "/"
     | "/_shell"
     | "/_shell/settings"
-    | "/agents/$agentId"
+    | "/_shell/bots/$botId"
     | "/_shell/sessions/$sessionId"
     | "/_shell/settings/appearance"
     | "/_shell/settings/general"
@@ -155,7 +155,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ShellRoute: typeof ShellRouteWithChildren
-  AgentsAgentIdRoute: typeof AgentsAgentIdRoute
 }
 
 declare module "@tanstack/react-router" {
@@ -181,12 +180,12 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof ShellSettingsRouteImport
       parentRoute: typeof ShellRoute
     }
-    "/agents/$agentId": {
-      id: "/agents/$agentId"
-      path: "/agents/$agentId"
-      fullPath: "/agents/$agentId"
-      preLoaderRoute: typeof AgentsAgentIdRouteImport
-      parentRoute: typeof rootRouteImport
+    "/_shell/bots/$botId": {
+      id: "/_shell/bots/$botId"
+      path: "/bots/$botId"
+      fullPath: "/bots/$botId"
+      preLoaderRoute: typeof ShellBotsBotIdRouteImport
+      parentRoute: typeof ShellRoute
     }
     "/_shell/sessions/": {
       id: "/_shell/sessions/"
@@ -262,12 +261,14 @@ const ShellSettingsRouteWithChildren = ShellSettingsRoute._addFileChildren(
 
 interface ShellRouteChildren {
   ShellSettingsRoute: typeof ShellSettingsRouteWithChildren
+  ShellBotsBotIdRoute: typeof ShellBotsBotIdRoute
   ShellSessionsSessionIdRoute: typeof ShellSessionsSessionIdRoute
   ShellSessionsIndexRoute: typeof ShellSessionsIndexRoute
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
   ShellSettingsRoute: ShellSettingsRouteWithChildren,
+  ShellBotsBotIdRoute: ShellBotsBotIdRoute,
   ShellSessionsSessionIdRoute: ShellSessionsSessionIdRoute,
   ShellSessionsIndexRoute: ShellSessionsIndexRoute,
 }
@@ -277,7 +278,6 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ShellRoute: ShellRouteWithChildren,
-  AgentsAgentIdRoute: AgentsAgentIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
