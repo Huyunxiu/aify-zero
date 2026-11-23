@@ -1,8 +1,4 @@
-import type {
-  AgentToolPart,
-  AgentToolSet,
-  FileReadMetadata,
-} from "@workspace/agent-client";
+import type { AgentToolPart, AgentToolSet } from "@workspace/agent-client";
 import { WrapTextIcon } from "lucide-react";
 import * as React from "react";
 
@@ -42,52 +38,6 @@ const EMPTY_TEXT = "Nothing to show";
 /** The language tag beside a section title: `json`, `tsx`, `text`. */
 const LANGUAGE_CLASS =
   "font-mono text-[10px] leading-none text-muted-foreground/70";
-
-/**
- * 文件扩展名到 shiki 语言。工具读到的是源码时按源码高亮，读不懂的当纯文本，
- * 和 Markdown 里的围栏代码走同一套高亮器。
- */
-const FILE_LANGUAGES: Record<string, string> = {
-  c: "c",
-  cpp: "cpp",
-  cs: "csharp",
-  css: "css",
-  go: "go",
-  html: "html",
-  java: "java",
-  js: "javascript",
-  json: "json",
-  jsx: "jsx",
-  kt: "kotlin",
-  md: "markdown",
-  php: "php",
-  py: "python",
-  rb: "ruby",
-  rs: "rust",
-  scss: "scss",
-  sh: "bash",
-  sql: "sql",
-  svelte: "svelte",
-  swift: "swift",
-  toml: "toml",
-  ts: "typescript",
-  tsx: "tsx",
-  vue: "vue",
-  xml: "xml",
-  yaml: "yaml",
-  yml: "yaml",
-};
-
-/** 这份文件该按什么语言高亮；认不出扩展名就是纯文本。 */
-export function languageFromPath(path?: string): string {
-  const extension = path?.split(".").pop()?.toLowerCase();
-
-  if (extension === undefined || extension === path) {
-    return "text";
-  }
-
-  return FILE_LANGUAGES[extension] ?? "text";
-}
 
 /**
  * Controls that are useful but rarely used — wrapping — stay out of the way
@@ -236,14 +186,21 @@ export function ToolSection({
   );
 }
 
-/** A section whose body is richer than text — markdown, a diff, a table. */
-export function ToolRenderedSection({
+/**
+ * A card whose body is richer than text — markdown, a diff, a table.
+ *
+ * It serves more than a tool's body now: a note, a retry's reason, a compaction
+ * summary, a questionnaire. So the title is a node — a card that has to say two
+ * things up there says them in its own label.
+ */
+export function RenderedSection({
   label,
   copyValue,
   children,
   footer,
 }: {
-  label: string;
+  label: React.ReactNode;
+  /** What the copy button hands over. No button without it. */
   copyValue?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -348,9 +305,9 @@ function ToolPanelsBody({
       {hideOutput ? null : renderOutput === undefined ? (
         <ToolSection label="Output" language={outputLanguage} value={output} />
       ) : (
-        <ToolRenderedSection copyValue={output} label="Output">
+        <RenderedSection copyValue={output} label="Output">
           {renderOutput(output)}
-        </ToolRenderedSection>
+        </RenderedSection>
       )}
       {errorText === undefined ? null : (
         <ToolErrorSection label={errorLabel} text={errorText} />
@@ -358,25 +315,6 @@ function ToolPanelsBody({
     </div>
   );
 }
-
-/**
- * The language to highlight a call's output in.
- *
- * Only a `read-file` that answered with a file's content has a language. A
- * directory, an attachment, a binary file, and a miss each answer with a
- * description of what happened, and every other tool answers with prose.
- */
-export const outputLanguageOf = (part: AgentToolPart<AgentToolSet>): string => {
-  if (part.type === "tool-read-file") {
-    const metadata: FileReadMetadata | undefined = part.output?.metadata;
-
-    if (metadata?.type === "file") {
-      return languageFromPath(metadata.filepath);
-    }
-  }
-
-  return "text";
-};
 
 /** The approve and deny buttons of a call that is waiting on the user. */
 const InlineToolApproval = ({
@@ -428,6 +366,7 @@ export function ToolPanels({
   onRespond,
   children,
   hideOutput = false,
+  outputLanguage = "text",
   renderOutput,
 }: {
   part: AgentToolPart<AgentToolSet>;
@@ -440,6 +379,11 @@ export function ToolPanels({
   children?: React.ReactNode;
   /** No result to show, for example a `task` call that started nothing. */
   hideOutput?: boolean;
+  /**
+   * Highlighting for the output block. The view that knows what a tool answered
+   * with says so; the panel knows no tool.
+   */
+  outputLanguage?: string;
   /** Replaces the plain output body when the result needs rich text. */
   renderOutput?: (text: string) => React.ReactNode;
 }) {
@@ -460,7 +404,7 @@ export function ToolPanels({
       hideOutput={hideOutput || refused}
       input={JSON.stringify(part.input, null, 2) ?? ""}
       output={toolOutputText(part.output)}
-      outputLanguage={outputLanguageOf(part)}
+      outputLanguage={outputLanguage}
       pending={part.state === "input-streaming"}
       renderOutput={renderOutput}
     >
@@ -477,53 +421,3 @@ export function ToolPartError({ part }: { part: AgentToolPart<AgentToolSet> }) {
     <ToolErrorSection label={error.label} text={error.text} />
   );
 }
-
-type EditFilePart = Extract<
-  AgentToolPart<AgentToolSet>,
-  { type: "tool-edit-file" }
->;
-
-/** Flattens one replacement block into `-` and `+` rows, so a step reads as a diff. */
-const editDiffLines = (oldString: string, newString: string) => [
-  ...oldString.split("\n").map((text) => ({ sign: "-" as const, text })),
-  ...newString.split("\n").map((text) => ({ sign: "+" as const, text })),
-];
-
-/**
- * Parses a display diff line the tool returned, in the form `+ 12 content`. The
- * first character is the sign; the rest — line number and text — is shown as is.
- */
-const parseRenderedDiffLine = (line: string) => ({
-  sign: line[0] ?? " ",
-  text: line.slice(1),
-});
-
-/**
- * The rows of an edit's diff: the tool's own diff once it finished, and a
- * preview built from the input before that.
- *
- * The two sources once rendered on their own, so the copy button had nothing to
- * copy. The rows are the one form that the panel and the clipboard both read.
- */
-export const editDiffRows = (
-  part: EditFilePart
-): { sign: string; text: string }[] => {
-  const actualDiff = part.output?.metadata?.diff;
-
-  if (actualDiff) {
-    return actualDiff.split("\n").map(parseRenderedDiffLine);
-  }
-
-  // While streaming, `input` is a partial, so an unfinished edit block is not
-  // drawn yet.
-  return (part.input?.edits ?? []).flatMap((block) =>
-    typeof block?.oldText === "string" && typeof block?.newText === "string"
-      ? editDiffLines(block.oldText, block.newText)
-      : []
-  );
-};
-
-export const editDiffText = (part: EditFilePart) =>
-  editDiffRows(part)
-    .map((row) => `${row.sign}${row.text}`)
-    .join("\n");
