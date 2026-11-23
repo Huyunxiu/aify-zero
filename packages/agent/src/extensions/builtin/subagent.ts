@@ -1,4 +1,7 @@
-import { SUBAGENT_DEFINITIONS } from "../../subagent/definitions";
+import {
+  renderSubagentCatalogue,
+  SUBAGENT_DEFINITIONS,
+} from "../../subagent/definitions";
 import type { SubagentDefinition } from "../../subagent/definitions";
 import { createTaskTool } from "../../tools/task";
 import { Capabilities } from "../capabilities";
@@ -35,5 +38,15 @@ export class SubagentExtension extends Extension {
         definitions: this.#definitions,
       })
     );
+
+    api.instructionsSection({
+      id: `${this.id}:catalogue`,
+      // After the facts and the resource lists: the model picks a subagent once
+      // it knows where it is and what it has.
+      priority: 90,
+      render: renderSubagentCatalogue,
+      // A subagent has no task tool, so the catalogue tells it nothing it can do.
+      renderForSubagent: (prompt) => prompt,
+    });
   }
 }

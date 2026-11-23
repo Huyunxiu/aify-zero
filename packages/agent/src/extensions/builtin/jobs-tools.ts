@@ -14,6 +14,15 @@ const DEFAULT_OPTIONS: JobsToolsExtensionOptions = { id: "jobs-tools" };
 const JOBS_GUIDANCE = `Track every background job id you start. A completion notice arrives when a job finishes — do not poll or sleep on one; keep working on independent steps and do not duplicate a running job's work. Before a final answer, collect every still-relevant job with job-output (set wait: true only when you are blocked on it), and job-kill jobs that no longer matter.`;
 
 /**
+ * What a subagent reads instead.
+ *
+ * It inherits the parent's tool set and the parent's job registry, so a job it
+ * starts belongs to the parent session, and it has no inbox to receive the
+ * completion notice.
+ */
+const SUBAGENT_GUIDANCE = `A background job you start belongs to the parent session, and its completion notice does not come back to you. Collect what you need before your report, and put the job id in the report so the parent can collect the rest.`;
+
+/**
  * 后台任务控制扩展。
  *
  * 没有任务注册表就没有可控制的任务，所以这三个工具一起缺席，而不是注册成
@@ -48,6 +57,8 @@ export class JobsToolsExtension extends Extension {
       priority: 50,
       render: (prompt) =>
         prompt ? `${prompt}\n\n${JOBS_GUIDANCE}` : JOBS_GUIDANCE,
+      renderForSubagent: (prompt) =>
+        prompt ? `${prompt}\n\n${SUBAGENT_GUIDANCE}` : SUBAGENT_GUIDANCE,
     });
   }
 }

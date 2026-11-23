@@ -201,7 +201,7 @@ describe(ToolCatalogExtension, () => {
         "## Tool catalog",
         "",
         "Some tools are not in your list. They belong to these servers.",
-        "Before you say you have no tool for a task, search with search-tools. Then call the tool with call-tool({ name, input }).",
+        "Before you say you have no tool for a task, search with search-tools.",
         "",
         "- linear (2 tools)",
         "- notion (1 tool)",

@@ -20,7 +20,7 @@ import type { EventWriter } from "../capabilities";
 import type { ExtensionAPI } from "../types";
 import { Extension } from "../types";
 
-export const TITLE_PROMPT = `Generate a very short session title (2-5 words max) based on the user's message.
+export const TITLE_PROMPT = `Generate a very short session title based on the user's message.
 Rules:
 - Maximum 30 characters
 - No quotes, colons, hashtags, or markdown

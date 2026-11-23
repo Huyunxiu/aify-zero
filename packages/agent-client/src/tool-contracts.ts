@@ -41,7 +41,7 @@ export type PublicJob = {
   finishedAt?: number;
 };
 
-/** read-file 和 load-skill 共用的 metadata 变体。 */
+/** read-file 的 metadata 变体；load-skill 只用到其中的文件与 miss 两种。 */
 export type FileReadMetadata =
   | { type: "miss"; filepath: string }
   | {
@@ -152,13 +152,12 @@ export type WebFetchOutput = ToolOutput<string, WebFetchMetadata>;
 
 export type LoadSkillInput = {
   skill: string;
-  path?: string;
-  limit?: number;
-  offset?: number;
 };
-export type LoadSkillOutput = ToolOutput<string, FileReadMetadata> & {
-  attachments?: FileAttachment[];
-};
+/** 加载到的是正文，或者一个找不到的名字。没有目录、附件、二进制三种结果。 */
+export type LoadSkillMetadata =
+  | { type: "miss"; filepath: string }
+  | Extract<FileReadMetadata, { type: "file" }>;
+export type LoadSkillOutput = ToolOutput<string, LoadSkillMetadata>;
 
 export type JobOutputInput = {
   jobId: string;

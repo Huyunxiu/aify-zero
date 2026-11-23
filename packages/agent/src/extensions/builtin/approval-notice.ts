@@ -40,9 +40,13 @@ function refusedClasses(policy: ApprovalPolicy): string[] {
  * Two sentences: what will be refused, and what to do about it. It says "will be
  * refused" rather than "you may not": the sandbox decides what is possible, and the
  * policy only decides who gets asked.
+ *
+ * A subagent reads the same notice, but it has no questionnaire to keep: the
+ * parent takes that tool away. `subagent` drops the clause that would promise it.
  */
 export function renderApprovalNotice(
-  policy: ApprovalPolicy
+  policy: ApprovalPolicy,
+  options: { subagent?: boolean } = {}
 ): string | undefined {
   const refused = refusedClasses(policy);
   if (refused.length === 0) {
@@ -54,11 +58,15 @@ export function renderApprovalNotice(
       ? refused[0]
       : `${refused.slice(0, -1).join(", ")} and ${refused.at(-1)}`;
 
+  const stillWorks = options.subagent
+    ? "Reads and searches still work."
+    : "Reads, searches, and the questionnaire still work.";
+
   return [
     "## Approval",
     "",
-    `This session refuses ${list} before the call runs. Reads, searches, and the questionnaire still work.`,
-    "When a call is refused, tell the user what stopped it. Do not retry it with another tool.",
+    `This session refuses ${list} before the call runs. ${stillWorks}`,
+    "When a call is refused, tell the user what stopped it. Do not run the same call through another tool.",
   ].join("\n");
 }
 
@@ -90,6 +98,16 @@ export class ApprovalPolicyExtension extends Extension {
       // world this session runs in.
       priority: -5,
       render: (prompt) => (prompt ? `${prompt}\n\n${notice}` : notice),
+      renderForSubagent: (prompt) => {
+        const forSubagent = renderApprovalNotice(this.#policy, {
+          subagent: true,
+        });
+        return forSubagent
+          ? prompt
+            ? `${prompt}\n\n${forSubagent}`
+            : forSubagent
+          : prompt;
+      },
     };
 
     api.instructionsSection(section);

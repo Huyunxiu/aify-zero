@@ -7,11 +7,16 @@ const DEFAULT_OPTIONS: ExtensionOptions = { id: "timers-tools" };
 /** 定时器的使用说明；只在绑定了会话定时器时出现。 */
 const TIMERS_GUIDANCE = `A timer wakes this session later. Set one with timer-set when the next step depends on something that has not happened yet — a deploy, a build, a reply. Set a schedule with schedule-set when the user wants to be woken on a cadence, such as every day at nine. Do not sleep or poll waiting for either: end the turn and it brings you back.`;
 
+/** A subagent inherits this section, but a timer it sets is not its own. */
+const SUBAGENT_OWNERSHIP = `A timer you set from here wakes the parent session, not this subagent.`;
+
 /**
- * 定时器控制扩展。
+ * The timers extension.
  *
- * 没有绑定会话定时器就没有可排的定时器，所以这几个工具一起缺席，而不是注册成
- * 一个永远失败的工具。子会话属于这一类：它没有收件箱，排了也不会触发。
+ * With no timer store bound to the session there is nothing to schedule, so the
+ * tools are absent rather than registered and always failing. A subagent does not
+ * register extensions: it inherits these tools from the parent's tool set, so the
+ * timer it sets lands in the parent session, and {@link SUBAGENT_OWNERSHIP} says so.
  */
 export class TimersToolsExtension extends Extension {
   constructor(options: ExtensionOptions = DEFAULT_OPTIONS) {
@@ -34,6 +39,9 @@ export class TimersToolsExtension extends Extension {
       priority: 50,
       render: (prompt) =>
         prompt ? `${prompt}\n\n${TIMERS_GUIDANCE}` : TIMERS_GUIDANCE,
+      // 子 agent 继承父的工具集，排出来的定时器落在父会话里。
+      renderForSubagent: (prompt) =>
+        prompt ? `${prompt}\n\n${SUBAGENT_OWNERSHIP}` : SUBAGENT_OWNERSHIP,
     });
   }
 }

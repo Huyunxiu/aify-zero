@@ -56,8 +56,8 @@ export type AgentContextOptions = AgentStateOptions & {
    */
   projectId?: string;
   /**
-   * 启动时注册的系统提示片段。子 agent 从这里继承，保证主会话和子会话
-   * 看到同一套说明。
+   * The instructions sections registered at assembly. A subagent inherits them,
+   * so the main session and the child read the same set.
    */
   instructionsSections?: readonly InstructionsSection[];
   /**

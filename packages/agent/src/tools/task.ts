@@ -62,14 +62,12 @@ export const createTaskTool = ({
     definitions.find((definition) => definition.name === name) ??
     definitions.find((definition) => definition.name === DEFAULT_SUBAGENT_NAME);
 
-  const description = `Delegate a self-contained task to a subagent, which runs with its own context and reports back a final answer.
+  const description = `Delegate a self-contained task to a subagent. It works in its own transcript, inside this session's sandbox and session directory, and reports back one final answer.
 
 Available subagents: ${names}.
 
-Usage:
-- Give the subagent the whole task, not one step of it: it cannot ask you or the user anything.
 - The subagent's intermediate steps stay out of this conversation; only its final report comes back.
-- State in the prompt what to look at and what the answer should contain.`;
+- It reads the same project instructions and skills that this session has.`;
 
   const inputSchema = z.object({
     subagent_type: z

@@ -160,13 +160,9 @@ export class ExtensionManager {
       .map((entry) => entry.section);
   }
 
-  /** 以 `base` 为起点，依次套用所有提示片段。 */
+  /** Applies every instructions section to `base`, in order. */
   renderInstructions(base = ""): string {
-    let prompt = base;
-    for (const section of this.listSections()) {
-      prompt = section.render(prompt);
-    }
-    return prompt;
+    return renderSections(this.listSections(), base);
   }
 
   #createApi(record: RegisteredExtension): ExtensionAPI {
@@ -372,4 +368,16 @@ function isolateAssembler(
     events: events as unknown as AssemblerModule<AgentToolSet>["events"],
     ...(module.settle ? { settle: module.settle } : {}),
   };
+}
+
+/** Applies every section to `base`, in priority order. */
+export function renderSections(
+  sections: readonly InstructionsSection[],
+  base = ""
+): string {
+  let prompt = base;
+  for (const section of sections) {
+    prompt = section.render(prompt);
+  }
+  return prompt;
 }
