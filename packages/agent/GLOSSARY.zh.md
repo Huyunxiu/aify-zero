@@ -143,7 +143,8 @@ _Avoid_: 插件、模块、集成
 
 **系统提示 (System Prompt)**:
 每个步骤请求里作为模型指令发出的那段文本。它以身份句开头：主会话读 `MAIN_INSTRUCTIONS`，
-子 agent 读它自己的 preamble；每个指令段再按优先级追加。代码里的字段名是 `instructions`。
+子 agent 读它自己的 preamble；每个指令段再按优先级追加。别的代码不写它：起始补丁改的是
+这一次调用，不是提示。代码里的字段名是 `instructions`。
 _Avoid_: 提示词、提示片段、系统消息
 
 **指令段 (Instructions Section)**:

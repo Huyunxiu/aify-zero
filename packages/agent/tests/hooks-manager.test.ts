@@ -538,9 +538,20 @@ describe(HooksManager, () => {
       expect(
         applyRuntimeSettingsPatches(
           { model: testModel, instructions: "base prompt" },
-          [{}, { instructions: "" }]
+          [{}, {}]
         )
       ).toStrictEqual({ model: testModel, instructions: "base prompt" });
+    });
+
+    test("should not let a patch replace the system prompt", () => {
+      // A plugin written in JavaScript can send any key. The merge ignores one
+      // that is not a patchable field, so the prompt keeps the one writer it has.
+      const state = applyRuntimeSettingsPatches(
+        { model: testModel, instructions: "base prompt" },
+        [{ instructions: "replaced" } as unknown as RuntimeSettingsPatch]
+      );
+
+      expect(state.instructions).toBe("base prompt");
     });
 
     test("should let the last model patch win", () => {
@@ -558,36 +569,20 @@ describe(HooksManager, () => {
       });
     });
 
-    test("should apply string and function prompt patches in order", () => {
-      const state = applyRuntimeSettingsPatches(
-        { model: testModel, instructions: "base" },
-        [
-          { instructions: (prompt) => `${prompt}+one` },
-          { instructions: "replaced" },
-          { instructions: (prompt) => `${prompt}+two` },
-        ]
-      );
-
-      expect(state.instructions).toBe("replaced+two");
-    });
-
-    test("should keep the previous prompt when a patch function throws", () => {
+    test("should keep the previous value when a patch function throws", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {
         /* keep the test output clean */
       });
-      const state = applyRuntimeSettingsPatches(
-        { model: testModel, instructions: "base" },
-        [
-          { instructions: "changed" },
-          {
-            instructions: () => {
-              throw new Error("boom");
-            },
+      const state = applyPatches({ note: "base" }, [
+        { note: "changed" },
+        {
+          note: () => {
+            throw new Error("boom");
           },
-        ]
-      );
+        },
+      ]);
 
-      expect(state.instructions).toBe("changed");
+      expect(state.note).toBe("changed");
       expect(warn).toHaveBeenCalledOnce();
       warn.mockRestore();
     });
@@ -619,14 +614,15 @@ describe(HooksManager, () => {
     test("should type turn_start handlers as patch producers", () => {
       const hooks = new HooksManager();
 
-      hooks.on("turn_start", (event) => ({
-        model: event.model,
-        instructions: (prompt) => prompt,
-      }));
+      hooks.on("turn_start", (event) => ({ model: event.model }));
       hooks.on("step_start", (event) => {
         expectTypeOf(event.model).toEqualTypeOf<ModelRef>();
         return { model: event.model };
       });
+
+      // The prompt has one writer, so a patch cannot carry it.
+      // @ts-expect-error - `instructions` is not a patchable field.
+      hooks.on("turn_start", () => ({ instructions: "replaced" }));
     });
   });
 
