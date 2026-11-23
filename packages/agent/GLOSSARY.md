@@ -165,8 +165,8 @@ _Avoid_: 插件、模块、集成
 **System Prompt (系统提示)**:
 The text a session sends as the model's instructions with every step request. It starts with an
 identity: the main session reads `MAIN_INSTRUCTIONS`, and a subagent reads its own preamble. Each
-instructions section then appends to it in priority order. The code names this field
-`instructions`.
+instructions section then appends to it in priority order. Nothing else writes it: a start patch
+changes the call, not the prompt. The code names this field `instructions`.
 _Avoid_: 提示词、提示片段、系统消息、system message
 
 **Instructions Section (指令段)**:
