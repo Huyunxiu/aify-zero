@@ -1,9 +1,16 @@
 # Agent
 
-The model loop in a session. A session holds turns. A turn holds steps. One run drives one
-assistant turn. Tools, hooks, and instructions sections enter this loop at assembly.
+The Assistant of one session: the model loop. A session holds turns. A turn holds steps. One run
+drives one assistant turn. Tools, hooks, and instructions sections enter this loop at assembly.
 
 ## Language
+
+**Assistant (助理)**:
+The agent one session talks to: the model loop, with the tools, skills, subagents, and timers it
+can use. The code calls it `Agent`, and the table calls it `agents`; the user-facing word is
+Assistant. The word also names the role of one turn — an assistant turn holds the answer — and
+that turn is not the Assistant.
+_Avoid_: 助手、智能体、机器人、bot
 
 **Turn (回合)**:
 One exchange between the user and the model, in the order of a session. A user turn holds

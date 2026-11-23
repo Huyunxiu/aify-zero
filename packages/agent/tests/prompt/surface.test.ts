@@ -72,10 +72,12 @@ describe("the session prompt", () => {
     registry = undefined;
   });
 
-  test("opens with the agent identity", async () => {
+  test("opens with the assistant identity", async () => {
     const agent = await makeAgent();
 
-    expect(agent.instructions).toMatch(/^You are an agent/);
+    expect(agent.instructions).toMatch(
+      /^You are the assistant in this session/
+    );
   });
 
   test("reads the rules before the facts", async () => {
