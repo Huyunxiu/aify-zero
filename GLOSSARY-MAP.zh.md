@@ -8,7 +8,7 @@
 
 - [packages/ui](./packages/ui/GLOSSARY.md)：会话面板与其中的各个视图（文件、改动、终端）。
 - [packages/agent](./packages/agent/GLOSSARY.md)：会话里的模型循环，以及进入循环的工具、MCP 服务器和扩展。
-- [packages/server](./packages/server/GLOSSARY.md)：设置、项目、会话行和凭据；模型与供应商在这里定义；浏览器怎么拿到本机 API 的凭据。
+- [packages/server](./packages/server/GLOSSARY.md)：Bot、设置、项目、会话行和凭据；Bot、默认 Bot、Bot 主目录、Bot 工作目录、模型与供应商在这里定义；浏览器怎么拿到本机 API 的凭据。
 - [packages/db](./packages/db/GLOSSARY.md)：表结构与它的版本历史；数据库语境下的迁移、迁移历史、基线按这里的说法用。
 - [packages/sandbox](./packages/sandbox/GLOSSARY.md)：工具在哪跑、按什么读写文件；沙箱与沙箱适配器的区别只在这里定义。
 
@@ -40,3 +40,6 @@
 - **packages/sandbox ↔ packages/server**：server 决定一个会话用哪个适配器、什么时候复用；
   「沙箱」「沙箱适配器」只按 `packages/sandbox/GLOSSARY.md` 的说法用，不叫「提供方」——
   那个词在 `packages/server/GLOSSARY.md` 里已经归模型。
+- **packages/server → packages/agent, packages/ui**：「Bot」「默认 Bot」「Bot 主目录」「Bot 工作目录」
+  定义在 `packages/server/GLOSSARY.md`。「Agent」和「Subagent」留在 `packages/agent/GLOSSARY.md`，
+  界面沿用 `Bot`，不叫「Agent」或「智能体」。

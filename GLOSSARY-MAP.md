@@ -9,9 +9,9 @@ and the other contexts use the same word.
   terminal).
 - [packages/agent](./packages/agent/GLOSSARY.md): the model loop in a session, and the
   tools, MCP servers, and extensions that enter that loop.
-- [packages/server](./packages/server/GLOSSARY.md): settings, projects, session rows, and
-  credentials; this file defines the model and the provider; how the browser gets the
-  credential of the local API.
+- [packages/server](./packages/server/GLOSSARY.md): bots, settings, projects, session rows, and
+  credentials; this file defines Bot, Default Bot, Bot Home, Bot Workspace, model, and provider;
+  how the browser gets the credential of the local API.
 - [packages/db](./packages/db/GLOSSARY.md): the table structure and its version history;
   migration, migration history, and baseline in the database context follow this file.
 - [packages/sandbox](./packages/sandbox/GLOSSARY.md): where a tool runs, and which files it
@@ -58,3 +58,6 @@ and the other contexts use the same word.
   and when it reuses that adapter. "Sandbox" and "sandbox adapter" follow only
   `packages/sandbox/GLOSSARY.md`, and they are not "provider": that word already belongs to
   the model in `packages/server/GLOSSARY.md`.
+- **packages/server → packages/agent, packages/ui**: `Bot`, `Default Bot`, `Bot Home`, and
+  `Bot Workspace` are defined in `packages/server/GLOSSARY.md`. `Agent` and `Subagent` stay in
+  `packages/agent/GLOSSARY.md`, and UI views keep `Bot` rather than naming it `Agent`.
