@@ -26,20 +26,14 @@
     "docs/adr/0021-session-last-activity-is-turn-boundary.md",
     "docs/adr/0022-session-delete-is-soft.md",
     "docs/plans/fake-provider.md",
-    "docs/plans/mcp-auth.md",
     "docs/plans/mcp-tools.md",
-    "docs/plans/model-logos.md",
-    "docs/plans/providers.md",
-    "docs/plans/retry-step.md",
     "docs/plans/tool-catalog.md",
     "docs/development/desktop-and-api.md",
     "docs/development/packaging.md",
     "docs/testing/fake-provider.md",
     "packages/agent-client/README.md",
-    "packages/agent/src/compaction/README.md",
     "packages/agent/src/jobs/README.md",
     "packages/agent/src/testing/fake-provider/README.md",
-    "packages/agent/src/tools/shell/README.md",
     "packages/sandbox/README.md"
   ]
 }
