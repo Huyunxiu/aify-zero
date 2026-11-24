@@ -8,7 +8,7 @@ import type {
 } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
-import { splitAssistantMessageSteps } from "../src/elements/assistant-entries";
+import { splitAssistantMessageSteps } from "../src/blocks/assistant-entries";
 
 const textPart = (text: string, createdAt = 1) => ({
   type: "text" as const,

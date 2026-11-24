@@ -4,9 +4,9 @@ import type {
 } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
-import { formatTokens } from "../src/elements/compaction-message";
-import { compactionSummary } from "../src/elements/steps/compaction";
-import { getPartDurationMs, getPartStatus } from "../src/elements/tool-step";
+import { formatTokens } from "../src/blocks/compaction-message";
+import { compactionSummary } from "../src/blocks/steps/compaction";
+import { getPartDurationMs, getPartStatus } from "../src/blocks/tool-step";
 
 const part: AgentCompactionPart = {
   type: "compaction",

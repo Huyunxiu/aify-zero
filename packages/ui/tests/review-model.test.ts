@@ -4,7 +4,7 @@ import {
   lineCountsOf,
   reviewItemOf,
   treeInputOf,
-} from "../src/elements/session-panel/review-model";
+} from "../src/blocks/session-panel/review-model";
 
 describe("review tree input", () => {
   test("gives the tree one path and one status per change", () => {

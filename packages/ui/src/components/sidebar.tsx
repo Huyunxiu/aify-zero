@@ -22,8 +22,8 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
 import * as React from "react";
 
-import { DesktopTitleBar } from "../elements/title-bar";
-import { useLayout } from "../elements/layout-provider";
+import { DesktopTitleBar } from "../blocks/title-bar";
+import { useLayout } from "../blocks/layout-provider";
 import { isDesktopShell } from "../lib/desktop";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";

@@ -7,7 +7,7 @@
     "./app.tsx": "./src/app.tsx",
     "./globals.css": "./src/styles/globals.css",
     "./components/*": "./src/components/*.tsx",
-    "./elements/*": "./src/elements/*.tsx",
+    "./blocks/*": "./src/blocks/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
     "./i18n": "./src/i18n/index.ts",
     "./lib/*": "./src/lib/*.ts",

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { classifyMarkdownHref, parseFileLink } from "../src/elements/file-link";
+import { classifyMarkdownHref, parseFileLink } from "../src/blocks/file-link";
 
 /** 拆开写，避免 lint 把测试里的字符串当成真的脚本地址。 */
 const SCRIPT_HREF = ["java", "script:alert(1)"].join("");

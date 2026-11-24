@@ -3,11 +3,8 @@ import { describe, expect, test } from "vitest";
 import {
   initialPanelState,
   panelReducer,
-} from "../src/elements/session-panel/tabs";
-import type {
-  PanelAction,
-  PanelState,
-} from "../src/elements/session-panel/tabs";
+} from "../src/blocks/session-panel/tabs";
+import type { PanelAction, PanelState } from "../src/blocks/session-panel/tabs";
 
 /** 依次执行多个操作。 */
 function run(state: PanelState, ...actions: PanelAction[]): PanelState {

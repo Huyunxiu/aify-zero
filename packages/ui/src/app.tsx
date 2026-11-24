@@ -5,16 +5,16 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { LangProvider } from "@workspace/ui/components/lang-provider";
-import { ServerStatusBanner } from "@workspace/ui/components/server-status-banner";
-import { ThemeProvider } from "@workspace/ui/components/theme-provider";
+import { LangProvider } from "@workspace/ui/blocks/lang-provider";
+import { LayoutProvider } from "@workspace/ui/blocks/layout-provider";
+import { ServerStatusBanner } from "@workspace/ui/blocks/server-status-banner";
+import { SignInGate } from "@workspace/ui/blocks/sign-in-gate";
+import { ThemeProvider } from "@workspace/ui/blocks/theme-provider";
 import {
   AnchoredToastProvider,
   ToastProvider,
 } from "@workspace/ui/components/toast";
 import { TooltipProvider } from "@workspace/ui/components/tooltip";
-import { LayoutProvider } from "@workspace/ui/elements/layout-provider";
-import { SignInGate } from "@workspace/ui/elements/sign-in-gate";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 
