@@ -341,3 +341,36 @@ describe("approval policy", () => {
     });
   });
 });
+
+describe("enabledToolGroups", () => {
+  test("omits disabled files, web, timers, and subagent tools and subagent prompt", async () => {
+    const agent = await makeAgent({
+      timers: idleTimerStore(),
+      instructions: "Custom persona",
+      enabledToolGroups: {
+        files: false,
+        web: false,
+        timers: false,
+        subagent: false,
+      },
+    });
+
+    const names = Object.keys(agent.tools);
+    expect(names).not.toContain("read-file");
+    expect(names).not.toContain("web-fetch");
+    expect(names).not.toContain("timer-set");
+    expect(names).not.toContain("task");
+    expect(agent.instructions).toBe("Custom persona");
+  });
+
+  test("omits jobs when shell is disabled or jobs is disabled, while keeping core tools", async () => {
+    const noShell = await makeAgent({
+      enabledToolGroups: { shell: false, jobs: true },
+    });
+    expect(noShell.tools.bash).toBeUndefined();
+    expect(noShell.tools["job-output"]).toBeUndefined();
+    expect(noShell.context.jobs).toBeUndefined();
+    expect(noShell.tools.questionnaire).toBeDefined();
+    expect(noShell.tools["search-tools"]).toBeDefined();
+  });
+});

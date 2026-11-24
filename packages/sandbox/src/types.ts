@@ -150,6 +150,12 @@ export interface AcquireSandboxInput {
   readonly projectDirs: readonly string[];
   /** 会话私有目录，存临时文件。 */
   readonly sessionDir: string;
+  /** Read-only directories visible to tools and commands (for example Bot skills). */
+  readonly readOnlyDirs?: readonly string[];
+  /** Base environment overrides applied to shell commands unless overridden per call. */
+  readonly env?: Readonly<Record<string, string>>;
+  /** Isolated home directory overriding `HOME` and `~` resolution. */
+  readonly homeDir?: string;
   /** 上一次回报的物理 id。有了就尝试回到同一个环境，没有就是新建。 */
   readonly physicalId?: string;
 }

@@ -20,6 +20,8 @@ export const SEATBELT_BINARY = "/usr/bin/sandbox-exec";
 export interface WritePolicyInput {
   readonly projectDirs: readonly string[];
   readonly sessionDir: string;
+  /** Optional isolated home directory allowed for writes. */
+  readonly homeDir?: string;
   /** 额外可写根，例如某个项目自己的构建缓存目录。 */
   readonly extra?: readonly string[];
 }
@@ -35,6 +37,7 @@ export function buildWritePolicy(input: WritePolicyInput): readonly string[] {
   const candidates = [
     ...input.projectDirs,
     input.sessionDir,
+    input.homeDir,
     ...(input.extra ?? []),
     process.env.TMPDIR,
     "/tmp",

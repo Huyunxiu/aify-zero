@@ -258,4 +258,66 @@ describe(EnvironmentExtension, () => {
     expect(section?.id).toBe("environment:environment");
     expect(section?.priority).toBe(-10);
   });
+
+  test("renders Bot workspace directory as cwd when no project is attached", () => {
+    const botWorkspaceDir = "/home/user/.aify-zero/bots/b1/workspace";
+    const rendered = renderEnvironment(
+      {
+        backend: "host",
+        cwd: botWorkspaceDir,
+        roots: [
+          botWorkspaceDir,
+          sessionDir,
+          "/home/user/.aify-zero/bots/b1/skills",
+        ],
+        shells: ["bash"],
+      },
+      sessionDir,
+      {
+        operatingSystem: "darwin 27.0.0",
+        architecture: "arm64",
+        nodeVersion: "v22.0.0",
+      },
+      {
+        botWorkspaceDir,
+        projectDirs: [botWorkspaceDir],
+      }
+    );
+
+    expect(rendered).toContain(
+      `- Bot workspace directory: ${botWorkspaceDir} (relative paths resolve here)`
+    );
+    expect(rendered).not.toContain("Project director");
+    expect(rendered).not.toContain("skills");
+  });
+
+  test("renders Project directory alongside Bot workspace directory when a project is attached", () => {
+    const botWorkspaceDir = "/home/user/.aify-zero/bots/b1/workspace";
+    const rendered = renderEnvironment(
+      {
+        backend: "host",
+        cwd: "/repo",
+        roots: ["/repo", botWorkspaceDir, sessionDir, "/bots/b1/skills"],
+        shells: ["bash"],
+      },
+      sessionDir,
+      {
+        operatingSystem: "darwin 27.0.0",
+        architecture: "arm64",
+        nodeVersion: "v22.0.0",
+      },
+      {
+        botWorkspaceDir,
+        projectDirs: ["/repo", botWorkspaceDir],
+      }
+    );
+
+    expect(rendered).toContain(
+      "- Project directory: /repo (relative paths resolve here)"
+    );
+    expect(rendered).toContain(
+      `- Bot workspace directory: ${botWorkspaceDir} (persistent workspace for this Bot)`
+    );
+    expect(rendered).not.toContain("skills");
+  });
 });

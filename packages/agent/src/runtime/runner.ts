@@ -167,6 +167,7 @@ export class AgentRunner {
       id: input.sessionId,
       title: input.title ?? "",
       metadata: input.metadata ?? {},
+      ...(input.botId === undefined ? {} : { botId: input.botId }),
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
       ...(input.approvalPolicy === undefined
         ? {}
@@ -410,6 +411,15 @@ export class AgentRunner {
     cursor?: SessionCursor
   ): ReadableStream<SessionStreamEvent<AgentToolSet>> {
     return this.#sessionEvents.subscribe(sessionId, cursor);
+  }
+
+  /** Read-only check for whether a session has an active stream or queued run loop. */
+  isSessionBusy(sessionId: string): boolean {
+    if (this.#runs.has(sessionId) || this.#wakeups.has(sessionId)) {
+      return true;
+    }
+    const stream = this.#streams.getStreamEntryBySession(sessionId);
+    return stream !== undefined && !stream.isDone();
   }
 
   /** 只读状态：正在推进的会话、等待中的唤醒、暂停原因。 */

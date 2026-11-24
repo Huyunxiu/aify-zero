@@ -1,4 +1,8 @@
-import type { AgentToolSet, AgentAssistantTurn } from "@workspace/agent-client";
+import type {
+  AgentAssistantTurn,
+  AgentToolSet,
+  BotSummary,
+} from "@workspace/agent-client";
 import { SplitIcon } from "lucide-react";
 
 import {
@@ -38,6 +42,8 @@ import {
 
 type AssistantMessageProps = {
   turn: AgentAssistantTurn<AgentToolSet>;
+  /** The Bot that owns the session; its face stands beside every answer. */
+  bot?: BotSummary | null;
   onFork?: (messageId: string) => void;
   /**
    * Answers a call the turn was held on. The turn is not re-run here: the caller
@@ -103,6 +109,7 @@ const TURN_HEADING = {
  * record itself rather than about one tool.
  */
 export const AssistantMessage = ({
+  bot,
   turn,
   onFork,
   onRespondToolApproval,
@@ -118,7 +125,7 @@ export const AssistantMessage = ({
 
   return (
     <div className="group flex w-full items-start gap-3 pr-8">
-      <AssistantAvatar />
+      <AssistantAvatar bot={bot} />
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <AgentActivity defaultExpanded={new Set(["root"])}>
           <AgentActivityHeader

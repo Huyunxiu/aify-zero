@@ -5,8 +5,6 @@ import {
   createMcpToolApprovalPattern,
   createSessionAgent,
   ContextExtension,
-  FileSystemContextSource,
-  FileSystemSkillSource,
   mcpApprovalClass,
   McpExtension,
   SkillExtension,
@@ -26,11 +24,16 @@ import type { ModelEffort } from "@workspace/shared/constants";
 import { getSessionDir } from "../config";
 import { JOB_REGISTRY } from "../jobs";
 import { getMcpManager } from "../mcp/registry";
-import { getProjectDirs } from "../routers/project/project.service";
+import { resolveEffectiveMcpServers } from "../routers/bot/bot.service";
 import type { ConfiguredModel } from "../routers/settings/settings.schema";
 import { getUserSettings } from "../routers/settings/settings.service";
 import { acquireSessionSandbox } from "../sandbox/registry";
 import type { SQLiteStore } from "../storage/sqlite-store";
+import {
+  createBotContextSource,
+  createBotSkillSource,
+  resolveSessionDirectories,
+} from "./directories";
 import {
   createModelTargetResolver,
   modelContextWindows,
@@ -40,28 +43,28 @@ export interface BuildSessionAgentInput {
   sessionId: string;
   configured: ConfiguredModel;
   effort?: ModelEffort;
+  botId?: string;
   projectId?: string;
   session: BuildAgentInput["session"];
   store: SQLiteStore;
-  /** 运行器实例的注册表；子会话必须复用它。 */
+  /** Runner stream registry; child sessions share it. */
   streams: BuildAgentInput["streams"];
   jobs?: JobRegistry;
-  /** 运行器的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
   /** The Approval Policy of the session, which this Run uses as it is. */
   approvalPolicy: ApprovalPolicy;
 }
 
 /**
- * 建一个会话用的 agent：目录、策略、扩展和工具都按这个会话装配好。
+ * Assemble a session's agent: Bot & Project directories, sandbox, policy, extensions, and tools.
  *
- * 建回合和手工压缩共用这一段；差别只在 AgentSession 里有什么、以及接下来
- * 调用 `stream` 时发哪种 signal。
+ * Shared by active turns and manual compaction runs.
  */
 export async function buildSessionAgent({
   sessionId,
   configured,
   effort,
+  botId,
   projectId,
   session,
   store,
@@ -70,31 +73,35 @@ export async function buildSessionAgent({
   steering,
   approvalPolicy,
 }: BuildSessionAgentInput): Promise<Agent> {
-  // 会话目录先建出来：Environment 提示会把路径告诉模型，模型可能直接往里
-  // 写文件，不该让它先自己 mkdir。
   const sessionDir = getSessionDir(sessionId);
   mkdirSync(sessionDir, { recursive: true });
 
-  // 目录来自 project 表：会话指定了项目就用那个项目，否则用默认项目。
-  const projectDirs = await getProjectDirs(projectId);
+  const dirs = await resolveSessionDirectories({ botId, projectId });
+  const { bot } = dirs;
 
-  // 沙箱按会话缓存：它要比一次请求活得久，远端实例尤其不能被每回合重建。
   const sandbox = await acquireSessionSandbox({
     sessionId,
-    projectDirs,
+    projectDirs: dirs.projectDirs,
     sessionDir,
+    sandbox: bot.sandbox,
+    readOnlyDirs: [dirs.botSkillsDir],
+    env: bot.env,
+    homeDir: dirs.botIsolatedHomeDir,
   });
 
   const settings = await getUserSettings();
-  // 日历规则的缺省时区：设置里写死的优先，没写就跟随宿主。定下来之后由工具
-  // 写进每一条日程，之后不再跟随（ADR 0018）。设置刚读过，不再查一次库。
   const timeZone = timeZoneOrHost(settings.timeZone);
-
-  // 默认扩展和工具装配由 agent 包的组合根决定；这里只提供宿主才能知道的
-  // 东西：目录、模型、设置和文件系统资源。
-  //
-  // MCP 连接归进程，不归会话：每回合都会走到这里，扩展只向管理器要快照。
   const mcpManager = getMcpManager();
+  const effectiveMcpServers = resolveEffectiveMcpServers(
+    bot,
+    settings.mcpServers
+  );
+  const effectiveMcpServerIds = new Set(
+    effectiveMcpServers.map((server) => server.id)
+  );
+  const compactionOverrides = bot.compaction
+    ? { ...settings.compaction, ...bot.compaction }
+    : settings.compaction;
 
   return await createSessionAgent({
     sessionId,
@@ -103,48 +110,52 @@ export async function buildSessionAgent({
     streamRegistry: streams,
     model: { ref: configured.ref, effort },
     resolveModel: createModelTargetResolver(settings),
-    projectDirs,
+    projectDirs: dirs.projectDirs,
     sessionDir,
-    projectId,
-    compactionOverrides: settings.compaction,
+    projectId: dirs.hasProject ? projectId : undefined,
+    botId: bot.id,
+    botWorkspaceDir: dirs.botWorkspaceDir,
+    enabledToolGroups: bot.toolGroups,
+    compactionOverrides,
     modelContextWindows: modelContextWindows(settings),
     jobs: jobs ?? JOB_REGISTRY,
-    // 定时器和收件箱共用同一个库：会话排的定时器就落在它自己的存储上。
     timers: store,
     timeZone,
     steering,
     sandbox,
-    // 审批放进宿主的函数，子会话才能继承 MCP 工具的询问规则。
-    toolApprovalPattern: createMcpToolApprovalPattern(mcpManager),
+    toolApprovalPattern: createMcpToolApprovalPattern(
+      mcpManager,
+      effectiveMcpServerIds
+    ),
     approvalPolicy,
-    // Class resolution belongs to the host: the annotations sit in the MCP Tool table, and the agent package does not know the manager.
-    resolveApprovalClass: resolveApprovalClass(mcpManager),
+    resolveApprovalClass: resolveApprovalClass(
+      mcpManager,
+      effectiveMcpServerIds
+    ),
+    instructions: bot.instructions?.trim() ? bot.instructions : undefined,
     extensions: [
       new McpExtension({
         id: "mcp",
         manager: mcpManager,
-        servers: settings.mcpServers,
+        servers: effectiveMcpServers,
       }),
       new SkillExtension({
         id: "filesystem-skills",
-        sources: [new FileSystemSkillSource()],
+        sources: [createBotSkillSource(dirs)],
       }),
       new ContextExtension({
         id: "filesystem-context",
-        sources: [new FileSystemContextSource()],
+        sources: [createBotContextSource(dirs)],
       }),
     ],
   });
 }
 
-/**
- * Map the Tool name of one call to its Approval Class.
- *
- * A built-in Tool reads the table; an MCP Tool reads the annotation from the server.
- * A missing annotation does not mean safe, so it falls to unknown: the policy has no opinion, and the MCP rule still asks.
- */
-function resolveApprovalClass(mcpManager: McpManager): ApprovalClassResolver {
+function resolveApprovalClass(
+  mcpManager: McpManager,
+  serverIds: ReadonlySet<string>
+): ApprovalClassResolver {
   return (request) =>
-    mcpApprovalClass(mcpManager, request.toolName) ??
+    mcpApprovalClass(mcpManager, request.toolName, serverIds) ??
     classifyTool(request.toolName);
 }

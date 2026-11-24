@@ -2,7 +2,10 @@ import type { CallToolResult } from "@ai-sdk/mcp";
 import { describe, expect, test } from "vitest";
 
 import type { ToolCallHookEvent } from "../../src/hooks-manager.js";
-import { createMcpToolApprovalPattern } from "../../src/mcp/approval.js";
+import {
+  createMcpToolApprovalPattern,
+  mcpApprovalClass,
+} from "../../src/mcp/approval.js";
 import type { McpServerConfig } from "../../src/mcp/config.js";
 import type { McpToolDefinition } from "../../src/mcp/connection.js";
 import { McpManager } from "../../src/mcp/manager.js";
@@ -95,5 +98,55 @@ describe(createMcpToolApprovalPattern, () => {
     expect(decide(request("linear__update_issue"))).toStrictEqual({
       decision: "allow",
     });
+  });
+
+  test("scopes approval and annotation lookup to the session's server IDs", async () => {
+    const serverA: McpServerConfig = {
+      ...server,
+      id: "bot-a-shared",
+      name: "shared",
+      autoApprove: true,
+    };
+    const serverB: McpServerConfig = {
+      ...server,
+      id: "bot-b-shared",
+      name: "shared",
+      autoApprove: false,
+    };
+    const toolsA: McpToolDefinition[] = [
+      {
+        name: "run_action",
+        inputSchema: { type: "object" },
+        annotations: { readOnlyHint: true },
+      },
+    ];
+    const toolsB: McpToolDefinition[] = [
+      {
+        name: "run_action",
+        inputSchema: { type: "object" },
+        annotations: { destructiveHint: true },
+      },
+    ];
+
+    const manager = new McpManager({
+      createConnection: (cfg) => ({
+        listTools: () =>
+          Promise.resolve(cfg.id === serverA.id ? toolsA : toolsB),
+        callTool: () => Promise.resolve({ content: [] } as CallToolResult),
+        close: () => Promise.resolve(),
+      }),
+    });
+    await manager.acquire(serverA);
+    await manager.acquire(serverB);
+
+    const scopedIds = new Set([serverB.id]);
+    const decide = createMcpToolApprovalPattern(manager, scopedIds);
+
+    expect(decide(request("shared__run_action"))).toStrictEqual({
+      decision: "ask",
+    });
+    expect(mcpApprovalClass(manager, "shared__run_action", scopedIds)).toBe(
+      "mutate"
+    );
   });
 });

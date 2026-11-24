@@ -410,5 +410,126 @@
     "unreachableHint": "The server did not answer. Check that it is running.",
     "expiredTitle": "Sign-in link expired",
     "expiredHint": "This link belongs to a previous run of the server. Use the link printed at the latest start."
+  },
+  "bots": {
+    "title": "Bots",
+    "create": "New Bot",
+    "newSession": "New session with this Bot",
+    "noSessions": "No sessions",
+    "backToApp": "Back to app",
+    "notFound": "Bot not found.",
+    "actions": {
+      "menu": "Bot actions",
+      "configure": "Configure",
+      "delete": "Delete",
+      "deleteBot": "Delete Bot",
+      "save": "Save",
+      "cancel": "Cancel",
+      "add": "Add"
+    },
+    "sections": {
+      "general": "General",
+      "model": "Model & Prompt",
+      "skills": "Skills",
+      "mcp": "MCP servers",
+      "runtime": "Tools & Runtime"
+    },
+    "fields": {
+      "avatar": "Avatar",
+      "name": "Name",
+      "description": "Description",
+      "descriptionPlaceholder": "Optional summary",
+      "defaultProject": "Default project",
+      "defaultModel": "Default model"
+    },
+    "createDialog": {
+      "title": "New Bot",
+      "namePlaceholder": "Code Reviewer",
+      "nameRequired": "Bot name is required.",
+      "submit": "Create Bot"
+    },
+    "deleteDialog": {
+      "title": "Delete Bot",
+      "description": "“{{name}}” and all of its sessions will be deleted.",
+      "deleteFiles": "Also delete local directory"
+    },
+    "paths": {
+      "title": "Directories",
+      "home": "Bot Home",
+      "workspace": "Bot Workspace",
+      "openFolder": "Open folder",
+      "copy": "Copy path",
+      "copied": "Path copied to clipboard"
+    },
+    "model": {
+      "inheritGlobal": "Inherit global default",
+      "missingWarning": "Configured Bot model ({{model}}) is unavailable or disabled. Select another model or update the Bot settings.",
+      "instructionsTitle": "System instructions",
+      "instructionsPlaceholder": "Additional instructions injected at the start of the system prompt",
+      "includeGlobalContext": "Include global context files",
+      "compaction": {
+        "title": "Compaction",
+        "override": "Override global compaction",
+        "auto": "Automatic compaction",
+        "pruneToolResults": "Prune old tool results",
+        "thresholdRatio": "Threshold ratio",
+        "keepRecentTokens": "Keep recent tokens"
+      }
+    },
+    "skills": {
+      "globalTitle": "Global skills",
+      "privateTitle": "Bot skills",
+      "refresh": "Refresh",
+      "noGlobalSkills": "No global skills found.",
+      "noPrivateSkills": "Place skill folders with SKILL.md inside this directory.",
+      "modes": {
+        "none": "None",
+        "all": "All",
+        "selected": "Selected"
+      }
+    },
+    "mcp": {
+      "globalTitle": "Global MCP servers",
+      "privateTitle": "Bot MCP servers",
+      "noPrivateServers": "No private MCP servers configured.",
+      "modes": {
+        "all": "All",
+        "selected": "Selected"
+      }
+    },
+    "runtime": {
+      "toolsTitle": "Built-in tool groups",
+      "tools": {
+        "files": "Files",
+        "shell": "Shell",
+        "web": "Web",
+        "jobs": "Background jobs",
+        "timers": "Timers",
+        "subagent": "Subagent"
+      },
+      "sandboxTitle": "Approval & Sandbox",
+      "approvalPolicy": "Default Approval Policy",
+      "sandboxAdapter": "Sandbox Adapter",
+      "containerImage": "Container image",
+      "containerImagePlaceholder": "Optional image override",
+      "isolateHome": "Isolate HOME directory",
+      "adapters": {
+        "inherit": "Inherit server default",
+        "host": "Host Adapter",
+        "isolated": "Native Isolation Adapter",
+        "apple-container": "Apple Container"
+      },
+      "envTitle": "Environment variables",
+      "envKeyPlaceholder": "ENV_KEY",
+      "envValuePlaceholder": "Value"
+    },
+    "builtInBadge": "Built-in",
+    "avatar": {
+      "hint": "PNG, JPEG or WebP, up to 2 MB.",
+      "upload": "Upload image",
+      "remove": "Remove",
+      "uploadFailed": "The image was not accepted.",
+      "removeFailed": "The avatar was not removed."
+    }
   }
 }

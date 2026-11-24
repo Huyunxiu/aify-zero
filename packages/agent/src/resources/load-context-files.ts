@@ -36,19 +36,27 @@ export async function loadContextFiles(
   return [...merged.values()];
 }
 
+export type FileSystemContextSourceOptions = {
+  globalDirs?: string[];
+  botHomeDir?: string;
+  scanProject?: boolean;
+};
+
 /** 从文件系统加载上下文文件，包住现有的 `loadProjectContextFiles`。 */
 export class FileSystemContextSource implements ContextSource {
-  readonly #globalDirs?: string[];
+  readonly #options: FileSystemContextSourceOptions;
 
-  constructor(options: { globalDirs?: string[] } = {}) {
-    this.#globalDirs = options.globalDirs;
+  constructor(options: FileSystemContextSourceOptions = {}) {
+    this.#options = options;
   }
 
   load(context: ResourceLoadContext): Promise<ContextFile[]> {
     return Promise.resolve(
       loadProjectContextFiles({
         cwd: context.projectDir,
-        globalDirs: this.#globalDirs,
+        globalDirs: this.#options.globalDirs,
+        botHomeDir: this.#options.botHomeDir,
+        scanProject: this.#options.scanProject,
       })
     );
   }

@@ -55,17 +55,49 @@ function detectEnvironment(): EnvironmentInfo {
  * The session directory is not a project directory: it has its own block, so this
  * function only excludes it from the roots.
  */
-export function renderEnvironment(
-  description: SandboxDescription,
-  sessionDir: string,
-  info: EnvironmentInfo
-): string {
-  const primary = description.cwd;
-  const additional = description.roots.filter(
-    (dir) => dir !== primary && dir !== sessionDir
-  );
+export interface EnvironmentRenderOptions {
+  readonly botWorkspaceDir?: string;
+  readonly projectDirs?: readonly string[];
+}
 
-  // A single directory reads as one line, not as a list with one entry.
+function renderWorkspaceLines(
+  primary: string,
+  candidateRoots: readonly string[],
+  sessionDir: string,
+  botWorkspaceDir?: string
+): string[] {
+  if (botWorkspaceDir === undefined) {
+    const additional = candidateRoots.filter(
+      (dir) => dir !== primary && dir !== sessionDir
+    );
+    // A single directory reads as one line, not as a list with one entry.
+    return additional.length === 0
+      ? [`- Project directory: ${primary} (relative paths resolve here)`]
+      : [
+          "- Project directories:",
+          `  - ${primary} (primary; relative paths resolve here)`,
+          ...additional.map((dir) => `  - ${dir}`),
+        ];
+  }
+
+  if (primary === botWorkspaceDir) {
+    const extraProjects = candidateRoots.filter(
+      (dir) => dir !== primary && dir !== sessionDir && dir !== botWorkspaceDir
+    );
+    return [
+      `- Bot workspace directory: ${botWorkspaceDir} (relative paths resolve here)`,
+      ...(extraProjects.length === 0
+        ? []
+        : [
+            "- Additional project directories:",
+            ...extraProjects.map((dir) => `  - ${dir}`),
+          ]),
+    ];
+  }
+
+  const additional = candidateRoots.filter(
+    (dir) => dir !== primary && dir !== sessionDir && dir !== botWorkspaceDir
+  );
   const projectLines =
     additional.length === 0
       ? [`- Project directory: ${primary} (relative paths resolve here)`]
@@ -76,9 +108,30 @@ export function renderEnvironment(
         ];
 
   return [
+    ...projectLines,
+    `- Bot workspace directory: ${botWorkspaceDir} (persistent workspace for this Bot)`,
+  ];
+}
+
+export function renderEnvironment(
+  description: SandboxDescription,
+  sessionDir: string,
+  info: EnvironmentInfo,
+  options: EnvironmentRenderOptions = {}
+): string {
+  const primary = description.cwd;
+  const candidateRoots = options.projectDirs ?? description.roots;
+  const workspaceLines = renderWorkspaceLines(
+    primary,
+    candidateRoots,
+    sessionDir,
+    options.botWorkspaceDir
+  );
+
+  return [
     "## Environment",
     "",
-    ...projectLines,
+    ...workspaceLines,
     // Only a sandbox that states a limit renders this line: a local run has no
     // boundary worth telling the model about up front.
     ...(description.note === undefined
@@ -142,7 +195,11 @@ export class EnvironmentExtension extends Extension {
     const rendered = renderEnvironment(
       api.environment.sandbox.describe(),
       sessionDir,
-      this.#info
+      this.#info,
+      {
+        botWorkspaceDir: api.environment.botWorkspaceDir,
+        projectDirs: api.agent.projectDirs,
+      }
     );
 
     api.instructionsSection({

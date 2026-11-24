@@ -11,28 +11,128 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-export const agent_table = sqliteTable("agent", {
-  id: text("id", { length: 36 })
-    .primaryKey()
-    .$defaultFn(() => randomUUID()),
-  name: text("name").notNull(),
-  avatar: text("avatar"),
-  description: text("description"),
-  instructions: text("instructions"),
-  tools: text("tools", { mode: "json" }),
-  models: text("models", { mode: "json" }),
-  skills: text("skills", { mode: "json" }),
-  config: text("config", { mode: "json" }),
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-    .notNull()
-    .default(sql`(unixepoch() * 1000)`),
-});
+/** Aligns with `ModelRef` in `@workspace/shared/model`. */
+export type BotModelRefColumn = {
+  providerId: string;
+  modelId: string;
+};
 
-export type AgentModel = InferSelectModel<typeof agent_table>;
-export type AgentInsertModel = InferInsertModel<typeof agent_table>;
+/** Aligns with `BotToolGroups` in `@workspace/agent-client`. */
+export type BotToolGroupsColumn = {
+  files: boolean;
+  shell: boolean;
+  web: boolean;
+  jobs: boolean;
+  timers: boolean;
+  subagent: boolean;
+};
+
+/** Aligns with `BotSandboxConfig` in `@workspace/agent-client`. */
+export type BotSandboxColumn = {
+  adapter: "inherit" | "host" | "isolated" | "apple-container";
+  image?: string;
+  isolateHome: boolean;
+};
+
+/** Aligns with `BotSkillsConfig` in `@workspace/agent-client`. */
+export type BotSkillsColumn = {
+  globalMode: "none" | "all" | "selected";
+  globalNames: string[];
+};
+
+/** Aligns with `BotMcpConfig` in `@workspace/agent-client`. */
+export type BotMcpColumn = {
+  globalMode: "all" | "selected";
+  globalServerIds: string[];
+  servers: unknown[];
+};
+
+/** Aligns with `BotCompactionOverride` in `@workspace/agent-client`. */
+export type BotCompactionColumn = {
+  auto?: boolean;
+  thresholdRatio?: number;
+  reserveTokens?: number;
+  keepRecentTokens?: number;
+  pruneToolResults?: boolean;
+  maxSummaryTokens?: number;
+};
+
+/**
+ * Persistent Bot definitions (ADR 0032, ADR 0033).
+ *
+ * The built-in Default Bot uses `id = "default"` and must never be soft-deleted.
+ * Literal enums and JSON shapes align with `@workspace/agent-client` (`bot.ts`,
+ * `approval-policy.ts`) because `@workspace/db` does not depend on the protocol package.
+ */
+export const bot_table = sqliteTable(
+  "bot",
+  {
+    id: text("id", { length: 36 })
+      .primaryKey()
+      .$defaultFn(() => randomUUID()),
+    name: text("name").notNull(),
+    /** File name under `<botHome>/assets`; null falls back to the name's initial. */
+    avatarPath: text("avatar_path"),
+    description: text("description"),
+    instructions: text("instructions"),
+    defaultModel: text("default_model", {
+      mode: "json",
+    }).$type<BotModelRefColumn | null>(),
+    defaultEffort: text("default_effort"),
+    defaultProjectId: text("default_project_id"),
+    /** Custom host workspace path reserved for future releases; null resolves to `<botHome>/workspace`. */
+    workspaceDir: text("workspace_dir"),
+    /** Aligns with `ApprovalPolicy` in `@workspace/agent-client`. */
+    defaultApprovalPolicy: text("default_approval_policy", {
+      enum: ["edit", "readonly", "unrestricted"],
+    })
+      .notNull()
+      .default("edit"),
+    toolGroups: text("tool_groups", { mode: "json" })
+      .$type<BotToolGroupsColumn>()
+      .notNull()
+      .default(
+        sql`'{"files":true,"shell":true,"web":true,"jobs":true,"timers":true,"subagent":true}'`
+      ),
+    sandbox: text("sandbox", { mode: "json" })
+      .$type<BotSandboxColumn>()
+      .notNull()
+      .default(sql`'{"adapter":"inherit","isolateHome":false}'`),
+    env: text("env", { mode: "json" })
+      .$type<Record<string, string>>()
+      .notNull()
+      .default(sql`'{}'`),
+    skills: text("skills", { mode: "json" })
+      .$type<BotSkillsColumn>()
+      .notNull()
+      .default(sql`'{"globalMode":"none","globalNames":[]}'`),
+    mcp: text("mcp", { mode: "json" })
+      .$type<BotMcpColumn>()
+      .notNull()
+      .default(
+        sql`'{"globalMode":"selected","globalServerIds":[],"servers":[]}'`
+      ),
+    includeGlobalContext: integer("include_global_context", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    compaction: text("compaction", {
+      mode: "json",
+    }).$type<BotCompactionColumn | null>(),
+    deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("idx_bot_deleted_created").on(table.deletedAt, table.createdAt),
+  ]
+);
+
+export type BotModel = InferSelectModel<typeof bot_table>;
+export type BotInsertModel = InferInsertModel<typeof bot_table>;
 
 export const project_table = sqliteTable(
   "project",
@@ -84,6 +184,13 @@ export const session_table = sqliteTable(
       .$defaultFn(() => randomUUID()),
     title: text("title").notNull(),
     metadata: text("metadata", { mode: "json" }),
+    /**
+     * Owning Bot of this session (ADR 0032).
+     *
+     * Defaults to `"default"` (the built-in Default Bot) so existing rows and
+     * subagents without an explicit override always belong to a valid Bot.
+     */
+    botId: text("bot_id").notNull().default("default"),
     /**
      * 会话所属的项目。
      *
@@ -154,6 +261,11 @@ export const session_table = sqliteTable(
     // 按项目列会话的热路径：先按项目收窄，再按 kind 排除子 agent，最后排序。
     index("idx_session_project_kind_updated").on(
       table.projectId,
+      table.kind,
+      table.updatedAt
+    ),
+    index("idx_session_bot_kind_updated").on(
+      table.botId,
       table.kind,
       table.updatedAt
     ),

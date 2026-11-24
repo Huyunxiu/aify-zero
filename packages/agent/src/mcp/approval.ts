@@ -16,13 +16,17 @@ type McpToolLookup =
  * ours but the server is not configured, `resolveTool` also returns empty, but the
  * meaning differs: the first is not an MCP Tool, the second is a stale Tool.
  */
-function lookupMcpTool(manager: McpManager, toolName: string): McpToolLookup {
+function lookupMcpTool(
+  manager: McpManager,
+  toolName: string,
+  serverIds?: ReadonlySet<string>
+): McpToolLookup {
   const parsed = splitMcpToolName(toolName);
-  if (!parsed || !manager.hasServer(parsed.serverName)) {
+  if (!parsed || !manager.hasServer(parsed.serverName, serverIds)) {
     return { owned: false };
   }
 
-  return { owned: true, resolved: manager.resolveTool(toolName) };
+  return { owned: true, resolved: manager.resolveTool(toolName, serverIds) };
 }
 
 /**
@@ -35,9 +39,10 @@ function lookupMcpTool(manager: McpManager, toolName: string): McpToolLookup {
  */
 export function mcpApprovalClass(
   manager: McpManager,
-  toolName: string
+  toolName: string,
+  serverIds?: ReadonlySet<string>
 ): ApprovalClass | undefined {
-  const lookup = lookupMcpTool(manager, toolName);
+  const lookup = lookupMcpTool(manager, toolName, serverIds);
   if (!lookup.owned) {
     return undefined;
   }
@@ -69,10 +74,11 @@ export function mcpApprovalClass(
  * so the call asks.
  */
 export function createMcpToolApprovalPattern(
-  manager: McpManager
+  manager: McpManager,
+  serverIds?: ReadonlySet<string>
 ): ToolApprovalPattern {
   return (request) => {
-    const lookup = lookupMcpTool(manager, request.toolName);
+    const lookup = lookupMcpTool(manager, request.toolName, serverIds);
     if (!lookup.owned) {
       // Not our Tool name shape: let the later rules answer.
       return;

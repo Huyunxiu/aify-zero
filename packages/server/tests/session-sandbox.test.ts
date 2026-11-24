@@ -1,7 +1,10 @@
 import { HOST_BACKEND } from "@workspace/sandbox";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { acquireSessionSandbox } from "../src/sandbox/registry";
+import {
+  acquireSessionSandbox,
+  clearSessionSandboxes,
+} from "../src/sandbox/registry";
 
 const input = (sessionId: string) => ({
   sessionId,
@@ -10,8 +13,9 @@ const input = (sessionId: string) => ({
 });
 
 describe(acquireSessionSandbox, () => {
-  afterEach(() => {
+  afterEach(async () => {
     vi.unstubAllEnvs();
+    await clearSessionSandboxes();
   });
 
   test("should return the same sandbox for the same session", async () => {
@@ -45,6 +49,45 @@ describe(acquireSessionSandbox, () => {
     await expect(
       acquireSessionSandbox(input("session-unknown"))
     ).rejects.toThrow('Unknown AIFY_SANDBOX_ADAPTER: "docker"');
+  });
+
+  test("should reject an unknown explicit Bot sandbox adapter instead of falling back", async () => {
+    await expect(
+      acquireSessionSandbox({
+        ...input("session-bot-unknown"),
+        sandbox: {
+          adapter: "docker" as unknown as "host",
+          isolateHome: false,
+        },
+      })
+    ).rejects.toThrow('Unknown sandbox adapter: "docker"');
+  });
+
+  test("should rebuild only the session whose Bot sandbox config changed", async () => {
+    const sessionA1 = await acquireSessionSandbox({
+      ...input("rebuild-a"),
+      env: { TOKEN: "v1" },
+      sandbox: { adapter: "host", isolateHome: false },
+    });
+    const sessionB1 = await acquireSessionSandbox({
+      ...input("rebuild-b"),
+      env: { OTHER: "keep" },
+      sandbox: { adapter: "host", isolateHome: false },
+    });
+
+    const sessionA2 = await acquireSessionSandbox({
+      ...input("rebuild-a"),
+      env: { TOKEN: "v2" },
+      sandbox: { adapter: "host", isolateHome: false },
+    });
+    const sessionB2 = await acquireSessionSandbox({
+      ...input("rebuild-b"),
+      env: { OTHER: "keep" },
+      sandbox: { adapter: "host", isolateHome: false },
+    });
+
+    expect(sessionA2).not.toBe(sessionA1);
+    expect(sessionB2).toBe(sessionB1);
   });
 
   test("should refuse the isolated backend when isolation is unavailable", async () => {

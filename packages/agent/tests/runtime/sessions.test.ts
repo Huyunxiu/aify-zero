@@ -31,6 +31,7 @@ const sessionRow = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   id: "s1",
   title: "Source",
   metadata: {},
+  botId: "default",
   projectId: "p1",
   kind: "main",
   activeHeadId: null,
@@ -136,7 +137,9 @@ describe(SessionLifecycle, () => {
 
     const lifecycle = makeLifecycle({
       getSessionById: () =>
-        Promise.resolve(sessionRow({ approvalPolicy: "edit" })),
+        Promise.resolve(
+          sessionRow({ approvalPolicy: "edit", botId: "b-custom" })
+        ),
       getBranchTurns: () => Promise.resolve(branch),
       saveSession: (session) => {
         savedSessions.push(session);
@@ -178,6 +181,7 @@ describe(SessionLifecycle, () => {
     });
     // A branch continues the same posture: the source session stores Edit, and the fork row stores Edit too.
     expect(savedSessions[0]).toMatchObject({ approvalPolicy: "edit" });
+    expect(savedSessions[0]).toMatchObject({ botId: "b-custom" });
   });
 });
 
@@ -386,7 +390,9 @@ describe("approval policy on SessionLifecycle", () => {
     return new SessionLifecycle({
       store: asStore({
         getSessionById: () =>
-          Promise.resolve(sessionRow({ approvalPolicy: "edit" })),
+          Promise.resolve(
+            sessionRow({ approvalPolicy: "edit", botId: "b-custom" })
+          ),
         getBranchTurns: () => Promise.resolve([]),
         setActiveStream: () => Promise.resolve(1),
         clearActiveStream: () => Promise.resolve(1),
@@ -425,7 +431,7 @@ describe("approval policy on SessionLifecycle", () => {
     expect(seen[0]?.approvalPolicy).toBe("edit");
   });
 
-  test("a user message keeps the stored policy", async () => {
+  test("a user message keeps the stored policy and botId", async () => {
     const seen: BuildAgentInput[] = [];
 
     await lifecycleFor(seen).startFromInbox({
@@ -434,5 +440,6 @@ describe("approval policy on SessionLifecycle", () => {
     });
 
     expect(seen[0]?.approvalPolicy).toBe("edit");
+    expect(seen[0]?.botId).toBe("b-custom");
   });
 });

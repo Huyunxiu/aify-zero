@@ -9,7 +9,11 @@ import type {
   InboxPayload,
   StepSource,
 } from "@workspace/agent-client";
-import { isSystemStepSource, TIMER_INBOX_KIND } from "@workspace/agent-client";
+import {
+  DEFAULT_BOT_ID,
+  isSystemStepSource,
+  TIMER_INBOX_KIND,
+} from "@workspace/agent-client";
 import {
   composeTimerTurn,
   hydrateTurn,
@@ -297,12 +301,14 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
     direction,
     kind,
     projectId,
+    botId,
   }: {
     cursor?: string;
     limit?: number;
     direction?: "asc" | "desc";
     kind: SessionModel["kind"];
     projectId?: string;
+    botId?: string;
   }): Promise<SessionModel[]> {
     const isDesc = direction === "desc";
     const keyset =
@@ -314,6 +320,7 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
       eq(session_table.kind, kind),
       isNull(session_table.deletedAt),
       ...(projectId ? [eq(session_table.projectId, projectId)] : []),
+      ...(botId ? [eq(session_table.botId, botId)] : []),
       ...(keyset
         ? [
             // 两列的 keyset：先比 updatedAt，相等的那一批再按 id 继续往下切。
@@ -384,8 +391,21 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
   }
 
   async saveSession(session: SessionInsertModel): Promise<boolean> {
-    const result = await db.insert(session_table).values(session);
+    const result = await db.insert(session_table).values({
+      ...session,
+      botId: session.botId ?? DEFAULT_BOT_ID,
+    });
     return result.rowsAffected > 0;
+  }
+
+  /** Return all non-deleted sessions (main and subagent) belonging to a Bot. */
+  async listSessionsByBotId(botId: string): Promise<SessionModel[]> {
+    return await db
+      .select()
+      .from(session_table)
+      .where(
+        and(eq(session_table.botId, botId), isNull(session_table.deletedAt))
+      );
   }
 
   async getSessionById(sessionId: string): Promise<SessionModel | null> {

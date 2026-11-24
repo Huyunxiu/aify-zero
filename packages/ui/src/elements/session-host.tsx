@@ -5,7 +5,7 @@ import {
   IslandHandle,
 } from "@workspace/ui/elements/island";
 import { SessionContainer } from "@workspace/ui/elements/session-container";
-import { readProjectId } from "@workspace/ui/lib/session-search";
+import { readBotId, readProjectId } from "@workspace/ui/lib/session-search";
 import { useSubagentPane } from "@workspace/ui/stores/subagent-pane";
 import * as React from "react";
 
@@ -16,8 +16,17 @@ export type SessionHostProps = {
 
 /** The session the host shows: a saved one, or the session list's draft. */
 type ShownSession =
-  | { readonly kind: "draft" }
-  | { readonly id: string; readonly kind: "id" };
+  | {
+      readonly kind: "draft";
+      readonly botId?: string;
+      readonly projectId?: string;
+    }
+  | {
+      readonly id: string;
+      readonly kind: "id";
+      readonly botId?: string;
+      readonly projectId?: string;
+    };
 
 /**
  * The session on screen, owned by the shell rather than by a route.
@@ -37,32 +46,43 @@ export function SessionHost({ covered }: SessionHostProps) {
 
   const sessionId =
     typeof params.sessionId === "string" ? params.sessionId : undefined;
+  const searchProjectId = readProjectId(search);
+  const searchBotId = readBotId(search);
 
-  // A covering route has no session in its address. The host remembers what it
-  // showed last, so coming back lands on the same session. The draft counts:
-  // opening settings from the session list must not throw the draft away.
-  const lastShown = React.useRef<ShownSession | undefined>(
-    sessionId === undefined ? undefined : { id: sessionId, kind: "id" }
-  );
-  React.useEffect(() => {
-    if (sessionId !== undefined) {
-      lastShown.current = { id: sessionId, kind: "id" };
-
+  const liveSession = React.useMemo<ShownSession | undefined>(() => {
+    if (covered) {
       return;
     }
-
-    if (atSessionList) {
-      lastShown.current = { kind: "draft" };
+    if (sessionId !== undefined) {
+      return {
+        id: sessionId,
+        kind: "id",
+        botId: searchBotId,
+        projectId: searchProjectId,
+      };
     }
-  }, [sessionId, atSessionList]);
+    if (atSessionList) {
+      return {
+        kind: "draft",
+        botId: searchBotId,
+        projectId: searchProjectId,
+      };
+    }
+  }, [covered, sessionId, searchBotId, searchProjectId, atSessionList]);
 
-  const shownSession: ShownSession | undefined = sessionId
-    ? { id: sessionId, kind: "id" }
-    : covered
-      ? lastShown.current
-      : atSessionList
-        ? { kind: "draft" }
-        : undefined;
+  // A covering route has no session in its address. The host remembers what it
+  // showed last (including draft botId/projectId), so coming back or reconfiguring
+  // the active Bot underneath lands on the exact same session without resetting it.
+  const lastShown = React.useRef<ShownSession | undefined>(liveSession);
+  React.useEffect(() => {
+    if (!covered && liveSession !== undefined) {
+      lastShown.current = liveSession;
+    }
+  }, [covered, liveSession]);
+
+  const shownSession: ShownSession | undefined = covered
+    ? lastShown.current
+    : liveSession;
 
   const activeSessionId =
     shownSession?.kind === "id" ? shownSession.id : undefined;
@@ -89,14 +109,13 @@ export function SessionHost({ covered }: SessionHostProps) {
     return null;
   }
 
-  const projectId = readProjectId(search);
-
   return (
     <IslandGroup orientation="horizontal">
       <Island defaultSize={subagentSessionId ? "50%" : "100%"}>
         <SessionContainer
           covered={covered}
-          initialProjectId={projectId}
+          initialBotId={shownSession.botId}
+          initialProjectId={shownSession.projectId}
           sessionId={activeSessionId}
         />
       </Island>

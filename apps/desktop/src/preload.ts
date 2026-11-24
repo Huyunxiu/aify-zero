@@ -74,6 +74,9 @@ contextBridge.exposeInMainWorld("aifyDesktop", {
   // 终端通道和通道走同一套鉴权与注入逻辑，只是路径不同。
   terminalUrl: (): Promise<string> =>
     ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_URL) as Promise<string>,
+  /** Open a local directory or file in the OS file manager; returns "" on success. */
+  openPath: (targetPath: string): Promise<string> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, targetPath) as Promise<string>,
 });
 
 window.addEventListener("message", (event) => {

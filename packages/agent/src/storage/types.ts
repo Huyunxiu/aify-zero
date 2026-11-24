@@ -33,6 +33,7 @@ export type SessionRecord = {
   id: string;
   title: string;
   metadata: unknown;
+  botId: string;
   projectId: string | null;
   kind: SessionKind;
   activeHeadId: string | null;
@@ -55,6 +56,7 @@ export type SessionWrite = {
   id: string;
   title: string;
   metadata?: unknown;
+  botId?: string;
   projectId?: string | null;
   kind?: SessionKind;
   activeHeadId?: string | null;

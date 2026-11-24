@@ -314,6 +314,53 @@ describe("context files", () => {
       ]);
     });
 
+    test("should load botHomeDir after globalDirs and before project ancestors", () => {
+      const globalDir = join(tempDir, "global");
+      const botHome = join(tempDir, "bot-home");
+      const repo = join(tempDir, "repo");
+      mkdirSync(repo, { recursive: true });
+      write(join(globalDir, "AGENTS.md"), "global");
+      write(join(botHome, "AGENTS.md"), "bot");
+      write(join(repo, "AGENTS.md"), "project");
+
+      const files = under(
+        loadProjectContextFiles({
+          cwd: repo,
+          globalDirs: [globalDir],
+          botHomeDir: botHome,
+        }),
+        tempDir
+      );
+
+      expect(files.map((file) => file.content)).toStrictEqual([
+        "global",
+        "bot",
+        "project",
+      ]);
+    });
+
+    test("should skip ancestor project chain when scanProject is false", () => {
+      const globalDir = join(tempDir, "global");
+      const botHome = join(tempDir, "bot-home");
+      const workspace = join(botHome, "workspace");
+      mkdirSync(workspace, { recursive: true });
+      write(join(tempDir, "AGENTS.md"), "ancestor-leak");
+      write(join(botHome, "AGENTS.md"), "bot");
+      write(join(workspace, "AGENTS.md"), "workspace-ignored");
+
+      const files = under(
+        loadProjectContextFiles({
+          cwd: workspace,
+          globalDirs: [globalDir],
+          botHomeDir: botHome,
+          scanProject: false,
+        }),
+        tempDir
+      );
+
+      expect(files.map((file) => file.content)).toStrictEqual(["bot"]);
+    });
+
     test("should not skip anything for a sibling worktree", () => {
       // git worktree add ../feat 让 worktree 与主仓库平级，主仓库不在祖先链上。
       const outer = join(tempDir, "outer");

@@ -650,6 +650,31 @@ const installServerSelectionIpc = (): void => {
   });
 };
 
+const installShellOpenPathIpc = (): void => {
+  ipcMain.handle(
+    IPC_CHANNELS.OPEN_PATH,
+    async (event, targetPath: unknown): Promise<string> => {
+      const frame = event.senderFrame;
+      if (
+        frame === null ||
+        frame !== event.sender.mainFrame ||
+        !isTrustedDocument(frame.url)
+      ) {
+        throw new Error("Rejected openPath request from an untrusted renderer");
+      }
+      if (
+        typeof targetPath !== "string" ||
+        targetPath.trim() === "" ||
+        !path.isAbsolute(targetPath)
+      ) {
+        throw new Error("openPath target must be a non-empty absolute path");
+      }
+
+      return await shell.openPath(targetPath);
+    }
+  );
+};
+
 const onElectronReady = async () => {
   // 启动过程中用户已经退出（例如 Cmd+Q）：不要再起 server，否则 before-quit
   // 的 stop() 已经跑完，这个晚到的子进程会变成孤儿。
@@ -754,6 +779,7 @@ const onElectronReady = async () => {
   const mainWindow = buildWindow();
   await setupIpcServer();
   installServerSelectionIpc();
+  installShellOpenPathIpc();
   installChannelIpc(apiToken, mainWindow, waitForOrigin);
   showWindow(mainWindow);
 

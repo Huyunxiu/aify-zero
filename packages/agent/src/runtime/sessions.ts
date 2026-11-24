@@ -35,6 +35,7 @@ export type CreateInput = {
   approvals?: TextStreamToolApprovalResponseEvent[];
   model: ModelRef;
   effort?: ModelEffort;
+  botId?: string;
   projectId?: string;
 };
 
@@ -95,6 +96,7 @@ export class SessionLifecycle {
     // 项目在会话行落库时固定：行已存在就沿用行上的项目，输入值只在首次
     // 落库时生效。
     const previousSession = await store.getSessionById(sessionId);
+    const sessionBotId = previousSession ? previousSession.botId : input.botId;
     const sessionProjectId = previousSession
       ? (previousSession.projectId ?? undefined)
       : input.projectId;
@@ -132,6 +134,7 @@ export class SessionLifecycle {
       approvalPolicy:
         previousSession?.approvalPolicy ?? DEFAULT_APPROVAL_POLICY,
       ...(effort === undefined ? {} : { effort }),
+      ...(sessionBotId === undefined ? {} : { botId: sessionBotId }),
       ...(sessionProjectId === undefined
         ? {}
         : { projectId: sessionProjectId }),
@@ -208,6 +211,7 @@ export class SessionLifecycle {
       turns: AgentSession.toAgentTurns(branch),
       model: latest.payload.model,
       approvalPolicy: session.approvalPolicy,
+      botId: session.botId,
       ...(effort === undefined ? {} : { effort }),
       ...(projectId === undefined ? {} : { projectId }),
       claims: items.map((item) => ({ inboxId: item.id, turn: item.content })),
@@ -225,12 +229,13 @@ export class SessionLifecycle {
     turns: AgentTurn<AgentToolSet>[];
     model: ModelRef;
     effort?: ModelEffort;
+    botId?: string;
     projectId?: string;
     claims?: readonly InboxClaim[];
     /** The stored policy of the session, which the run uses as it is. */
     approvalPolicy: ApprovalPolicy;
   }): Promise<StartedRun> {
-    const { sessionId, turns, model, effort, projectId, claims } = input;
+    const { sessionId, turns, model, effort, botId, projectId, claims } = input;
     const { store, registry, buildAgent } = this.#deps;
 
     const agent = await buildAgent({
@@ -239,6 +244,7 @@ export class SessionLifecycle {
       approvalPolicy: input.approvalPolicy,
       model,
       ...(effort === undefined ? {} : { effort }),
+      ...(botId === undefined ? {} : { botId }),
       ...(projectId === undefined ? {} : { projectId }),
       streams: registry,
       ...(this.#deps.jobs === undefined ? {} : { jobs: this.#deps.jobs }),
@@ -430,6 +436,7 @@ export class SessionLifecycle {
       sessionId,
       session: new AgentSession({ turns }),
       approvalPolicy: session.approvalPolicy,
+      botId: session.botId,
       model,
       ...(effort === undefined ? {} : { effort }),
       ...(session.projectId === null || session.projectId === undefined
@@ -532,7 +539,8 @@ export class SessionLifecycle {
       activeHeadId: copies.at(-1)?.id ?? null,
       forkedFromSessionId: source.id,
       forkedFromMessageId: messageId ?? prefix.at(-1)?.id,
-      // fork 出来的会话留在源会话的项目里，否则按项目列表时会凭空少一条。
+      // Keep the forked session under the source session's Bot and project so filtered lists stay consistent.
+      botId: source.botId,
       projectId: source.projectId,
       // A fork continues the same posture: what the source session lets pass must not ask again in the branch.
       approvalPolicy: source.approvalPolicy,

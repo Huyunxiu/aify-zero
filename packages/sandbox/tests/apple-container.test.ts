@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { buildExecArgv } from "../src/apple-container/adapter";
+import { buildStartArgs } from "../src/apple-container/runtime";
 import type {
   ContainerCommandOptions,
   ContainerRuntime,
@@ -378,6 +379,76 @@ describe("apple container sandbox", () => {
     const result = await sandbox.exec("exit 124");
     expect(result.timedOut).toBeFalsy();
   });
+
+  test("should mount readOnlyDirs as read-only and homeDir as writable", async () => {
+    const input = await createInput();
+    const skillsDir = await createTempDir();
+    const botHome = await createTempDir();
+    await writeFile(join(skillsDir, "SKILL.md"), "# skill", "utf-8");
+    const runtime = createHostRuntime();
+
+    const sandbox = await sandboxFor(runtime, {
+      ...input,
+      readOnlyDirs: [skillsDir],
+      homeDir: botHome,
+    });
+
+    expect(first(runtime.started).mounts).toStrictEqual([
+      { hostPath: firstProject(input), containerPath: firstProject(input) },
+      { hostPath: input.sessionDir, containerPath: input.sessionDir },
+      { hostPath: botHome, containerPath: botHome },
+      { hostPath: skillsDir, containerPath: skillsDir, readOnly: true },
+    ]);
+
+    expect(sandbox.resolvePath("~/out.txt")).toBe(join(botHome, "out.txt"));
+    await sandbox.writeFile("~/out.txt", "home-ok");
+    await expect(sandbox.readFile(join(botHome, "out.txt"))).resolves.toBe(
+      "home-ok"
+    );
+    await expect(sandbox.readFile(join(skillsDir, "SKILL.md"))).resolves.toBe(
+      "# skill"
+    );
+    await expect(
+      sandbox.writeFile(join(skillsDir, "mutate.txt"), "bad")
+    ).rejects.toBeInstanceOf(SandboxPathDeniedError);
+  });
+
+  test("should reject mkdir and rm on readOnlyDirs and inject base env", async () => {
+    const input = await createInput();
+    const skillsDir = await createTempDir();
+    const botHome = await createTempDir();
+    await writeFile(join(skillsDir, "SKILL.md"), "# skill", "utf-8");
+    const runtime = createHostRuntime();
+
+    const sandbox = await sandboxFor(runtime, {
+      ...input,
+      readOnlyDirs: [skillsDir],
+      homeDir: botHome,
+      env: { BOT_TOKEN: "secret", OVERRIDE: "base" },
+    });
+
+    await expect(sandbox.mkdir(join(skillsDir, "sub"))).rejects.toBeInstanceOf(
+      SandboxPathDeniedError
+    );
+    await expect(
+      sandbox.rm(join(skillsDir, "SKILL.md"))
+    ).rejects.toBeInstanceOf(SandboxPathDeniedError);
+
+    const out: string[] = [];
+    const execResult = await sandbox.exec(
+      'printf "%s|%s|%s" "$BOT_TOKEN" "$OVERRIDE" "$HOME"',
+      {
+        env: { OVERRIDE: "call" },
+        onData: (channel, chunk) => {
+          if (channel === "stdout") {
+            out.push(chunk.toString("utf-8"));
+          }
+        },
+      }
+    );
+    expect(execResult.exitCode).toBe(0);
+    expect(out.join("")).toBe(`secret|call|${botHome}`);
+  });
 });
 
 describe(buildExecArgv, () => {
@@ -413,10 +484,35 @@ describe(buildExecArgv, () => {
     expect(argv.slice(-3)).toStrictEqual(["bash", "-c", "npm test"]);
   });
 
-  test("should pass environment overrides as separate arguments", () => {
+  test("should pass environment overrides via env", () => {
     const argv = buildExecArgv("env", "/work/alpha", "bash", { CI: "1" });
 
+    expect(argv).toContain("env");
     expect(argv).toContain("CI=1");
+  });
+
+  test("should pass read-only mounts with --mount readonly in buildStartArgs", () => {
+    const args = buildStartArgs({
+      name: "aify-s1",
+      image: "node:22",
+      workdir: "/work/alpha",
+      mounts: [
+        { hostPath: "/work/alpha", containerPath: "/work/alpha" },
+        {
+          hostPath: "/bots/b1/skills",
+          containerPath: "/bots/b1/skills",
+          readOnly: true,
+        },
+      ],
+      command: ["sleep", "infinity"],
+    });
+
+    expect(args).toContain("--volume");
+    expect(args).toContain("/work/alpha:/work/alpha");
+    expect(args).toContain("--mount");
+    expect(args).toContain(
+      "type=bind,source=/bots/b1/skills,target=/bots/b1/skills,readonly"
+    );
   });
 });
 

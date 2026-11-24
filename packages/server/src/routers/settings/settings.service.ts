@@ -4,7 +4,11 @@ import { publicProcedure } from "../../index";
 import { dropStaleMcpCredentials } from "../../mcp/credentials-cleanup";
 import { mcpAuthorizationFlows } from "../../mcp/oauth";
 import { getMcpManager } from "../../mcp/registry";
-import { assertUniqueMcpServers } from "../../mcp/validate";
+import {
+  assertUniqueMcpAcrossGlobalAndBots,
+  parseBotMcpConfig,
+} from "../../mcp/validate";
+import { listActiveBots } from "../bot/bot.repository";
 import {
   createDict,
   findDictByCode,
@@ -70,8 +74,16 @@ export const updateUserSettingsRoute = publicProcedure
 
     const touchedMcp = input.mcpServers !== undefined;
     if (touchedMcp) {
-      // 只在提交了 MCP 配置时校验：旧数据里的冲突不该把别的设置项也锁住。
-      assertUniqueMcpServers(merged.mcpServers);
+      // Check uniqueness across globals and every active Bot when global MCP servers change.
+      const activeRows = await listActiveBots();
+      const bots = activeRows.map((row) => ({
+        id: row.id,
+        mcp: parseBotMcpConfig(row.mcp),
+      }));
+      assertUniqueMcpAcrossGlobalAndBots({
+        globalServers: merged.mcpServers,
+        bots,
+      });
     }
 
     const saved = await saveUserSettings(merged);

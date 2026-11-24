@@ -134,6 +134,20 @@
       "when": 1795156970074,
       "tag": "0018_session_approval_policy_default",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1795406462824,
+      "tag": "0019_bot_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1795505254386,
+      "tag": "0020_bot_avatar_path",
+      "breakpoints": true
     }
   ]
 }

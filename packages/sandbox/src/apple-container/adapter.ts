@@ -141,12 +141,25 @@ function collectMounts(
 ): readonly ContainerMount[] {
   const seen = new Set<string>();
   const mounts: ContainerMount[] = [];
-  for (const path of [...input.projectDirs, input.sessionDir, ...extraMounts]) {
+  const writableDirs = [
+    ...input.projectDirs,
+    input.sessionDir,
+    ...(input.homeDir === undefined ? [] : [input.homeDir]),
+    ...extraMounts,
+  ];
+  for (const path of writableDirs) {
     if (path.length === 0 || seen.has(path)) {
       continue;
     }
     seen.add(path);
     mounts.push({ hostPath: path, containerPath: path });
+  }
+  for (const path of input.readOnlyDirs ?? []) {
+    if (path.length === 0 || seen.has(path)) {
+      continue;
+    }
+    seen.add(path);
+    mounts.push({ hostPath: path, containerPath: path, readOnly: true });
   }
   return mounts;
 }
@@ -168,6 +181,7 @@ export function buildExecArgv(
   const envArgs = Object.entries(env ?? {}).flatMap(([key, value]) =>
     value === undefined ? [] : [`${key}=${value}`]
   );
+  const envPrefix = envArgs.length > 0 ? ["env", ...envArgs] : [];
 
   // 超时交给容器里的 `timeout`：只杀 CLI 进程的话，容器里的命令会继续跑，
   // 而工具已经告诉模型「超时了」。
@@ -190,7 +204,7 @@ export function buildExecArgv(
     'cd "$1" && shift && exec "$@"',
     "aify-exec",
     cwd,
-    ...envArgs,
+    ...envPrefix,
     ...timeoutArgs,
     shell,
     "-c",
@@ -205,9 +219,13 @@ class AppleContainerSandbox implements Sandbox {
   readonly #host: Sandbox;
   /** 挂载集，按原样：这是模型的视图，也是 `describe().roots`。 */
   readonly #mounts: readonly string[];
-  /** 判断用的根：挂载集加上它们的真实路径。 */
-  readonly #roots: readonly string[];
+  /** Readable roots: all mounts plus their real paths. */
+  readonly #readRoots: readonly string[];
+  /** Writable roots: non-read-only mounts plus their real paths. */
+  readonly #writeRoots: readonly string[];
   readonly #cwd: string;
+  readonly #home: string;
+  readonly #baseEnv: NodeJS.ProcessEnv;
 
   constructor(
     runtime: ContainerRuntime,
@@ -219,10 +237,19 @@ class AppleContainerSandbox implements Sandbox {
     this.#container = container;
     this.#host = createHostSandbox(input);
     this.#mounts = mounts.map((mount) => mount.containerPath);
+    const writableMounts = mounts
+      .filter((mount) => mount.readOnly !== true)
+      .map((mount) => mount.containerPath);
     // 判断用两种形态：原样与解析符号链接之后。macOS 上 `TMPDIR` 是
     // `/var/…`，真实路径是 `/private/var/…`，只留一种会让合法路径被判越界。
-    this.#roots = resolvedForms(this.#mounts);
+    this.#readRoots = resolvedForms(this.#mounts);
+    this.#writeRoots = resolvedForms(writableMounts);
     this.#cwd = this.#mounts[0] ?? input.sessionDir;
+    this.#home = input.homeDir ?? homedir();
+    this.#baseEnv = {
+      ...input.env,
+      ...(input.homeDir === undefined ? {} : { HOME: input.homeDir }),
+    };
   }
 
   describe(): SandboxDescription {
@@ -246,13 +273,9 @@ class AppleContainerSandbox implements Sandbox {
 
     const cwd =
       options.cwd === undefined ? this.#cwd : this.resolvePath(options.cwd);
-    const argv = buildExecArgv(
-      command,
-      cwd,
-      shell,
-      options.env,
-      options.timeoutMs
-    );
+    const mergedEnv: NodeJS.ProcessEnv = { ...this.#baseEnv, ...options.env };
+    const env = Object.keys(mergedEnv).length > 0 ? mergedEnv : undefined;
+    const argv = buildExecArgv(command, cwd, shell, env, options.timeoutMs);
 
     const result = await this.#runtime.exec(this.#container, argv, {
       ...(options.timeoutMs === undefined
@@ -273,27 +296,32 @@ class AppleContainerSandbox implements Sandbox {
   }
 
   async readFile(path: string): Promise<string> {
-    const absolute = await this.#assertInside("readFile", path, true);
+    const absolute = await this.#assertInside("readFile", path, true, "read");
     return await this.#host.readFile(absolute);
   }
 
   async readFileBuffer(path: string): Promise<Uint8Array> {
-    const absolute = await this.#assertInside("readFileBuffer", path, true);
+    const absolute = await this.#assertInside(
+      "readFileBuffer",
+      path,
+      true,
+      "read"
+    );
     return await this.#host.readFileBuffer(absolute);
   }
 
   async writeFile(path: string, content: string | Uint8Array): Promise<void> {
-    const absolute = await this.#assertInside("writeFile", path, true);
+    const absolute = await this.#assertInside("writeFile", path, true, "write");
     await this.#host.writeFile(absolute, content);
   }
 
   async stat(path: string): Promise<FileStat> {
-    const absolute = await this.#assertInside("stat", path, true);
+    const absolute = await this.#assertInside("stat", path, true, "read");
     return await this.#host.stat(absolute);
   }
 
   async readdir(path: string): Promise<DirEntry[]> {
-    const absolute = await this.#assertInside("readdir", path, true);
+    const absolute = await this.#assertInside("readdir", path, true, "read");
     return await this.#host.readdir(absolute);
   }
 
@@ -301,7 +329,8 @@ class AppleContainerSandbox implements Sandbox {
     // `exists` 按契约永不抛：越过边界就是「不存在」。
     const absolute = this.resolvePath(path);
     const target = await resolveTargetPath(absolute, true);
-    if (!isInsideRoots(target, this.#roots)) {
+    const roots = options?.writable ? this.#writeRoots : this.#readRoots;
+    if (!isInsideRoots(target, roots)) {
       return false;
     }
     return await this.#host.exists(absolute, options);
@@ -309,7 +338,7 @@ class AppleContainerSandbox implements Sandbox {
 
   async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
     // mkdir 不跟随最终链接：目标已是链接时系统会拒绝创建，这里只看目录项。
-    const absolute = await this.#assertInside("mkdir", path, false);
+    const absolute = await this.#assertInside("mkdir", path, false, "write");
     await this.#host.mkdir(absolute, options);
   }
 
@@ -317,19 +346,24 @@ class AppleContainerSandbox implements Sandbox {
     path: string,
     options?: { recursive?: boolean; force?: boolean }
   ): Promise<void> {
-    const absolute = await this.#assertInside("rm", path, false);
+    const absolute = await this.#assertInside("rm", path, false, "write");
     await this.#host.rm(absolute, options);
   }
 
   resolvePath(path: string): string {
     return resolveSandboxPath(path, {
       cwd: this.#cwd,
-      home: homedir(),
+      home: this.#home,
     });
   }
 
   async *readTextStream(path: string): AsyncIterable<string> {
-    const absolute = await this.#assertInside("readTextStream", path, true);
+    const absolute = await this.#assertInside(
+      "readTextStream",
+      path,
+      true,
+      "read"
+    );
     if (this.#host.readTextStream === undefined) {
       throw new Error("This sandbox cannot stream text.");
     }
@@ -337,7 +371,7 @@ class AppleContainerSandbox implements Sandbox {
   }
 
   async readHead(path: string, bytes: number): Promise<Uint8Array> {
-    const absolute = await this.#assertInside("readHead", path, true);
+    const absolute = await this.#assertInside("readHead", path, true, "read");
     if (this.#host.readHead === undefined) {
       throw new Error("This sandbox cannot read a file head.");
     }
@@ -353,15 +387,17 @@ class AppleContainerSandbox implements Sandbox {
   async #assertInside(
     operation: string,
     path: string,
-    followFinalLink: boolean
+    followFinalLink: boolean,
+    mode: "read" | "write"
   ): Promise<string> {
     const absolute = this.resolvePath(path);
     const target = await resolveTargetPath(absolute, followFinalLink);
-    if (!isInsideRoots(target, this.#roots)) {
+    const roots = mode === "write" ? this.#writeRoots : this.#readRoots;
+    if (!isInsideRoots(target, roots)) {
       throw new SandboxPathDeniedError({
         operation,
         path: absolute,
-        roots: this.#roots,
+        roots,
       });
     }
     return absolute;

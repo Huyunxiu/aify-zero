@@ -18,6 +18,7 @@ import { Hono } from "hono";
 import { languageDetector } from "hono/language";
 import { requestId } from "hono/request-id";
 
+import { registerAssetRoutes } from "./asset/asset.route";
 import { authenticate } from "./auth";
 import {
   registerPrivateAuthRoutes,
@@ -168,6 +169,11 @@ export const createApp = ({
   app.get("/api/workspace/file", (c) =>
     serveWorkspaceFile(c.req.raw, { resolveRoots: resolveSessionWorkspace })
   );
+
+  // The owner's asset channel: bytes for `<img src>` and uploads for a form. A Bot
+  // avatar is its first caller. It sits before the RPC fallback too, so neither goes
+  // through a handler match first.
+  registerAssetRoutes(app);
 
   registerPrivateAuthRoutes(app, authOptions);
 

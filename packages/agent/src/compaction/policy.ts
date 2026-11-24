@@ -1,12 +1,16 @@
+import { DEFAULT_BOT_COMPACTION_OVERRIDE } from "@workspace/agent-client";
+
 import type {
   CompactionPolicyOverrides,
   ResolvedCompactionPolicy,
 } from "./types";
 
-const DEFAULT_THRESHOLD_RATIO = 0.8;
-const DEFAULT_RESERVE_TOKENS = 16_384;
-const DEFAULT_KEEP_RECENT_TOKENS = 20_000;
-const DEFAULT_MAX_SUMMARY_TOKENS = 8192;
+const DEFAULT_THRESHOLD_RATIO = DEFAULT_BOT_COMPACTION_OVERRIDE.thresholdRatio;
+const DEFAULT_RESERVE_TOKENS = DEFAULT_BOT_COMPACTION_OVERRIDE.reserveTokens;
+const DEFAULT_KEEP_RECENT_TOKENS =
+  DEFAULT_BOT_COMPACTION_OVERRIDE.keepRecentTokens;
+const DEFAULT_MAX_SUMMARY_TOKENS =
+  DEFAULT_BOT_COMPACTION_OVERRIDE.maxSummaryTokens;
 const DEFAULT_MIN_SUMMARIZE_TOKENS = 2000;
 
 const DEFAULT_PRUNE_THRESHOLD_CHARS = 8192;
@@ -36,7 +40,7 @@ export function resolvePolicy(input?: {
   overrides?: CompactionPolicyOverrides;
 }): ResolvedCompactionPolicy {
   const overrides = input?.overrides ?? {};
-  const auto = overrides.auto ?? true;
+  const auto = overrides.auto ?? DEFAULT_BOT_COMPACTION_OVERRIDE.auto;
   const thresholdRatio = Math.min(
     0.95,
     Math.max(
@@ -104,7 +108,9 @@ export function resolvePolicy(input?: {
     thresholdRatio,
     reserveTokens,
     keepRecentTokens,
-    pruneToolResults: overrides.pruneToolResults ?? true,
+    pruneToolResults:
+      overrides.pruneToolResults ??
+      DEFAULT_BOT_COMPACTION_OVERRIDE.pruneToolResults,
     pruneThresholdChars,
     pruneHeadChars,
     pruneTailChars,

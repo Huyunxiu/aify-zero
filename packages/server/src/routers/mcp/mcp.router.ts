@@ -7,6 +7,7 @@ import { publicProcedure } from "../../index";
 import { clearMcpCredentials, hasMcpTokens } from "../../mcp/credentials";
 import { mcpAuthorizationFlows } from "../../mcp/oauth";
 import { getMcpManager } from "../../mcp/registry";
+import { findActiveBotMcpServer } from "../bot/bot.service";
 import { getUserSettings } from "../settings/settings.service";
 
 /** 每个已配置服务器一行：状态、工具数、失败原因。 */
@@ -33,7 +34,9 @@ const test = publicProcedure
 
 async function findServer(id: string): Promise<McpServerConfig> {
   const settings = await getUserSettings();
-  const server = settings.mcpServers.find((row) => row.id === id);
+  const server =
+    settings.mcpServers.find((row) => row.id === id) ??
+    (await findActiveBotMcpServer(id));
 
   if (server === undefined) {
     throw new ApiError("MCP_SERVER_NOT_FOUND", { data: { id } });

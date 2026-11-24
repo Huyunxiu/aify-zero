@@ -155,7 +155,7 @@ describe(resolveSubagentSession, () => {
     ]);
   });
 
-  test("puts the parent's policy on the child row", async () => {
+  test("puts the parent's policy and botId on the child row", async () => {
     const store = new FakeStore();
 
     await resolveSubagentSession(asStore(store), {
@@ -165,9 +165,13 @@ describe(resolveSubagentSession, () => {
       prompt: "Find the thing.",
       // The parent tightens to Read-Only. The child row copies this value and must not fall back to Standard.
       approvalPolicy: "readonly",
+      botId: "b-parent",
     });
 
-    expect(store.saved[0]).toMatchObject({ approvalPolicy: "readonly" });
+    expect(store.saved[0]).toMatchObject({
+      approvalPolicy: "readonly",
+      botId: "b-parent",
+    });
   });
 
   test("reuses the existing child session instead of starting over", async () => {

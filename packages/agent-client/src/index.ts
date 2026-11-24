@@ -1,4 +1,6 @@
 export * from "./approval-policy";
+export * from "./asset";
+export * from "./bot";
 export * from "./types";
 export * from "./session-stream";
 export * from "./agent-turn-assembler";

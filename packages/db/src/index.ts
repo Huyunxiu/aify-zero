@@ -21,9 +21,13 @@ export const MIGRATIONS_TABLE = "__drizzle_migrations";
 /** 历史表的建表语句，与 drizzle 的 migrator 写下的完全一致。 */
 export const MIGRATIONS_TABLE_DDL = `create table if not exists "${MIGRATIONS_TABLE}" (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)`;
 
-// Ensure the ~/.aify-zero user data directory exists.
+// Ensure the data directory exists (`AIFY_DATA_DIR` or `~/.aify-zero`).
 const ensureDataDir = () => {
-  const dataDir = path.join(homedir(), ".aify-zero");
+  const override = process.env.AIFY_DATA_DIR?.trim();
+  const dataDir =
+    override !== undefined && override.length > 0
+      ? override
+      : path.join(homedir(), ".aify-zero");
 
   if (!existsSync(dataDir)) {
     mkdirSync(dataDir, { recursive: true });

@@ -410,5 +410,126 @@
     "unreachableHint": "server 没有响应，请确认它正在运行。",
     "expiredTitle": "登录链接已失效",
     "expiredHint": "这条链接属于上一次 server 运行。请用最近一次启动打印的链接。"
+  },
+  "bots": {
+    "title": "Bot",
+    "create": "新建 Bot",
+    "newSession": "在此 Bot 中新建会话",
+    "noSessions": "暂无会话",
+    "backToApp": "返回应用",
+    "notFound": "未找到该 Bot。",
+    "actions": {
+      "menu": "Bot 操作",
+      "configure": "配置",
+      "delete": "删除",
+      "deleteBot": "删除 Bot",
+      "save": "保存",
+      "cancel": "取消",
+      "add": "添加"
+    },
+    "sections": {
+      "general": "通用",
+      "model": "模型与提示词",
+      "skills": "Skills",
+      "mcp": "MCP 服务器",
+      "runtime": "工具与运行环境"
+    },
+    "fields": {
+      "avatar": "头像",
+      "name": "名称",
+      "description": "简介",
+      "descriptionPlaceholder": "可选说明",
+      "defaultProject": "默认项目",
+      "defaultModel": "默认模型"
+    },
+    "createDialog": {
+      "title": "新建 Bot",
+      "namePlaceholder": "代码评审",
+      "nameRequired": "请填写 Bot 名称。",
+      "submit": "创建 Bot"
+    },
+    "deleteDialog": {
+      "title": "删除 Bot",
+      "description": "「{{name}}」及其名下所有会话将被删除。",
+      "deleteFiles": "同时删除本地目录"
+    },
+    "paths": {
+      "title": "目录",
+      "home": "Bot 主目录",
+      "workspace": "Bot 工作目录",
+      "openFolder": "打开目录",
+      "copy": "复制路径",
+      "copied": "路径已复制到剪贴板"
+    },
+    "model": {
+      "inheritGlobal": "跟随全局默认",
+      "missingWarning": "该 Bot 配置的默认模型（{{model}}）不可用或已停用，请改选其他模型或调整 Bot 设置。",
+      "instructionsTitle": "系统提示词",
+      "instructionsPlaceholder": "附加到系统提示词开头的说明",
+      "includeGlobalContext": "继承全局上下文文件",
+      "compaction": {
+        "title": "上下文压缩",
+        "override": "覆盖全局压缩设置",
+        "auto": "自动压缩",
+        "pruneToolResults": "裁剪旧工具结果",
+        "thresholdRatio": "触发比例",
+        "keepRecentTokens": "保留最近 Tokens"
+      }
+    },
+    "skills": {
+      "globalTitle": "全局 Skills",
+      "privateTitle": "Bot Skills",
+      "refresh": "刷新",
+      "noGlobalSkills": "未发现全局 Skills。",
+      "noPrivateSkills": "将包含 SKILL.md 的技能目录放到此文件夹下。",
+      "modes": {
+        "none": "不继承",
+        "all": "全部继承",
+        "selected": "按需勾选"
+      }
+    },
+    "mcp": {
+      "globalTitle": "全局 MCP 服务器",
+      "privateTitle": "Bot MCP 服务器",
+      "noPrivateServers": "暂未配置私有 MCP 服务器。",
+      "modes": {
+        "all": "全部继承",
+        "selected": "按需勾选"
+      }
+    },
+    "runtime": {
+      "toolsTitle": "内置工具组",
+      "tools": {
+        "files": "文件读写",
+        "shell": "Shell 命令",
+        "web": "网络检索",
+        "jobs": "后台任务",
+        "timers": "定时器",
+        "subagent": "子会话"
+      },
+      "sandboxTitle": "审批策略与沙箱",
+      "approvalPolicy": "默认审批策略",
+      "sandboxAdapter": "沙箱适配器",
+      "containerImage": "容器镜像",
+      "containerImagePlaceholder": "可选镜像名称",
+      "isolateHome": "隔离 HOME 目录",
+      "adapters": {
+        "inherit": "跟随服务端默认",
+        "host": "本机适配器",
+        "isolated": "原生隔离适配器",
+        "apple-container": "Apple Container"
+      },
+      "envTitle": "环境变量",
+      "envKeyPlaceholder": "变量名",
+      "envValuePlaceholder": "变量值"
+    },
+    "builtInBadge": "内置",
+    "avatar": {
+      "hint": "PNG、JPEG 或 WebP，最大 2 MB。",
+      "upload": "上传图片",
+      "remove": "移除",
+      "uploadFailed": "这张图片没有被接受。",
+      "removeFailed": "头像没有被移除。"
+    }
   }
 }

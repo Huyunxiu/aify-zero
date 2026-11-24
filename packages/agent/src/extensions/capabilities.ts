@@ -29,6 +29,9 @@ export interface ToolEnvironment {
   /** 当前会话的私有目录，存临时文件和 artifacts。 */
   readonly sessionDir: string;
   readonly projectId?: string;
+  readonly botId?: string;
+  /** Persistent workspace directory of the owning Bot. */
+  readonly botWorkspaceDir?: string;
   /** 后台任务注册表；省略时后台执行和任务控制工具都不可用。 */
   readonly jobs?: JobRegistry;
   /**

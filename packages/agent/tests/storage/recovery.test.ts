@@ -21,6 +21,7 @@ const session = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   id: "session-1",
   title: "test",
   metadata: {},
+  botId: "default",
   projectId: null,
   kind: "main",
   activeHeadId: "a1",

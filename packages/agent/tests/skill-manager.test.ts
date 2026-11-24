@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { SkillManager } from "../src/skill/skill-manager.js";
-import type { SkillInfo } from "../src/skill/skill-types.js";
+import type { SkillCategory, SkillInfo } from "../src/skill/skill-types.js";
 
 const DIRS = [".agents"];
 
@@ -46,7 +46,7 @@ const ALL_DIRS = [".aify-studio", ".agents"];
  */
 const makeSkill = (
   name: string,
-  category: "global" | "project",
+  category: SkillCategory,
   dir: string,
   metadata: Record<string, unknown> = {}
 ): SkillInfo => ({
@@ -358,6 +358,67 @@ describe(SkillManager, () => {
       const manager = managerWith(makeSkill("alpha", "global", ".agents"));
 
       expect(manager.getByName("absent")).toBeUndefined();
+    });
+  });
+
+  describe("bot layer and filtering", () => {
+    test("should enforce precedence project > bot > global", () => {
+      const globalSkill = makeSkill("shared", "global", ".aify-studio");
+      const botSkill = makeSkill("shared", "bot", "skills");
+      const projectSkill = makeSkill("shared", "project", ".agents");
+
+      expect(
+        managerWith(globalSkill, botSkill).listUserAvailableSkills()
+      ).toStrictEqual([botSkill]);
+      expect(
+        managerWith(
+          globalSkill,
+          botSkill,
+          projectSkill
+        ).listUserAvailableSkills()
+      ).toStrictEqual([projectSkill]);
+    });
+
+    test("should scan botSkillsDir, skip project when scanProject is false, and honor globalMode", async () => {
+      const botSkillsDir = path.join(projectDir, "bot-skills");
+      const botSkillPath = path.join(botSkillsDir, "reviewer", "SKILL.md");
+      await mkdir(path.dirname(botSkillPath), { recursive: true });
+      await writeFile(
+        botSkillPath,
+        "---\nname: reviewer\ndescription: Bot skill.\n---\n"
+      );
+      await writeSkill(
+        projectDir,
+        "proj-only",
+        "---\nname: proj-only\ndescription: Project skill.\n---\n"
+      );
+
+      const manager = new SkillManager({ dirs: ALL_DIRS });
+      const skills = await manager.scan({
+        projectDir,
+        scanProject: false,
+        botSkillsDir,
+        globalMode: "none",
+      });
+
+      expect(skills).toHaveLength(1);
+      expect(skills[0]).toMatchObject({
+        name: "reviewer",
+        category: "bot",
+        dir: "skills",
+      });
+    });
+
+    test("should skip a missing botSkillsDir without failing", async () => {
+      const manager = new SkillManager({ dirs: ALL_DIRS });
+      const skills = await manager.scan({
+        projectDir,
+        scanProject: false,
+        botSkillsDir: path.join(projectDir, "does-not-exist"),
+        globalMode: "none",
+      });
+
+      expect(skills).toStrictEqual([]);
     });
   });
 });
