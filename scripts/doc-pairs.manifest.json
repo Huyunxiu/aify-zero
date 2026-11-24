@@ -27,7 +27,6 @@
     "docs/adr/0022-session-delete-is-soft.md",
     "docs/plans/fake-provider.md",
     "docs/plans/mcp-tools.md",
-    "docs/plans/providers.md",
     "docs/plans/retry-step.md",
     "docs/plans/tool-catalog.md",
     "docs/development/desktop-and-api.md",

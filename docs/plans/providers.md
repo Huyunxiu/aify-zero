@@ -1,43 +1,44 @@
-# 供应商为主的模型配置
+# Provider-first model configuration
 
-把「模型」这一层从接入信息里拆出来。供应商持有 API 地址、协议、密钥和请求头，
-模型只描述模型本身，并挂在供应商下面。加一家供应商不再等于把同一个密钥和地址
-重复填进它的每个模型。
+This plan takes the model layer out of the access config. A provider holds the API URL, the
+protocol, the key, and the request headers. A model describes only the model itself, and it
+belongs to a provider. Adding a provider no longer means that the user enters the same key and
+the same URL in each of its models.
 
-## 决策
+## Decisions
 
-| 决策           | 结论                                                                         |
-| -------------- | ---------------------------------------------------------------------------- |
-| 数据形状       | `providers[]`，模型内嵌在供应商的 `models[]` 里                              |
-| 模型引用       | `{ providerId, modelId }` 对象，贯穿设置、请求、事件、子 agent、localStorage |
-| 供应商身份     | 内置预设加自定义；预设给地址、控制台地址、Key 申请地址                       |
-| 接入信息       | 供应商持有 `baseURL`、`protocol`、`apiKey`、`headers`                        |
-| 协议           | `openai-chat` 与 `openai-responses`；不做 Anthropic Messages                 |
-| Responses 实现 | `@ai-sdk/openai`；API 地址仍填 base，SDK 追加路径                            |
-| API 地址规范化 | 去尾斜杠，按协议去掉误填的 `/chat/completions`、`/responses`                 |
-| 加模型         | 拉 `GET {baseURL}/models` 勾选，手填兜底；拉取兼作连接测试                   |
-| 能力字段       | `limit.context`、`modalities`、`reasoning` 全部接线                          |
-| 能力来源       | 从列表响应尽力解析，其余手填；不接 models.dev                                |
-| 能力校验       | 前端隐藏入口，服务端拒绝不支持的内容；档位对不支持推理的模型直接忽略         |
-| 网关           | 按模型引用解析，补丁换到别家就换地址与密钥                                   |
-| `active`       | 供应商与模型都生效，关掉的不出现也调不到                                     |
-| `defaultModel` | 新会话的初值；localStorage 里的选择优先                                      |
-| 密钥输入       | 密码框，已存时显示掩码，留空表示不修改                                       |
-| 旧数据         | 读取时归一化，下一次保存才落库                                               |
-| 身份漂移       | 归一化按 `provider` 字段重建，不信任旧 id 前缀                               |
-| 界面           | 一个供应商页，行内展开模型                                                   |
-| 追踪           | step 事件保留模型 id，新增 `providerId`                                      |
+| Decision                 | Outcome                                                                                                                    |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Data shape               | `providers[]`, with each model inside the `models[]` of its provider                                                       |
+| Model ref                | Settings, requests, events, subagents, and localStorage all carry the object `{ providerId, modelId }`                     |
+| Provider identity        | A built-in preset or a custom provider. A preset supplies the API URL, the console URL, and the key URL                    |
+| Access config            | The provider holds `baseURL`, `protocol`, `apiKey`, and `headers`                                                          |
+| Protocol                 | `openai-chat` and `openai-responses`. Anthropic Messages is out of scope                                                   |
+| Responses implementation | `@ai-sdk/openai`. The user enters the base API URL, and the SDK appends the path                                           |
+| API URL normalization    | The code removes the trailing slash. Per protocol, it removes a mistaken `/chat/completions` or `/responses`               |
+| Add a model              | Fetch `GET {baseURL}/models` and select entries. Manual input is the fallback, and the fetch tests the connection          |
+| Capability fields        | The code wires `limit.context`, `modalities`, and `reasoning`                                                              |
+| Capability source        | The code parses what it can from the list response, and the user enters the rest. There is no models.dev                   |
+| Capability validation    | The interface hides the entry. The server rejects an unsupported value. It ignores the level for a model without reasoning |
+| Gateway                  | The gateway resolves a model ref. A patch that selects another provider changes the URL and the key                        |
+| `active`                 | It applies to the provider and to the model. A provider or model that is off does not appear and cannot be called          |
+| `defaultModel`           | The initial value for a new session. A selection in localStorage has priority                                              |
+| Key input                | A password field. When a key is stored, the field shows a mask, and an empty field means no change                         |
+| Old data                 | The code normalizes it at read time and writes it to the database at the next save                                         |
+| Identity drift           | Normalization rebuilds from the `provider` field and does not trust an old id prefix                                       |
+| Interface                | One provider page. Each provider expands its models in the row                                                             |
+| Tracking                 | A step event keeps the model id and adds `providerId`                                                                      |
 
-## 数据结构
+## Data structure
 
 ```ts
 type ModelProtocol = "openai-chat" | "openai-responses";
 
-/** 唯一确定一个可调用模型的引用。 */
+/** The reference that identifies one callable model. */
 type ModelRef = { providerId: string; modelId: string };
 
 type Provider = {
-  id: string; // slug，不含 "/"
+  id: string; // slug, without "/"
   name: string;
   protocol: ModelProtocol;
   baseURL: string;
@@ -48,7 +49,7 @@ type Provider = {
 };
 
 type ProviderModel = {
-  id: string; // 模型 id：上游用来标识它，可以自带 "/"
+  id: string; // model id: the upstream identifies the model with it, and it may contain "/"
   name: string;
   active: boolean;
   reasoning: boolean;
@@ -57,67 +58,74 @@ type ProviderModel = {
 };
 ```
 
-`ModelRef` 用两个字段而不是 `"provider/model"` 字符串：OpenRouter 一类供应商的
-模型 id 自带 `/`（`anthropic/claude-x`），拼接会产生歧义。设置里需要按模型索引
-的地方用嵌套记录，不再拼字符串。
+`ModelRef` uses two fields, not a `"provider/model"` string. A provider such as OpenRouter
+keeps a `/` in its model id (`anthropic/claude-x`), so a join is ambiguous. Where settings
+index by model, a nested record replaces the joined string.
 
-## 旧设置的归一化
+## Old settings normalization
 
-`user.settings` 是 `dict` 表里的一段 JSON，读取时过一遍 schema。旧形状的 `models[]`
-每条都带自己的 `provider` / `apiUrl` / `apiKey`。
+`user.settings` is one JSON value in the `dict` table, and the code reads it through the
+schema. Each entry of the old `models[]` carries its own `provider`, `apiUrl`, and `apiKey`.
 
-- 已有 `providers` 时直接用，忽略旧的 `models`。
-- 否则按 `(provider, apiUrl, apiKey)` 归并旧记录，一组一条供应商。
-- 供应商 id 由名字生成 slug，重复时加序号。
-- 模型 id 取旧记录的 `model` 字段，不取旧 id 的前缀：`local.db` 里存在
-  `Maas/ling-3.0-flash-sante` 配 `provider = "AntGroup"` 这种漂移。
-- 旧 `defaultModel` 是字符串，按第一个 `/` 拆开再校验；校验失败置 `null`。
+- If `providers` exists, the code uses it and ignores the old `models`.
+- Otherwise the code groups the old records by `(provider, apiUrl, apiKey)`, and each group
+  becomes one provider.
+- The code makes the provider id from a slug of the name, and it adds a number on a repeat.
+- The model id comes from the `model` field of the old record, not from the prefix of the old
+  id. `local.db` holds drift such as `Maas/ling-3.0-flash-sante` with `provider = "AntGroup"`.
+- The old `defaultModel` is a string, so the code splits it at the first `/` and then validates
+  it. If validation fails, the value becomes `null`.
 
-归一化是纯函数且幂等，只在读取时跑；写库发生在用户下一次保存。
+Normalization is a pure function, and it is idempotent. It runs at read time only. The code
+writes the database only at the next save by the user.
 
-## 协议
+## Protocol
 
-两条适配路径，都只做协议转换，不缓存模型对象。
+The code has two adapter paths. Both paths only convert the protocol, and neither caches a
+model object.
 
-| 协议               | 依赖                        | 请求路径                        |
+| Protocol           | Dependency                  | Request path                    |
 | ------------------ | --------------------------- | ------------------------------- |
 | `openai-chat`      | `@ai-sdk/openai-compatible` | `baseURL` + `/chat/completions` |
 | `openai-responses` | `@ai-sdk/openai`            | `baseURL` + `/responses`        |
 
-OpenCode 的网关要求额外的请求头，缺 `x-opencode-session` 直接 400。网关在目标
-主机是 `opencode.ai` 或其子域时补一整套头，其中包括由会话 id 派生的会话头。
-版本号用常量，用户可以用供应商的自定义请求头覆盖。
+The OpenCode gateway requires extra request headers. The gateway returns 400 for a request
+without `x-opencode-session`. When the target host is `opencode.ai` or one of its
+subdomains, the gateway adds the full header set. That set includes a session header that
+the code derives from the session id. The version number comes from a constant, and a custom
+header of the provider can override it.
 
-## 模块
+## Modules
 
-| 路径                                                         | 职责                                            |
-| ------------------------------------------------------------ | ----------------------------------------------- |
-| `packages/shared/src/model.ts`                               | `ModelRef`、`ModelProtocol`、`PROVIDER_PRESETS` |
-| `packages/server/src/routers/settings/settings.schema.ts`    | 供应商与模型的 schema，设置形状                 |
-| `packages/server/src/routers/settings/settings.normalize.ts` | 旧设置归一化与 API 地址规范化                   |
-| `packages/server/src/routers/settings/settings.service.ts`   | 读写设置、按引用找模型                          |
-| `packages/server/src/routers/settings/model-list.ts`         | 拉取并解析 `/models`                            |
-| `packages/server/src/session/agent.ts`                       | 把供应商配置解析成网关目标                      |
-| `packages/agent/src/model/gateway.ts`                        | 两种协议的适配器与 OpenCode 请求头              |
-| `packages/ui/src/elements/settings/provider-settings.tsx`    | 供应商页                                        |
+| Path                                                         | Responsibility                                             |
+| ------------------------------------------------------------ | ---------------------------------------------------------- |
+| `packages/shared/src/model.ts`                               | `ModelRef`, `ModelProtocol`, and `PROVIDER_PRESETS`        |
+| `packages/server/src/routers/settings/settings.schema.ts`    | The provider and model schema, and the settings shape      |
+| `packages/server/src/routers/settings/settings.normalize.ts` | Old settings normalization and API URL normalization       |
+| `packages/server/src/routers/settings/settings.service.ts`   | Read and write settings, and find a model by its ref       |
+| `packages/server/src/routers/settings/model-list.ts`         | Fetch and parse `/models`                                  |
+| `packages/server/src/session/agent.ts`                       | Resolve a provider config to a gateway target              |
+| `packages/agent/src/model/gateway.ts`                        | The adapters of the two protocols and the OpenCode headers |
+| `packages/ui/src/blocks/settings/provider-settings.tsx`      | The provider page                                          |
 
-## 预设
+## Presets
 
-| 供应商          | API 地址                                                  | 默认协议  |
-| --------------- | --------------------------------------------------------- | --------- |
-| OpenRouter      | `https://openrouter.ai/api/v1`                            | chat      |
-| OpenCode Zen    | `https://opencode.ai/zen/v1`                              | chat      |
-| OpenCode Go     | `https://opencode.ai/zen/go/v1`                           | chat      |
-| DeepSeek        | `https://api.deepseek.com/v1`                             | chat      |
-| OpenAI          | `https://api.openai.com/v1`                               | responses |
-| Google Gemini   | `https://generativelanguage.googleapis.com/v1beta/openai` | chat      |
-| 智谱            | `https://open.bigmodel.cn/api/paas/v4`                    | chat      |
-| Kimi            | `https://api.moonshot.cn/v1`                              | chat      |
-| 火山方舟        | `https://ark.cn-beijing.volces.com/api/v3`                | chat      |
-| 腾讯云 TokenHub | `https://tokenhub.tencentmaas.com/v1`                     | chat      |
+| Provider        | API URL                                                   | Default protocol |
+| --------------- | --------------------------------------------------------- | ---------------- |
+| OpenRouter      | `https://openrouter.ai/api/v1`                            | chat             |
+| OpenCode Zen    | `https://opencode.ai/zen/v1`                              | chat             |
+| OpenCode Go     | `https://opencode.ai/zen/go/v1`                           | chat             |
+| DeepSeek        | `https://api.deepseek.com/v1`                             | chat             |
+| OpenAI          | `https://api.openai.com/v1`                               | responses        |
+| Google Gemini   | `https://generativelanguage.googleapis.com/v1beta/openai` | chat             |
+| 智谱            | `https://open.bigmodel.cn/api/paas/v4`                    | chat             |
+| Kimi            | `https://api.moonshot.cn/v1`                              | chat             |
+| 火山方舟        | `https://ark.cn-beijing.volces.com/api/v3`                | chat             |
+| 腾讯云 TokenHub | `https://tokenhub.tencentmaas.com/v1`                     | chat             |
 
-## 不做
+## Out of scope
 
-- Anthropic Messages 协议。清单里没有只能走它的供应商。
-- models.dev 目录。它要引入外部目录、缓存和快照，是独立子系统。
-- OpenCode 免费模型的路径改写与工具伪装。
+- The Anthropic Messages protocol. No provider in the list uses only that protocol.
+- The models.dev catalogue. It brings an external catalogue, a cache, and a snapshot, so it is
+  a separate subsystem.
+- The path rewrite and the tool disguise of the free OpenCode models.
