@@ -27,18 +27,29 @@ so these cases use no network, spend no money, and give the same result each tim
 vp run e2e
 ```
 
-One case takes about 25 seconds. The whole suite takes about 7 minutes: two cases
-wait a full minute each.
+A short case takes about 8 seconds; the range is 2.7 to 13.9 seconds. The suite takes
+about 4.5 minutes on macOS arm64: 16 cases in 13 files. Three cases wait tens of seconds
+each, and they carry most of that time: `approval-policy` (Unattended) 66 seconds,
+`schedule` 35 seconds, `timer` 66 seconds.
 
-The suite needs a Chromium browser and the system libraries that Chromium loads. On
-a machine with root, one command installs both:
+The suite needs a Chromium browser. On macOS, one command installs it, and the system
+libraries come with the operating system:
+
+```bash
+vp exec playwright install chromium
+```
+
+The browser lands in `~/Library/Caches/ms-playwright`. `--with-deps` does nothing on
+darwin: `playwright-core` reads that flag on win32 and linux only.
+
+On Linux with root, one command installs the browser and its system libraries:
 
 ```bash
 vp exec playwright install --with-deps chromium
 ```
 
-On a machine without root, put both inside the repository, then point two variables
-at them:
+On Linux x86_64 without root, put the browser and the libraries inside the repository,
+then point two variables at them:
 
 ```bash
 PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
@@ -50,7 +61,8 @@ To fill those two directories: install the browser with
 `PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers vp exec playwright install chromium`,
 then `apt-get download` the missing packages and unpack each one into `.e2e/sysroot`
 with `dpkg-deb -x`. Both directories sit under `.e2e/`, so neither enters the
-repository.
+repository. The packages are x86_64 Linux binaries, so another architecture needs its
+own set.
 
 ### Run one case
 
@@ -65,14 +77,18 @@ passes `--` and the path through, and Playwright does not read the path as a fil
 
 ### The browser is installed elsewhere
 
-Point `PLAYWRIGHT_BROWSERS_PATH` at that installation, and `LD_LIBRARY_PATH` at the
-`usr/lib/x86_64-linux-gnu` directory that holds the unpacked system libraries:
+On Linux x86_64, point `PLAYWRIGHT_BROWSERS_PATH` at that installation, and
+`LD_LIBRARY_PATH` at the `usr/lib/x86_64-linux-gnu` directory that holds the unpacked
+system libraries:
 
 ```bash
 PLAYWRIGHT_BROWSERS_PATH=<browser directory> \
 LD_LIBRARY_PATH=<libraries directory>/usr/lib/x86_64-linux-gnu \
 vp run e2e
 ```
+
+On macOS, `PLAYWRIGHT_BROWSERS_PATH` is the only variable: the system provides the
+libraries that Chromium loads.
 
 In a worktree, note one thing: the harness reads the repository root as the worktree
 itself, so `.e2e/` belongs to the worktree too. You can install the browser once and point
@@ -116,8 +132,9 @@ the interface asks only if the policy says so.
    starts. Nothing tightens the policy, so the change lands and no card appears: a run that
    nobody started uses the policy that the session stores.
 
-The third case waits a full minute (the timer minimum) and then waits for the scan loop to
-wake the session. Its timeout is therefore longer than the timeout of the other cases.
+The third case waits the 60-second timer minimum, and then waits for the scan loop to wake
+the session. It sets its own budget of 180 seconds; the default in `playwright.config.ts`
+is 120.
 
 The behavior matrix (four policies × five classes, the fold of host rules and hooks) does not
 live here. That part belongs to the table-driven cases in `packages/agent/tests`. A hook,
@@ -142,7 +159,7 @@ model loop ran.
 ### Completion notice (`job-notice.e2e.ts`)
 
 The scene `job-notice` makes the model ask for one background command. The command is
-`sleep 5; echo done`. The command lives longer than the first turn, so:
+`sleep 5`, and it prints `done`. The command lives longer than the first turn, so:
 
 1. A `Bash` line appears. The background job really starts.
 2. The first turn completes and is still `Finished`.
@@ -182,9 +199,9 @@ of the woken turn.
 ### Schedule (`schedule.e2e.ts`)
 
 The scene `schedule` computes its target at run time. `daily` writes a local "hour and
-minute", so the case sets the target at the next whole minute, a bit more than ten seconds
-later, and the model sets a schedule from it. The wait therefore drops to a little over one
-minute, and the 300-second interval minimum need not change.
+minute", so the case sets the target at the next whole minute, at least `LEAD_MS = 20_000`
+after now, and the model sets a schedule from it. The wait measured about 35 seconds, and
+the 300-second interval minimum need not change.
 
 It uses the same chain as the timer case. Only the end differs:
 
@@ -241,18 +258,76 @@ If the page marks as read while hidden, the dispatcher thinks that a person look
 system notification never appears. The read mark therefore depends on a visible page, not
 on a page that exists.
 
+### A Bot avatar is one stored asset (`bots-avatar.e2e.ts`)
+
+The avatar is an uploaded image under the Bot's own `assets/` directory, and it travels
+through one owner-generic byte route. Every face of that Bot draws the same bytes.
+
+1. Open the settings from the sidebar row menu. Before the upload the page draws no image,
+   so the initial of the name is the face.
+2. Upload a 1×1 PNG. The settings header and the sidebar row show the image. The route
+   checks the magic bytes, so a 1×1 file is enough.
+3. Back in the session, three faces carry the image: the sidebar row, the session header,
+   and the assistant message row.
+4. Reload. The three faces stay, so the image was stored, not held in memory.
+5. Remove the image. Every face falls back to the initial.
+
+### One Bot's settings are addresses (`bots-settings.e2e.ts`)
+
+Each settings section has its own address, so a reader can send someone a section and
+reload it. The bare Bot address and `/settings` name no section, so each of them hands the
+reader to the first section instead of drawing a section-less screen.
+
+1. `Configure` opens `/bots/<id>/settings/general`. The run finishes behind the settings,
+   so covering the session does not stop it.
+2. `MCP servers` moves to `/settings/mcp` as a navigation, and `goBack` returns to
+   `/settings/general`.
+3. `Back to app` returns to the session address, not to the previous section.
+4. The session keeps its draft and does not replay the turn: one `Finished`, and the draft
+   is still in the composer.
+5. The bare address and `/settings` replace themselves in the history, so `goBack` lands on
+   the session.
+6. A section address opens on its own and survives a reload.
+
+### Deleting a session clears its row and its page (`session-delete.e2e.ts`)
+
+1. Two sessions, each with one turn and its own title.
+2. `Delete` in the row menu opens a dialog that names that session.
+3. The list loses one row, the page falls back to the empty state (`Start a session`), and
+   the other session stays.
+4. Reload. The deleted session is still gone, so the server hides it and a cache does not.
+
+### The sidebar orders sessions by the last activity (`session-order.e2e.ts`)
+
+1. Session A runs one turn, and then session B runs one turn. B is newer on both the
+   creation time and the last activity.
+2. Return to A and run one more turn. A is older but more recently active, so it must move
+   to the first row.
+3. Both rows say `Just now`, and the case compares the vertical position of the two titles,
+   so the assertion reads the order that the user sees.
+4. The request count is the hard evidence here: 3 streaming answers for 3 turns, and 2
+   non-streaming title requests for 2 sessions.
+
+### Settings covers the session (`settings-keepalive.e2e.ts`)
+
+Two cases. The first one opens settings while a run streams, with a draft typed and not
+sent. Coming back must show the same session: one finished turn, no replay, and the draft
+still in the composer. The second one starts from the session list, which has no session
+id, and proves that the draft of that screen survives settings too.
+
 ## Inspect a scene
 
 By default, a successful case cleans its temporary scene. A failed case keeps its scene:
 
 ```text
 .e2e/
-├── results/                 # Playwright 的 trace 与截图
-└── runs/<时间戳>/
-    ├── logs/api.log         # API 进程的 stdout，登录链接与启动恢复都在里面
-    ├── logs/web.log         # Vite 的 stdout
-    ├── db/app.db            # 这一场用的数据库
-    └── project/             # 临时仓库与改过的文件
+├── results/                 # Playwright traces and screenshots
+└── runs/<timestamp>/
+    ├── home/                # temporary HOME of this scene
+    ├── logs/api.log         # stdout of the API process: the login link and start-up recovery
+    ├── logs/web.log         # stdout of Vite
+    ├── db/app.db            # the database of this scene
+    └── project/             # the temporary repository and the files it changed
 ```
 
 To open a trace, run `vp exec playwright show-trace .e2e/results/<case>/trace.zip`.
@@ -285,10 +360,11 @@ names and the DOM structure of the page are outside the assertions.
 
 ## Three traps
 
-1. **The address bar does not reflect the route.** `app.tsx` uses an in-memory history, so
-   `page.goto("/sessions/x")` lands only on `/sessions`. To change the page, click. When
-   the panel is collapsed, its content is `inert`. The buttons inside do not respond until
-   you click the entry to expand the panel. A click waits until the timeout.
+1. **A deep link lands on its page; a collapsed panel does not answer.** `app.tsx` builds the
+   router on `createBrowserHistory` for the web and `createHashHistory` for the desktop, so
+   `page.goto("/sessions/<id>")` opens that session and keeps the address. When the panel is
+   collapsed, its content is `inert`. The buttons inside do not respond until you click the
+   entry to expand the panel. A click waits until the timeout.
 2. **`Start a session`, `Working`, `Finished`, and `Approve` are hard-coded English.** They
    do not change in Chinese either. If they enter i18n one day, the assertions fail. They
    should fail: change the assertions then.
@@ -300,13 +376,16 @@ names and the DOM structure of the page are outside the assertions.
 
 ## Add a case
 
-Each `*.e2e.ts` in `e2e/` is one case. To add an approval path (`write-file`, an MCP tool):
+A file is one scene and holds one or more cases: 13 files hold 16 cases. To add an approval
+path (`write-file`, an MCP tool):
 
 1. Add a scene in `packages/agent/scenarios/`. Use `toolCall` to request the tool that asks
    for approval.
 2. Add a `*.e2e.ts` in `e2e/`. Use `startStack({ scenario: "..." })` to change the script,
    and continue the assertions after the click on `Approve`.
-3. The case budget is still 120 seconds, and the case still does not retry.
+3. The default budget is 120 seconds, and no case retries. Four cases widen the budget for
+   themselves: `approval-policy` 180 seconds, `outbox-hidden` 150, `schedule` 210, and
+   `timer` 150.
 
 End-to-end does not enter `vp run ready`. That command runs in the seconds before a commit.
-End-to-end takes about seven minutes. Mix the two, and both break.
+End-to-end takes about 4.5 minutes. Mix the two, and both break.

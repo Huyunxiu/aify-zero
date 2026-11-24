@@ -27,16 +27,26 @@
 vp run e2e
 ```
 
-一条约 25 秒。整套约 7 分钟：其中两条各等满一分钟。
+一条短用例约 8 秒，范围 2.7 到 13.9 秒。整套在 macOS arm64 上约 4.5 分钟：13 个文件、
+16 条用例。三条用例各等几十秒，占掉大部分时间：`approval-policy`（Unattended）66 秒、
+`schedule` 35 秒、`timer` 66 秒。
 
-整套要一个 Chromium 浏览器，以及 Chromium 装载的系统库。有 root 的机器上，一条命令
-两样都装：
+整套要一个 Chromium 浏览器。macOS 上一条命令就够，系统库随操作系统一起来：
+
+```bash
+vp exec playwright install chromium
+```
+
+浏览器落在 `~/Library/Caches/ms-playwright`。`--with-deps` 在 darwin 上是空操作：
+`playwright-core` 只对 win32 与 linux 处理这个参数。
+
+Linux 有 root 时，一条命令把浏览器与它的系统库都装上：
 
 ```bash
 vp exec playwright install --with-deps chromium
 ```
 
-没有 root 时，把两样都放进仓库，再用两个变量指过去：
+Linux x86_64 没有 root 时，把浏览器与库都放进仓库，再用两个变量指过去：
 
 ```bash
 PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
@@ -46,7 +56,8 @@ vp run e2e
 
 备好这两个目录：用 `PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers vp exec playwright
 install chromium` 装浏览器；缺的包用 `apt-get download` 取下来，逐个用 `dpkg-deb -x`
-解到 `.e2e/sysroot`。两者都在 `.e2e/` 下，不会进版本库。
+解到 `.e2e/sysroot`。两者都在 `.e2e/` 下，不会进版本库。这些包是 x86_64 Linux 的
+二进制，换一个架构就得换一套。
 
 ### 跑一条
 
@@ -61,14 +72,16 @@ vp exec playwright test --config e2e/playwright.config.ts e2e/outbox.e2e.ts
 
 ### 浏览器装在别处
 
-`PLAYWRIGHT_BROWSERS_PATH` 指到那份安装，`LD_LIBRARY_PATH` 指向装着解包库的
-`usr/lib/x86_64-linux-gnu`：
+Linux x86_64 上，`PLAYWRIGHT_BROWSERS_PATH` 指到那份安装，`LD_LIBRARY_PATH` 指向装着
+解包库的 `usr/lib/x86_64-linux-gnu`：
 
 ```bash
 PLAYWRIGHT_BROWSERS_PATH=<浏览器目录> \
 LD_LIBRARY_PATH=<库目录>/usr/lib/x86_64-linux-gnu \
 vp run e2e
 ```
+
+在 macOS 上只有 `PLAYWRIGHT_BROWSERS_PATH` 一个变量：Chromium 要的系统库由系统提供。
 
 worktree 里要注意：harness 把仓库根算成 worktree 自己，所以 `.e2e/` 也是
 worktree 自己的。浏览器可以只装一份，用 `PLAYWRIGHT_BROWSERS_PATH` 指到主
@@ -105,7 +118,8 @@ context，`localStorage` 是空的。
 3. 定时器：会话里存的是编辑策略，定时器唤起的运行没人看着，也没有任何一层收紧它；
    改动直接落盘，不出现审批卡——没人发起的运行用的就是会话存的那一档。
 
-第 3 条要等满一分钟（定时器下限），再等扫描循环唤醒会话，所以它的超时比别的用例长。
+第 3 条要等满定时器 60 秒的下限，再等扫描循环唤醒会话。它给自己放宽到 180 秒；
+`playwright.config.ts` 里的默认值是 120 秒。
 
 行为矩阵（四个策略 × 五个类别，宿主规则与 hook 的折叠）不在这里：那部分归
 `packages/agent/tests` 的表驱动用例。hook、MCP 注解、子代理、fork、压缩都够不到这套
@@ -124,7 +138,7 @@ context，`localStorage` 是空的。
 
 ### 完成通知（`job-notice.e2e.ts`）
 
-场景 `job-notice` 让模型要一条后台命令（`sleep 5; echo done`）。命令活得比第一个回合长，所以：
+场景 `job-notice` 让模型要一条后台命令（`sleep 5`，输出 `done`）。命令活得比第一个回合长，所以：
 
 1. `Bash` 行出现，后台任务真的起来了
 2. 第一个回合收尾，仍是 `Finished`
@@ -151,8 +165,9 @@ context，`localStorage` 是空的。
 
 ### 日程（`schedule.e2e.ts`）
 
-场景 `schedule` 在运行时算出来：`daily` 写的是当地「几点几分」，所以把目标定在十几秒
-之后的那个整分，模型据此排一个日程。等待因此压到一分钟出头，300 秒的间隔下限不必动。
+场景 `schedule` 在运行时算出来：`daily` 写的是当地「几点几分」，所以把目标定在
+`LEAD_MS = 20_000` 之后、下一个整分，模型据此排一个日程。实测等待约 35 秒，300 秒的
+间隔下限不必动。
 
 和定时器用例走同一条链路，差别只在收尾：
 
@@ -195,6 +210,50 @@ context，`localStorage` 是空的。
 隐藏时标记已读，投递器就会以为有人看过，系统通知永远不弹。标记已读因此以页面
 可见为准，不是以页面存在为准。
 
+### Bot 头像是一份存下来的资产（`bots-avatar.e2e.ts`）
+
+头像是上传的图片，存在 Bot 自己的 `assets/` 目录下，走一条按 owner 取的字节路由。
+这个 Bot 的每一处脸都画同一份字节。
+
+1. 从侧边栏行菜单打开设置。上传之前页面不画图片，脸就是名字的首字母
+2. 上传一张 1×1 PNG。设置头部与侧边栏行都显示它；路由校验文件头，1×1 的文件就够了
+3. 回到会话，三处脸带着这张图：侧边栏行、会话头部、助手消息行
+4. 刷新，三处还在：图是存下来的，不是留在内存里
+5. 删掉图像，每一处脸回到首字母
+
+### Bot 的设置是地址（`bots-settings.e2e.ts`）
+
+设置的每一节都有自己的地址，所以可以只把一节发给别人，也可以刷新它。Bot 的裸地址
+与 `/settings` 都不指名哪一节，两者都把读者交给第一节，而不是画一个没有节的页面。
+
+1. `Configure` 打开 `/bots/<id>/settings/general`；设置在运行还在跑的时候打开，运行
+   在它后面收尾——盖住会话不会停掉它
+2. `MCP servers` 是导航到 `/settings/mcp`，`goBack` 回到 `/settings/general`
+3. `Back to app` 回到会话的地址，不是回到上一节
+4. 会话留着草稿，也没有重放回合：`Finished` 只有一个，草稿还在输入框里
+5. 裸地址与 `/settings` 用 `replace` 换掉自己在历史里的位置，所以 `goBack` 落在会话上
+6. 一节的地址可以单独打开，刷新后还在
+
+### 删除会话会清掉它的行与它占的页面（`session-delete.e2e.ts`）
+
+1. 两个会话，各跑一个回合，各有一个标题
+2. 行菜单里的 `Delete` 打开确认框，框里写的是那一条会话
+3. 列表少一行，页面回到空白态（`Start a session`），另一个会话还在
+4. 刷新，删掉的会话仍然不在：藏起来的是服务端，不是缓存
+
+### 侧边栏按最后活动排序（`session-order.e2e.ts`）
+
+1. 会话甲跑一个回合，会话乙跑一个回合；乙在创建时刻与最后活动上都更新
+2. 回到甲再跑一个回合；甲创建更早、却更晚活动，所以它必须回到第一行
+3. 两行都写着 `Just now`，用例比较两个标题的纵向坐标，所以断言读的是用户看到的顺序
+4. 这里的硬证据是请求次数：3 个回合对应 3 次流式回答，2 个会话对应 2 次非流式标题请求
+
+### 设置盖住会话，不替换它（`settings-keepalive.e2e.ts`）
+
+两条用例。第一条在运行还在流的时候打开设置，输入框里留着没发出去的草稿。回来必须
+还是同一条会话：一个收尾的回合、没有重放、草稿还在输入框里。第二条从会话列表出发，
+那里没有会话 id，它证明那个页面的草稿也扛得住设置。
+
 ## 查看现场
 
 默认情况下，成功后会清理临时现场；失败时会保留现场：
@@ -203,6 +262,7 @@ context，`localStorage` 是空的。
 .e2e/
 ├── results/                 # Playwright 的 trace 与截图
 └── runs/<时间戳>/
+    ├── home/                # 这一场用的临时 HOME
     ├── logs/api.log         # API 进程的 stdout，登录链接与启动恢复都在里面
     ├── logs/web.log         # Vite 的 stdout
     ├── db/app.db            # 这一场用的数据库
@@ -233,7 +293,9 @@ E2E_KEEP_ARTIFACTS=1 vp run e2e
 
 ## 三个坑
 
-1. **地址栏不反映路由。** `app.tsx` 用内存历史，`page.goto("/sessions/x")` 只会落到 `/sessions`。要换页面就点击。
+1. **深链能落到页面上；收起的面板不会应答。** `app.tsx` 在 web 上用
+   `createBrowserHistory`、在桌面上用 `createHashHistory` 建路由，所以
+   `page.goto("/sessions/<id>")` 会打开那条会话，地址也不变。
    面板收起时里面的内容是 `inert`：不先点入口展开，里面的按钮点不动，点击会一直等到超时。
 2. **`Start a session`、`Working`、`Finished`、`Approve` 是硬编码英文。** 切到中文也不变。哪天它们进了 i18n，断言会红——应该红，改断言就是。
 3. **假供应商的 `toolCall` 只是「能被客户端解析回同一个工具调用」。** 协议级测试
@@ -242,11 +304,13 @@ E2E_KEEP_ARTIFACTS=1 vp run e2e
 
 ## 加一条用例
 
-`e2e/` 下每个 `*.e2e.ts` 就是一条用例。要加审批路径（`write-file`、MCP 工具）时：
+一个文件是一个场景，可以有一条或多条用例：13 个文件、16 条用例。要加审批路径
+（`write-file`、MCP 工具）时：
 
 1. 在 `packages/agent/scenarios/` 加一个场景，用 `toolCall` 要那个会询问的工具
 2. 在 `e2e/` 加一个 `*.e2e.ts`，用 `startStack({ scenario: "..." })` 换剧本，
    点 `Approve` 后继续断言
-3. 用例预算仍是 120 秒，仍然不重试
+3. 默认预算是 120 秒，用例都不重试。四条用例给自己放宽：`approval-policy` 180 秒、
+   `outbox-hidden` 150 秒、`schedule` 210 秒、`timer` 150 秒。
 
-它不进 `vp run ready`：那是「提交前几秒跑完」的东西，端到端要七分钟左右。混在一起两个都会坏。
+它不进 `vp run ready`：那是「提交前几秒跑完」的东西，端到端要 4.5 分钟左右。混在一起两个都会坏。
