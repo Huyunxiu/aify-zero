@@ -9,12 +9,12 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { getErrorMessage } from "@workspace/shared/errors";
+import { BotAvatar } from "@workspace/ui/blocks/bot-avatar";
 import { BOT_SECTIONS } from "@workspace/ui/blocks/bots/bot-sections";
 import { BotSettingsProvider } from "@workspace/ui/blocks/bots/bot-settings-context";
 import type { BotUpdateInput } from "@workspace/ui/blocks/bots/types";
 import { Island, IslandGroup } from "@workspace/ui/blocks/island";
 import { DesktopTitleBar } from "@workspace/ui/blocks/title-bar";
-import { BotAvatar } from "@workspace/ui/components/bot-avatar";
 import { Button } from "@workspace/ui/components/button";
 import { Dialog, DialogContent } from "@workspace/ui/components/dialog";
 import {

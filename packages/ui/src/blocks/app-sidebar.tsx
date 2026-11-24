@@ -1,8 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { DEFAULT_BOT_ID, generateSessionId } from "@workspace/agent-client";
-import { NavBots } from "@workspace/ui/components/nav-bots";
-import { NavBottom } from "@workspace/ui/components/nav-bottom";
-import { NavProjects } from "@workspace/ui/components/nav-projects";
+import { NavBots } from "@workspace/ui/blocks/nav-bots";
+import { NavBottom } from "@workspace/ui/blocks/nav-bottom";
+import { NavProjects } from "@workspace/ui/blocks/nav-projects";
+import { Button } from "@workspace/ui/components/button";
 import {
   Sidebar,
   SidebarContent,
@@ -14,8 +15,6 @@ import {
 import { PlusIcon } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
-
-import { Button } from "./button";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const navigate = useNavigate();

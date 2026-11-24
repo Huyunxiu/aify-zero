@@ -1,3 +1,4 @@
+import { FolderIcon } from "@workspace/ui/blocks/folder-icon";
 /**
  * 面板里的新标签页。
  *
@@ -5,7 +6,6 @@
  * 标签关闭后，面板下次打开又回到这里。
  */
 import { Button } from "@workspace/ui/components/button";
-import { FolderIcon } from "@workspace/ui/components/folder-icon";
 import { FileDiffIcon, SquareTerminalIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 

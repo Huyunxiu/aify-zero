@@ -1,6 +1,5 @@
-import { useTranslation } from "react-i18next";
-
 import { useServerStatus } from "@workspace/ui/hooks/use-server-status";
+import { useTranslation } from "react-i18next";
 
 /**
  * 桌面壳的 API server 状态条。

@@ -18,9 +18,9 @@ import {
 } from "@pierre/trees/react";
 import { useQuery } from "@tanstack/react-query";
 import { getErrorMessage } from "@workspace/shared/errors";
+import { useTheme } from "@workspace/ui/blocks/theme-provider";
 import { Button } from "@workspace/ui/components/button";
 import { InputCopyButton } from "@workspace/ui/components/input-copy-button";
-import { useTheme } from "@workspace/ui/components/theme-provider";
 import { client } from "@workspace/ui/lib/orpc";
 import { useContentVersion } from "@workspace/ui/lib/use-content-version";
 import {

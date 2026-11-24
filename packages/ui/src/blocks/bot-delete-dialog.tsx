@@ -1,10 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMatchRoute, useNavigate, useParams } from "@tanstack/react-router";
 import { getErrorMessage } from "@workspace/shared/errors";
-import { useState } from "react";
-import { useTranslation } from "react-i18next";
-
-import { client } from "../lib/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,9 +10,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "./alert-dialog";
-import { Checkbox } from "./checkbox";
-import { Label } from "./label";
+} from "@workspace/ui/components/alert-dialog";
+import { Checkbox } from "@workspace/ui/components/checkbox";
+import { Label } from "@workspace/ui/components/label";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import { client } from "../lib/orpc";
 
 export type DeletableBot = {
   id: string;
@@ -119,7 +119,7 @@ export function BotDeleteDialog({ bot, onOpenChange }: BotDeleteDialogProps) {
               checked={deleteFiles}
               disabled={removal.isPending}
               onCheckedChange={(checked) => {
-                setDeleteFiles(Boolean(checked));
+                setDeleteFiles(checked);
               }}
             />
             <div className="flex flex-col gap-1">

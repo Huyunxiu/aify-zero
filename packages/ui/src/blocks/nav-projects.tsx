@@ -1,7 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { generateSessionId } from "@workspace/agent-client";
-import { Button } from "@workspace/ui/components/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@workspace/ui/components/collapsible";
+import { DropdownMenuItem } from "@workspace/ui/components/dropdown-menu";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -12,6 +17,11 @@ import {
   SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
+import {
   ChevronDownIcon,
   FolderPlusIcon,
   PencilIcon,
@@ -21,17 +31,11 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "./collapsible";
-import { DropdownMenuItem } from "./dropdown-menu";
 import { FolderIcon } from "./folder-icon";
-import { ProjectDialog, type ProjectSummary } from "./project-dialog";
+import { ProjectDialog } from "./project-dialog";
+import type { ProjectSummary } from "./project-dialog";
 import { ProjectSessions } from "./project-sessions";
 import { SidebarRowMenu } from "./sidebar-row-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
 
 type ProjectItemProps = {
   project: ProjectSummary;
@@ -80,7 +84,9 @@ function ProjectItem({ project, onEdit }: ProjectItemProps) {
           >
             <PlusIcon />
           </TooltipTrigger>
-          <TooltipContent side="bottom">{t("projects.newSession")}</TooltipContent>
+          <TooltipContent side="bottom">
+            {t("projects.newSession")}
+          </TooltipContent>
         </Tooltip>
         <SidebarRowMenu label={t("projects.actions")}>
           <DropdownMenuItem

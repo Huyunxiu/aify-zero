@@ -1,13 +1,12 @@
-import { EllipsisIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
-
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from "./dropdown-menu";
-import { SidebarMenuAction } from "./sidebar";
+} from "@workspace/ui/components/dropdown-menu";
+import { SidebarMenuAction } from "@workspace/ui/components/sidebar";
+import { EllipsisIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 /** 右键落点做成一个零尺寸的锚点，菜单就能贴着鼠标出现。 */
 type PointerAnchor = {
@@ -21,7 +20,8 @@ type PointerAnchor = {
  * Base UI 会把自己的 `data-slot="collapsible"` 写到同一个 `li` 上，把
  * `data-slot="sidebar-menu-item"` 顶掉。
  */
-const ROW_SELECTOR = '[data-sidebar="menu-item"], [data-sidebar="menu-sub-item"]';
+const ROW_SELECTOR =
+  '[data-sidebar="menu-item"], [data-sidebar="menu-sub-item"]';
 
 type SidebarRowMenuProps = {
   /** 触发按钮的无障碍名称，比如「项目操作」。 */

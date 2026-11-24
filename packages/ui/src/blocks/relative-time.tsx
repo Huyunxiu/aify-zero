@@ -104,8 +104,12 @@ export function RelativeTime({
       break;
     }
     case "date": {
-      text = bucket.text;
+      ({ text } = bucket);
       break;
+    }
+    default: {
+      // Every kind is listed, so `bucket` is never here. A new kind fails to compile on this line.
+      text = bucket;
     }
   }
 

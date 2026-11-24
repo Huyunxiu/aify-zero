@@ -22,6 +22,7 @@ import { LOCAL_STORAGE_KEYS, ModelEffort } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
 import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
+import { BotAvatar } from "@workspace/ui/blocks/bot-avatar";
 import type { LanguageModelUsage } from "ai";
 import {
   AlertTriangleIcon,
@@ -53,7 +54,6 @@ import {
   ContextReasoningUsage,
   ContextTrigger,
 } from "../blocks/token-context";
-import { BotAvatar } from "../components/bot-avatar";
 import { Button } from "../components/button";
 import { ButtonGroup } from "../components/button-group";
 import {

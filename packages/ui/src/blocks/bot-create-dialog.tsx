@@ -1,17 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { getErrorMessage } from "@workspace/shared/errors";
 import { ModelEffort } from "@workspace/shared/constants";
+import { getErrorMessage } from "@workspace/shared/errors";
 import type { ModelRef } from "@workspace/shared/model";
-import { XIcon } from "lucide-react";
-import { useId, useMemo, useState } from "react";
-import type { FormEvent } from "react";
-import { useTranslation } from "react-i18next";
-
-import { ModelSelect } from "../blocks/model-select";
-import { flattenModels } from "../lib/models";
-import { client } from "../lib/orpc";
-import { Button } from "./button";
+import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
   DialogClose,
@@ -19,16 +11,29 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./dialog";
-import { Field, FieldError, FieldGroup, FieldLabel } from "./field";
-import { Input } from "./input";
+} from "@workspace/ui/components/dialog";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "@workspace/ui/components/field";
+import { Input } from "@workspace/ui/components/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "./select";
+} from "@workspace/ui/components/select";
+import { XIcon } from "lucide-react";
+import { useId, useMemo, useState } from "react";
+import type { SyntheticEvent } from "react";
+import { useTranslation } from "react-i18next";
+
+import { ModelSelect } from "../blocks/model-select";
+import { flattenModels } from "../lib/models";
+import { client } from "../lib/orpc";
 
 export type BotCreateDialogProps = {
   open: boolean;
@@ -99,7 +104,7 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
     createMutation.reset();
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (createMutation.isPending) {
       return;
@@ -144,27 +149,27 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
 
         <form id={formId} onSubmit={handleSubmit} noValidate>
           <FieldGroup>
-              <Field data-invalid={Boolean(nameError)}>
-                <FieldLabel htmlFor={`${formId}-name`}>
-                  {t("bots.fields.name")}
-                </FieldLabel>
-                <Input
-                  id={`${formId}-name`}
-                  value={name}
-                  placeholder={t("bots.createDialog.namePlaceholder")}
-                  aria-invalid={Boolean(nameError)}
-                  autoComplete="off"
-                  onChange={(event) => {
-                    setName(event.target.value);
-                    if (nameError) {
-                      setNameError(undefined);
-                    }
-                  }}
-                />
-                {nameError ? (
-                  <FieldError errors={[{ message: nameError }]} />
-                ) : null}
-              </Field>
+            <Field data-invalid={Boolean(nameError)}>
+              <FieldLabel htmlFor={`${formId}-name`}>
+                {t("bots.fields.name")}
+              </FieldLabel>
+              <Input
+                id={`${formId}-name`}
+                value={name}
+                placeholder={t("bots.createDialog.namePlaceholder")}
+                aria-invalid={Boolean(nameError)}
+                autoComplete="off"
+                onChange={(event) => {
+                  setName(event.target.value);
+                  if (nameError) {
+                    setNameError(undefined);
+                  }
+                }}
+              />
+              {nameError ? (
+                <FieldError errors={[{ message: nameError }]} />
+              ) : null}
+            </Field>
 
             <Field>
               <FieldLabel htmlFor={`${formId}-description`}>

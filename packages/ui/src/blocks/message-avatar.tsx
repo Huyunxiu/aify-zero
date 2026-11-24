@@ -1,8 +1,8 @@
 import type { BotSummary } from "@workspace/agent-client";
+import { BotAvatar } from "@workspace/ui/blocks/bot-avatar";
 import { BotIcon } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "../components/avatar";
-import { BotAvatar } from "../components/bot-avatar";
 
 /**
  * The user's face: one letter.

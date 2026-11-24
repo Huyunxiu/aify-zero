@@ -1,3 +1,4 @@
+import { FolderIcon } from "@workspace/ui/blocks/folder-icon";
 import { TitleBar } from "@workspace/ui/blocks/title-bar";
 /**
  * 会话右侧的面板。
@@ -11,7 +12,6 @@ import { TitleBar } from "@workspace/ui/blocks/title-bar";
  * 文案各加一行，区域写成同级目录下的视图组件。
  */
 import { Button } from "@workspace/ui/components/button";
-import { FolderIcon } from "@workspace/ui/components/folder-icon";
 import {
   TabStripList,
   TabStripTrigger,

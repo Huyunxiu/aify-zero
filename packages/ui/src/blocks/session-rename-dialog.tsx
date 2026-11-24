@@ -1,11 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { getErrorMessage } from "@workspace/shared/errors";
-import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-
-import { client } from "../lib/orpc";
-import { Button } from "./button";
+import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
   DialogClose,
@@ -13,9 +8,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./dialog";
-import { Field } from "./field";
-import { Input } from "./input";
+} from "@workspace/ui/components/dialog";
+import { Field } from "@workspace/ui/components/field";
+import { Input } from "@workspace/ui/components/input";
+import type { SyntheticEvent } from "react";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import { client } from "../lib/orpc";
 
 /** 重命名只需要这两个字段，列表里拿到的会话够用。 */
 export type RenamableSession = {
@@ -57,7 +57,7 @@ export function SessionRenameDialog({
 
   const trimmedTitle = title.trim();
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!session || !trimmedTitle || renameMutation.isPending) {
       return;

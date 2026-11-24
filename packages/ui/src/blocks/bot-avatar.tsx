@@ -1,7 +1,12 @@
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar";
+
 import { assetUrl } from "../lib/asset-url";
 import { initialOf } from "../lib/initial";
 import { cn } from "../lib/utils";
-import { Avatar, AvatarFallback, AvatarImage } from "./avatar";
 
 export type BotAvatarSize = "sm" | "md" | "lg";
 

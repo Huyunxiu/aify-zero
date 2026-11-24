@@ -1,7 +1,7 @@
+import { DropdownMenuItem } from "@workspace/ui/components/dropdown-menu";
 import { PencilIcon, Trash2Icon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { DropdownMenuItem } from "./dropdown-menu";
 import type { SessionStatus } from "./session-status";
 
 /** 行操作只需要这几个字段，列表里拿到的会话够用。 */

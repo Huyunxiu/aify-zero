@@ -11,8 +11,7 @@ const DOC_LINE_WIDTHS = [78, 180, 140, 175, 126, 168, 110];
 const ICON_CLASS =
   "absolute top-1/2 left-1/2 aspect-[6/5] w-full -translate-x-1/2 -translate-y-1/2 @container [perspective:220cqw] [perspective-origin:50%_60%] transition-transform duration-[600ms] ease-[cubic-bezier(0.2,0.85,0.25,1)] group-hover/folder:scale-[1.03] group-hover/folder-row:scale-[1.03] motion-reduce:transition-none";
 
-const LAYER_CLASS =
-  "absolute inset-0 size-full! overflow-visible";
+const LAYER_CLASS = "absolute inset-0 size-full! overflow-visible";
 
 const BACK_FILTER_CLASS =
   "[filter:drop-shadow(0_4cqw_4.6cqw_rgba(60,130,180,0.28))_drop-shadow(0_1.3cqw_2cqw_rgba(60,130,180,0.16))_drop-shadow(0_0.3cqw_0.7cqw_rgba(60,130,180,0.1))] dark:[filter:drop-shadow(0_4cqw_4.6cqw_rgba(0,0,0,0.45))_drop-shadow(0_1.3cqw_2cqw_rgba(0,0,0,0.3))]";

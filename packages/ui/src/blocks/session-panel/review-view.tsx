@@ -20,6 +20,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LOCAL_STORAGE_KEYS } from "@workspace/shared/constants";
 import { getErrorMessage } from "@workspace/shared/errors";
+import { useTheme } from "@workspace/ui/blocks/theme-provider";
 import { Button } from "@workspace/ui/components/button";
 import { HoverScrollText } from "@workspace/ui/components/hover-scroll-text";
 import { InputCopyButton } from "@workspace/ui/components/input-copy-button";
@@ -32,7 +33,6 @@ import {
   SegmentedControl,
   SegmentedControlItem,
 } from "@workspace/ui/components/segmented-control";
-import { useTheme } from "@workspace/ui/components/theme-provider";
 import { client } from "@workspace/ui/lib/orpc";
 import { useContentVersion } from "@workspace/ui/lib/use-content-version";
 import { isDirectoryPath } from "@workspace/ui/lib/workspace-path";

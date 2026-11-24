@@ -32,7 +32,7 @@ import {
 } from "@workspace/ui/components/input-group";
 import { EllipsisIcon, PlusIcon } from "lucide-react";
 import { nanoid } from "nanoid";
-import type { FormEvent } from "react";
+import type { SyntheticEvent } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -144,9 +144,10 @@ export function ProjectDialog({
         return previous;
       }
 
-      const dirs = { ...previous.dirs };
-      delete dirs[id];
-      return { ...previous, dirs };
+      const remainingDirs = Object.fromEntries(
+        Object.entries(previous.dirs).filter(([key]) => key !== id)
+      );
+      return { ...previous, dirs: remainingDirs };
     });
   }
 
@@ -211,7 +212,7 @@ export function ProjectDialog({
     }
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saveProjectMutation.isPending) {
       return;
@@ -229,14 +230,10 @@ export function ProjectDialog({
     }
     if (primaryRow) {
       if (!trimmedDir) {
-        nextErrors.dirs[primaryRow.id] = t(
-          "projects.dialog.directoryRequired"
-        );
+        nextErrors.dirs[primaryRow.id] = t("projects.dialog.directoryRequired");
       } else if (!isAbsolutePath(trimmedDir)) {
         // 服务端也会拒绝，但那里的报错是通用的校验错误，这里先给出字段级的提示。
-        nextErrors.dirs[primaryRow.id] = t(
-          "projects.dialog.directoryAbsolute"
-        );
+        nextErrors.dirs[primaryRow.id] = t("projects.dialog.directoryAbsolute");
       }
     }
 
@@ -444,7 +441,9 @@ export function ProjectDialog({
             loading={saveProjectMutation.isPending}
             disabled={saveProjectMutation.isPending}
           >
-            {project ? t("projects.dialog.update") : t("projects.dialog.submit")}
+            {project
+              ? t("projects.dialog.update")
+              : t("projects.dialog.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

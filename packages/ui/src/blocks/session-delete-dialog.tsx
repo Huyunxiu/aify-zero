@@ -1,9 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 import { getErrorMessage } from "@workspace/shared/errors";
-import { useTranslation } from "react-i18next";
-
-import { client } from "../lib/orpc";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,7 +10,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "./alert-dialog";
+} from "@workspace/ui/components/alert-dialog";
+import { useTranslation } from "react-i18next";
+
+import { client } from "../lib/orpc";
 
 /** 删除只需要这两个字段，列表里拿到的会话够用。 */
 export type DeletableSession = {
@@ -64,9 +64,7 @@ export function SessionDeleteDialog({
     },
   });
 
-  const title = session?.title?.trim()
-    ? session.title
-    : t("sessions.untitled");
+  const title = session?.title?.trim() ? session.title : t("sessions.untitled");
 
   function confirm(): void {
     if (session === null || removal.isPending) {

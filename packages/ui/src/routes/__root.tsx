@@ -1,5 +1,5 @@
 import { createRootRoute, Outlet } from "@tanstack/react-router";
-import { AppSidebar } from "@workspace/ui/components/app-sidebar";
+import { AppSidebar } from "@workspace/ui/blocks/app-sidebar";
 import {
   SidebarInset,
   SidebarProvider,

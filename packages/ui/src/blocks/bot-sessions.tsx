@@ -10,15 +10,11 @@ import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc";
 import { RelativeTime } from "./relative-time";
-import {
-  SessionDeleteDialog,
-  type DeletableSession,
-} from "./session-delete-dialog";
+import { SessionDeleteDialog } from "./session-delete-dialog";
+import type { DeletableSession } from "./session-delete-dialog";
+import { SessionRenameDialog } from "./session-rename-dialog";
+import type { RenamableSession } from "./session-rename-dialog";
 import { SessionRowMenuItems } from "./session-row-actions";
-import {
-  SessionRenameDialog,
-  type RenamableSession,
-} from "./session-rename-dialog";
 import { SessionStatus } from "./session-status";
 import { SidebarRowMenu } from "./sidebar-row-menu";
 
@@ -50,7 +46,7 @@ export function BotSessions({ botId }: { botId: string }) {
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (sentinel == null || !hasNextPage || isFetching) {
+    if (sentinel === null || !hasNextPage || isFetching) {
       return;
     }
 

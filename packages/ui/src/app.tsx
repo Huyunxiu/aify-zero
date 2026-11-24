@@ -5,11 +5,11 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import { LangProvider } from "@workspace/ui/blocks/lang-provider";
 import { LayoutProvider } from "@workspace/ui/blocks/layout-provider";
+import { ServerStatusBanner } from "@workspace/ui/blocks/server-status-banner";
 import { SignInGate } from "@workspace/ui/blocks/sign-in-gate";
-import { LangProvider } from "@workspace/ui/components/lang-provider";
-import { ServerStatusBanner } from "@workspace/ui/components/server-status-banner";
-import { ThemeProvider } from "@workspace/ui/components/theme-provider";
+import { ThemeProvider } from "@workspace/ui/blocks/theme-provider";
 import {
   AnchoredToastProvider,
   ToastProvider,

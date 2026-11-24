@@ -1,3 +1,4 @@
+import { useTheme } from "@workspace/ui/blocks/theme-provider";
 import {
   Select,
   SelectContent,
@@ -6,7 +7,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@workspace/ui/components/select";
-import { useTheme } from "@workspace/ui/components/theme-provider";
 import { useTranslation } from "react-i18next";
 
 import {

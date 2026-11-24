@@ -3,6 +3,12 @@ import { useNavigate } from "@tanstack/react-router";
 import type { BotSummary } from "@workspace/agent-client";
 import { generateSessionId } from "@workspace/agent-client";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@workspace/ui/components/collapsible";
+import { DropdownMenuItem } from "@workspace/ui/components/dropdown-menu";
+import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -11,6 +17,11 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@workspace/ui/components/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@workspace/ui/components/tooltip";
 import {
   ChevronDownIcon,
   PlusIcon,
@@ -23,16 +34,10 @@ import { useTranslation } from "react-i18next";
 import { client } from "../lib/orpc";
 import { BotAvatar } from "./bot-avatar";
 import { BotCreateDialog } from "./bot-create-dialog";
-import { BotDeleteDialog, type DeletableBot } from "./bot-delete-dialog";
+import { BotDeleteDialog } from "./bot-delete-dialog";
+import type { DeletableBot } from "./bot-delete-dialog";
 import { BotSessions } from "./bot-sessions";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "./collapsible";
-import { DropdownMenuItem } from "./dropdown-menu";
 import { SidebarRowMenu } from "./sidebar-row-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./tooltip";
 
 type BotItemProps = {
   bot: BotSummary;

@@ -1,3 +1,5 @@
+import { FolderIcon } from "@workspace/ui/blocks/folder-icon";
+import type { ProjectSummary } from "@workspace/ui/blocks/project-dialog";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -10,8 +12,6 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "../components/combobox";
-import { FolderIcon } from "../components/folder-icon";
-import type { ProjectSummary } from "../components/project-dialog";
 import { cn } from "../lib/utils";
 import { PromptInputButton } from "./prompt-input";
 

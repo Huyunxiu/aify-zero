@@ -105,15 +105,15 @@ export function ThemeProvider({
   const applyTheme = useCallback(
     (nextTheme: Theme) => {
       const root = document.documentElement;
-      const resolvedTheme =
+      const nextResolvedTheme =
         nextTheme === "system" ? getSystemTheme() : nextTheme;
       const restoreTransitions = disableTransitionOnChange
         ? disableTransitionsTemporarily()
         : null;
 
       root.classList.remove("light", "dark");
-      root.classList.add(resolvedTheme);
-      setResolvedTheme(resolvedTheme);
+      root.classList.add(nextResolvedTheme);
+      setResolvedTheme(nextResolvedTheme);
 
       if (restoreTransitions) {
         restoreTransitions();

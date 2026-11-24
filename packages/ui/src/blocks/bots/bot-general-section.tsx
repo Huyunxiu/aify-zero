@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ASSET_IMAGE_TYPES } from "@workspace/agent-client";
 import { getErrorMessage } from "@workspace/shared/errors";
+import { BotAvatar } from "@workspace/ui/blocks/bot-avatar";
+import { BotDeleteDialog } from "@workspace/ui/blocks/bot-delete-dialog";
+import type { DeletableBot } from "@workspace/ui/blocks/bot-delete-dialog";
 import { Badge } from "@workspace/ui/components/badge";
-import { BotAvatar } from "@workspace/ui/components/bot-avatar";
-import { BotDeleteDialog } from "@workspace/ui/components/bot-delete-dialog";
-import type { DeletableBot } from "@workspace/ui/components/bot-delete-dialog";
 import { Button } from "@workspace/ui/components/button";
 import { CopyButton } from "@workspace/ui/components/copy-button";
 import { Input } from "@workspace/ui/components/input";
