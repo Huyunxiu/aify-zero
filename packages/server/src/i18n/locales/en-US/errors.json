@@ -24,7 +24,7 @@
   "SESSION_NOT_FOUND": "The requested chat was not found. Please check the session and try again.",
   "BOT_NOT_FOUND": "The requested Bot was not found.",
   "BOT_BUSY": "This Bot has an active or awaiting-approval session. Finish or stop it before deleting.",
-  "CANNOT_DELETE_DEFAULT_BOT": "The Default Bot cannot be deleted.",
+  "CANNOT_DELETE_DEFAULT_BOT": "The built-in Bot cannot be deleted.",
   "PROJECT_NOT_FOUND": "The requested project was not found.",
   "PROJECT_DIR_EXISTS": "A project already uses this directory.",
   "MCP_SERVER_DUPLICATE": "Two MCP servers share the same id or name.",

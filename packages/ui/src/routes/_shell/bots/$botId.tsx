@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RouterHistory } from "@tanstack/react-router";
 import {
   createFileRoute,
+  Outlet,
+  useMatchRoute,
   useNavigate,
   useRouter,
   useRouterState,
@@ -24,50 +26,37 @@ import {
 } from "@workspace/ui/components/sidebar";
 import { Spinner } from "@workspace/ui/components/spinner";
 import { toastManager } from "@workspace/ui/components/toast";
-import { BotGeneralSection } from "@workspace/ui/elements/bots/bot-general-section";
-import { BotMcpSection } from "@workspace/ui/elements/bots/bot-mcp-section";
-import { BotModelSection } from "@workspace/ui/elements/bots/bot-model-section";
-import { BotRuntimeSection } from "@workspace/ui/elements/bots/bot-runtime-section";
-import { BotSkillsSection } from "@workspace/ui/elements/bots/bot-skills-section";
+import { BOT_SECTIONS } from "@workspace/ui/elements/bots/bot-sections";
+import { BotSettingsProvider } from "@workspace/ui/elements/bots/bot-settings-context";
 import type { BotUpdateInput } from "@workspace/ui/elements/bots/types";
 import { Island, IslandGroup } from "@workspace/ui/elements/island";
 import { DesktopTitleBar } from "@workspace/ui/elements/title-bar";
 import { isDesktopShell } from "@workspace/ui/lib/desktop";
 import { client } from "@workspace/ui/lib/orpc";
 import { COVERS_SESSION } from "@workspace/ui/lib/route-static-data";
-import {
-  BotIcon,
-  BrainCircuitIcon,
-  ChevronLeft,
-  PlugIcon,
-  ShieldCheckIcon,
-  SparklesIcon,
-} from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 
-type BotSectionKey = "general" | "model" | "skills" | "mcp" | "runtime";
-
-const BOT_SECTIONS = [
-  { key: "general", icon: BotIcon, titleKey: "bots.sections.general" },
-  { key: "model", icon: BrainCircuitIcon, titleKey: "bots.sections.model" },
-  { key: "skills", icon: SparklesIcon, titleKey: "bots.sections.skills" },
-  { key: "mcp", icon: PlugIcon, titleKey: "bots.sections.mcp" },
-  { key: "runtime", icon: ShieldCheckIcon, titleKey: "bots.sections.runtime" },
-] as const;
-
 /**
- * Full-screen Bot configuration surface rendered over the active session
- * so streams and drafts underneath stay intact (ADR 0027).
+ * One Bot's settings, drawn over the session.
+ *
+ * The dialog is built here rather than in each section: swapping sections swaps
+ * the outlet, so the focus trap and the background lock never rebuild.
  */
-const BotConfigLayout = () => {
+const BotSettingsLayout = () => {
   const { botId } = Route.useParams();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  // `useRouter` is untyped until the app registers its router; the annotation
+  // turns its history back into something a reader can call.
   const { history }: { history: RouterHistory } = useRouter();
-  const [section, setSection] = React.useState<BotSectionKey>("general");
+  const matchRoute = useMatchRoute();
 
+  // The history entry that opened this Bot. Sections are pushed on top of it, so
+  // closing has to step over all of them: one step back per section would land
+  // the reader on the previous section instead of the app.
   const index = useRouterState({
     select: (state) => state.location.state.__TSR_index,
   });
@@ -78,9 +67,11 @@ const BotConfigLayout = () => {
 
     if (history.canGoBack() && steps > 0) {
       history.go(-steps);
+
       return;
     }
 
+    // A visit that starts at a section has nothing behind it.
     void navigate({ replace: true, to: "/sessions" });
   };
 
@@ -114,7 +105,7 @@ const BotConfigLayout = () => {
 
   const bot = botQuery.data?.bot;
 
-  const renderSection = () => {
+  const renderContent = () => {
     if (botQuery.isPending) {
       return (
         <div className="flex h-48 items-center justify-center">
@@ -138,32 +129,17 @@ const BotConfigLayout = () => {
       );
     }
 
-    const sectionProps = {
-      bot,
-      isSaving: updateMutation.isPending,
-      onUpdate: handleUpdate,
-    };
-
-    switch (section) {
-      case "general": {
-        return <BotGeneralSection {...sectionProps} />;
-      }
-      case "model": {
-        return <BotModelSection {...sectionProps} />;
-      }
-      case "skills": {
-        return <BotSkillsSection {...sectionProps} />;
-      }
-      case "mcp": {
-        return <BotMcpSection {...sectionProps} />;
-      }
-      case "runtime": {
-        return <BotRuntimeSection {...sectionProps} />;
-      }
-      default: {
-        return null;
-      }
-    }
+    return (
+      <BotSettingsProvider
+        value={{
+          bot,
+          isSaving: updateMutation.isPending,
+          onUpdate: handleUpdate,
+        }}
+      >
+        <Outlet />
+      </BotSettingsProvider>
+    );
   };
 
   return (
@@ -206,9 +182,11 @@ const BotConfigLayout = () => {
                     {BOT_SECTIONS.map((item) => (
                       <SidebarMenuItem key={item.key}>
                         <SidebarMenuButton
-                          isActive={section === item.key}
+                          isActive={Boolean(
+                            matchRoute({ to: item.to, params: { botId } })
+                          )}
                           onClick={() => {
-                            setSection(item.key);
+                            void navigate({ to: item.to, params: { botId } });
                           }}
                         >
                           <item.icon />
@@ -230,7 +208,7 @@ const BotConfigLayout = () => {
                 <div className="flex h-full flex-col">
                   <DesktopTitleBar className="sticky top-0 flex h-14 items-center gap-2 px-3" />
                   <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-12">
-                    {renderSection()}
+                    {renderContent()}
                   </div>
                 </div>
               </Island>
@@ -244,5 +222,5 @@ const BotConfigLayout = () => {
 
 export const Route = createFileRoute("/_shell/bots/$botId")({
   staticData: COVERS_SESSION,
-  component: BotConfigLayout,
+  component: BotSettingsLayout,
 });

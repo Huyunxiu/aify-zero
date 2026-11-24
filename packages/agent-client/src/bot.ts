@@ -10,8 +10,8 @@ import type { McpServerConfig } from "./mcp-config";
 /** Built-in Default Bot identifier. Cannot be deleted. */
 export const DEFAULT_BOT_ID = "default";
 
-/** Canonical display name for the built-in Default Bot. */
-export const DEFAULT_BOT_NAME = "Default Bot";
+/** Display name the built-in Default Bot starts with. The name stays editable. */
+export const DEFAULT_BOT_NAME = "Aify";
 
 /** Built-in tool capability groups that a Bot can toggle independently. */
 export const BOT_TOOL_GROUPS = [

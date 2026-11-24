@@ -417,7 +417,6 @@
     "newSession": "New session with this Bot",
     "noSessions": "No sessions",
     "backToApp": "Back to app",
-    "defaultBadge": "Default Bot",
     "notFound": "Bot not found.",
     "actions": {
       "menu": "Bot actions",
@@ -523,6 +522,7 @@
       "envTitle": "Environment variables",
       "envKeyPlaceholder": "ENV_KEY",
       "envValuePlaceholder": "Value"
-    }
+    },
+    "builtInBadge": "Built-in"
   }
 }

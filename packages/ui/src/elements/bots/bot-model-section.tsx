@@ -22,9 +22,10 @@ import {
   SettingItemTitle,
   SettingSeparator,
 } from "../settings/setting-frame";
-import type { BotSectionProps } from "./types";
+import { useBotSettings } from "./bot-settings-context";
 
-export function BotModelSection({ bot, isSaving, onUpdate }: BotSectionProps) {
+export function BotModelSection() {
+  const { bot, isSaving, onUpdate } = useBotSettings();
   const { t } = useTranslation();
   const [instructions, setInstructions] = useState(bot.instructions ?? "");
   const [compactionDraft, setCompactionDraft] = useState({

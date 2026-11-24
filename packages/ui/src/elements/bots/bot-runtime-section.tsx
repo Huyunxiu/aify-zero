@@ -28,7 +28,7 @@ import {
   SettingItemTitle,
   SettingSeparator,
 } from "../settings/setting-frame";
-import type { BotSectionProps } from "./types";
+import { useBotSettings } from "./bot-settings-context";
 
 function isSandboxAdapterChoice(
   value: string
@@ -36,11 +36,8 @@ function isSandboxAdapterChoice(
   return BOT_SANDBOX_ADAPTERS.some((item) => item === value);
 }
 
-export function BotRuntimeSection({
-  bot,
-  isSaving,
-  onUpdate,
-}: BotSectionProps) {
+export function BotRuntimeSection() {
+  const { bot, isSaving, onUpdate } = useBotSettings();
   const { t } = useTranslation();
   const [image, setImage] = useState(bot.sandbox.image ?? "");
   const [newEnvKey, setNewEnvKey] = useState("");

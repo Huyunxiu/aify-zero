@@ -6,7 +6,8 @@ export type BotUpdateInput = Omit<
   "botId"
 >;
 
-export type BotSectionProps = {
+/** One Bot's settings: the loaded Bot, and the one channel that saves it. */
+export type BotSettings = {
   bot: BotDetail;
   isSaving: boolean;
   onUpdate: (patch: BotUpdateInput) => Promise<void>;

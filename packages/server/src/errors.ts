@@ -62,7 +62,7 @@ export const ErrorMap = {
   },
   CANNOT_DELETE_DEFAULT_BOT: {
     status: 400,
-    message: "The Default Bot cannot be deleted.",
+    message: "The built-in Bot cannot be deleted.",
     data: z.object({ botId: z.string() }),
   },
   PROJECT_NOT_FOUND: {

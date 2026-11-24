@@ -27,9 +27,10 @@ import {
   SettingItemTitle,
   SettingSeparator,
 } from "../settings/setting-frame";
-import type { BotSectionProps } from "./types";
+import { useBotSettings } from "./bot-settings-context";
 
-export function BotMcpSection({ bot, isSaving, onUpdate }: BotSectionProps) {
+export function BotMcpSection() {
+  const { bot, isSaving, onUpdate } = useBotSettings();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 

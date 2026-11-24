@@ -29,15 +29,12 @@ import {
   SettingItemTitle,
   SettingSeparator,
 } from "../settings/setting-frame";
-import type { BotSectionProps } from "./types";
+import { useBotSettings } from "./bot-settings-context";
 
 const NO_PROJECT_VALUE = "__none__";
 
-export function BotGeneralSection({
-  bot,
-  isSaving,
-  onUpdate,
-}: BotSectionProps) {
+export function BotGeneralSection() {
+  const { bot, isSaving, onUpdate } = useBotSettings();
   const { t } = useTranslation();
   const [name, setName] = useState(bot.name);
   const [avatar, setAvatar] = useState(bot.avatar ?? "");
@@ -103,7 +100,7 @@ export function BotGeneralSection({
           <div className="flex items-center gap-2">
             <SettingGroupTitle>{t("bots.sections.general")}</SettingGroupTitle>
             {bot.isDefault ? (
-              <Badge variant="secondary">{t("bots.defaultBadge")}</Badge>
+              <Badge variant="secondary">{t("bots.builtInBadge")}</Badge>
             ) : null}
           </div>
           {identityDirty ? (

@@ -62,8 +62,14 @@ export function BotDeleteDialog({ bot, onOpenChange }: BotDeleteDialogProps) {
         });
       }
 
+      // Fuzzy: every section of the Bot is its own address under the same layout,
+      // so an exact match would miss a reader who is in one of them.
       const viewingBot = Boolean(
-        matchRoute({ to: "/bots/$botId", params: { botId: variables.botId } })
+        matchRoute({
+          to: "/bots/$botId",
+          params: { botId: variables.botId },
+          fuzzy: true,
+        })
       );
       const currentSessionId =
         typeof params.sessionId === "string" ? params.sessionId : undefined;

@@ -25,9 +25,10 @@ import {
   SettingItemTitle,
   SettingSeparator,
 } from "../settings/setting-frame";
-import type { BotSectionProps } from "./types";
+import { useBotSettings } from "./bot-settings-context";
 
-export function BotSkillsSection({ bot, isSaving, onUpdate }: BotSectionProps) {
+export function BotSkillsSection() {
+  const { bot, isSaving, onUpdate } = useBotSettings();
   const { t } = useTranslation();
 
   const skillsQuery = useQuery({
