@@ -27,37 +27,46 @@
 vp run e2e
 ```
 
-第一次要装浏览器与它的系统库：
+一条约 25 秒。整套约 7 分钟：其中两条各等满一分钟。
+
+整套要一个 Chromium 浏览器，以及 Chromium 装载的系统库。有 root 的机器上，一条命令
+两样都装：
 
 ```bash
 vp exec playwright install --with-deps chromium
 ```
 
-`--with-deps` 要 root。装在别处就设 `PLAYWRIGHT_BROWSERS_PATH` 指过去；没有 root
-时也可以用 `apt-get download` 把缺的库解到本地，再用 `LD_LIBRARY_PATH` 指过去。
-把浏览器装进仓库的做法：`PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers` 跑
-`vp exec playwright install chromium`；缺的包用 `apt-get download` 取下来，
-`dpkg-deb -x` 解到 `.e2e/sysroot`，运行时把 `LD_LIBRARY_PATH` 指到它的
-`usr/lib/x86_64-linux-gnu`。两者都在 `.e2e/` 下，不会进版本库。
+没有 root 时，把两样都放进仓库，再用两个变量指过去：
 
-热的一次约 15 秒，其中大半是 Vite 冷启动。
+```bash
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
+LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
+vp run e2e
+```
+
+备好这两个目录：用 `PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers vp exec playwright
+install chromium` 装浏览器；缺的包用 `apt-get download` 取下来，逐个用 `dpkg-deb -x`
+解到 `.e2e/sysroot`。两者都在 `.e2e/` 下，不会进版本库。
 
 ### 跑一条
 
-位置参数按**文件路径**过滤。传名字（`outbox`）不报错，但整套会全部跑一遍：
+把文件路径传给 Playwright：
 
 ```bash
 vp exec playwright test --config e2e/playwright.config.ts e2e/outbox.e2e.ts
 ```
 
+`vp run e2e -- e2e/outbox.e2e.ts` 不报错，但整套全部跑一遍：`vp run` 把 `--` 和路径
+一起传下去，Playwright 不把路径当过滤条件。
+
 ### 浏览器装在别处
 
-`PLAYWRIGHT_BROWSERS_PATH` 指到那份安装，缺的系统库解包出来的
-`usr/lib/x86_64-linux-gnu` 用 `LD_LIBRARY_PATH` 指过去：
+`PLAYWRIGHT_BROWSERS_PATH` 指到那份安装，`LD_LIBRARY_PATH` 指向装着解包库的
+`usr/lib/x86_64-linux-gnu`：
 
 ```bash
-PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
-LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
+PLAYWRIGHT_BROWSERS_PATH=<浏览器目录> \
+LD_LIBRARY_PATH=<库目录>/usr/lib/x86_64-linux-gnu \
 vp run e2e
 ```
 
@@ -233,14 +242,11 @@ E2E_KEEP_ARTIFACTS=1 vp run e2e
 
 ## 加一条用例
 
-现在有十条：审批策略、主流程、队列领取、完成通知、定时器、日程、发件箱、隐藏窗口、
-会话删除、会话排序。
-要加审批路径
-（`write-file`、MCP 工具）时：
+`e2e/` 下每个 `*.e2e.ts` 就是一条用例。要加审批路径（`write-file`、MCP 工具）时：
 
 1. 在 `packages/agent/scenarios/` 加一个场景，用 `toolCall` 要那个会询问的工具
 2. 在 `e2e/` 加一个 `*.e2e.ts`，用 `startStack({ scenario: "..." })` 换剧本，
    点 `Approve` 后继续断言
 3. 用例预算仍是 120 秒，仍然不重试
 
-它不进 `vp run ready`：那是「提交前几秒跑完」的东西，端到端是三分钟的东西，混在一起两个都会坏。
+它不进 `vp run ready`：那是「提交前几秒跑完」的东西，端到端要七分钟左右。混在一起两个都会坏。

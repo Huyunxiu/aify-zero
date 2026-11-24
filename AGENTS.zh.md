@@ -53,6 +53,11 @@ footer，不放在 subject。不要用 `git commit --no-verify`。见 `docs/agen
 
 仓库里的每段文字都是英文，每份文档有一份中文副本。见 `docs/agents/language.md`。
 
+### 测试
+
+端到端用例的说明在 `docs/testing/e2e.md`。跑或改端到端用例之前先读它：里面写了只跑一条
+的命令，以及没有 root 时怎么备好浏览器与它的系统库。
+
 ### 评审
 
 只留判断题：名字按 glossary、一个目录一个概念、一个判断只有一个权威、测试对着接缝写。见

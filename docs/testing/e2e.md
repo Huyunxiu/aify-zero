@@ -27,40 +27,50 @@ so these cases use no network, spend no money, and give the same result each tim
 vp run e2e
 ```
 
-The first run installs the browser and its system libraries:
+One case takes about 25 seconds. The whole suite takes about 7 minutes: two cases
+wait a full minute each.
+
+The suite needs a Chromium browser and the system libraries that Chromium loads. On
+a machine with root, one command installs both:
 
 ```bash
 vp exec playwright install --with-deps chromium
 ```
 
-`--with-deps` needs root. If you install the browser in another place, set
-`PLAYWRIGHT_BROWSERS_PATH` to that place. Without root, you can also use `apt-get download`
-to unpack the missing libraries and point `LD_LIBRARY_PATH` at the result. To install the
-browser into the repository, run `vp exec playwright install chromium` with
-`PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers`. Use `apt-get download` to get the missing
-packages. Unpack them into `.e2e/sysroot` with `dpkg-deb -x`. At run time, point
-`LD_LIBRARY_PATH` at its `usr/lib/x86_64-linux-gnu`. Both live under `.e2e/`, so neither
-enters the repository.
+On a machine without root, put both inside the repository, then point two variables
+at them:
 
-A warm run takes about 15 seconds. Most of that time is the Vite cold start.
+```bash
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
+LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
+vp run e2e
+```
+
+To fill those two directories: install the browser with
+`PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers vp exec playwright install chromium`,
+then `apt-get download` the missing packages and unpack each one into `.e2e/sysroot`
+with `dpkg-deb -x`. Both directories sit under `.e2e/`, so neither enters the
+repository.
 
 ### Run one case
 
-A positional argument filters by **file path**. A name (`outbox`) reports no error, but the
-whole suite runs:
+Pass the file path to Playwright:
 
 ```bash
 vp exec playwright test --config e2e/playwright.config.ts e2e/outbox.e2e.ts
 ```
 
+`vp run e2e -- e2e/outbox.e2e.ts` prints no error and runs the whole suite: `vp run`
+passes `--` and the path through, and Playwright does not read the path as a filter.
+
 ### The browser is installed elsewhere
 
-Point `PLAYWRIGHT_BROWSERS_PATH` at that installation. Point `LD_LIBRARY_PATH` at the
+Point `PLAYWRIGHT_BROWSERS_PATH` at that installation, and `LD_LIBRARY_PATH` at the
 `usr/lib/x86_64-linux-gnu` directory that holds the unpacked system libraries:
 
 ```bash
-PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
-LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
+PLAYWRIGHT_BROWSERS_PATH=<browser directory> \
+LD_LIBRARY_PATH=<libraries directory>/usr/lib/x86_64-linux-gnu \
 vp run e2e
 ```
 
@@ -290,8 +300,7 @@ names and the DOM structure of the page are outside the assertions.
 
 ## Add a case
 
-There are ten files now: approval policy, main flow, batch claim, completion notice, timer,
-schedule, outbox, hidden window, session delete, and session order. To add an approval path (`write-file`, an MCP tool):
+Each `*.e2e.ts` in `e2e/` is one case. To add an approval path (`write-file`, an MCP tool):
 
 1. Add a scene in `packages/agent/scenarios/`. Use `toolCall` to request the tool that asks
    for approval.
@@ -300,4 +309,4 @@ schedule, outbox, hidden window, session delete, and session order. To add an ap
 3. The case budget is still 120 seconds, and the case still does not retry.
 
 End-to-end does not enter `vp run ready`. That command runs in the seconds before a commit.
-End-to-end takes three minutes. Mix the two, and both break.
+End-to-end takes about seven minutes. Mix the two, and both break.

@@ -44,6 +44,10 @@ Use Conventional Commits. The `commit-msg` hook rejects a message that breaks th
 
 Every repository text is English, and every document has a Chinese copy. See `docs/agents/language.md`.
 
+### Testing
+
+The end-to-end guide is `docs/testing/e2e.md`. Read it before you run or fix an end-to-end case: it names the command for one case, and the way to supply a browser and its libraries without root.
+
 ### Review
 
 Judgement calls only: naming from the glossary, one concept per directory, one authoritative rule, tests against their seam. See `CODING_STANDARDS.md`.
