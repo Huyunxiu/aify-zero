@@ -1,37 +1,37 @@
-# MCP 授权方案
+# MCP Authorization Plan
 
-让远程 MCP 服务器（`http` / `sse`）支持 OAuth 授权：用户在设置页点一次「授权」，
-浏览器里同意，令牌落到本地表，之后每回合照常装配工具。范围只到授权；resources、
-prompts、sampling 不做。
+This plan adds OAuth authorization to a remote MCP server (`http` / `sse`). The user clicks **Authorize**
+once on the settings page and agrees in the browser; the token lands in a local table, and each turn
+then assembles the tools as usual. The scope stops at authorization: no resources, prompts, or sampling.
 
-## 决策
+## Decisions
 
-| 决策     | 结论                                                                                  |
-| -------- | ------------------------------------------------------------------------------------- |
-| 机制     | 配置里的 `auth` 三态：`none` / `headers` / `oauth`                                    |
-| 协议     | 复用 `@ai-sdk/mcp` 的 `auth()` 与 `OAuthClientProvider`，只实现 provider 与持久化     |
-| 适用传输 | 仅 `http` / `sse`；`stdio` 仍靠 `env`                                                 |
-| 发起者   | 设置页点「授权」才开浏览器；后台撞 401 只标 `needs-auth`；会话里撞 401 返回错误文本   |
-| 回调     | `http://127.0.0.1:<port>/api/mcp/oauth/callback`，挂在 `bearerAuth` 之前，见 ADR-0003 |
-| 凭据     | `mcp_credential` 表，按 `(server_id, kind)` 分行，`generation` 列做条件删除           |
-| 绑定     | 一条凭据属于一个服务器 id；URL / issuer 变化、删除服务器、切回静态凭据即丢弃          |
-| 刷新     | 只靠 401 触发；不做主动刷新                                                           |
-| 试连     | 「测试连接」只带已存令牌：不发起授权、不注册客户端、不覆盖 verifier                   |
-| 失效清理 | 照 SDK 给的 scope；`invalid_client` 且动态注册的删全部，`invalid_grant` 只删令牌      |
-| 授权完成 | 立刻连一次并刷新状态                                                                  |
-| 撤销     | 授权过的行提供「撤销」，清掉令牌与注册信息                                            |
-| 兼容     | 只支持动态注册；不开放手填 `client_id` / `secret` / scope                             |
-| 信任     | `validateAuthorizationServerURL` 只放行 https 与回环                                  |
+| Decision            | Outcome                                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mechanism           | The `auth` field has three states: `none` / `headers` / `oauth`                                                                                                           |
+| Protocol            | Reuse `auth()` and `OAuthClientProvider` from `@ai-sdk/mcp`. The plan implements the provider and the persistence only                                                    |
+| Transport           | `http` / `sse` only. `stdio` still uses `env`                                                                                                                             |
+| Starter             | The browser opens only after the user clicks **Authorize** on the settings page. A background 401 marks the server `needs-auth`. A 401 in a session returns an error text |
+| Callback            | `http://127.0.0.1:<port>/api/mcp/oauth/callback`. It mounts before `bearerAuth`; see ADR-0003                                                                             |
+| Credential          | The `mcp_credential` table. It stores one row per `(server_id, kind)`, and the `generation` column makes a conditional delete                                             |
+| Binding             | One credential belongs to one server id. A change of the URL or the issuer, a delete of the server, or a return to static headers discards it                             |
+| Refresh             | Only a 401 starts a refresh. The code never refreshes in advance                                                                                                          |
+| Test connection     | **Test connection** sends a stored token only. It does not start authorization, register a client, or overwrite the verifier                                              |
+| Cleanup on failure  | Follow the scope that the SDK gives. `invalid_client` on a dynamic registration deletes every row; `invalid_grant` deletes the token only                                 |
+| After authorization | The manager connects once immediately and refreshes the status                                                                                                            |
+| Revoke              | A row that holds an authorization offers **Remove authorization**. It clears the token and the registration                                                               |
+| Compatibility       | Dynamic registration only. The plan does not permit a typed `client_id`, `secret`, or scope                                                                               |
+| Trust               | `validateAuthorizationServerURL` permits https and the loopback only                                                                                                      |
 
-## 数据结构
+## Data Structures
 
 ```ts
-// 配置里新增；缺省时按 headers 是否为空推断，已存设置不用迁移
+// New in the config. When it is absent, the code infers it from whether headers is empty, so stored settings need no migration
 type McpAuth = { type: "none" } | { type: "headers" } | { type: "oauth" };
 ```
 
 ```sql
--- mcp_credential：一行一次写入，generation 每次写加一
+-- mcp_credential: one row per write; generation adds one on every write
 create table mcp_credential (
   server_id text not null,
   kind      text not null,      -- tokens | client | verifier
@@ -43,69 +43,75 @@ create table mcp_credential (
 );
 ```
 
-`tokens` 存 SDK 交回来的 `OAuthTokens` 原样：里面已经带了授权服务器的 pin
-（`issuer` / `authorization_server` / `token_endpoint`），刷新时靠它判定「这份
-令牌是不是同一个授权服务器发的」。`client` 存 `OAuthClientInformation`，`verifier`
-存 `{ codeVerifier, state }`。
+The `tokens` row stores `OAuthTokens` exactly as the SDK returns it. That value already carries the
+pin of the authorization server (`issuer` / `authorization_server` / `token_endpoint`), and a refresh
+reads the pin to decide if this token came from the same authorization server. The `client` row
+stores `OAuthClientInformation`. The `verifier` row stores `{ codeVerifier, state }`.
 
-## 模块
+## Modules
 
-| 路径                                                 | 职责                                                     |
-| ---------------------------------------------------- | -------------------------------------------------------- |
-| `packages/agent/src/mcp/oauth/store.ts`              | `McpCredentialStore` 接口与代次类型                      |
-| `packages/agent/src/mcp/oauth/provider.ts`           | `OAuthClientProvider` 实现；捕获授权地址，不自己开浏览器 |
-| `packages/agent/src/mcp/oauth/flows.ts`              | 进程内的待授权表：`state` → 配置快照，十分钟过期         |
-| `packages/agent/src/mcp/oauth/authorize.ts`          | `completeMcpAuthorization()`：用授权码换令牌             |
-| `packages/server/src/mcp/credentials.ts`             | 表读写实现与按服务器清理                                 |
-| `packages/server/src/mcp/credentials-cleanup.ts`     | 配置变化后丢弃对不上的凭据                               |
-| `packages/server/src/mcp/oauth.ts`                   | 把配置、存储、待授权表、回环地址拼成一个 provider        |
-| `packages/server/src/mcp/oauth-callback.ts`          | 回调路由的处理与页面                                     |
-| `packages/server/src/routers/mcp/mcp.router.ts`      | `authorize` / `revoke` 两个路由                          |
-| `packages/ui/src/elements/settings/mcp-settings.tsx` | 授权方式选择、`needs-auth` 可点、撤销                    |
+| Path                                               | Responsibility                                                                                                       |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `packages/agent/src/mcp/oauth/store.ts`            | The `McpCredentialStore` interface and the generation type                                                           |
+| `packages/agent/src/mcp/oauth/provider.ts`         | The `OAuthClientProvider` implementation. It captures the authorization address and does not open the browser itself |
+| `packages/agent/src/mcp/oauth/flows.ts`            | The in-process pending-authorization table: `state` to a configuration snapshot, with a ten-minute expiry            |
+| `packages/agent/src/mcp/oauth/authorize.ts`        | `completeMcpAuthorization()`: it exchanges the authorization code for a token                                        |
+| `packages/server/src/mcp/credentials.ts`           | The table read and write, and the cleanup per server                                                                 |
+| `packages/server/src/mcp/credentials-cleanup.ts`   | Discards a credential that no longer matches, after a configuration change                                           |
+| `packages/server/src/mcp/oauth.ts`                 | Assembles the configuration, the store, the pending table, and the loopback address into one provider                |
+| `packages/server/src/mcp/oauth-callback.ts`        | The handler of the callback route and its page                                                                       |
+| `packages/server/src/routers/mcp/mcp.router.ts`    | The `authorize` / `revoke` routes                                                                                    |
+| `packages/ui/src/blocks/settings/mcp-settings.tsx` | The choice of authorization, the clickable `needs-auth`, and revoke                                                  |
 
-## 请求流
+## Request Flow
 
-**点授权**：`mcp.authorize({ id })` → 管理器换代、建连 → 服务器返回 401 → 传输层
-调 `auth()` → 发现元数据、动态注册、生成 PKCE → `redirectToAuthorization(url)` 把
-地址留在 provider 上 → 抛 `UnauthorizedError` → 管理器收下地址、状态记 `needs-auth`
-→ 路由把 `{ url }` 交给界面 → 界面 `window.open(url)`（桌面会被主进程转给系统浏览器）。
+**The user clicks Authorize**: the interface calls `mcp.authorize({ id })`. The manager starts a new
+generation and opens a connection. The server returns 401. The transport layer calls `auth()`. That
+call discovers the metadata, registers a client, and makes the PKCE pair. `redirectToAuthorization(url)`
+keeps the address on the provider, and the transport raises `UnauthorizedError`. The manager takes the
+address and sets the status to `needs-auth`. The route hands `{ url }` to the interface, and the
+interface calls `window.open(url)`. On the desktop, the main process passes the URL to the system browser.
 
-**回调**：浏览器带 `code` / `state` 到回环路由 → 从待授权表取配置快照 → 用同一个
-回环地址重拼 provider → `auth({ authorizationCode, callbackState, callbackIssuer })`
-→ 换令牌、写表 → 管理器换代重连 → 页面显示「可以回到应用」。
+**Callback**: the browser sends `code` and `state` to the loopback route. The route takes the
+configuration snapshot from the pending-authorization table, and it assembles the provider again with
+the same loopback address. It calls `auth({ authorizationCode, callbackState, callbackIssuer })`,
+exchanges the code for a token, and writes the table. The manager starts a new generation and
+reconnects. The page shows "Authorization complete. You can close this tab."
 
-**运行期 401**：传输层先尝试用刷新令牌换一次；失败则 `auth()` 需要重新授权 → 抛
-`UnauthorizedError` → 工具返回「授权已失效，请在设置页重新授权」→ 该服务器状态转
-`needs-auth`。
+**A 401 at run time**: the transport layer first exchanges the refresh token once. If that fails,
+`auth()` needs a new authorization and raises `UnauthorizedError`. The tool returns "Authorization has
+expired. Authorize again on the settings page." The status of that server becomes `needs-auth`.
 
-**撤销**：删 `tokens` / `client` / `verifier` 三行 → 管理器换代 → 状态回 `idle`。
+**Revoke**: the code deletes the `tokens`, `client`, and `verifier` rows. The manager starts a new
+generation. The status returns to `idle`.
 
-## 状态
+## Status
 
-`McpServerStatus` 从四个变五个，新增 `needs-auth`。它和 `failed` 分开：一个等用户
-动手，一个等下次重试。`needs-auth` 是终态，不按时间重试：重试会重新发现元数据、
-再注册一个客户端，而用户并没有授权。只有点授权、撤销或改配置才会换代。
+`McpServerStatus` goes from four values to five, with the new `needs-auth`. It is separate from
+`failed`: one waits for the user, and the other waits for the next retry. `needs-auth` is a terminal
+state, and time does not start a retry. A retry would discover the metadata again and register another
+client, and the user did not authorize. Only **Authorize**, **Remove authorization**, or a configuration
+change starts a new generation.
 
-## 安全
+## Security
 
-- 回调路由不读设置、不返回错误详情、不把授权码写进日志；`state` 一次性、十分钟过期。
-- `validateAuthorizationServerURL` 拒绝非 https、非回环的授权服务器。
-- 回调页只回一段静态文本，不渲染任何来自请求的内容。
+- The callback route does not read the settings, does not return error details, and does not write the authorization code to the log. A `state` value works once and expires after ten minutes.
+- `validateAuthorizationServerURL` rejects an authorization server that is not https and not the loopback.
+- The callback page returns one static text only. It renders no content that comes from the request.
 
-## 分步实施
+## Step-by-Step Implementation
 
-1. 文档与 schema：`auth` 字段、跨字段校验（`oauth` 只对远程生效）、`mcpAuthType()`。
-2. 迁移：`mcp_credential` 表与仓储。
-3. provider 与存储接口：令牌、注册信息、verifier 的读写，代次条件删除。
-4. 连接与管理器：传 provider、识别 `UnauthorizedError`、`needs-auth`、`authorize()`、`revoke()`。
-5. 回环回调：路由、待授权表、`completeAuthorization()`。
-6. 设置页：授权方式选择、可点状态、撤销、i18n。
-7. 测试：假授权服务器跑完整链路，另加代次删除与配置校验。
+1. Documents and schema: the `auth` field, the cross-field check (`oauth` applies to a remote server only), and `mcpAuthType()`.
+2. Migration: the `mcp_credential` table and its repository.
+3. Provider and store interface: read and write for the token, the registration, and the verifier; the conditional delete on the generation.
+4. Connection and manager: pass the provider, catch `UnauthorizedError`, and add `needs-auth`, `authorize()`, and `revoke()`.
+5. Loopback callback: the route, the pending-authorization table, and `completeAuthorization()`.
+6. Settings page: the choice of authorization, the clickable status, revoke, and i18n.
+7. Tests: a fake authorization server runs the full flow, with the generation delete and the configuration check.
 
-## 风险
+## Risks
 
-- **回调不可达**：`attach` 远程 server 时回环地址不是用户的机器。界面提示在宿主机上授权。
-- **并发刷新**：两个回合同时撞 401 会各刷一次。代次条件删除保证不会删掉别人刚存的新令牌，
-  但可能多换一次令牌；接受。
-- **明文存储**：令牌与 `apiKey` 一样明文落库。仓库没有钥匙串，另起一套只会让机密有两种编辑方式。
-- **第三方服务器不合规**：不做手填 client 的后门；真遇到就退回 `headers` 档。
+- **The callback is unreachable**: when the code attaches a remote server, the loopback address is not the machine of the user. The interface tells the user to authorize on the host machine.
+- **Concurrent refresh**: two turns that meet a 401 at the same time refresh once each. The conditional delete on the generation never removes a new token that another turn just stored, but the code can exchange the token one extra time. The plan accepts this.
+- **Plain-text storage**: the token goes to the database in plain text, as `apiKey` does. The repository has no keychain, and a second mechanism would only give a secret two ways to edit it.
+- **A third-party server that does not comply**: the plan adds no back door for a typed client. If that case occurs, the user goes back to the `headers` state.

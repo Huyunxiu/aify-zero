@@ -26,7 +26,6 @@
     "docs/adr/0021-session-last-activity-is-turn-boundary.md",
     "docs/adr/0022-session-delete-is-soft.md",
     "docs/plans/fake-provider.md",
-    "docs/plans/mcp-auth.md",
     "docs/plans/mcp-tools.md",
     "docs/plans/model-logos.md",
     "docs/plans/providers.md",
