@@ -81,15 +81,15 @@ test("a Bot's uploaded avatar reaches every face of that Bot", async ({
     // The settings header and the sidebar row both show the uploaded bytes.
     await expect(page.locator(`img[alt="${BOT_NAME}"]`).first()).toBeVisible();
 
-    // Back in the session, two faces carry the same bytes: the sidebar row and the
-    // assistant message row that the Bot spoke.
+    // Back in the session, three faces carry the same bytes: the sidebar row, the
+    // session header, and the assistant message row that the Bot spoke.
     await page.getByRole("button", { name: "Back to app" }).click();
     const faces = page.locator(`img[alt="${BOT_NAME}"]`);
-    await expect(faces).toHaveCount(2);
+    await expect(faces).toHaveCount(3);
 
-    // The image was stored, not held in memory: a reload still shows both.
+    // The image was stored, not held in memory: a reload still shows all three.
     await page.reload();
-    await expect(faces).toHaveCount(2);
+    await expect(faces).toHaveCount(3);
 
     // Removing the image brings the initial back.
     const reopenedRow = page
