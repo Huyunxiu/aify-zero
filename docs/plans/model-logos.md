@@ -1,50 +1,57 @@
-# 供应商图标与模型图标
+# Provider Icons and Model Icons
 
-分清两件事：**供应商**的图标和**模型**的图标。它们不是两套文件，而是同一批品牌图上的
-两层解析。改之前只有 `ModelLogo` 一个组件，一张表里混着供应商（`openrouter`、
-`tencentcloud`）和模型（`deepseek`、`kimi`），认不出品牌时画 OpenAI 的图。
+Two things are different: the icon of the **provider** and the icon of the **model**. They are
+not two sets of files. They are two layers of resolution on the same set of brand images.
+Before the change, one component, `ModelLogo`, held one table. That table mixed providers
+(`openrouter`, `tencentcloud`) and models (`deepseek`, `kimi`). When the component did not know
+the brand, it drew the OpenAI image.
 
-## 决策
+## Decision
 
-| 决策     | 结论                                                                           |
-| -------- | ------------------------------------------------------------------------------ |
-| 概念     | 供应商图标与模型图标是两个概念，两个组件，共享一个渲染器                       |
-| 渲染器   | `BrandIcon`：彩色图走 `<img>`，单色图走 mask 跟随文字色                        |
-| 键契约   | 键名就是品牌名，`-color` 后缀表示彩色；后缀自带信息，删掉 `monochrome` 布尔    |
-| 键来源   | 不新增持久化字段；供应商键来自 `ProviderPreset.icon`，模型键按 id 前缀推出品方 |
-| 解析顺序 | 显式键 → 模型 id 家族前缀 → 所属供应商的键 → 兜底                              |
-| 迁移     | 一次性改成新键，不留兼容别名；没有持久化数据存着旧键                           |
-| 清单     | 40 个品牌图，覆盖预置供应商与模型家族；不含 PNG                                |
-| 兜底     | 供应商：名字首字母方块；模型：中性 `generic` 图标                              |
-| 资源引入 | `import.meta.glob` 取 `?url`，键名从文件名推导，加图不改代码                   |
-| 出处     | 不做第三方声明；来源与约定记在本文档                                           |
+| Decision          | Result                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Concept           | Provider Icon and Model Icon are two concepts and two components. They share one renderer.                                                             |
+| Renderer          | `BrandIcon`: a colored image uses `<img>`, and a monochrome image uses a mask that follows the text color.                                             |
+| Icon Key contract | The key name is the brand name. The `-color` suffix marks a colored image. The suffix carries the information, so the `monochrome` boolean is removed. |
+| Key source        | The change adds no persisted field. A provider key comes from `ProviderPreset.icon`. For a model key, the id prefix gives the Model Maker.             |
+| Resolution order  | Explicit key → model id family prefix → key of the provider that serves the model → fallback                                                           |
+| Migration         | One change to the new keys. No compatible alias stays. No persisted data holds an old key.                                                             |
+| Manifest          | 40 brand images that cover the preset providers and the model families. The set holds no PNG.                                                          |
+| Fallback          | Provider: a square with the first letter of the name. Model: the neutral `generic` icon.                                                               |
+| Asset import      | `import.meta.glob` gets `?url`. The code derives the key name from the file name, so an added image needs no code change.                              |
+| Source            | The project creates no third-party notice. This document records the source and the convention.                                                        |
 
-## 术语
+## Terms
 
-三个词写进 `packages/ui/GLOSSARY.md`：供应商图标、模型图标、模型出品方。
+Three words go into `packages/ui/GLOSSARY.md`: Provider Icon, Model Icon, and Model Maker.
 
-**模型图标画的是出品方，不是版本。** 图标只做到品牌级，没有 `gpt-4o`、`claude-3-5`
-这种版本级图。所以 `claude-sonnet` 与 `claude-opus` 画同一张图，这是刻意的。
+**A Model Icon draws the Model Maker, not the version.** An icon stops at the brand level. There
+is no version-level image for `gpt-4o` or `claude-3-5`. Therefore `claude-sonnet` and
+`claude-opus` draw the same image, and that result is deliberate.
 
-## 为什么先看出品方
+## Why the Model Maker Comes First
 
-aify-zero 的供应商是用户手填的地址和名字，没有 models.dev 那样的 catalog id 可查，
-所以顺序只能是「先按模型 id 的家族前缀看出品方，再退到所属供应商」。
+In aify-zero, the user types the address and the name of a provider. The provider has no catalog
+id to look up, unlike the id in models.dev. So the order can only be: first the Model Maker,
+from the family prefix of the model id; then the provider that serves the model.
 
-这样对中转类供应商更好：`anthropic/claude-x` 挂在「我的中转」下时，画的是 Claude 的
-图，不是中转站的图——模型是谁做的，比它挂在谁下面更有用。
+This order is better for a relay provider. When `anthropic/claude-x` sits under "My Relay", it
+draws the Claude image, not the image of the relay. The maker of the model is more useful than
+the provider that serves the model.
 
-认不出的模型画 `generic` 中性图标，不画空白。列表里有图标和没图标混排会让行首抖，
-中性图标让「未知」长得一致，也不给模型安一个假品牌。
+An unknown model draws the neutral `generic` icon. It does not draw an empty space. A list that
+mixes icons and empty spaces makes the row start jump. The neutral icon makes the unknown case
+look the same, and it does not give the model a false brand.
 
-## 键契约
+## Icon Key Contract
 
-键名就是文件名去掉 `.svg`。`-color` 后缀表示这份图是彩色的，用 `<img>` 原色渲染；
-没有后缀的是单色图，用 CSS mask 跟随 `currentColor`。后缀自带信息，所以不再需要
-`monochrome` 布尔。
+The key name is the file name without `.svg`. The `-color` suffix marks a colored image, and
+`<img>` renders it in its own colors. A key without the suffix marks a monochrome image, and a
+CSS mask follows `currentColor`. The suffix carries the information, so the `monochrome`
+boolean is no longer necessary.
 
 ```ts
-/** 图标键到资源地址。键名即文件名去掉 `.svg`，由 glob 推导。 */
+/** Icon Key to asset address. The key name is the file name without `.svg`, derived by glob. */
 const ICONS = import.meta.glob("../assets/icons/*.svg", {
   eager: true,
   query: "?url",
@@ -52,128 +59,135 @@ const ICONS = import.meta.glob("../assets/icons/*.svg", {
 }) as Record<string, string>;
 ```
 
-`generic` 不是文件，是 `BrandIcon` 里的内联 SVG，所以不进 glob 表。
+`generic` is not a file. It is an inline SVG in `BrandIcon`, so it does not enter the glob table.
 
-## 清单
+## Manifest
 
-### 模型厂商（13）
+### Model Makers (13)
 
-`claude-color`、`deepseek-color`、`gemini-color`、`minimax-color`、`mistral-color`、
-`mimocode`、`openai`、`qwen-color`、`stepfun-color`、`xai`、`zai`、`zhipu-color`、
+`claude-color`, `deepseek-color`, `gemini-color`, `minimax-color`, `mistral-color`,
+`mimocode`, `openai`, `qwen-color`, `stepfun-color`, `xai`, `zai`, `zhipu-color`,
 `longcat`
 
-### 云与托管（8）
+### Clouds and Hosting (8)
 
-`volcengine-color`、`tencentcloud-color`、`baiducloud-color`、`bedrock-color`、
-`nvidia-color`、`modelscope-color`、`siliconcloud-color`、`voyage-color`
+`volcengine-color`, `tencentcloud-color`, `baiducloud-color`, `bedrock-color`,
+`nvidia-color`, `modelscope-color`, `siliconcloud-color`, `voyage-color`
 
-### 平台、中转与工具（19）
+### Platforms, Relays, and Tools (19)
 
-`openrouter`、`opencode`、`vercel`、`cloudflare-color`、`together-color`、
-`fireworks-color`、`aihubmix-color`、`ai302-color`、`nousresearch`、`ollama`、
-`groq`、`kimi`、`gmicloud`、`commandcode`、`cherryin-color`、`pipellm-color`、
-`cline`、`kilo`、`yylx`
+`openrouter`, `opencode`, `vercel`, `cloudflare-color`, `together-color`,
+`fireworks-color`, `aihubmix-color`, `ai302-color`, `nousresearch`, `ollama`,
+`groq`, `kimi`, `gmicloud`, `commandcode`, `cherryin-color`, `pipellm-color`,
+`cline`, `kilo`, `yylx`
 
-### 不收录
+### Not Included
 
-- PNG。渲染器只有「彩色 `<img>` / 单色 mask」两条分支，不解析位图。
-- 同一个品牌的第二个变体。一个品牌一个键，`anthropic` 与 `claude-color` 只留后者，
-  `moonshot` 与 `kimi` 只留后者。
-- 与模型无关的图标：编辑器与 agent 工具（`vscode`、`zed`、`raycast`、`obsidian`）、
-  云架构图专用图标。
+- PNG. The renderer has only two branches, a colored `<img>` and a monochrome mask. It does not
+  read a bitmap.
+- A second variant of one brand. One brand has one key. Of `anthropic` and `claude-color`, only
+  the second stays. Of `moonshot` and `kimi`, only the second stays.
+- An icon that has no relation to a model: editor and agent tools (`vscode`, `zed`, `raycast`,
+  `obsidian`), and icons only for a cloud architecture diagram.
 
-## 现有键的迁移
+## Migration of the Existing Keys
 
-`LOGO_MAP` 的 12 个键里，7 个改名、1 个并入、4 个不动。
+Of the 12 keys in `LOGO_MAP`, 7 keys get a new name, 1 key merges into another, and 4 keys do
+not change.
 
-| 旧键           | 新键                 |
+| Old Key        | New Key              |
 | -------------- | -------------------- |
 | `deepseek`     | `deepseek-color`     |
 | `gemini`       | `gemini-color`       |
 | `minimax`      | `minimax-color`      |
-| `moonshot`     | `kimi`（并入）       |
+| `moonshot`     | `kimi` (merged)      |
 | `qwen`         | `qwen-color`         |
 | `tencentcloud` | `tencentcloud-color` |
 | `volcengine`   | `volcengine-color`   |
 | `zhipu`        | `zhipu-color`        |
-| `openai`       | 不变                 |
-| `kimi`         | 不变                 |
-| `opencode`     | 不变                 |
-| `openrouter`   | 不变                 |
+| `openai`       | No change            |
+| `kimi`         | No change            |
+| `opencode`     | No change            |
+| `openrouter`   | No change            |
 
-`packages/shared/src/model.ts` 里 9 个预置的 `icon` 值同步改成新键。这些键不落库
-（`Provider` 与 `ProviderModel` 都没有 icon 字段），所以没有数据迁移。
+The 9 preset `icon` values in `packages/shared/src/model.ts` change to the new keys at the same
+time. These keys do not enter the database: `Provider` and `ProviderModel` have no icon field.
+Therefore no data migration occurs.
 
-## 渲染
+## Rendering
 
 ```
 ProviderLogo({ name, icon?, className? })
-  key = icon ?? 按名字/别名找键
-  有键 → <BrandIcon name={key} />
-  无键 → 首字母方块
+  key = icon ?? find the key by name or alias
+  key found → <BrandIcon name={key} />
+  no key    → square with the first letter
 
 ModelLogo({ model, providerIcon?, className? })
-  key = 显式? → 模型 id 家族前缀
-  有键 → <BrandIcon name={key} />
-  无键 → providerIcon ? <BrandIcon name={providerIcon} /> : <BrandIcon name="generic" />
+  key = explicit? → model id family prefix
+  key found → <BrandIcon name={key} />
+  no key    → providerIcon ? <BrandIcon name={providerIcon} /> : <BrandIcon name="generic" />
 
 BrandIcon({ name, className? })
-  键以 -color 结尾 → <img src={url}>，object-contain
-  否则             → <span> + mask-image，取 alpha，跟随文字色
-  name === "generic" → 内联中性 SVG
+  key ends with -color → <img src={url}>, object-contain
+  otherwise            → <span> + mask-image, take alpha, follow the text color
+  name === "generic"   → inline neutral SVG
 ```
 
-尺寸默认 `size-4`，由 `className` 覆盖（调用点有 `size-5`）。`aria-hidden` 保持不变，
-可访问名字由旁边的文本给出。
+The default size is `size-4`, and `className` overrides it; one call site uses `size-5`.
+`aria-hidden` does not change. The text next to the icon gives the accessible name.
 
-## 文件
+## Files
 
-| 路径                                                           | 动作                                      |
-| -------------------------------------------------------------- | ----------------------------------------- |
-| `packages/ui/src/assets/icons/*.svg`                           | 40 个品牌图                               |
-| `packages/ui/src/assets/app-icon.svg`                          | 应用自身的图标，不跟品牌图混在一起        |
-| `packages/ui/src/elements/brand-icon.tsx`                      | 键表、`BrandIcon`、`hasIcon`、`ICON_KEYS` |
-| `packages/ui/src/elements/provider-logo.tsx`                   | `ProviderLogo`、别名表、`providerKeyFor`  |
-| `packages/ui/src/elements/model-logo.tsx`                      | `ModelLogo`、`makerKeyFor`、家族前缀表    |
-| `packages/ui/src/elements/settings/provider-settings.tsx`      | 供应商行与模型行用新组件                  |
-| `packages/ui/src/elements/settings/provider-preset-select.tsx` | 预设行用 `ProviderLogo`                   |
-| `packages/ui/src/elements/model-select.tsx`                    | 三处模型行传 `providerIcon`               |
-| `packages/ui/src/index.d.ts`                                   | 声明 `import.meta.glob` 的这一种形态      |
-| `packages/shared/src/model.ts`                                 | 9 个预置的 `icon` 值                      |
-| `packages/ui/tests/model-logo.test.ts`                         | 表驱动测试                                |
-| `packages/ui/tests/brand-icon.test.tsx`                        | 三个渲染分支的静态标记测试                |
+| Path                                                         | Action                                                       |
+| ------------------------------------------------------------ | ------------------------------------------------------------ |
+| `packages/ui/src/assets/icons/*.svg`                         | 40 brand images                                              |
+| `packages/ui/src/assets/app-icon.svg`                        | The icon of the app itself, kept apart from the brand images |
+| `packages/ui/src/blocks/brand-icon.tsx`                      | The key table, `BrandIcon`, `hasIcon`, `ICON_KEYS`           |
+| `packages/ui/src/blocks/provider-logo.tsx`                   | `ProviderLogo`, the alias table, `providerKeyFor`            |
+| `packages/ui/src/blocks/model-logo.tsx`                      | `ModelLogo`, `makerKeyFor`, the family prefix table          |
+| `packages/ui/src/blocks/settings/provider-settings.tsx`      | The provider row and the model row use the new components    |
+| `packages/ui/src/blocks/settings/provider-preset-select.tsx` | The preset row uses `ProviderLogo`                           |
+| `packages/ui/src/blocks/model-select.tsx`                    | Three model rows pass `providerIcon`                         |
+| `packages/ui/src/index.d.ts`                                 | Declares this one form of `import.meta.glob`                 |
+| `packages/shared/src/model.ts`                               | The 9 preset `icon` values                                   |
+| `packages/ui/tests/model-logo.test.ts`                       | Table-driven test                                            |
+| `packages/ui/tests/brand-icon.test.tsx`                      | Static markup test of the three render branches              |
 
-## 测试
+## Tests
 
-1. 每个键都能取到资源地址。
-2. 每个预置的 `icon` 都在键表里。
-3. 每条家族前缀都能解析到存在的键。
-4. `anthropic/claude-x` 这类带 `/` 的模型 id 取后半段再匹配。
-5. 认不出的模型退到 `generic`，有供应商键时退到供应商。
+1. Every key resolves to an asset address.
+2. Every preset `icon` is in the key table.
+3. Every family prefix resolves to a key that exists.
+4. A model id with `/`, such as `anthropic/claude-x`, matches on the second half.
+5. An unknown model falls back to `generic`; when a provider key exists, it falls back to the
+   provider.
 
-## 出处
+## Source
 
-图标取自 [theSVG](https://thesvg.org)：
+The icons come from [theSVG](https://thesvg.org):
 
 ```
 https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/{slug}/{variant}.svg
 ```
 
-注册表是同一仓库的 `src/data/icons.json`。不建 `THIRD_PARTY_NOTICES.md`：品牌的商标
-仍归各品牌方，这份文件只记录取图地址。
+The registry is `src/data/icons.json` in the same repository. The project does not create
+`THIRD_PARTY_NOTICES.md`: a trademark stays with its brand owner, and this document only records
+the address of the image.
 
-### 取图规则
+### Image Selection Rules
 
-文件名（即键名）保持不变，`-color` 后缀仍然表示彩色，渲染器不用管来源。变体选择：
-彩色键优先 `color`，没有就用 `default`；单色键优先 `mono`，没有就用 `default`——单色
-渲染取的是 alpha，颜色不重要。
+The file name, and therefore the Icon Key, does not change. The `-color` suffix still marks a
+colored image, and the renderer does not care about the source. Variant selection: a colored key
+prefers `color`, and uses `default` when `color` is absent; a monochrome key prefers `mono`, and
+uses `default` when `mono` is absent. A monochrome render takes alpha, so the color does not
+matter.
 
-几个要绕开的坑：
+Some traps to avoid:
 
-| 键             | 取的条目                   | 原因                                            |
-| -------------- | -------------------------- | ----------------------------------------------- |
-| `gemini-color` | `gemini`                   | `google-gemini` 是单色紫，不是那条四色星标      |
-| `openai`       | `openai-chatgpt` 的 `mono` | `openai` 的默认条目是白色填充，在白底上等于空白 |
+| Key            | Entry Used                 | Reason                                                                               |
+| -------------- | -------------------------- | ------------------------------------------------------------------------------------ |
+| `gemini-color` | `gemini`                   | `google-gemini` is a monochrome purple, not the four-color star mark                 |
+| `openai`       | `mono` of `openai-chatgpt` | The default entry of `openai` has a white fill, so it is empty on a white background |
 
-品牌标不一定按方形导出，所以彩色图那一支用 `object-contain`，非方形的图只会留白，
-不会被拉变形。
+A brand mark is not always square. Therefore the colored branch uses `object-contain`. A
+non-square image only gets empty space. It does not stretch.
