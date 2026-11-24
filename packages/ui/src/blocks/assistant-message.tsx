@@ -9,8 +9,8 @@ import {
   AgentActivity,
   AgentActivityContent,
   AgentActivityHeader,
-} from "../components/ai-elements/chain-of-turn";
-import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
+} from "../blocks/chain-of-turn";
+import type { ToolApprovalAnswer } from "../blocks/chain-of-turn";
 import { CopyButton } from "../components/copy-button";
 import {
   Tooltip,

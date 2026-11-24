@@ -21,7 +21,6 @@
     "hooks": "@workspace/ui/hooks"
   },
   "registries": {
-    "@ai-elements": "https://ai-sdk.dev/elements/api/registry/{name}.json",
     "@coss": "https://coss.com/ui/r/{name}.json"
   }
 }

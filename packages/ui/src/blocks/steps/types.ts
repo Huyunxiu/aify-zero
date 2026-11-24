@@ -7,7 +7,7 @@ import type {
 import type {
   AgentStepStatus,
   ToolApprovalAnswer,
-} from "../../components/ai-elements/chain-of-turn";
+} from "../../blocks/chain-of-turn";
 import type { QuestionnairePlacement } from "../questionnaire";
 
 /**

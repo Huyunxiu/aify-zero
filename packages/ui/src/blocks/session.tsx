@@ -39,8 +39,8 @@ import {
   AttachmentPreview,
   AttachmentRemove,
   Attachments,
-} from "../components/ai-elements/attachments";
-import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
+} from "../blocks/attachments";
+import type { ToolApprovalAnswer } from "../blocks/chain-of-turn";
 import {
   Context,
   ContextCacheUsage,
@@ -52,7 +52,7 @@ import {
   ContextOutputUsage,
   ContextReasoningUsage,
   ContextTrigger,
-} from "../components/ai-elements/token-context";
+} from "../blocks/token-context";
 import { BotAvatar } from "../components/bot-avatar";
 import { Button } from "../components/button";
 import { ButtonGroup } from "../components/button-group";

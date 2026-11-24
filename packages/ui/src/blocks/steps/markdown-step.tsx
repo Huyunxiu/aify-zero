@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { AgentStepStatus } from "../../components/ai-elements/chain-of-turn";
+import type { AgentStepStatus } from "../../blocks/chain-of-turn";
 import { RenderedSection } from "../tool-panels";
 import { MarkdownBody } from "./markdown-body";
 import { StepLabel, StepShell } from "./shell";

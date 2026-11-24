@@ -2,7 +2,7 @@ import type { AgentToolPart, AgentToolSet } from "@workspace/agent-client";
 import { WrapTextIcon } from "lucide-react";
 import * as React from "react";
 
-import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
+import type { ToolApprovalAnswer } from "../blocks/chain-of-turn";
 import { Button } from "../components/button";
 import {
   CodeBlock,

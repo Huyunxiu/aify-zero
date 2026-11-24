@@ -10,8 +10,8 @@ import {
   AgentStepRow,
   AgentStepTitle,
   AgentStepTrigger,
-} from "../../components/ai-elements/chain-of-turn";
-import type { AgentStepStatus } from "../../components/ai-elements/chain-of-turn";
+} from "../../blocks/chain-of-turn";
+import type { AgentStepStatus } from "../../blocks/chain-of-turn";
 import type { ToolRespond } from "./types";
 
 /**

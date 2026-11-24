@@ -1,8 +1,15 @@
 import type { AgentToolPart, JSONObject } from "@workspace/agent-client";
+import { Button } from "@workspace/ui/components/button";
 import {
   Collapsible,
   CollapsibleContent,
 } from "@workspace/ui/components/collapsible";
+import {
+  Dialog,
+  DialogContent,
+  DialogTrigger,
+} from "@workspace/ui/components/dialog";
+import { Spinner } from "@workspace/ui/components/spinner";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   ArrowUpRightIcon,
@@ -22,9 +29,6 @@ import {
   useState,
 } from "react";
 
-import { Button } from "../button";
-import { Dialog, DialogContent, DialogTrigger } from "../dialog";
-import { Spinner } from "../spinner";
 import { LoaderGrid, PATTERNS } from "./loading-state";
 
 interface AgentActivityContext {

@@ -14,7 +14,7 @@ import type {
   AgentTurnStatus,
 } from "@workspace/agent-client";
 
-import type { AgentStepStatus } from "../components/ai-elements/chain-of-turn";
+import type { AgentStepStatus } from "../blocks/chain-of-turn";
 import type { StepPart } from "./steps/types";
 
 /** A part as it is rendered, next to the step that owns it. */

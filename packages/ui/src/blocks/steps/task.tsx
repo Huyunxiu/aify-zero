@@ -7,7 +7,7 @@ import {
   AgentStepIcon,
   AgentStepRow,
   AgentStepTitle,
-} from "../../components/ai-elements/chain-of-turn";
+} from "../../blocks/chain-of-turn";
 import { useSubagentPane } from "../../stores/subagent-pane";
 import { ToolPanels } from "../tool-panels";
 import { MarkdownBody } from "./markdown-body";

@@ -17,7 +17,7 @@ import {
   AttachmentPreview,
   AttachmentRemove,
   Attachments,
-} from "../components/ai-elements/attachments";
+} from "../blocks/attachments";
 import { CopyButton } from "../components/copy-button";
 import {
   Tooltip,

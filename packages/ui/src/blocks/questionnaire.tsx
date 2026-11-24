@@ -13,7 +13,7 @@ import type {
 } from "@workspace/agent-client";
 import * as React from "react";
 
-import type { ToolApprovalAnswer } from "../components/ai-elements/chain-of-turn";
+import type { ToolApprovalAnswer } from "../blocks/chain-of-turn";
 import { Button } from "../components/button";
 import {
   Questionnaire,
