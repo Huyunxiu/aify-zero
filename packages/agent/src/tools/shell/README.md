@@ -1,18 +1,18 @@
-# Shell 工具内核（bash / powershell）
+# Shell tool kernel (bash, powershell)
 
-`bash` 与 `powershell` 两个模型工具共用的执行内核。上层薄配置在 [`bash.ts`](../bash.ts) 和 [`powershell.ts`](../powershell.ts)；本目录负责输出收集、后台任务托管和模型结果渲染。可执行文件解析与进程生命周期已经搬到 [`@workspace/sandbox`](../../../../sandbox/README.md)：工具不再自己 spawn，只把命令交给沙箱。每次调用都是全新进程，不保留 cwd、变量或函数。
+The execution kernel that the `bash` and the `powershell` model tools share. The thin configuration above it lives in [`bash.ts`](../bash.ts) and [`powershell.ts`](../powershell.ts). This directory collects the output, hosts background jobs, and renders the model result. Executable resolution and process lifecycle now live in [`@workspace/sandbox`](../../../../sandbox/README.md): a tool no longer spawns a process, and it gives the command to the sandbox. Every call is a new process. It keeps no cwd, no variable, and no function.
 
-## 模块地图
+## Module map
 
-| 文件                             | 职责                                                       | 副作用              |
-| -------------------------------- | ---------------------------------------------------------- | ------------------- |
-| [output.ts](./output.ts)         | 尾部保留、按字节/行截断、完整输出落盘、UTF-8 解码          | 是（写 spill 文件） |
-| [background.ts](./background.ts) | 后台命令的生产者侧输出缓冲：两条流各一个环，按绝对偏移读取 | 否（内存缓冲）      |
-| [tool.ts](./tool.ts)             | zod schema、cwd 校验、前台/后台分支、`ToolOutput` 与渲染   | 否（编排前两者）    |
+| File                             | Responsibility                                                                                                   | Side effect                     |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| [output.ts](./output.ts)         | Keeps the tail, truncates by byte or by line, writes the full output to disk, decodes UTF-8                      | Yes (writes the spill file)     |
+| [background.ts](./background.ts) | Output buffer on the producer side of a background command: one ring for each stream, read at an absolute offset | No (memory buffer)              |
+| [tool.ts](./tool.ts)             | zod schema, cwd check, foreground and background branch, `ToolOutput` and rendering                              | No (orchestrates the first two) |
 
-调用方只需要 `createShellTool()`。进程怎么起、shell 怎么解析归 `@workspace/sandbox`；本目录只管把 chunk 收成可给模型看的正文。
+The caller needs only `createShellTool()`. `@workspace/sandbox` owns how the process starts and how the shell resolves. This directory only turns a chunk into the body that the model reads.
 
-## 一次调用的数据流
+## Data flow of one call
 
 ```text
 tool.execute(input)
@@ -20,49 +20,49 @@ tool.execute(input)
   ├─ sandbox.exec(command, { cwd, env, timeoutMs, signal, shell })
   │      ├─ stdout/stderr → onData(channel, chunk)
   │      │                 └─ collector.push()   // output.ts
-  │      └─ exit + 空闲排空 → { exitCode, signal, timedOut, aborted, durationMs }
+  │      └─ exit + idle drain → { exitCode, signal, timedOut, aborted, durationMs }
   ├─ collector.finish() → { stdout, stderr, truncated, spillPath?, … }
   └─ ToolOutput { output, code: "ok", metadata }
-       └─ toModelOutput() → 正文 + 状态 marker
+       └─ toModelOutput() → body + status marker
 ```
 
-`run_in_background: true` 走另一条分支：同样的路径校验与 argv 构造之后，命令被登记为后台任务，`onData` 写进生产者侧缓冲而不是 collector，调用立刻带着 job id 返回。
+`run_in_background: true` takes the other branch. After the same path check and the same argv construction, the command becomes a background job. `onData` writes into the producer-side buffer, not into the collector, and the call returns at once with a job id.
 
 ```text
 tool.execute(input, run_in_background)
-  ├─ 路径校验 + 方言与变量覆盖（来自 bash.ts / powershell.ts）
+  ├─ path check + shell dialect and variable override (from bash.ts / powershell.ts)
   ├─ createShellStreamBuffer()            // background.ts
   ├─ jobs.start({ kind, label, owner, output, run })
-  │    └─ sandbox.exec(...)              无截止时间，用任务自己的 AbortController
-  │         └─ onData → buffer.push() → stdout/stderr 两个环
+  │    └─ sandbox.exec(...)              no deadline; the job uses its own AbortController
+  │         └─ onData → buffer.push() → two rings for stdout and stderr
   └─ ToolOutput { output: "started background job <id>", metadata: { jobId } }
 ```
 
 ## output.ts
 
-| 限额               | 值   | 说明                                     |
-| ------------------ | ---- | ---------------------------------------- |
-| `MAX_OUTPUT_BYTES` | 50KB | 每条流保留的尾部字节数                   |
-| `MAX_OUTPUT_LINES` | 2000 | 每条流保留的尾部行数（与字节数先到先算） |
-| `MAX_SPILL_BYTES`  | 64MB | spill 文件上限；超过后只保留已写部分     |
-| 滚动缓冲           | 2×   | 每流先留 100KB，供最终按行截断使用       |
+| Limit              | Value | Note                                                                      |
+| ------------------ | ----- | ------------------------------------------------------------------------- |
+| `MAX_OUTPUT_BYTES` | 50KB  | Bytes of the tail that each stream keeps                                  |
+| `MAX_OUTPUT_LINES` | 2000  | Lines of the tail that each stream keeps (the first limit to hit applies) |
+| `MAX_SPILL_BYTES`  | 64MB  | Spill file limit; after it, only the written part stays                   |
+| Scrolling buffer   | 2×    | Each stream keeps 100KB first, for the final truncation by line           |
 
-- 每条流一个流式 `TextDecoder`，chunk 切断多字节字符也不会产生乱码。
-- 未超限时原样返回；超限时用 [`truncateContent`](../../utils/truncate.ts) 取尾部，并保留原输出的结尾换行。
-- 单行超过 50KB 时没有完整行可留，退化为保留最后 50KB 字节（仍按 UTF-8 边界切）。
-- 超限后把**从开头起**的原始字节写入 `<sessionDir>/shell/<tool_id>.txt`（`createToolId()` 命名）；spill 写失败只降级为“没有路径”，不影响命令结果。
-- `finish()` 幂等：错误路径也能安全调用它关闭 spill 文件。
+- Each stream has one streaming `TextDecoder`. A chunk that cuts a multi-byte character makes no broken character.
+- Under the limit, the tool returns the text as it is. Over the limit, it takes the tail with [`truncateContent`](../../utils/truncate.ts) and keeps the final newline of the original output.
+- When one line is longer than 50KB, no complete line can stay. The tool keeps the last 50KB of bytes, still cut at a UTF-8 boundary.
+- Over the limit, the tool writes the original bytes **from the start** to `<sessionDir>/shell/<tool_id>.txt` (`createToolId()` names the file). A failed spill degrades to "no path" and does not change the command result.
+- `finish()` is idempotent. An error path can call it to close the spill file.
 
-`ShellOutputSnapshot`：
+`ShellOutputSnapshot`:
 
-| 字段             | 含义                                           |
-| ---------------- | ---------------------------------------------- |
-| `stdout`         | 保留的 stdout 尾部                             |
-| `stderr`         | 保留的 stderr 尾部                             |
-| `truncated`      | 任一流是否超限                                 |
-| `spillPath`      | 完整输出（或 spill 上限内的部分）路径          |
-| `spillTruncated` | spill 文件是否触到 64MB 上限                   |
-| `spillFailed`    | spill 是否完全写不出去（此时正文只有截断提示） |
+| Field            | Meaning                                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------- |
+| `stdout`         | The tail of stdout that the tool keeps                                                             |
+| `stderr`         | The tail of stderr that the tool keeps                                                             |
+| `truncated`      | Whether either stream went over the limit                                                          |
+| `spillPath`      | Path of the full output (or of the part within the spill limit)                                    |
+| `spillTruncated` | Whether the spill file hit the 64MB limit                                                          |
+| `spillFailed`    | Whether the tool could not write the spill at all (the body then holds only the truncation notice) |
 
 ## tool.ts
 
@@ -70,16 +70,16 @@ tool.execute(input, run_in_background)
 createShellTool({ description, agentContext, program }): Tool<ShellToolInput, ShellToolOutput, AgentContext>
 ```
 
-| 入参          | 说明                                            |
-| ------------- | ----------------------------------------------- |
-| `command`     | 非空命令文本，作为单个 argv 元素传给 shell      |
-| `timeout`     | 毫秒，正数，默认 `DEFAULT_TIMEOUT_MS`（2 分钟） |
-| `workdir`     | 相对路径按项目主目录解析；默认项目主目录        |
-| `description` | 5–10 词的 UI 标签，非空                         |
+| Input         | Note                                                                                                     |
+| ------------- | -------------------------------------------------------------------------------------------------------- |
+| `command`     | Non-empty command text. The tool passes it to the shell as one argv element.                             |
+| `timeout`     | Milliseconds, positive, default `DEFAULT_TIMEOUT_MS` (2 minutes)                                         |
+| `workdir`     | A relative path resolves against the primary project directory; default is the primary project directory |
+| `description` | A UI label of 5–10 words, non-empty                                                                      |
 
-执行前用 `stat` 检查工作目录；不存在时报 `Working directory does not exist: <path>`，不会 spawn。
+The tool checks the working directory with `stat` before it executes. When the directory does not exist, it reports `Working directory does not exist: <path>` and does not spawn.
 
-**正文**（`ToolOutput.output`，模型和 UI 都能看到）：
+**Body** (`ToolOutput.output`; the model and the UI both see it):
 
 ```text
 <stdout>
@@ -89,40 +89,40 @@ createShellTool({ description, agentContext, program }): Tool<ShellToolInput, Sh
 [output truncated; full output: <path>]
 ```
 
-stdout 为空且无 stderr 时正文是 `(no output)`；截断提示追加在最后（失败原因通常在尾部）。
+When stdout is empty and stderr is empty, the body is `(no output)`. The tool appends the truncation notice last, because the failure reason is usually at the tail.
 
-**模型可见的状态 marker**（只在 `toModelOutput` 追加，UI 用 metadata 显示摘要）：
+**Status marker that the model sees** (only `toModelOutput` appends it; the UI shows the summary from metadata):
 
-| marker                      | 触发条件               |
-| --------------------------- | ---------------------- |
-| `[timed out after <N>ms]`   | 执行器自身超时         |
-| `[aborted]`                 | 调用方取消             |
-| `[killed by signal: <SIG>]` | 进程被信号终止         |
-| `[exit code: <N>]`          | 非零退出且没有信号终止 |
+| marker                      | Trigger condition                             |
+| --------------------------- | --------------------------------------------- |
+| `[timed out after <N>ms]`   | The executor itself times out                 |
+| `[aborted]`                 | The caller cancels                            |
+| `[killed by signal: <SIG>]` | A signal ends the process                     |
+| `[exit code: <N>]`          | Non-zero exit and no signal ended the process |
 
-**metadata**：`exitCode`、`signal`、`timeout`、`aborted`、`timeoutMs`、`durationMs`、`truncated`、`spillPath?`。UI 的 [`tool-step.tsx`](../../../../ui/src/elements/tool-step.tsx) 用这些字段生成 `exit N` / `timed out` / `killed by SIG` / `output truncated` 摘要。
+**metadata**: `exitCode`, `signal`, `timeout`, `aborted`, `timeoutMs`, `durationMs`, `truncated`, `spillPath?`. The UI [`tool-step.tsx`](../../../../ui/src/blocks/tool-step.tsx) uses these fields to make the `exit N` / `timed out` / `killed by SIG` / `output truncated` summary.
 
-`code` 始终是 `"ok"`：非零退出、超时、取消都是命令结果，不是工具失败；只有这样 UI 才不会把整行标红。只有基础设施错误（spawn 失败、cwd 不存在）才抛异常。
+`code` is always `"ok"`. A non-zero exit, a timeout, and a cancel are command results, not tool failures. Only this rule keeps the UI from marking the whole row red. Only an infrastructure error (a failed spawn, a cwd that does not exist) throws.
 
-## 后台执行
+## Background execution
 
-- **schema 跟着注册表走。** 只有 `agentContext.jobs` 存在时 `run_in_background` 才进 zod schema；没有注册表就没有谁能收走那个 id，工具不该向模型许诺它。
-- **先登记后 spawn。** 准入拒绝（该会话的任务已达上限）时不会启动进程。
-- **取消权归任务，不归调用方。** 后台用任务自己的 `AbortController`，不接 `exec` 收到的 `abortSignal`：停止这一轮不该杀掉模型要求保留的工作。只有 `job-kill` 或拥有者销毁会终止进程组。
-- **没有截止时间。** `sandbox.exec` 在 `timeoutMs` 省略时不设截止时间，命令一直跑到结束或被取消。
-- **输出走缓冲，不走 collector。** 所以后台命令没有 spill 文件，只有 [background.ts](./background.ts) 的 256 KB 尾巴和任务环的保留。读取、列表与取消由 [`jobs`](../../jobs/README.md) 负责。
-- **结算**：取消后 `killed`，正常退出 `completed`（`detail` 是 `exit code: N`，非零也一样），spawn 失败 `failed`。
+- **The schema follows the registry.** `run_in_background` enters the zod schema only when `agentContext.jobs` exists. Without a registry, no code can collect that id, and the tool must not promise it to the model.
+- **Register first, then spawn.** A refused admission (the session reached its job limit) starts no process.
+- **The job owns the cancel, not the caller.** A background job uses its own `AbortController` and does not take the `abortSignal` that `exec` receives: a stop of this turn must not end the work that the model asked to keep. Only `job-kill` or the destroy of the owner ends the process group.
+- **No deadline.** When `timeoutMs` is absent, `sandbox.exec` sets no deadline, and the command runs until it ends or someone cancels it.
+- **The output goes to a buffer, not to the collector.** A background command therefore has no spill file. It has only the 256 KB tail of [background.ts](./background.ts) and the retention of the job ring. [`jobs`](../../jobs/README.md) does the read, the list, and the cancel.
+- **Settlement**: `killed` after a cancel, `completed` after a normal exit (`detail` is `exit code: N`, also for a non-zero exit), `failed` after a failed spawn.
 
-## 组合方式
+## Composition
 
-- [`bash.ts`](../bash.ts)：`shell: "bash"` + `NO_COLOR/TERM=dumb/PAGER` 等终端覆盖。
-- [`powershell.ts`](../powershell.ts)：`shell: "powershell"` + 不含 `TERM` 的覆盖。
-- [`shell-tools.ts`](../../extensions/builtin/shell-tools.ts)：按 `sandbox.describe().shells` 注册。沙箱说不了这种方言就不注册，避免广告一个必然失败的工具。
-- [`jobs`](../../jobs/README.md)：进程级任务注册表与三个控制工具；只有它被注入时，shell 才提供后台执行。
-- 子 agent 继承父级 `agent.tools`，两个工具自动可用。
-- UI 卡片在 [`assistant-message.tsx`](../../../../ui/src/elements/assistant-message.tsx) 共用同一套终端渲染。
+- [`bash.ts`](../bash.ts): `shell: "bash"` + the terminal overrides `NO_COLOR/TERM=dumb/PAGER`.
+- [`powershell.ts`](../powershell.ts): `shell: "powershell"` + the overrides without `TERM`.
+- [`shell-tools.ts`](../../extensions/builtin/shell-tools.ts): registers by `sandbox.describe().shells`. When the sandbox cannot speak the dialect, the tool does not register, so the code does not advertise a tool that must fail.
+- [`jobs`](../../jobs/README.md): the process-level job registry and its three control tools. The shell offers background execution only when someone injects it.
+- A subagent inherits the `agent.tools` of its parent, so both tools are available to it.
+- The UI cards in [`assistant-message.tsx`](../../../../ui/src/blocks/assistant-message.tsx) share one terminal rendering.
 
-## 测试
+## Tests
 
 ```bash
 vp test packages/agent/tests/tools/shell \
@@ -130,22 +130,22 @@ vp test packages/agent/tests/tools/shell \
   packages/agent/tests/tools/powershell.test.ts
 ```
 
-| 文件                                                                | 覆盖                                                                |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| [output.test.ts](../../../tests/tools/shell/output.test.ts)         | 限额内原样、行/字节截断、UTF-8 跨 chunk、spill 内容与上限、幂等     |
-| [background.test.ts](../../../tests/tools/shell/background.test.ts) | 后台启动、输出可读、取消杀进程、schema 随注册表出现/消失            |
-| [bash.test.ts](../../../tests/tools/bash.test.ts)                   | workdir、非零退出 marker、stderr 分段、截断与 spill、超时、cwd 缺失 |
-| [powershell.test.ts](../../../tests/tools/powershell.test.ts)       | 解析/argv + Windows 专属 UTF-8 执行（其他平台 skip）                |
+| File                                                                | Coverage                                                                                                                  |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [output.test.ts](../../../tests/tools/shell/output.test.ts)         | Text as it is under the limit, truncation by line and by byte, UTF-8 across a chunk, spill content and limit, idempotence |
+| [background.test.ts](../../../tests/tools/shell/background.test.ts) | Background start, readable output, cancel ends the process, the schema appears and disappears with the registry           |
+| [bash.test.ts](../../../tests/tools/bash.test.ts)                   | workdir, non-zero exit marker, stderr section, truncation and spill, timeout, missing cwd                                 |
+| [powershell.test.ts](../../../tests/tools/powershell.test.ts)       | Parse/argv + Windows-only UTF-8 execution (other platforms skip)                                                          |
 
-进程内核与 shell 解析的用例搬到 `packages/sandbox/tests/`，只在 POSIX 运行；PowerShell 的真实执行用例需要 Windows。
+The cases of the process kernel and of shell resolution moved to `packages/sandbox/tests/`, and they run on POSIX only. A real PowerShell execution case needs Windows.
 
-## 已知边界
+## Known limits
 
-- **不提供审批、持久 shell、流式输出**。隔离归 [`@workspace/sandbox`](../../../../sandbox/README.md)；后台执行由 [`jobs`](../../jobs/README.md) 提供，本内核只负责把一个命令交给它。
-- **shell 状态不跨调用**：每次都是新进程，`cd`、`export`、函数定义都不会保留。
-- **不剥离 ANSI**：只通过 `NO_COLOR` / `TERM=dumb` 降低概率；仍需强转义序列的命令可能把控制字符带进正文。
-- **stdout/stderr 分开收集**：正文先 stdout 再 `[stderr]` 段，两个流之间的真实交错顺序会丢失。
-- **正常退出不杀孙进程**：只做空闲排空；只有超时或取消才终止整个进程组 / 树。后台命令被取消时同样终止进程组。
-- **后台命令不落 spill**：超过 256 KB 的早期输出会被淘汰，读取时标出丢失。
-- **spill 文件跟随会话目录清理**，没有独立的定期清理任务。
-- **Windows 的 `bash` 依赖 Git Bash**；没装时只有 `powershell` 工具，这是有意的降级。
+- **No approval, no persistent shell, no streaming output.** [`@workspace/sandbox`](../../../../sandbox/README.md) owns isolation. [`jobs`](../../jobs/README.md) provides background execution, and this kernel only gives one command to it.
+- **Shell state does not cross a call**: every call is a new process, and `cd`, `export`, and a function definition do not stay.
+- **No ANSI strip**: the code lowers the chance with `NO_COLOR` / `TERM=dumb` only. A command that forces an escape sequence can still bring a control character into the body.
+- **stdout and stderr collect apart**: the body holds stdout first and the `[stderr]` section after it, so the real interleaving of the two streams is lost.
+- **A normal exit does not end a grandchild process**: the code does an idle drain only, and only a timeout or a cancel ends the whole process group or tree. A cancel of a background command also ends the process group.
+- **A background command writes no spill**: the early output over 256 KB is dropped, and a read marks the loss.
+- **The spill file goes with the session directory**, and no separate periodic cleanup task exists.
+- **`bash` on Windows depends on Git Bash**; without it, only the `powershell` tool exists, and this degradation is deliberate.

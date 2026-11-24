@@ -39,7 +39,6 @@
     "packages/agent/src/compaction/README.md",
     "packages/agent/src/jobs/README.md",
     "packages/agent/src/testing/fake-provider/README.md",
-    "packages/agent/src/tools/shell/README.md",
     "packages/sandbox/README.md"
   ]
 }
