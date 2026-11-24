@@ -54,9 +54,16 @@ test("Session delete: the removed session leaves the list and the page", async (
     await page.getByRole("menuitem", { name: "Delete" }).click();
 
     // 4. 确认框里写的是哪一个会话。
+    //
+    //    The name must sit inside the dialog: the sidebar row and the page header
+    //    carry the same title, so a page-wide lookup would pass without the dialog
+    //    naming anything.
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toBeVisible();
     await expect(
-      page.getByText("Delete session", { exact: true })
+      dialog.getByText("Delete session", { exact: true })
     ).toBeVisible();
+    await expect(dialog.getByText(REMOVED, { exact: false })).toBeVisible();
     await page.getByRole("button", { name: "Delete", exact: true }).click();
 
     // 5. 列表少一行，页面回到空白态，另一个会话还在。

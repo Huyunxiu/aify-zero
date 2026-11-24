@@ -110,6 +110,8 @@ test("Bot settings are addresses and cover the session", async ({ page }) => {
     // `/bots/<uuid>/settings` is the same kind of address, by the same rule.
     await page.goto(new URL(`${botBase}/settings`, sessionUrl).href);
     await expect(page).toHaveURL(/\/bots\/[^/]+\/settings\/general$/u);
+    await page.goBack();
+    await expect(page).toHaveURL(sessionUrl);
 
     // A section address can be opened on its own, and survives a reload.
     await page.goto(new URL(`${botBase}/settings/mcp`, sessionUrl).href);
