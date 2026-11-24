@@ -5,18 +5,22 @@ own scene: one browser and one real API process. The case tears the scene down w
 
 The page covers the seams, not the logic:
 
-| Seam                                   | How a case reaches it                                                                                                        |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Browser ↔ local API                    | The case exchanges the login link that the server prints for a cookie. The page sends its own requests.                      |
-| HTTP ↔ runner                          | The case sends one message. It waits until the runner completes the turn.                                                    |
-| Runner ↔ sandbox                       | The model asks for one `edit-file`. The tool writes to the disk.                                                             |
-| Disk ↔ review view                     | The session panel compares against the baseline. It lists the file that changed.                                             |
-| Job registry ↔ inbox                   | A background command settles and writes one completion notice. The idle session then wakes up.                               |
-| Timer ↔ inbox                          | A timer comes due and writes one inbox item. The idle session then wakes up.                                                 |
-| Schedule ↔ inbox and store             | A schedule comes due and writes one inbox item. That row advances. It does not delete.                                       |
-| Notice ↔ transcript                    | The turn appears in the transcript as a notice block, not as a user bubble.                                                  |
-| Outbox ↔ app channel                   | The case subscribes to the channel. After the run settles, the notice arrives. After the receipt, the state returns to zero. |
-| Approval policy ↔ runner and interface | The policy that the session stores goes into the run. That policy decides if the card appears.                               |
+| Seam                                   | How a case reaches it                                                                                                                          |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser ↔ local API                    | The case exchanges the login link that the server prints for a cookie. The page sends its own requests.                                        |
+| HTTP ↔ runner                          | The case sends one message. It waits until the runner completes the turn.                                                                      |
+| Runner ↔ sandbox                       | The model asks for one `edit-file`. The tool writes to the disk.                                                                               |
+| Disk ↔ review view                     | The session panel compares against the baseline. It lists the file that changed.                                                               |
+| Job registry ↔ inbox                   | A background command settles and writes one completion notice. The idle session then wakes up.                                                 |
+| Timer ↔ inbox                          | A timer comes due and writes one inbox item. The idle session then wakes up.                                                                   |
+| Schedule ↔ inbox and store             | A schedule comes due and writes one inbox item. That row advances. It does not delete.                                                         |
+| Notice ↔ transcript                    | The turn appears in the transcript as a notice block, not as a user bubble.                                                                    |
+| Outbox ↔ app channel                   | The case subscribes to the channel. After the run settles, the notice arrives. After the receipt, the state returns to zero.                   |
+| Approval policy ↔ runner and interface | The policy that the session stores goes into the run. That policy decides if the card appears.                                                 |
+| Avatar bytes ↔ every face of a Bot     | The case uploads one image through the asset route. The settings header, the sidebar row, the session header, and the message row all draw it. |
+| Settings sections ↔ address            | Each section is a route. A section address opens on its own and reloads into the same section.                                                 |
+| Session delete ↔ hidden by the server  | The row leaves the list, the page falls back to the empty state, and a reload still hides the session.                                         |
+| Session order ↔ last activity          | The session used last moves to the first row, and both rows say how long ago it was used.                                                      |
 
 The [fake provider](fake-provider.md) answers for the model side. It replaces the provider,
 so these cases use no network, spend no money, and give the same result each time.
@@ -27,10 +31,12 @@ so these cases use no network, spend no money, and give the same result each tim
 vp run e2e
 ```
 
-A short case takes about 8 seconds; the range is 2.7 to 13.9 seconds. The suite takes
-about 4.5 minutes on macOS arm64: 16 cases in 13 files. Three cases wait tens of seconds
-each, and they carry most of that time: `approval-policy` (Unattended) 66 seconds,
-`schedule` 35 seconds, `timer` 66 seconds.
+A short case takes about 8 seconds on macOS arm64 (range 2.7 to 13.9), and about 18
+seconds on a 2-vCPU Ubuntu 24.04 container (range 9.9 to 29.4). The suite takes about 4.5
+minutes on macOS arm64 and 7.7 minutes on that container: 16 cases in 13 files. Three
+cases wait tens of seconds each, and they carry most of that time: `approval-policy`
+(Unattended) 66 seconds on macOS and 72 on Linux, `schedule` 35 and 78, and `timer` 66
+and 72.
 
 The suite needs a Chromium browser. On macOS, one command installs it, and the system
 libraries come with the operating system:
@@ -47,6 +53,8 @@ On Linux with root, one command installs the browser and its system libraries:
 ```bash
 vp exec playwright install --with-deps chromium
 ```
+
+The browser lands in `~/.cache/ms-playwright`.
 
 On Linux x86_64 without root, put the browser and the libraries inside the repository,
 then point two variables at them:
@@ -303,9 +311,12 @@ reader to the first section instead of drawing a section-less screen.
    creation time and the last activity.
 2. Return to A and run one more turn. A is older but more recently active, so it must move
    to the first row.
-3. Both rows say `Just now`, and the case compares the vertical position of the two titles,
+3. Open a new untitled session before the position check. The session header draws the
+   title as well, so staying in A would match the title twice, and the comparison would
+   read the header against the sidebar, which is always true.
+4. Both rows say `Just now`, and the case compares the vertical position of the two titles,
    so the assertion reads the order that the user sees.
-4. The request count is the hard evidence here: 3 streaming answers for 3 turns, and 2
+5. The request count is the hard evidence here: 3 streaming answers for 3 turns, and 2
    non-streaming title requests for 2 sessions.
 
 ### Settings covers the session (`settings-keepalive.e2e.ts`)
@@ -388,4 +399,5 @@ path (`write-file`, an MCP tool):
    `timer` 150.
 
 End-to-end does not enter `vp run ready`. That command runs in the seconds before a commit.
-End-to-end takes about 4.5 minutes. Mix the two, and both break.
+End-to-end takes about 4.5 minutes on macOS arm64 and 7.7 on a 2-vCPU Linux container. Mix
+the two, and both break.
