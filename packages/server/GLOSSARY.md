@@ -27,6 +27,12 @@ The persistent cross-session working directory of one Bot, located by default at
 root when a project is attached.
 _Avoid_: 项目目录, 会话目录, 临时目录
 
+**Asset (资源)**:
+A file owned by one Bot or one session, kept under that owner's directory (`<ownerDir>/assets/`) and
+served by the byte route `/api/asset`. Its deletion follows the owner's rule; it never outlives the
+owner's file tree on its own.
+_Avoid_: 静态资源, 上传文件, 附件, blob
+
 **Session (会话)**:
 One row in the list: a title, its owning Bot, an optional attached project, turns, one branch, and
 the last activity; it is also where a run executes.
