@@ -1,78 +1,98 @@
 # UI
 
-会话面板与其中的各个视图：文件、改动、终端。它把会话能碰到的外部状态——工作区
-文件和 git 改动——画成可点、可看的区域。
+The session panel and its views: files, changes, terminal. It draws the external
+state a session can reach — workspace files and git changes — as areas a reader can
+click and read.
 
 ## Language
 
-**改动视图 (Review View)**:
-会话面板里的一个视图，右侧列出改动，左侧画出选中改动的内容差异。
-_Avoid_: 变更页、diff 面板
+**Review View**:
+A view in the session panel. It lists the changes on the right and draws the content
+diff of the selected change on the left.
+_Avoid_: Changes page, diff panel
 
-**改动 (Change)**:
-工作区里相对基线有差异的一个文件路径。一个路径算一处改动，与它被改了几次无关。
-_Avoid_: 变更项、diff、补丁
+**Change**:
+A file path in the workspace that differs from the baseline. One path is one change,
+whatever the number of times it changed.
+_Avoid_: Changed item, diff, patch
 
-**基线 (Baseline)**:
-用来判断「改了什么」的参照。当前是仓库的 `HEAD`；仓库还没有第一个提交时，基线是空树。
-_Avoid_: 目标版本、原始版本
+**Baseline**:
+The reference that answers "what changed". It is the `HEAD` of the repository. When the
+repository has no first commit, the baseline is the empty tree.
+_Avoid_: Target version, original version
 
-**未跟踪文件 (Untracked File)**:
-git 没有记录过的文件。它相对基线是一处完整的新增。
-_Avoid_: 新文件、未纳入版本
+**Untracked File**:
+A file that git does not record. It is one whole addition against the baseline.
+_Avoid_: New file, not under version control
 
-**改动状态 (Change Status)**:
-一处改动相对基线的性质：新增、修改、删除、重命名、未跟踪。
-_Avoid_: 差异类型、变更种类
+**Change Status**:
+The nature of one change against the baseline: added, modified, deleted, renamed,
+untracked.
+_Avoid_: Difference kind, change kind
 
-**纯重命名 (Pure Rename)**:
-路径变了、内容没变的改动。改动视图对它的左侧把整份内容按新增显示。
-_Avoid_: 空改动、只有路径变化
+**Pure Rename**:
+A change whose path changed and whose content did not. The review view draws the whole
+content as an addition on its left side.
+_Avoid_: Empty change, path-only change
 
-**图标键 (Icon Key)**:
-指向一张品牌图的名字。带 `-color` 后缀的键指向彩色图，其余键指向单色图。
-_Avoid_: logo 名、图标 id
+**Icon Key**:
+A name that points to one brand image. A key with the `-color` suffix points to the
+colored image; every other key points to the monochrome image.
+_Avoid_: Logo name, icon id
 
-**供应商图标 (Provider Icon)**:
-供应商这一方的品牌图，取自供应商自己的身份。
-_Avoid_: 品牌头像、provider logo
+**Provider Icon**:
+The brand image of the provider side, taken from the identity of the provider.
+_Avoid_: Brand avatar, provider logo
 
-**模型出品方 (Model Maker)**:
-做出一个模型的一方。它是模型的属性，与提供调用服务的供应商不是同一个身份。
-_Avoid_: 模型厂商、模型作者、vendor
+**Model Maker**:
+The side that made a model. It is a property of the model, and it is not the same
+identity as the provider that serves the calls.
+_Avoid_: Model vendor, model author, vendor
 
-**模型图标 (Model Icon)**:
-模型出品方的品牌图，与模型版本无关：同一家的两个版本画同一张图。
-_Avoid_: 模型头像、model logo
+**Model Icon**:
+The brand image of the model maker, independent of the model version: two versions from
+one maker draw the same image.
+_Avoid_: Model avatar, model logo
 
-**步骤 (Step)**:
-回合里的一段：模型写下的一段内容，或一次工具调用。链上的每一行都是一个步骤。
-_Avoid_: 环节、节点
+**Step**:
+One segment of a turn: a piece of content that the model wrote, or one tool call. Every
+row in the chain is a step.
+_Avoid_: Link in the chain, node
 
-**步骤视图 (Step View)**:
-一条步骤在链上的画法：行上写什么，点开看什么。它的单位是 part 的种类，不是工具名——一个视图可以服务好几个工具。
-_Avoid_: 工具组件、工具面板、渲染器
+**Step View**:
+The way one step is drawn in the chain: what the row says, and what a click shows. Its
+unit is the kind of part, not the tool name — one view can serve several tools.
+_Avoid_: Tool component, tool panel, renderer
 
-## 会话的位置
+**Block**:
+One segment of the interface, made of components, that owns the code computing its own
+content. A sidebar, one settings section, and the view of one step are blocks.
+_Avoid_: element, element component, widget
 
-**会话宿主 (Session Host)**:
-屏幕上有状态的那个会话实例。它由外壳持有，换地址不换它。
-_Avoid_: 会话页面、keep-alive
+## Where a session lives
 
-**遮挡 (Covered)**:
-会话仍在跑、仍在读会话事件流，但另一条路由盖在它上面，读者看不见它。
-_Avoid_: 隐藏、暂停、后台
+**Session Host**:
+The session instance that holds state on screen. The shell holds it; a change of address
+does not change it.
+_Avoid_: Session page, keep-alive
 
-**会话大纲 (Session Outline)**:
-会话记录左侧的目录。每个条目对应读者的一次提问，并包含这次提问之后、下一次提问
-之前的答复。点一个条目，会话记录跳到那次提问。
-_Avoid_: 小地图、minimap、时间线、目录树
+**Covered**:
+The session still runs and still reads its event stream, but another route covers it and
+the reader cannot see it.
+_Avoid_: Hidden, paused, in the background
 
-**提问 (Question)**:
-读者写下的一个用户轮次。完成通知和定时器也写成用户轮次，但它们不是提问，不进入
-会话大纲的条目。
-_Avoid_: 消息、prompt、输入
+**Session Outline**:
+The table of contents on the left of the session transcript. Each entry matches one
+question from the reader and holds the replies after that question and before the next
+one. A click on an entry moves the transcript to that question.
+_Avoid_: Minimap, timeline, directory tree
 
-**设置小节 (Settings Section)**:
-设置在地址上的一个分区。一节一条路由，可以单独打开。
-_Avoid_: 设置页、设置标签页、tab
+**Question**:
+One user turn that the reader wrote. Completion notices and timers also arrive as user
+turns, but they are not questions and do not become entries of the session outline.
+_Avoid_: Message, prompt, input
+
+**Settings Section**:
+One partition of settings on an address. One section is one route, and it opens on its
+own.
+_Avoid_: Settings page, settings tab, tab

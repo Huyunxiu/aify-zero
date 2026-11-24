@@ -3,7 +3,6 @@
   "documents": [
     "packages/db/GLOSSARY.md",
     "packages/sandbox/GLOSSARY.md",
-    "packages/ui/GLOSSARY.md",
     "CODING_STANDARDS.md",
     "docs/adr/0001-mcp-connections-shared-across-sessions.md",
     "docs/adr/0002-mcp-approval-lives-in-the-host-pattern.md",
