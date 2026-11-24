@@ -18,7 +18,6 @@ const trimmedNullableText = z.string().trim().nullable().optional();
 
 export const createBotInputSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  avatar: trimmedOptionalText,
   description: trimmedOptionalText,
   instructions: trimmedOptionalText,
   defaultModel: botModelRefSchema.nullable().optional(),
@@ -37,7 +36,6 @@ export const createBotInputSchema = z.object({
 export const updateBotInputSchema = z.object({
   botId: z.string().min(1),
   name: z.string().trim().min(1).max(100).optional(),
-  avatar: trimmedNullableText,
   description: trimmedNullableText,
   instructions: trimmedNullableText,
   defaultModel: botModelRefSchema.nullable().optional(),

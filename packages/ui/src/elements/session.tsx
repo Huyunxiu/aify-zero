@@ -1166,6 +1166,7 @@ export function Session({
       return (
         <AssistantMessage
           key={turn.id}
+          bot={activeBot}
           turn={turn}
           // A read-only page answers nothing: a call it was held on has no one
           // here to decide for it, and the row says so rather than offering
@@ -1213,8 +1214,10 @@ export function Session({
                     className="[-webkit-app-region:no-drag] inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground active:scale-[0.97] transition-[transform,background-color,color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none motion-reduce:transform-none"
                   >
                     <BotAvatar
-                      avatar={activeBot.avatar}
+                      avatarPath={activeBot.avatarPath}
+                      botId={activeBot.id}
                       name={activeBot.name}
+                      version={activeBot.updatedAt}
                       size="sm"
                     />
                     <span className="max-w-32 truncate">{activeBot.name}</span>

@@ -168,7 +168,13 @@ const BotSettingsLayout = () => {
               </SidebarMenu>
               {bot ? (
                 <div className="flex items-center gap-2.5 px-2 pb-1">
-                  <BotAvatar avatar={bot.avatar} name={bot.name} size="md" />
+                  <BotAvatar
+                    avatarPath={bot.avatarPath}
+                    botId={bot.id}
+                    name={bot.name}
+                    size="md"
+                    version={bot.updatedAt}
+                  />
                   <span className="truncate font-medium text-sm">
                     {bot.name}
                   </span>

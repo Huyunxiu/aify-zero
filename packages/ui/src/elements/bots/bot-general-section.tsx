@@ -1,5 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ASSET_IMAGE_TYPES } from "@workspace/agent-client";
+import { getErrorMessage } from "@workspace/shared/errors";
 import { Badge } from "@workspace/ui/components/badge";
+import { BotAvatar } from "@workspace/ui/components/bot-avatar";
 import { BotDeleteDialog } from "@workspace/ui/components/bot-delete-dialog";
 import type { DeletableBot } from "@workspace/ui/components/bot-delete-dialog";
 import { Button } from "@workspace/ui/components/button";
@@ -13,10 +16,11 @@ import {
   SelectValue,
 } from "@workspace/ui/components/select";
 import { toastManager } from "@workspace/ui/components/toast";
+import { assetEndpoint, assetUrl } from "@workspace/ui/lib/asset-url";
 import { openLocalPath } from "@workspace/ui/lib/desktop";
 import { client } from "@workspace/ui/lib/orpc";
 import { FolderOpenIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -26,6 +30,7 @@ import {
   SettingItem,
   SettingItemActions,
   SettingItemContent,
+  SettingItemDescription,
   SettingItemTitle,
   SettingSeparator,
 } from "../settings/setting-frame";
@@ -37,15 +42,69 @@ export function BotGeneralSection() {
   const { bot, isSaving, onUpdate } = useBotSettings();
   const { t } = useTranslation();
   const [name, setName] = useState(bot.name);
-  const [avatar, setAvatar] = useState(bot.avatar ?? "");
   const [description, setDescription] = useState(bot.description ?? "");
   const [deletingBot, setDeletingBot] = useState<DeletableBot | null>(null);
 
   useEffect(() => {
     setName(bot.name);
-    setAvatar(bot.avatar ?? "");
     setDescription(bot.description ?? "");
-  }, [bot.id, bot.name, bot.avatar, bot.description]);
+  }, [bot.id, bot.name, bot.description]);
+
+  const queryClient = useQueryClient();
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const refreshAvatar = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["bot", bot.id] }),
+      queryClient.invalidateQueries({ queryKey: ["list_bots"] }),
+      queryClient.invalidateQueries({ queryKey: ["listSessionResources"] }),
+    ]);
+  };
+
+  const uploadAvatar = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.set("owner", `bot:${bot.id}`);
+      form.set("name", "avatar");
+      form.set("file", file);
+
+      const response = await fetch(assetEndpoint(), {
+        method: "POST",
+        body: form,
+      });
+      if (!response.ok) {
+        throw new Error(`${response.status} ${await response.text()}`);
+      }
+    },
+    onSuccess: refreshAvatar,
+    onError: (error) => {
+      toastManager.add({
+        title: t("bots.avatar.uploadFailed"),
+        description: getErrorMessage(error),
+        type: "error",
+      });
+    },
+  });
+
+  const removeAvatar = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(
+        assetUrl({ kind: "bot", id: bot.id }, "avatar"),
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        throw new Error(`${response.status} ${await response.text()}`);
+      }
+    },
+    onSuccess: refreshAvatar,
+    onError: (error) => {
+      toastManager.add({
+        title: t("bots.avatar.removeFailed"),
+        description: getErrorMessage(error),
+        type: "error",
+      });
+    },
+  });
 
   const projectsQuery = useQuery({
     queryKey: ["list_projects"],
@@ -65,12 +124,9 @@ export function BotGeneralSection() {
   const projects = projectsData ?? [];
 
   const trimmedName = name.trim();
-  const trimmedAvatar = avatar.trim();
   const trimmedDescription = description.trim();
   const identityDirty =
-    trimmedName !== bot.name ||
-    trimmedAvatar !== (bot.avatar ?? "") ||
-    trimmedDescription !== (bot.description ?? "");
+    trimmedName !== bot.name || trimmedDescription !== (bot.description ?? "");
 
   const saveIdentity = async () => {
     if (!trimmedName || isSaving || !identityDirty) {
@@ -78,7 +134,6 @@ export function BotGeneralSection() {
     }
     await onUpdate({
       name: trimmedName,
-      avatar: trimmedAvatar === "" ? null : trimmedAvatar,
       description: trimmedDescription === "" ? null : trimmedDescription,
     });
   };
@@ -121,18 +176,57 @@ export function BotGeneralSection() {
           <SettingItem variant="muted">
             <SettingItemContent>
               <SettingItemTitle>{t("bots.fields.avatar")}</SettingItemTitle>
+              <SettingItemDescription>
+                {t("bots.avatar.hint")}
+              </SettingItemDescription>
             </SettingItemContent>
             <SettingItemActions>
-              <Input
-                value={avatar}
-                maxLength={8}
-                placeholder="🤖"
-                aria-label={t("bots.fields.avatar")}
-                className="w-16 text-center shadow-xs"
-                onChange={(event) => {
-                  setAvatar(event.target.value);
-                }}
-              />
+              <div className="flex items-center gap-2">
+                <BotAvatar
+                  avatarPath={bot.avatarPath}
+                  botId={bot.id}
+                  name={trimmedName || bot.name}
+                  size="lg"
+                  version={bot.updatedAt}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={uploadAvatar.isPending}
+                  onClick={() => {
+                    fileInput.current?.click();
+                  }}
+                >
+                  {t("bots.avatar.upload")}
+                </Button>
+                {bot.avatarPath ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    loading={removeAvatar.isPending}
+                    onClick={() => {
+                      removeAvatar.mutate();
+                    }}
+                  >
+                    {t("bots.avatar.remove")}
+                  </Button>
+                ) : null}
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept={ASSET_IMAGE_TYPES.join(",")}
+                  aria-label={t("bots.avatar.upload")}
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    // Clear first: picking the same file twice must still fire.
+                    event.target.value = "";
+                    if (file) {
+                      uploadAvatar.mutate(file);
+                    }
+                  }}
+                />
+              </div>
             </SettingItemActions>
           </SettingItem>
           <SettingSeparator />

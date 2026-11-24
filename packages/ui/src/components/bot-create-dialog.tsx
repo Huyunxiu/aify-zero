@@ -37,7 +37,7 @@ export type BotCreateDialogProps = {
 
 const NO_PROJECT_VALUE = "__none__";
 
-/** Minimal Bot creation modal storing name, avatar, description, default Project, and default Model. */
+/** Minimal Bot creation modal storing name, description, default Project, and default Model. */
 export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -45,7 +45,6 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
   const formId = useId();
 
   const [name, setName] = useState("");
-  const [avatar, setAvatar] = useState("");
   const [description, setDescription] = useState("");
   const [defaultProjectId, setDefaultProjectId] = useState<string | null>(null);
   const [defaultModel, setDefaultModel] = useState<ModelRef | undefined>();
@@ -75,7 +74,6 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
     mutationFn: async () =>
       await client.bot.create({
         name: name.trim(),
-        ...(avatar.trim() ? { avatar: avatar.trim() } : {}),
         ...(description.trim() ? { description: description.trim() } : {}),
         defaultProjectId,
         defaultModel: defaultModel ?? null,
@@ -93,7 +91,6 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
 
   const resetForm = () => {
     setName("");
-    setAvatar("");
     setDescription("");
     setDefaultProjectId(null);
     setDefaultModel(undefined);
@@ -147,22 +144,6 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
 
         <form id={formId} onSubmit={handleSubmit} noValidate>
           <FieldGroup>
-            <div className="grid grid-cols-[5rem_1fr] gap-3">
-              <Field>
-                <FieldLabel htmlFor={`${formId}-avatar`}>
-                  {t("bots.fields.avatar")}
-                </FieldLabel>
-                <Input
-                  id={`${formId}-avatar`}
-                  value={avatar}
-                  maxLength={8}
-                  placeholder="🤖"
-                  className="text-center"
-                  onChange={(event) => {
-                    setAvatar(event.target.value);
-                  }}
-                />
-              </Field>
               <Field data-invalid={Boolean(nameError)}>
                 <FieldLabel htmlFor={`${formId}-name`}>
                   {t("bots.fields.name")}
@@ -184,7 +165,6 @@ export function BotCreateDialog({ open, onOpenChange }: BotCreateDialogProps) {
                   <FieldError errors={[{ message: nameError }]} />
                 ) : null}
               </Field>
-            </div>
 
             <Field>
               <FieldLabel htmlFor={`${formId}-description`}>

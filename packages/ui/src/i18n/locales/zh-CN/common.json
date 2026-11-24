@@ -523,6 +523,13 @@
       "envKeyPlaceholder": "变量名",
       "envValuePlaceholder": "变量值"
     },
-    "builtInBadge": "内置"
+    "builtInBadge": "内置",
+    "avatar": {
+      "hint": "PNG、JPEG 或 WebP，最大 2 MB。",
+      "upload": "上传图片",
+      "remove": "移除",
+      "uploadFailed": "这张图片没有被接受。",
+      "removeFailed": "头像没有被移除。"
+    }
   }
 }

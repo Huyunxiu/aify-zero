@@ -165,7 +165,7 @@ export const botEffortSchema: z.ZodType<ModelEffort> = z.enum(
 export type BotConfig = {
   id: string;
   name: string;
-  avatar: string | null;
+  avatarPath: string | null;
   description: string | null;
   instructions: string | null;
   defaultModel: ModelRef | null;
@@ -185,7 +185,7 @@ export type BotSummary = {
   id: string;
   isDefault: boolean;
   name: string;
-  avatar: string | null;
+  avatarPath: string | null;
   description: string | null;
   defaultModel: ModelRef | null;
   defaultEffort: ModelEffort | null;

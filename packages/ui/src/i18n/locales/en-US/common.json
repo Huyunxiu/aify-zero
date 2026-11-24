@@ -523,6 +523,13 @@
       "envKeyPlaceholder": "ENV_KEY",
       "envValuePlaceholder": "Value"
     },
-    "builtInBadge": "Built-in"
+    "builtInBadge": "Built-in",
+    "avatar": {
+      "hint": "PNG, JPEG or WebP, up to 2 MB.",
+      "upload": "Upload image",
+      "remove": "Remove",
+      "uploadFailed": "The image was not accepted.",
+      "removeFailed": "The avatar was not removed."
+    }
   }
 }

@@ -54,6 +54,16 @@ export function getBotIsolatedHomeDir(botId: string): string {
   return join(getBotHomeDir(botId), "home");
 }
 
+/** Bot-owned assets (`<botHome>/assets`), served by `/api/asset?owner=bot:<id>`. */
+export function getBotAssetsDir(botId: string): string {
+  return join(getBotHomeDir(botId), "assets");
+}
+
+/** Session-owned assets (`<sessionDir>/assets`), served by `/api/asset?owner=session:<id>`. */
+export function getSessionAssetsDir(sessionId: string): string {
+  return join(getSessionDir(sessionId), "assets");
+}
+
 export interface EnsuredBotDirs {
   homeDir: string;
   workspaceDir: string;
@@ -74,6 +84,7 @@ export function ensureBotDirs(
   mkdirSync(homeDir, { recursive: true });
   mkdirSync(workspaceDir, { recursive: true });
   mkdirSync(skillsDir, { recursive: true });
+  mkdirSync(getBotAssetsDir(botId), { recursive: true });
   if (options?.isolateHome) {
     mkdirSync(isolatedHomeDir, { recursive: true });
   }

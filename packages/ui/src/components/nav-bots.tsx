@@ -57,7 +57,13 @@ function BotItem({ bot, onConfigure, onDelete }: BotItemProps) {
             <SidebarMenuButton className="cursor-pointer pr-14 group-has-data-[sidebar=menu-action]/menu-item:pr-14 transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none" />
           }
         >
-          <BotAvatar avatar={bot.avatar} name={bot.name} size="sm" />
+          <BotAvatar
+            avatarPath={bot.avatarPath}
+            botId={bot.id}
+            name={bot.name}
+            size="sm"
+            version={bot.updatedAt}
+          />
           <span className="truncate font-medium">{bot.name}</span>
         </CollapsibleTrigger>
         <Tooltip>

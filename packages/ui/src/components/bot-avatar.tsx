@@ -1,45 +1,54 @@
-import { BotIcon } from "lucide-react";
-
+import { assetUrl } from "../lib/asset-url";
+import { initialOf } from "../lib/initial";
 import { cn } from "../lib/utils";
+import { Avatar, AvatarFallback, AvatarImage } from "./avatar";
 
 export type BotAvatarSize = "sm" | "md" | "lg";
 
-const SIZE_CLASSES: Record<BotAvatarSize, string> = {
-  sm: "size-5 text-xs [&_svg]:size-3.5",
-  md: "size-7 text-sm [&_svg]:size-4",
-  lg: "size-10 text-lg [&_svg]:size-5",
-};
+/** Three Bot sizes, mapped onto the three sizes the avatar component has. */
+const AVATAR_SIZE = { sm: "sm", md: "default", lg: "lg" } as const;
 
 export interface BotAvatarProps {
-  avatar?: string | null;
-  name?: string;
-  size?: BotAvatarSize;
-  className?: string;
+  readonly botId: string;
+  readonly name: string;
+  /** The file name under the Bot's asset directory; without it the initial shows. */
+  readonly avatarPath?: string | null;
+  /** A value that changes when the Bot does, so a replaced image is fetched again. */
+  readonly version?: number | string;
+  readonly size?: BotAvatarSize;
+  readonly className?: string;
 }
 
-/** Compact identity glyph for a Bot: renders custom emoji when set, or a Bot icon. */
+/**
+ * A Bot's face: the image it uploaded, else the first letter of its name.
+ *
+ * The root keeps `aria-label`: the sidebar locates a row by it, and a screen reader
+ * uses it to say which Bot this is.
+ */
 export function BotAvatar({
-  avatar,
+  botId,
   name,
+  avatarPath,
+  version,
   size = "sm",
   className,
 }: BotAvatarProps) {
-  const glyph = avatar?.trim();
+  const hasImage =
+    avatarPath !== undefined && avatarPath !== null && avatarPath !== "";
 
   return (
-    <span
+    <Avatar
       aria-label={name}
-      className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-md bg-sidebar-accent text-sidebar-accent-foreground select-none",
-        SIZE_CLASSES[size],
-        className
-      )}
+      className={cn("shrink-0", className)}
+      size={AVATAR_SIZE[size]}
     >
-      {glyph ? (
-        <span className="leading-none">{glyph}</span>
-      ) : (
-        <BotIcon aria-hidden="true" />
-      )}
-    </span>
+      {hasImage ? (
+        <AvatarImage
+          alt={name}
+          src={assetUrl({ kind: "bot", id: botId }, "avatar", version)}
+        />
+      ) : null}
+      <AvatarFallback>{initialOf(name)}</AvatarFallback>
+    </Avatar>
   );
 }

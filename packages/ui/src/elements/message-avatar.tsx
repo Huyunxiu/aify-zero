@@ -1,28 +1,50 @@
-import { createAvatar } from "@oreo-design/avatar";
+import type { BotSummary } from "@workspace/agent-client";
+import { BotIcon } from "lucide-react";
 
-import Logo from "../assets/app-icon.svg";
-import { Avatar, AvatarFallback, AvatarImage } from "../components/avatar";
+import { Avatar, AvatarFallback } from "../components/avatar";
+import { BotAvatar } from "../components/bot-avatar";
 
-// 头像按角色固定，只在模块加载时生成一次：每个 turn 都会渲染一次，
-// 跟着渲染重算一遍 SVG 是白费。
-const userAvatarSrc = createAvatar({
-  shape: "flare",
-  palette: "cotton-candy",
-  variantId: "user",
-}).toDataUri();
-
-/** 用户消息的头像，由消息行摆在内容右侧。 */
+/**
+ * The user's face: one letter.
+ *
+ * It uses the same fallback a Bot without an image uses, so the two read as two
+ * identities rather than as two different drawings.
+ */
 export const UserAvatar = () => (
   <Avatar className="mt-0.5" size="sm">
-    <AvatarImage alt="User" src={userAvatarSrc} />
-    <AvatarFallback>U</AvatarFallback>
+    <AvatarFallback aria-label="User">U</AvatarFallback>
   </Avatar>
 );
 
-/** 助手消息的头像，由消息行摆在内容左侧。 */
-export const AssistantAvatar = () => (
-  <Avatar className="mt-0.5" size="sm">
-    <AvatarImage alt="Assistant" src={Logo} />
-    <AvatarFallback>A</AvatarFallback>
-  </Avatar>
-);
+/**
+ * The assistant's face is the face of the Bot that said it.
+ *
+ * Until the Bot query answers, the row keeps a neutral glyph instead of dropping the
+ * slot: a missing avatar would shift every line of the transcript by its width.
+ */
+export const AssistantAvatar = ({
+  bot,
+}: {
+  readonly bot: BotSummary | null | undefined;
+}) => {
+  if (!bot) {
+    return (
+      <Avatar className="mt-0.5" size="sm">
+        <AvatarFallback aria-label="Assistant">
+          <BotIcon />
+        </AvatarFallback>
+      </Avatar>
+    );
+  }
+
+  return (
+    <BotAvatar
+      avatarPath={bot.avatarPath}
+      botId={bot.id}
+      className="mt-0.5"
+      name={bot.name}
+      size="sm"
+      version={bot.updatedAt}
+    />
+  );
+};

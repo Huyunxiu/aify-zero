@@ -60,7 +60,7 @@ export interface NormalizedBot {
   id: string;
   isDefault: boolean;
   name: string;
-  avatar: string | null;
+  avatarPath: string | null;
   description: string | null;
   instructions: string | null;
   defaultModel: ModelRef | null;
@@ -107,7 +107,7 @@ export function normalizeBotRow(row: BotModel): NormalizedBot {
     id: row.id,
     isDefault: row.id === DEFAULT_BOT_ID,
     name: row.name,
-    avatar: row.avatar ?? null,
+    avatarPath: row.avatarPath ?? null,
     description: row.description ?? null,
     instructions: row.instructions ?? null,
     defaultModel: row.defaultModel ?? null,
@@ -148,7 +148,7 @@ export function toBotSummary(bot: NormalizedBot): BotSummary {
     id: bot.id,
     isDefault: bot.isDefault,
     name: bot.name,
-    avatar: bot.avatar,
+    avatarPath: bot.avatarPath,
     description: bot.description,
     defaultModel: bot.defaultModel,
     defaultEffort: bot.defaultEffort,
@@ -311,7 +311,7 @@ export async function createBot(input: CreateBotInput): Promise<BotDetail> {
   const row = await insertBot({
     id,
     name: input.name.trim(),
-    avatar: emptyToNull(input.avatar) ?? null,
+    avatarPath: null,
     description: emptyToNull(input.description) ?? null,
     instructions: emptyToNull(input.instructions) ?? null,
     defaultModel: input.defaultModel ?? null,
@@ -379,9 +379,6 @@ export async function updateBot(input: UpdateBotInput): Promise<BotDetail> {
 
   const updated = await updateBotRow(current.id, {
     ...(input.name === undefined ? {} : { name: input.name.trim() }),
-    ...(input.avatar === undefined
-      ? {}
-      : { avatar: emptyToNull(input.avatar) ?? null }),
     ...(input.description === undefined
       ? {}
       : { description: emptyToNull(input.description) ?? null }),

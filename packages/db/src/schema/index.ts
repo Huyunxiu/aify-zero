@@ -71,7 +71,8 @@ export const bot_table = sqliteTable(
       .primaryKey()
       .$defaultFn(() => randomUUID()),
     name: text("name").notNull(),
-    avatar: text("avatar"),
+    /** File name under `<botHome>/assets`; null falls back to the name's initial. */
+    avatarPath: text("avatar_path"),
     description: text("description"),
     instructions: text("instructions"),
     defaultModel: text("default_model", {
