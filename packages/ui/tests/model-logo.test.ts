@@ -1,13 +1,13 @@
 import { PROVIDER_PRESETS } from "@workspace/shared/model";
 import { describe, expect, test } from "vitest";
 
-import { hasIcon, ICON_KEYS } from "../src/elements/brand-icon";
+import { hasIcon, ICON_KEYS } from "../src/blocks/brand-icon";
 import {
   MAKER_PREFIXES,
   makerKeyFor,
   modelIconKey,
-} from "../src/elements/model-logo";
-import { providerKeyFor } from "../src/elements/provider-logo";
+} from "../src/blocks/model-logo";
+import { providerKeyFor } from "../src/blocks/provider-logo";
 
 describe("图标键", () => {
   test("每个键都能取到资源地址", () => {

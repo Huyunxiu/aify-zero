@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PROVIDER_PRESETS, slugifyProviderId } from "@workspace/shared/model";
 import type { ModelProtocol, ModelRef } from "@workspace/shared/model";
+import { ModelLogo } from "@workspace/ui/blocks/model-logo";
+import { ProviderLogo } from "@workspace/ui/blocks/provider-logo";
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import { Checkbox } from "@workspace/ui/components/checkbox";
@@ -26,8 +28,6 @@ import {
 import { Spinner } from "@workspace/ui/components/spinner";
 import { Switch } from "@workspace/ui/components/switch";
 import { Textarea } from "@workspace/ui/components/textarea";
-import { ModelLogo } from "@workspace/ui/elements/model-logo";
-import { ProviderLogo } from "@workspace/ui/elements/provider-logo";
 import { client } from "@workspace/ui/lib/orpc";
 import { cn } from "@workspace/ui/lib/utils";
 import {

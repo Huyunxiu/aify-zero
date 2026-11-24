@@ -3,7 +3,7 @@ import {
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
-import { SessionHost } from "@workspace/ui/elements/session-host";
+import { SessionHost } from "@workspace/ui/blocks/session-host";
 import { isCoveringMatch } from "@workspace/ui/lib/route-static-data";
 
 /**

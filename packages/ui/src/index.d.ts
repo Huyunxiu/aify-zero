@@ -14,8 +14,8 @@ declare module "*?url" {
 }
 
 /**
- * Vite 的批量资源导入。这里只用到一种形态：立刻求值、取每个文件的 URL，
- * 结果是 `{ 文件路径: URL }`。见 `elements/brand-icon.tsx`。
+ * The bulk asset import of Vite. Only one form is in use: it evaluates at once and
+ * returns the URL of each file, as `{ file path: URL }`. See `blocks/brand-icon.tsx`.
  */
 interface ImportMeta {
   glob(

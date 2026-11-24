@@ -7,6 +7,9 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
+import { Island, IslandGroup } from "@workspace/ui/blocks/island";
+import { SETTINGS_SECTIONS } from "@workspace/ui/blocks/settings/sections";
+import { DesktopTitleBar } from "@workspace/ui/blocks/title-bar";
 import { Dialog, DialogContent } from "@workspace/ui/components/dialog";
 import {
   Sidebar,
@@ -20,9 +23,6 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@workspace/ui/components/sidebar";
-import { Island, IslandGroup } from "@workspace/ui/elements/island";
-import { SETTINGS_SECTIONS } from "@workspace/ui/elements/settings/sections";
-import { DesktopTitleBar } from "@workspace/ui/elements/title-bar";
 import { isDesktopShell } from "@workspace/ui/lib/desktop";
 import { COVERS_SESSION } from "@workspace/ui/lib/route-static-data";
 import { ChevronLeft } from "lucide-react";

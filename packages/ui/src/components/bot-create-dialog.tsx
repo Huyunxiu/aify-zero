@@ -8,7 +8,7 @@ import { useId, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ModelSelect } from "../elements/model-select";
+import { ModelSelect } from "../blocks/model-select";
 import { flattenModels } from "../lib/models";
 import { client } from "../lib/orpc";
 import { Button } from "./button";

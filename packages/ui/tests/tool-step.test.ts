@@ -1,14 +1,14 @@
 import type { AgentAssistantStep, AgentToolSet } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
-import type { StepPart } from "../src/elements/steps/types";
-import type { StepRow } from "../src/elements/tool-step";
+import type { StepPart } from "../src/blocks/steps/types";
+import type { StepRow } from "../src/blocks/tool-step";
 import {
   formatDuration,
   getPartDurationMs,
   getPartStatus,
   summarizeTurn,
-} from "../src/elements/tool-step";
+} from "../src/blocks/tool-step";
 
 /**
  * Builds a part from the fields a case cares about. Cast through the real union

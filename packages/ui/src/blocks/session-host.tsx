@@ -1,10 +1,6 @@
 import { useMatchRoute, useParams, useSearch } from "@tanstack/react-router";
-import {
-  Island,
-  IslandGroup,
-  IslandHandle,
-} from "@workspace/ui/elements/island";
-import { SessionContainer } from "@workspace/ui/elements/session-container";
+import { Island, IslandGroup, IslandHandle } from "@workspace/ui/blocks/island";
+import { SessionContainer } from "@workspace/ui/blocks/session-container";
 import { readBotId, readProjectId } from "@workspace/ui/lib/session-search";
 import { useSubagentPane } from "@workspace/ui/stores/subagent-pane";
 import * as React from "react";

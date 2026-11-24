@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { outputLanguageOf } from "../../src/elements/steps/read-file";
-import type { StepPartOf } from "../../src/elements/steps/types";
+import { outputLanguageOf } from "../../src/blocks/steps/read-file";
+import type { StepPartOf } from "../../src/blocks/steps/types";
 
 /**
  * Builds a read part from the fields a case cares about, cast through the real

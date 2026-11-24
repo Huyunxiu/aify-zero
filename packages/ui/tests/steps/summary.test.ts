@@ -3,22 +3,19 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { deleteFileSummary } from "../../src/elements/steps/delete-file";
-import { editFileSummary } from "../../src/elements/steps/edit-file";
-import { globSummary } from "../../src/elements/steps/glob";
-import { grepSummary } from "../../src/elements/steps/grep";
-import { loadSkillSummary } from "../../src/elements/steps/load-skill";
-import { questionnaireSummary } from "../../src/elements/steps/questionnaire";
-import { readFileSummary } from "../../src/elements/steps/read-file";
-import { shellSummary } from "../../src/elements/steps/shell-tool";
-import {
-  finishedOutput,
-  pendingSummary,
-} from "../../src/elements/steps/summary";
-import { taskSummary } from "../../src/elements/steps/task";
-import type { StepPart, StepPartOf } from "../../src/elements/steps/types";
-import { webFetchSummary } from "../../src/elements/steps/web-fetch";
-import { writeFileSummary } from "../../src/elements/steps/write-file";
+import { deleteFileSummary } from "../../src/blocks/steps/delete-file";
+import { editFileSummary } from "../../src/blocks/steps/edit-file";
+import { globSummary } from "../../src/blocks/steps/glob";
+import { grepSummary } from "../../src/blocks/steps/grep";
+import { loadSkillSummary } from "../../src/blocks/steps/load-skill";
+import { questionnaireSummary } from "../../src/blocks/steps/questionnaire";
+import { readFileSummary } from "../../src/blocks/steps/read-file";
+import { shellSummary } from "../../src/blocks/steps/shell-tool";
+import { finishedOutput, pendingSummary } from "../../src/blocks/steps/summary";
+import { taskSummary } from "../../src/blocks/steps/task";
+import type { StepPart, StepPartOf } from "../../src/blocks/steps/types";
+import { webFetchSummary } from "../../src/blocks/steps/web-fetch";
+import { writeFileSummary } from "../../src/blocks/steps/write-file";
 
 /**
  * The visible text of a summary. The edit summary is JSX so its delta can be

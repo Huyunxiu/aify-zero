@@ -1,3 +1,4 @@
+import { TitleBar } from "@workspace/ui/blocks/title-bar";
 /**
  * 会话右侧的面板。
  *
@@ -17,7 +18,6 @@ import {
   Tabs,
   TabsContent,
 } from "@workspace/ui/components/tabs";
-import { TitleBar } from "@workspace/ui/elements/title-bar";
 import { fileNameOf } from "@workspace/ui/lib/workspace-path";
 import type { TFunction } from "i18next";
 import {

@@ -2,10 +2,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
-import { FallbackToolStep } from "../../src/elements/steps/fallback-tool";
-import { NoteStep } from "../../src/elements/steps/note";
-import { stepViews, viewFor } from "../../src/elements/steps/registry";
-import type { StepPart } from "../../src/elements/steps/types";
+import { FallbackToolStep } from "../../src/blocks/steps/fallback-tool";
+import { NoteStep } from "../../src/blocks/steps/note";
+import { stepViews, viewFor } from "../../src/blocks/steps/registry";
+import type { StepPart } from "../../src/blocks/steps/types";
 
 /**
  * Builds a part from the fields a case cares about, cast through the real union

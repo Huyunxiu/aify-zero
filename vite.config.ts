@@ -17,9 +17,9 @@ export default defineConfig({
       // 冒烟测试用的 MCP 服务器是独立运行脚本，保持自己的写法，不参与格式化。
       "packages/agent/tests/mcp/fixtures/**",
       "packages/ui/src/components/**.tsx",
-      "packages/ui/src/elements/prompt-input.tsx",
-      "packages/ui/src/elements/message.tsx",
-      "packages/ui/src/elements/conversation.tsx",
+      "packages/ui/src/blocks/prompt-input.tsx",
+      "packages/ui/src/blocks/message.tsx",
+      "packages/ui/src/blocks/conversation.tsx",
     ],
   },
   lint: {
@@ -35,9 +35,9 @@ export default defineConfig({
       // 冒烟测试用的 MCP 服务器是运行脚本，不参与类型感知检查。
       "packages/agent/tests/mcp/fixtures/**",
       "packages/ui/src/components/**.tsx",
-      "packages/ui/src/elements/prompt-input.tsx",
-      "packages/ui/src/elements/message.tsx",
-      "packages/ui/src/elements/conversation.tsx",
+      "packages/ui/src/blocks/prompt-input.tsx",
+      "packages/ui/src/blocks/message.tsx",
+      "packages/ui/src/blocks/conversation.tsx",
     ],
     options: { typeAware: true, typeCheck: true },
     rules: {

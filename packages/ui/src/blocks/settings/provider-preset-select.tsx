@@ -1,5 +1,6 @@
 import { PROVIDER_PRESETS } from "@workspace/shared/model";
 import type { ProviderPreset } from "@workspace/shared/model";
+import { ProviderLogo } from "@workspace/ui/blocks/provider-logo";
 import {
   Combobox,
   ComboboxContent,
@@ -9,7 +10,6 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@workspace/ui/components/combobox";
-import { ProviderLogo } from "@workspace/ui/elements/provider-logo";
 import { cn } from "@workspace/ui/lib/utils";
 import { Pencil } from "lucide-react";
 import { useMemo } from "react";

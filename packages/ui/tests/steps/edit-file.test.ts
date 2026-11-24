@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 
-import { editDiffRows, editDiffText } from "../../src/elements/steps/edit-file";
-import type { StepPartOf } from "../../src/elements/steps/types";
+import { editDiffRows, editDiffText } from "../../src/blocks/steps/edit-file";
+import type { StepPartOf } from "../../src/blocks/steps/types";
 
 /**
  * Builds an edit part from the fields a case cares about, cast through the real

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { targetAfterSelect } from "../src/elements/session-panel/target";
+import { targetAfterSelect } from "../src/blocks/session-panel/target";
 
 describe("panel target", () => {
   test("a newly selected file has no range", () => {

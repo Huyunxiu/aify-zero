@@ -1,7 +1,7 @@
 import type { AgentToolSet, AgentTurn } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
-import { findPendingQuestionnaire } from "../src/elements/questionnaire";
+import { findPendingQuestionnaire } from "../src/blocks/questionnaire";
 
 const questionnaire = (fields: Record<string, unknown> = {}) => ({
   approval: { createdAt: 1, id: "approval-1", isAutomatic: false },
