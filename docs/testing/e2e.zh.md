@@ -27,18 +27,34 @@
 vp run e2e
 ```
 
-第一次要装浏览器与它的系统库：
+第一次要装浏览器。macOS 和 Windows 的浏览器自带依赖库；Linux 的库是单独的包，
+装它们要 root：
+
+| 系统    | 安装命令                                          |
+| ------- | ------------------------------------------------- |
+| macOS   | `vp exec playwright install chromium`             |
+| Windows | `vp exec playwright install chromium`             |
+| Linux   | `vp exec playwright install --with-deps chromium` |
+
+Linux 上没有 root 时，把浏览器装进仓库，库解到它旁边。`apt-get` 与 `dpkg-deb` 是
+Debian 的工具，别的发行版用各自的包管理器：
 
 ```bash
-vp exec playwright install --with-deps chromium
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers vp exec playwright install chromium
+apt-get download <package>            # 每个包一次
+dpkg-deb -x <package>.deb .e2e/sysroot
 ```
 
-`--with-deps` 要 root。装在别处就设 `PLAYWRIGHT_BROWSERS_PATH` 指过去；没有 root
-时也可以用 `apt-get download` 把缺的库解到本地，再用 `LD_LIBRARY_PATH` 指过去。
-把浏览器装进仓库的做法：`PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers` 跑
-`vp exec playwright install chromium`；缺的包用 `apt-get download` 取下来，
-`dpkg-deb -x` 解到 `.e2e/sysroot`，运行时把 `LD_LIBRARY_PATH` 指到它的
-`usr/lib/x86_64-linux-gnu`。两者都在 `.e2e/` 下，不会进版本库。
+`vp exec playwright install-deps --dry-run` 会列出包清单。运行时把加载器指到解出来的
+库：
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
+LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
+vp run e2e
+```
+
+两个目录都在 `.e2e/` 下，都不会进版本库。
 
 热的一次约 15 秒，其中大半是 Vite 冷启动。
 
@@ -52,18 +68,22 @@ vp exec playwright test --config e2e/playwright.config.ts e2e/outbox.e2e.ts
 
 ### 浏览器装在别处
 
-`PLAYWRIGHT_BROWSERS_PATH` 指到那份安装，缺的系统库解包出来的
-`usr/lib/x86_64-linux-gnu` 用 `LD_LIBRARY_PATH` 指过去：
+`PLAYWRIGHT_BROWSERS_PATH` 指到那份安装。Linux 上再把 `LD_LIBRARY_PATH` 指到解包
+出来的 `usr/lib/x86_64-linux-gnu`；macOS 和 Windows 只要前一个：
 
 ```bash
+# Linux
 PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
 LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
 vp run e2e
+
+# macOS 与 Windows：同一个变量，不要 LD_LIBRARY_PATH
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers vp run e2e
 ```
 
-worktree 里要注意：harness 把仓库根算成 worktree 自己，所以 `.e2e/` 也是
-worktree 自己的。浏览器可以只装一份，用 `PLAYWRIGHT_BROWSERS_PATH` 指到主
-checkout 的那份。
+worktree 里有两件事跟着来：harness 把仓库根算成 worktree 自己，所以 `.e2e/` 也是
+worktree 的；浏览器就住在里面，删掉 worktree 会连浏览器一起删。装一份，用
+`PLAYWRIGHT_BROWSERS_PATH` 指到主 checkout 的那份，才不会丢。
 
 浏览器的 locale 固定成 `en-US`；应用自己的语言走 i18n 默认值——每个用例都是新的
 context，`localStorage` 是空的。

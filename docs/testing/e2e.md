@@ -27,20 +27,35 @@ so these cases use no network, spend no money, and give the same result each tim
 vp run e2e
 ```
 
-The first run installs the browser and its system libraries:
+The first run installs the browser. macOS and Windows ship the library set with it. Linux
+needs that set as separate packages, and installing them needs root:
+
+| System  | Install command                                   |
+| ------- | ------------------------------------------------- |
+| macOS   | `vp exec playwright install chromium`             |
+| Windows | `vp exec playwright install chromium`             |
+| Linux   | `vp exec playwright install --with-deps chromium` |
+
+Without root on Linux, put the browser in the repository and unpack the libraries beside
+it. `apt-get` and `dpkg-deb` are Debian tools; another distribution uses its own package
+manager:
 
 ```bash
-vp exec playwright install --with-deps chromium
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers vp exec playwright install chromium
+apt-get download <package>            # one call per package
+dpkg-deb -x <package>.deb .e2e/sysroot
 ```
 
-`--with-deps` needs root. If you install the browser in another place, set
-`PLAYWRIGHT_BROWSERS_PATH` to that place. Without root, you can also use `apt-get download`
-to unpack the missing libraries and point `LD_LIBRARY_PATH` at the result. To install the
-browser into the repository, run `vp exec playwright install chromium` with
-`PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers`. Use `apt-get download` to get the missing
-packages. Unpack them into `.e2e/sysroot` with `dpkg-deb -x`. At run time, point
-`LD_LIBRARY_PATH` at its `usr/lib/x86_64-linux-gnu`. Both live under `.e2e/`, so neither
-enters the repository.
+`vp exec playwright install-deps --dry-run` prints the package list. At run time, point the
+loader at the unpacked libraries:
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
+LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
+vp run e2e
+```
+
+Both directories live under `.e2e/`, so neither enters the repository.
 
 A warm run takes about 15 seconds. Most of that time is the Vite cold start.
 
@@ -55,18 +70,23 @@ vp exec playwright test --config e2e/playwright.config.ts e2e/outbox.e2e.ts
 
 ### The browser is installed elsewhere
 
-Point `PLAYWRIGHT_BROWSERS_PATH` at that installation. Point `LD_LIBRARY_PATH` at the
-`usr/lib/x86_64-linux-gnu` directory that holds the unpacked system libraries:
+Set `PLAYWRIGHT_BROWSERS_PATH` to that installation. On Linux, also point `LD_LIBRARY_PATH`
+at the unpacked `usr/lib/x86_64-linux-gnu`. macOS and Windows need only the first:
 
 ```bash
+# Linux
 PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers \
 LD_LIBRARY_PATH=$PWD/.e2e/sysroot/usr/lib/x86_64-linux-gnu \
 vp run e2e
+
+# macOS and Windows: same variable, no LD_LIBRARY_PATH
+PLAYWRIGHT_BROWSERS_PATH=$PWD/.e2e/browsers vp run e2e
 ```
 
-In a worktree, note one thing: the harness reads the repository root as the worktree
-itself, so `.e2e/` belongs to the worktree too. You can install the browser once and point
-`PLAYWRIGHT_BROWSERS_PATH` at the copy in the main checkout.
+In a worktree, two things follow from the harness reading the repository root as the
+worktree itself. `.e2e/` belongs to the worktree, and the browser lives under it, so
+removing the worktree removes the browser. Install it once and point
+`PLAYWRIGHT_BROWSERS_PATH` at the copy in the main checkout to keep it.
 
 The browser locale is fixed to `en-US`. The application uses the i18n default for its own
 language, because each case gets a new context and its `localStorage` is empty.
