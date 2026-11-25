@@ -600,6 +600,9 @@
     --scrollbar-thumb-color-hover: oklch(0 0 0 / 0.25);
     --scrollbar-thumb-color-active: oklch(0 0 0 / 0.4);
     --scrollbar-thumb: var(--scrollbar-thumb-color);
+    /* The width a scroll bar takes out of a box. A box that must line up with
+       a scrolling column reserves it; nothing else may hard-code it. */
+    --scrollbar-size: 10px;
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
   }
@@ -610,11 +613,11 @@
     --scrollbar-thumb-color-active: oklch(1 0 0 / 0.3);
   }
 
-  /* A 10px track is the hit target; transparent borders clip the thumb back to
+  /* The track is the hit target; transparent borders clip the thumb back to
      4px, so the mark stays thin while the target stays reachable. */
   *::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
   }
 
   *::-webkit-scrollbar-track,

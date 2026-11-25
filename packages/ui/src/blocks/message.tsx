@@ -64,7 +64,9 @@ export const Message = ({
         className={cn("max-w-[95%]", isUser && "ml-auto", className)}
         {...props}
       >
-        {avatar && <div className="shrink-0">{avatar}</div>}
+        {avatar && (
+          <div className="hidden shrink-0 @min-[420px]:block">{avatar}</div>
+        )}
         <div
           className={cn(
             "flex min-w-0 flex-1 flex-col gap-2",

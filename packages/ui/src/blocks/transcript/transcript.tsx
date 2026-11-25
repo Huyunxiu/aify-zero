@@ -41,6 +41,7 @@ import type { ToolApprovalAnswer } from "../chain-of-turn";
 import { CompactionMessage } from "../compaction-message";
 import { Message, MessageContent, MessageResponse } from "../message";
 import type { QuestionnairePlacement } from "../questionnaire";
+import { SESSION_COLUMN } from "../session-column";
 import { UserMessage } from "../user-message";
 
 /** The outline beside the record: the anchors, and the sections between them. */
@@ -181,7 +182,7 @@ export function Transcript({
           >
             <MessageScroller>
               <MessageScrollerViewport>
-                <MessageScrollerContent className="px-0 py-4 max-w-[calc(56rem+16px)] mx-auto">
+                <MessageScrollerContent className={cn(SESSION_COLUMN, "py-4")}>
                   {turns.length === 0 ? (
                     <Empty className="h-full">
                       <EmptyHeader>

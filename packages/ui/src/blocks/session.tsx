@@ -96,6 +96,7 @@ import {
   QuestionnaireComposer,
 } from "./questionnaire";
 import type { QuestionnairePlacement } from "./questionnaire";
+import { SESSION_COLUMN } from "./session-column";
 import { SessionPanel } from "./session-panel/session-panel";
 import { TitleBar } from "./title-bar";
 import { Transcript } from "./transcript/transcript";
@@ -1144,172 +1145,182 @@ export function Session({
                     hasOutline && "@min-[1100px]:ps-[104px]"
                   )}
                 >
-                  <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 border-t-0 pt-1 px-4 pb-4">
-                    {missingBotModel ? (
-                      <div
-                        className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-900 text-xs dark:text-amber-200"
-                        role="alert"
-                      >
-                        <div className="flex items-center gap-2">
-                          <AlertTriangleIcon className="size-4 shrink-0" />
-                          <span>
-                            {t("bots.model.missingWarning", {
-                              model: `${missingBotModel.providerId}/${missingBotModel.modelId}`,
-                            })}
-                          </span>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          onClick={() => {
-                            void navigate({
-                              to: "/bots/$botId",
-                              params: { botId: effectiveBotId },
-                            });
-                          }}
-                        >
-                          {t("bots.actions.configure")}
-                        </Button>
-                      </div>
-                    ) : null}
-                    <InboxDock
-                      busy={isGenerating}
-                      messages={pendingMessages}
-                      onCancel={handleQueueCancel}
-                      onClear={handleQueueClear}
-                      onSend={handleQueueSend}
-                    />
-                    <PromptInputProvider>
-                      {pendingQuestionnaire ? (
-                        <QuestionnaireComposer
-                          part={pendingQuestionnaire}
-                          onRespond={handleRespondToolApproval}
-                        />
-                      ) : (
-                        <PromptInput
-                          multiple
-                          maxFileSize={5 * 1024 * 1024}
-                          accept="image/png,image/jpeg,image/webp"
-                          onSubmit={handleSubmit}
-                          onError={console.error}
-                        >
-                          <PromptInputAttachmentsDisplay />
-                          <PromptInputBody>
-                            {/* <PromptInputTextarea /> */}
-                            <PromptInputTiptap
-                              skills={
-                                listSessionResourcesQuery.data?.skills.map(
-                                  (e) => ({
-                                    ...e,
-                                    type: "skill",
-                                  })
-                                ) || []
-                              }
-                              commands={commands}
-                              onEmptyChange={(isEmpty) => {
-                                if (isEmpty !== isEditorEmpty) {
-                                  setIsEditorEmpty(isEmpty);
-                                }
-                              }}
-                            />
-                          </PromptInputBody>
-                          <PromptInputFooter>
-                            <PromptInputTools className="flex-wrap gap-0">
-                              <PromptInputActionMenu>
-                                <PromptInputActionMenuTrigger />
-                                <PromptInputActionMenuContent className="min-w-max">
-                                  <PromptInputActionAddAttachments
-                                    disabled={
-                                      !selectedModelOption?.acceptsImage
-                                    }
-                                  />
-                                </PromptInputActionMenuContent>
-                              </PromptInputActionMenu>
-                              <ProjectSelect
-                                locked={isProjectLocked}
-                                onProjectChange={handleProjectChange}
-                                projectId={selectedProjectId}
-                                projects={projects}
-                              />
-                              <ModelSelect
-                                models={models}
-                                model={selectedModel}
-                                modelEffort={selectedModelEffort}
-                                onModelChange={handleModelChange}
-                                onModelEffortChange={handleModelEffortChange}
-                              />
-                              <ApprovalPolicySelect
-                                approvalPolicy={approvalPolicy}
-                                onApprovalPolicyChange={
-                                  handleApprovalPolicyChange
-                                }
-                              />
-                            </PromptInputTools>
-                            <div className="flex items-center gap-2">
-                              {isGenerating && (
-                                <ButtonGroup>
-                                  <Button
-                                    onClick={() =>
-                                      handleBusyModeChange("steering")
-                                    }
-                                    size="xs"
-                                    type="button"
-                                    variant={
-                                      busyMode === "steering"
-                                        ? "secondary"
-                                        : "ghost"
-                                    }
-                                  >
-                                    {t("composer.mode.steering")}
-                                  </Button>
-                                  <Button
-                                    onClick={() =>
-                                      handleBusyModeChange("followup")
-                                    }
-                                    size="xs"
-                                    type="button"
-                                    variant={
-                                      busyMode === "followup"
-                                        ? "secondary"
-                                        : "ghost"
-                                    }
-                                  >
-                                    {t("composer.mode.followup")}
-                                  </Button>
-                                </ButtonGroup>
-                              )}
-                              <Context
-                                maxTokens={contextWindow}
-                                modelId={selectedModelOption?.name}
-                                usage={tokenUsage}
-                                usedTokens={contextUsedTokens}
-                              >
-                                <ContextTrigger />
-                                <ContextContent>
-                                  <ContextContentHeader />
-                                  <ContextContentBody>
-                                    <ContextInputUsage />
-                                    <ContextOutputUsage />
-                                    <ContextReasoningUsage />
-                                    <ContextCacheUsage />
-                                  </ContextContentBody>
-                                  <ContextContentFooter />
-                                </ContextContent>
-                              </Context>
-                              {isGenerating && (
-                                <PromptInputStop onStop={() => void stop()} />
-                              )}
-                              <PromptInputSubmit
-                                disabled={isEditorEmpty || !selectedModel}
-                                label={submitLabel}
-                                status={status}
-                              />
-                            </div>
-                          </PromptInputFooter>
-                        </PromptInput>
+                  {/* The bar's width comes out of the record's box, so the
+                      input box reserves the same on both sides; the two
+                      blocks then center on one axis. */}
+                  <div className="px-[var(--scrollbar-size)]">
+                    <div
+                      className={cn(
+                        SESSION_COLUMN,
+                        "gap-2 border-t-0 pt-1 pb-4"
                       )}
-                    </PromptInputProvider>
+                    >
+                      {missingBotModel ? (
+                        <div
+                          className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-900 text-xs dark:text-amber-200"
+                          role="alert"
+                        >
+                          <div className="flex items-center gap-2">
+                            <AlertTriangleIcon className="size-4 shrink-0" />
+                            <span>
+                              {t("bots.model.missingWarning", {
+                                model: `${missingBotModel.providerId}/${missingBotModel.modelId}`,
+                              })}
+                            </span>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => {
+                              void navigate({
+                                to: "/bots/$botId",
+                                params: { botId: effectiveBotId },
+                              });
+                            }}
+                          >
+                            {t("bots.actions.configure")}
+                          </Button>
+                        </div>
+                      ) : null}
+                      <InboxDock
+                        busy={isGenerating}
+                        messages={pendingMessages}
+                        onCancel={handleQueueCancel}
+                        onClear={handleQueueClear}
+                        onSend={handleQueueSend}
+                      />
+                      <PromptInputProvider>
+                        {pendingQuestionnaire ? (
+                          <QuestionnaireComposer
+                            part={pendingQuestionnaire}
+                            onRespond={handleRespondToolApproval}
+                          />
+                        ) : (
+                          <PromptInput
+                            multiple
+                            maxFileSize={5 * 1024 * 1024}
+                            accept="image/png,image/jpeg,image/webp"
+                            onSubmit={handleSubmit}
+                            onError={console.error}
+                          >
+                            <PromptInputAttachmentsDisplay />
+                            <PromptInputBody>
+                              {/* <PromptInputTextarea /> */}
+                              <PromptInputTiptap
+                                skills={
+                                  listSessionResourcesQuery.data?.skills.map(
+                                    (e) => ({
+                                      ...e,
+                                      type: "skill",
+                                    })
+                                  ) || []
+                                }
+                                commands={commands}
+                                onEmptyChange={(isEmpty) => {
+                                  if (isEmpty !== isEditorEmpty) {
+                                    setIsEditorEmpty(isEmpty);
+                                  }
+                                }}
+                              />
+                            </PromptInputBody>
+                            <PromptInputFooter>
+                              <PromptInputTools className="flex-wrap gap-0">
+                                <PromptInputActionMenu>
+                                  <PromptInputActionMenuTrigger />
+                                  <PromptInputActionMenuContent className="min-w-max">
+                                    <PromptInputActionAddAttachments
+                                      disabled={
+                                        !selectedModelOption?.acceptsImage
+                                      }
+                                    />
+                                  </PromptInputActionMenuContent>
+                                </PromptInputActionMenu>
+                                <ProjectSelect
+                                  locked={isProjectLocked}
+                                  onProjectChange={handleProjectChange}
+                                  projectId={selectedProjectId}
+                                  projects={projects}
+                                />
+                                <ModelSelect
+                                  models={models}
+                                  model={selectedModel}
+                                  modelEffort={selectedModelEffort}
+                                  onModelChange={handleModelChange}
+                                  onModelEffortChange={handleModelEffortChange}
+                                />
+                                <ApprovalPolicySelect
+                                  approvalPolicy={approvalPolicy}
+                                  onApprovalPolicyChange={
+                                    handleApprovalPolicyChange
+                                  }
+                                />
+                              </PromptInputTools>
+                              <div className="flex items-center gap-2">
+                                {isGenerating && (
+                                  <ButtonGroup>
+                                    <Button
+                                      onClick={() =>
+                                        handleBusyModeChange("steering")
+                                      }
+                                      size="xs"
+                                      type="button"
+                                      variant={
+                                        busyMode === "steering"
+                                          ? "secondary"
+                                          : "ghost"
+                                      }
+                                    >
+                                      {t("composer.mode.steering")}
+                                    </Button>
+                                    <Button
+                                      onClick={() =>
+                                        handleBusyModeChange("followup")
+                                      }
+                                      size="xs"
+                                      type="button"
+                                      variant={
+                                        busyMode === "followup"
+                                          ? "secondary"
+                                          : "ghost"
+                                      }
+                                    >
+                                      {t("composer.mode.followup")}
+                                    </Button>
+                                  </ButtonGroup>
+                                )}
+                                <Context
+                                  maxTokens={contextWindow}
+                                  modelId={selectedModelOption?.name}
+                                  usage={tokenUsage}
+                                  usedTokens={contextUsedTokens}
+                                >
+                                  <ContextTrigger />
+                                  <ContextContent>
+                                    <ContextContentHeader />
+                                    <ContextContentBody>
+                                      <ContextInputUsage />
+                                      <ContextOutputUsage />
+                                      <ContextReasoningUsage />
+                                      <ContextCacheUsage />
+                                    </ContextContentBody>
+                                    <ContextContentFooter />
+                                  </ContextContent>
+                                </Context>
+                                {isGenerating && (
+                                  <PromptInputStop onStop={() => void stop()} />
+                                )}
+                                <PromptInputSubmit
+                                  disabled={isEditorEmpty || !selectedModel}
+                                  label={submitLabel}
+                                  status={status}
+                                />
+                              </div>
+                            </PromptInputFooter>
+                          </PromptInput>
+                        )}
+                      </PromptInputProvider>
+                    </div>
                   </div>
                 </div>
               </div>

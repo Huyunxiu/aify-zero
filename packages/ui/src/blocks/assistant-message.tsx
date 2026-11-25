@@ -125,7 +125,11 @@ export const AssistantMessage = ({
 
   return (
     <div className="group flex w-full items-start gap-3 pr-8">
-      <AssistantAvatar bot={bot} />
+      {/* A narrow pane does not draw the face: the title bar already names the
+          Bot, and a 36px column would be taken from every line of the turn. */}
+      <div className="hidden shrink-0 @min-[420px]:block">
+        <AssistantAvatar bot={bot} />
+      </div>
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         <AgentActivity defaultExpanded={new Set(["root"])}>
           <AgentActivityHeader
