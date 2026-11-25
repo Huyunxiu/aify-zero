@@ -1,119 +1,6 @@
 import { cn } from "@workspace/ui/lib/utils";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-
-const DoneIcon = (props: ComponentProps<"svg">) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="lucide lucide-circle-check preview-icon"
-    {...props}
-  >
-    <circle cx="12" cy="12" r="10" strokeWidth="0" />
-    <path d="m16 9-5.5 5.5L8 12" />
-  </svg>
-);
-
-const IdleIcon = (props: ComponentProps<"svg">) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="lucide lucide-dot preview-icon"
-    {...props}
-  >
-    <circle cx="12" cy="12" r="2" />
-  </svg>
-);
-
-const RunningIcon = (props: ComponentProps<"svg">) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="lucide lucide-loader-circle preview-icon"
-    {...props}
-  >
-    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-  </svg>
-);
-
-const WaitReviewIcon = (props: ComponentProps<"svg">) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="lucide lucide-circle-dot preview-icon"
-    {...props}
-  >
-    <circle cx="12" cy="12" r="1" />
-    <circle cx="12" cy="12" r="10" />
-  </svg>
-);
-
-const CanceledIcon = (props: ComponentProps<"svg">) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="lucide lucide-circle-x preview-icon"
-    {...props}
-  >
-    <circle cx="12" cy="12" r="10" strokeWidth="0" />
-    <line x1="9" x2="15" y1="15" y2="9" />
-  </svg>
-);
-
-const ErrorIcon = (props: ComponentProps<"svg">) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="lucide lucide-circle-x preview-icon"
-    {...props}
-  >
-    <circle cx="12" cy="12" r="10" strokeWidth="0" />
-    <path d="m15 9-6 6" />
-    <path d="m9 9 6 6" />
-  </svg>
-);
 
 /**
  * The session lifecycle states the server stores.
@@ -132,24 +19,76 @@ export type SessionStatus =
   | "canceled"
   | "error";
 
-const STATUS_ICONS: Record<SessionStatus, React.FC<ComponentProps<"svg">>> = {
-  idle: IdleIcon,
-  running: RunningIcon,
-  wait_review: WaitReviewIcon,
-  done: DoneIcon,
-  canceled: CanceledIcon,
-  error: ErrorIcon,
-};
+const DISC_RADIUS = 10;
 
+/** The shape of "a turn waits for the reader": a bold ring and a core. */
+const RING_RADIUS = 8.4;
+const RING_STROKE = 2.8;
+const CORE_RADIUS = 3.6;
+
+const RUNNING = <path d="M21 12a9 9 0 1 1-6.219-8.56" strokeWidth="2" />;
+
+const WAIT_REVIEW = (
+  <>
+    <circle
+      cx="12"
+      cy="12"
+      r={RING_RADIUS}
+      fill="none"
+      strokeWidth={RING_STROKE}
+    />
+    <circle cx="12" cy="12" r={CORE_RADIUS} stroke="none" />
+  </>
+);
+
+const DONE = (
+  <>
+    <circle cx="12" cy="12" r={DISC_RADIUS} strokeWidth="0" />
+    <path d="m16 9-5.5 5.5L8 12" fill="none" strokeWidth="2" />
+  </>
+);
+
+const CANCELED = (
+  <>
+    <circle cx="12" cy="12" r={DISC_RADIUS} strokeWidth="0" />
+    <line x1="9" x2="15" y1="15" y2="9" strokeWidth="2" />
+  </>
+);
+
+const ERROR = (
+  <>
+    <circle cx="12" cy="12" r={DISC_RADIUS} strokeWidth="0" />
+    <path d="m15 9-6 6" fill="none" strokeWidth="2" />
+    <path d="m9 9 6 6" fill="none" strokeWidth="2" />
+  </>
+);
+
+/**
+ * Colour goes through `fill-*` and `stroke-*`, never `text-*`.
+ *
+ * A sidebar row paints `text-sidebar-accent-foreground` on every direct `svg`
+ * child, and that rule outranks a class on the icon itself. A `text-*` colour
+ * added here would be lost without an error — which is how `wait_review` used
+ * to render without its amber.
+ */
 const STATUS_STYLES: Record<SessionStatus, string> = {
-  idle: "fill-muted-foreground",
+  idle: "",
   // Spun, not merely tinted: in a list where nothing else moves, the motion is
   // what makes a running turn findable without reading it.
-  running: "animate-spin stroke-muted-foreground",
-  wait_review: "text-warning",
-  done: "text-background fill-primary",
-  canceled: "text-background fill-muted-foreground",
-  error: "text-background fill-destructive",
+  running: "animate-spin stroke-muted-foreground motion-reduce:animate-none",
+  wait_review: "stroke-warning fill-warning",
+  done: "fill-primary stroke-white",
+  canceled: "fill-muted-foreground stroke-white",
+  error: "fill-destructive stroke-white",
+};
+
+const STATUS_MARKS: Record<SessionStatus, ReactNode> = {
+  idle: null,
+  running: RUNNING,
+  wait_review: WAIT_REVIEW,
+  done: DONE,
+  canceled: CANCELED,
+  error: ERROR,
 };
 
 const STATUS_LABEL_KEYS = {
@@ -165,20 +104,37 @@ export type SessionStatusProps = Omit<ComponentProps<"svg">, "children"> & {
   status: SessionStatus;
 };
 
+/**
+ * The status of one session: a filled disc with a white mark on it.
+ *
+ * White on `primary`, on `muted-foreground` and on `destructive` reads the same
+ * in both themes, so the mark needs no colour of its own and no knowledge of
+ * what the row paints behind it. `idle` draws nothing — a session that has not
+ * started has nothing to report, and the empty box keeps the titles in one
+ * column.
+ */
 export function SessionStatus({
   status,
   className,
   ...props
 }: SessionStatusProps) {
   const { t } = useTranslation();
-  const Icon = STATUS_ICONS[status];
 
   return (
-    <Icon
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       aria-label={t(STATUS_LABEL_KEYS[status])}
       role="img"
       className={cn("size-3.5 shrink-0", STATUS_STYLES[status], className)}
       {...props}
-    />
+    >
+      {STATUS_MARKS[status]}
+    </svg>
   );
 }

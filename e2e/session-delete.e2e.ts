@@ -17,6 +17,16 @@ const COMPOSER_NAME = "What would you like to know?";
 const KEPT = "Session one";
 const REMOVED = "Session two";
 
+/**
+ * 侧栏里那一条会话行。
+ *
+ * 标题文字在正文头部还有一份，两边各自独立取数：列表要等下一次查询才画出
+ * 新会话，头部先有。按文字定位会先命中头部，右键就落在一个没有菜单的元素
+ * 上。行按钮的可访问名带着标题，只存在于列表里。
+ */
+const sessionRow = (page: Page, title: string) =>
+  page.getByRole("button", { name: new RegExp(title) });
+
 test("Session delete: the removed session leaves the list and the page", async ({
   page,
 }) => {
@@ -33,7 +43,7 @@ test("Session delete: the removed session leaves the list and the page", async (
     // 1. 留下一个会话：删掉另一个之后，它必须还在。
     await newSession.click();
     await sendAndSettle(page, "First message");
-    await expect(page.getByText(KEPT, { exact: true }).first()).toBeVisible();
+    await expect(sessionRow(page, KEPT)).toBeVisible();
 
     // 2. 再建一个，并且停在它里面——删除要顺带把页面让开。
     //
@@ -42,15 +52,10 @@ test("Session delete: the removed session leaves the list and the page", async (
     await page.waitForTimeout(1100);
     await newSession.click();
     await sendAndSettle(page, "Second message");
-    await expect(
-      page.getByText(REMOVED, { exact: true }).first()
-    ).toBeVisible();
+    await expect(sessionRow(page, REMOVED)).toBeVisible();
 
     // 3. 右键这一行，和鼠标用户看到的是同一个菜单。
-    await page
-      .getByText(REMOVED, { exact: true })
-      .first()
-      .click({ button: "right" });
+    await sessionRow(page, REMOVED).click({ button: "right" });
     await page.getByRole("menuitem", { name: "Delete" }).click();
 
     // 4. 确认框里写的是哪一个会话。
@@ -67,12 +72,12 @@ test("Session delete: the removed session leaves the list and the page", async (
     await expect(
       page.getByText("Start a session", { exact: true })
     ).toBeVisible();
-    await expect(page.getByText(KEPT, { exact: true })).toBeVisible();
+    await expect(sessionRow(page, KEPT)).toBeVisible();
 
     // 6. 刷新之后仍然是删掉的状态：藏起来的是服务端，不是缓存。
     await page.reload();
     await expect(page.getByText(REMOVED, { exact: true })).toHaveCount(0);
-    await expect(page.getByText(KEPT, { exact: true })).toBeVisible();
+    await expect(sessionRow(page, KEPT)).toBeVisible();
   } catch (error) {
     failed = true;
     throw error;
