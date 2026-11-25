@@ -8,7 +8,8 @@ import {
   AgentStepRow,
   AgentStepTitle,
 } from "../../blocks/chain-of-turn";
-import { useSubagentPane } from "../../stores/subagent-pane";
+import { useSubagentAddress } from "../../hooks/use-subagent-address";
+import { subagentSessionIdOf } from "../../lib/subagent-call";
 import { ToolPanels } from "../tool-panels";
 import { MarkdownBody } from "./markdown-body";
 import { StepFrame, StepLabel, StepShell } from "./shell";
@@ -32,7 +33,10 @@ export const taskSummary = (
  * show, and the dialog is where that answer is readable.
  *
  * The two arrangements are why this view takes the whole row back from the
- * shell: one row opens a dialog, the other selects a pane.
+ * shell: one row opens a dialog, the other points the panel at the child. It
+ * reads and writes the address itself rather than taking a callback: the
+ * selection is ambient, and a chain of props down to here would be a second
+ * place that knows about it.
  */
 export const TaskStep = ({
   part,
@@ -40,14 +44,10 @@ export const TaskStep = ({
   duration,
   onRespond,
 }: StepViewProps<"tool-task">) => {
-  // The subagent the pane beside this session is showing, and how to point it
-  // at another. Read here rather than handed down: the pane is ambient state,
-  // and this is the one view that asks for it.
-  const selectedSessionId = useSubagentPane((state) => state.sessionId);
-  const selectSubagent = useSubagentPane((state) => state.select);
+  const { select, selectedSubagentSessionId } = useSubagentAddress();
 
   const result = part.output?.output ?? "";
-  const subagentSessionId = part.output?.metadata?.sessionId;
+  const subagentSessionId = subagentSessionIdOf(part);
   // A call that failed before it made a subagent answers with the reason and
   // nothing else; one that failed outright has no answer at all, and an empty
   // panel under INPUT is worse than none.
@@ -58,8 +58,10 @@ export const TaskStep = ({
   if (subagentSessionId) {
     return (
       <AgentStepButton
-        onClick={() => selectSubagent(subagentSessionId)}
-        selected={selectedSessionId === subagentSessionId}
+        onClick={() => {
+          select(subagentSessionId);
+        }}
+        selected={selectedSubagentSessionId === subagentSessionId}
       >
         <AgentStepRow duration={duration} status={status}>
           <AgentStepIcon>

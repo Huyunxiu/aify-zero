@@ -349,7 +349,8 @@
       "files": "文件",
       "new": "新标签页",
       "terminal": "终端",
-      "review": "改动"
+      "review": "改动",
+      "subagent": "子会话"
     }
   },
   "files": {

@@ -205,12 +205,14 @@ export const AssistantMessage = ({
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-            <MessageAction
-              onClick={() => onFork?.(turn.id)}
-              className="text-muted-foreground"
-            >
-              <SplitIcon />
-            </MessageAction>
+            {onFork && (
+              <MessageAction
+                onClick={() => onFork(turn.id)}
+                className="text-muted-foreground"
+              >
+                <SplitIcon />
+              </MessageAction>
+            )}
           </MessageActions>
         )}
       </div>

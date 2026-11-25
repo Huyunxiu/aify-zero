@@ -1,6 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
-
-import { client } from "../lib/orpc";
+import { useSessionTurns } from "../hooks/use-session-turns";
 import type { QuestionnairePlacement } from "./questionnaire";
 import { Session } from "./session";
 
@@ -10,12 +8,8 @@ export type SessionContainerProps = {
   initialBotId?: string;
   /** 新建会话时预选的项目；已有会话行上的项目仍然优先。 */
   initialProjectId?: string;
-  /** Whether the session is being read rather than written to. See {@link Session}. */
-  readOnly?: boolean;
   /** Where a held questionnaire draws its form. See {@link Session}. */
   questionnairePlacement?: QuestionnairePlacement;
-  /** Closes the pane showing this session, when it can be pointed elsewhere. */
-  onClose?: () => void;
   /** Whether an opaque layer stands between the reader and this session. */
   covered: boolean;
 };
@@ -24,25 +18,17 @@ export function SessionContainer({
   sessionId,
   initialBotId,
   initialProjectId,
-  readOnly,
   questionnairePlacement,
-  onClose,
   covered,
 }: SessionContainerProps) {
-  const listSessionTurnsQuery = useQuery({
-    queryKey: ["listSessionTurns", sessionId],
-    queryFn: async () =>
-      await client.session.listSessionTurns({ sessionId: sessionId ?? "" }),
-    enabled: Boolean(sessionId),
-  });
-
-  const initialTurns = listSessionTurnsQuery.data;
+  const turnsQuery = useSessionTurns(sessionId);
+  const initialTurns = turnsQuery.data;
 
   // The transcript has to be in hand before the session mounts: the hook reads
   // its turns once, when the store is created, and a turn picked up mid-flight
   // continues from them. The home route has no session yet, so there is nothing
   // to wait for there.
-  if (sessionId && listSessionTurnsQuery.isPending) {
+  if (sessionId && turnsQuery.isPending) {
     return null;
   }
 
@@ -53,9 +39,7 @@ export function SessionContainer({
       initialTurns={initialTurns ?? []}
       initialBotId={initialBotId}
       initialProjectId={initialProjectId}
-      readOnly={readOnly}
       questionnairePlacement={questionnairePlacement}
-      onClose={onClose}
       covered={covered}
     />
   );

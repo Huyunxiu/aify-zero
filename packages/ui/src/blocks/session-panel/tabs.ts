@@ -1,15 +1,16 @@
 /**
- * 面板标签的类型与状态操作。
+ * The types and the state operations of the panel's tabs.
  *
- * 标签是一个个实例，不是视图类型：同一个视图可以开多个标签。文件标签还带
- * 自己的目标文件和根目录名，所以这些状态跟着标签走，互不影响。这里只留下
- * 可以被单测覆盖的纯函数。
+ * A tab is an instance, not a view type: one view can open more than one tab. A
+ * files tab carries the file it has open and the name of its root, and a subagent
+ * tab carries the session it reads, so that state follows the tab and two tabs
+ * never share it. Only what a unit test can reach belongs here.
  */
 import type { FileOpenTarget } from "../markdown-link";
 import { targetAfterSelect } from "./target";
 
 /** 面板能打开的视图类型。 */
-export type SessionPanelView = "files" | "review" | "terminal";
+export type SessionPanelView = "files" | "review" | "subagent" | "terminal";
 
 /** 文件标签自己的状态。 */
 export type FilesTabState = {
@@ -21,11 +22,30 @@ export type FilesTabState = {
   readonly target: FileOpenTarget | null;
 };
 
+/** The state of one subagent tab. */
+export type SubagentTabState = {
+  /** The session id of the subagent. */
+  readonly sessionId: string;
+  /**
+   * What this tab is called.
+   *
+   * It is the description of the `task` call, which became the title of the
+   * subagent's row, so naming the tab costs no request.
+   *
+   * It is absent when the record cannot name the call — an address opened cold,
+   * or one whose call is no longer in the record. The selection still stands, so
+   * the tab falls back to the name of the view.
+   */
+  readonly title?: string;
+};
+
 /** 标签栏里的一个标签；`view` 为 null 时是新标签页。 */
 export type PanelTab = {
   /** 文件标签的状态；其他标签为 null。 */
   readonly files: FilesTabState | null;
   readonly id: string;
+  /** The state of a subagent tab; null for every other tab. */
+  readonly subagent: SubagentTabState | null;
   readonly view: SessionPanelView | null;
 };
 
@@ -47,6 +67,11 @@ export type PanelAction =
   | { readonly id: string; readonly type: "select" }
   | {
       readonly id: string;
+      readonly subagent: SubagentTabState;
+      readonly type: "openSubagent";
+    }
+  | {
+      readonly id: string;
       readonly type: "openView";
       readonly view: SessionPanelView;
     }
@@ -63,7 +88,7 @@ export type PanelAction =
 
 /** 一个空的新标签页。 */
 function newTab(id: string): PanelTab {
-  return { files: null, id, view: null };
+  return { files: null, id, subagent: null, view: null };
 }
 
 /**
@@ -159,6 +184,7 @@ export function panelReducer(
         tabs: placeTab(state.tabs, {
           files: null,
           id: action.id,
+          subagent: null,
           view: action.view,
         }),
       };
@@ -172,6 +198,7 @@ export function panelReducer(
       const tab: PanelTab = existing ?? {
         files: null,
         id: action.id,
+        subagent: null,
         view: "files",
       };
       const opened: PanelTab = {
@@ -189,6 +216,34 @@ export function panelReducer(
           existing === undefined
             ? placeTab(state.tabs, opened)
             : replaceTab(state.tabs, opened),
+      };
+    }
+    case "openSubagent": {
+      // One tab per subagent: an open one is selected instead of opened again,
+      // the same rule a file link follows, so a reader never collects two tabs
+      // for one subagent. Its state is replaced with the one just asked for, so
+      // a tab opened cold picks up the name as soon as the record supplies it.
+      const open = state.tabs.find(
+        (tab) =>
+          tab.view === "subagent" &&
+          tab.subagent?.sessionId === action.subagent.sessionId
+      );
+
+      if (open !== undefined) {
+        return {
+          activeId: open.id,
+          tabs: replaceTab(state.tabs, { ...open, subagent: action.subagent }),
+        };
+      }
+
+      return {
+        activeId: action.id,
+        tabs: placeTab(state.tabs, {
+          files: null,
+          id: action.id,
+          subagent: action.subagent,
+          view: "subagent",
+        }),
       };
     }
     case "select": {

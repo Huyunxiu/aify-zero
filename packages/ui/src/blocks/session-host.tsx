@@ -1,8 +1,7 @@
 import { useMatchRoute, useParams, useSearch } from "@tanstack/react-router";
-import { Island, IslandGroup, IslandHandle } from "@workspace/ui/blocks/island";
+import { Island, IslandGroup } from "@workspace/ui/blocks/island";
 import { SessionContainer } from "@workspace/ui/blocks/session-container";
 import { readBotId, readProjectId } from "@workspace/ui/lib/session-search";
-import { useSubagentPane } from "@workspace/ui/stores/subagent-pane";
 import * as React from "react";
 
 export type SessionHostProps = {
@@ -82,22 +81,6 @@ export function SessionHost({ covered }: SessionHostProps) {
 
   const activeSessionId =
     shownSession?.kind === "id" ? shownSession.id : undefined;
-  const shownKey =
-    shownSession === undefined
-      ? undefined
-      : shownSession.kind === "id"
-        ? `id:${shownSession.id}`
-        : "draft";
-
-  const subagentSessionId = useSubagentPane((state) => state.sessionId);
-  const clearSubagent = useSubagentPane((state) => state.clear);
-
-  // A selection belongs to the session it was made in. Moving to another one
-  // leaves the pane holding a child of a session that is no longer on screen.
-  // A covering route is not a move: the session underneath did not change.
-  React.useEffect(() => {
-    clearSubagent();
-  }, [shownKey, clearSubagent]);
 
   // The session list shows a draft session, which has no id until the first
   // message. A covering route shows nothing only when there was nothing before.
@@ -107,7 +90,7 @@ export function SessionHost({ covered }: SessionHostProps) {
 
   return (
     <IslandGroup orientation="horizontal">
-      <Island defaultSize={subagentSessionId ? "50%" : "100%"}>
+      <Island defaultSize="100%">
         <SessionContainer
           covered={covered}
           initialBotId={shownSession.botId}
@@ -115,19 +98,6 @@ export function SessionHost({ covered }: SessionHostProps) {
           sessionId={activeSessionId}
         />
       </Island>
-      {subagentSessionId && (
-        <>
-          <IslandHandle />
-          <Island defaultSize="50%">
-            <SessionContainer
-              covered={covered}
-              onClose={clearSubagent}
-              readOnly
-              sessionId={subagentSessionId}
-            />
-          </Island>
-        </>
-      )}
     </IslandGroup>
   );
 }

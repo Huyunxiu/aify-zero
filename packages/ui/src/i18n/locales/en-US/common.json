@@ -349,7 +349,8 @@
       "files": "Files",
       "new": "New tab",
       "terminal": "Terminal",
-      "review": "Changes"
+      "review": "Changes",
+      "subagent": "Subagent"
     }
   },
   "files": {
