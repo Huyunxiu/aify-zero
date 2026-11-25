@@ -11,6 +11,7 @@
 - [packages/server](./packages/server/GLOSSARY.md)：Bot、设置、项目、会话行和凭据；Bot、默认 Bot、Bot 主目录、Bot 工作目录、模型与供应商在这里定义；浏览器怎么拿到本机 API 的凭据。
 - [packages/db](./packages/db/GLOSSARY.md)：表结构与它的版本历史；数据库语境下的迁移、迁移历史、基线按这里的说法用。
 - [packages/sandbox](./packages/sandbox/GLOSSARY.md)：工具在哪跑、按什么读写文件；沙箱与沙箱适配器的区别只在这里定义。
+- [apps/desktop](./apps/desktop/GLOSSARY.md)：窗口、托盘与系统通知；logo 源、应用图标、托盘图标在这里定义。
 
 ## Relationships
 
@@ -29,7 +30,8 @@
   「运行」「收件箱」「待办项」「发件箱」「投递」「运行器」「暂停」都按
   `packages/agent/GLOSSARY.md` 的说法用。收件箱是入站的那一侧，不要和发件箱混用。
 - **apps/desktop ← packages/agent**：桌面只做一件事——把一次「投递」变成一条系统通知。
-  它没有自己的词表，也不把发件项叫「通知」；「通知」留给 `packages/agent` 的「完成通知」。
+  它不把发件项叫「通知」；「通知」留给 `packages/agent` 的「完成通知」。桌面只给自己的外
+  壳起名：应用图标、托盘图标、logo 源。
 - **packages/db ← packages/server**：server 启动时应用迁移，失败就不提供服务；「迁移」
   「迁移历史」只按 `packages/db/GLOSSARY.md` 的说法用，「基线」在数据库语境下也按它、
   在改动对比语境下按 `packages/ui/GLOSSARY.md` 的说法用。

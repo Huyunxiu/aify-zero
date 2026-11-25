@@ -17,6 +17,8 @@ and the other contexts use the same word.
 - [packages/sandbox](./packages/sandbox/GLOSSARY.md): where a tool runs, and which files it
   reads and writes; only this file defines the difference between the sandbox and the
   sandbox adapter.
+- [apps/desktop](./apps/desktop/GLOSSARY.md): the window, the tray, and the system notice; this
+  file defines App Icon, Tray Icon, and Logo Source.
 
 ## Relationships
 
@@ -41,9 +43,9 @@ and the other contexts use the same word.
   follow `packages/agent/GLOSSARY.md`. The inbox is the inbound side; do not mix it with the
   outbox.
 - **apps/desktop ← packages/agent**: the desktop does one thing: it changes one "delivery"
-  into one system notification. It has no vocabulary of its own, and it does not call an
-  outbox item a "notification". "Notification" stays with the "completion notice" of
-  `packages/agent`.
+  into one system notification. It does not call an outbox item a "notification".
+  "Notification" stays with the "completion notice" of `packages/agent`. The desktop names only
+  its own shell: App Icon, Tray Icon, and Logo Source.
 - **packages/db ← packages/server**: the server applies the migrations at startup, and it
   does not serve if a migration fails. "Migration" and "migration history" follow only
   `packages/db/GLOSSARY.md`. "Baseline" follows that file in the database context, and
