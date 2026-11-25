@@ -37,7 +37,9 @@ const config: ForgeConfig = {
     // `../../packages/db/src/migrations` is copied to Resources/migrations
     // and applied by the packaged main process on startup.
     extraResource: ["./resources", "../../packages/db/src/migrations"],
-    icon: "resources/icons",
+    // electron-packager adds the extension to this base name: icon.icns on macOS,
+    // icon.ico on Windows, and icon.png on Linux.
+    icon: "resources/icons/icon",
   },
   plugins: [
     // libsql（`@libsql/<platform>/index.node`）是原生模块，不能从 asar 里
