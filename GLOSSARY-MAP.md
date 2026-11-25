@@ -18,7 +18,7 @@ and the other contexts use the same word.
   reads and writes; only this file defines the difference between the sandbox and the
   sandbox adapter.
 - [apps/desktop](./apps/desktop/GLOSSARY.md): the window, the tray, and the system notice; this
-  file defines App Icon, Tray Icon, and Logo Source.
+  file defines Icon Role, App Icon, Tray Icon, and Logo Source.
 
 ## Relationships
 

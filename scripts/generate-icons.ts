@@ -1,7 +1,10 @@
 /**
- * Builds every icon from one logo source.
+ * Builds the app icon and the tray icon from their sources in `brand/`.
  *
- * Usage: `tsx scripts/generate-icons.ts [logo.svg | logo.png] [--tray tray.svg | tray.png]`
+ * Usage: `tsx scripts/generate-icons.ts [app-icon.svg | app-icon.png] [--tray tray-icon.svg | tray-icon.png]`
+ *
+ * An icon role has at most one source, found by a fixed name in `brand/`: an SVG, or a PNG
+ * when there is no SVG. The command line can name another file for one run.
  *
  * The tool writes into the repository, so it is a local authoring tool. It needs `sips` and
  * `iconutil`, which ship with macOS, and it never runs in CI.
@@ -11,6 +14,7 @@
 
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -22,6 +26,7 @@ import path from "node:path";
 
 import {
   APP_ICON_SIZE,
+  chooseSource,
   decodePng,
   encodeIco,
   FAVICON_SIZES,
@@ -36,30 +41,50 @@ import {
   TRAY_SIZE,
   TRAY_SIZE_2X,
 } from "./app-icons.js";
-import type { SourceFormat } from "./app-icons.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 
-/** The logo source that the command reads when it names no other. */
-const DEFAULT_LOGO_SOURCE = path.join(ROOT, "brand/logo.svg");
+/** One icon role: the names that it accepts, its size floor, and how a message names it. */
+type IconRole = {
+  candidates: readonly string[];
+  minimum: number;
+  name: string;
+};
+
+/** The app icon. Its source is required. */
+const APP_ICON: IconRole = {
+  candidates: ["brand/app-icon.svg", "brand/app-icon.png"],
+  minimum: MIN_PNG_SIZE,
+  name: "app icon",
+};
+
+/** The tray icon. It has no source until a person draws one. */
+const TRAY_ICON: IconRole = {
+  candidates: ["brand/tray-icon.svg", "brand/tray-icon.png"],
+  minimum: TRAY_SIZE_2X,
+  name: "tray icon",
+};
 
 /** The app icon files, next to the Forge icon setting. */
 const ICONS_DIR = path.join(ROOT, "apps/desktop/resources/icons");
-
-/** The app icon copy that `packages/ui` reads. */
-const APP_ICON_SVG = path.join(ROOT, "packages/ui/src/assets/app-icon.svg");
 
 /** The favicon of the web entry. */
 const FAVICON_ICO = path.join(ROOT, "apps/web/public/favicon.ico");
 
 /** A source file after the tool checked its format and its size. */
 type Source = {
-  bytes: Buffer;
-  format: SourceFormat;
-  /** The path as the command line gave it, for a message about this source. */
+  /** The path as the command line or the role file named it. */
   given: string;
+  /** The path on disk. */
   path: string;
 };
+
+/** The path on disk of a path that a message shows. */
+const onDisk = (file: string): string =>
+  path.isAbsolute(file) ? file : path.join(ROOT, file);
+
+/** Whether the repository holds this file. */
+const holds = (file: string): boolean => existsSync(onDisk(file));
 
 /**
  * Runs a tool and waits for it.
@@ -77,12 +102,14 @@ const run = (file: string, args: string[]): void => {
  * A relative path resolves against the repository root, so a run gives the same result from
  * any directory.
  */
-const openSource = (given: string, role: string, minimum: number): Source => {
+const openSource = (given: string, role: IconRole): Source => {
   const format = sourceFormatOf(given);
-  const file = path.isAbsolute(given) ? given : path.join(ROOT, given);
+  const file = onDisk(given);
 
   if (format === undefined) {
-    throw new Error(`${role} must be an SVG or a PNG: ${given}`);
+    throw new Error(
+      `the ${role.name} source must be an SVG or a PNG: ${given}`
+    );
   }
 
   let bytes: Buffer;
@@ -90,24 +117,24 @@ const openSource = (given: string, role: string, minimum: number): Source => {
   try {
     bytes = readFileSync(file);
   } catch {
-    throw new Error(`${role} is missing: ${given}`);
+    throw new Error(`the ${role.name} source is missing: ${given}`);
   }
 
   const size = readSourceSize(bytes, format);
 
   if (size === undefined) {
     throw new Error(
-      `${role} has no size; an SVG needs width and height, or a viewBox: ${given}`
+      `the ${role.name} source has no size; an SVG needs width and height, or a viewBox: ${given}`
     );
   }
 
-  const problem = sourceProblem(size, format, minimum);
+  const problem = sourceProblem(size, format, role.minimum);
 
   if (problem !== undefined) {
-    throw new Error(`${role}: ${problem}: ${given}`);
+    throw new Error(`the ${role.name} source: ${problem}: ${given}`);
   }
 
-  return { bytes, format, given, path: file };
+  return { given, path: file };
 };
 
 /** Writes one built file and reports it. */
@@ -191,19 +218,35 @@ const readTray = (
 
   if (colour !== undefined) {
     throw new Error(
-      `the tray source carries colour at ${String(colour.x)},${String(colour.y)}: ${tray.given}; a tray icon is one grey, because macOS tints it`
+      `the ${TRAY_ICON.name} source carries colour at ${String(colour.x)},${String(colour.y)}: ${tray.given}; a tray icon is one grey, because macOS tints it`
     );
   }
 
   return { oneX: rasterise(TRAY_SIZE), twoX };
 };
 
-/** Builds every icon from one logo source, and the tray icon from its own source. */
-const build = (logo: Source, tray: Source | undefined): void => {
+/** The source of one role, from the command line or from the repository. */
+const sourceOf = (
+  role: IconRole,
+  given: string | undefined
+): Source | undefined => {
+  const chosen =
+    given ??
+    chooseSource({
+      candidates: role.candidates,
+      exists: holds,
+      name: role.name,
+    });
+
+  return chosen === undefined ? undefined : openSource(chosen, role);
+};
+
+/** Builds every icon from the app icon source, and the tray icon from its own source. */
+const build = (appIcon: Source, tray: Source | undefined): void => {
   const work = mkdtempSync(path.join(tmpdir(), "aify-icons-"));
 
   try {
-    const rasterise = makeRasteriser(logo, work);
+    const rasterise = makeRasteriser(appIcon, work);
     // Every source is checked before the first write, so a bad run changes no file.
     const trayImages = tray === undefined ? undefined : readTray(tray, work);
 
@@ -212,22 +255,11 @@ const build = (logo: Source, tray: Source | undefined): void => {
     write(FAVICON_ICO, packIco(FAVICON_SIZES, rasterise));
     writeIcns(rasterise, work);
 
-    if (logo.format === "svg") {
-      write(path.join(ICONS_DIR, "icon.svg"), logo.bytes);
-      write(APP_ICON_SVG, logo.bytes);
-    }
-
     if (trayImages === undefined) {
-      console.log("[icons] no --tray source, so the tray icon stays as it is");
+      console.log("[icons] no tray source, so the tray icon stays as it is");
     } else {
       write(path.join(ICONS_DIR, "tray.png"), trayImages.oneX);
       write(path.join(ICONS_DIR, "tray@2x.png"), trayImages.twoX);
-    }
-
-    if (logo.format === "png") {
-      throw new Error(
-        `the logo source is a PNG, so ${path.relative(ROOT, path.join(ICONS_DIR, "icon.svg"))} and ${path.relative(ROOT, APP_ICON_SVG)} keep the old art; pass an SVG to fill them`
-      );
     }
   } finally {
     rmSync(work, { force: true, recursive: true });
@@ -239,17 +271,16 @@ const main = (): void => {
     throw new Error("sips and iconutil ship with macOS only");
   }
 
-  const { logo, tray } = parseArguments(
-    process.argv.slice(2),
-    DEFAULT_LOGO_SOURCE
-  );
+  const parsed = parseArguments(process.argv.slice(2));
+  const appIcon = sourceOf(APP_ICON, parsed.appIcon);
 
-  build(
-    openSource(logo, "the logo source", MIN_PNG_SIZE),
-    tray === undefined
-      ? undefined
-      : openSource(tray, "the tray source", TRAY_SIZE_2X)
-  );
+  if (appIcon === undefined) {
+    throw new Error(
+      `the ${APP_ICON.name} source is missing: ${APP_ICON.candidates.join(" or ")}`
+    );
+  }
+
+  build(appIcon, sourceOf(TRAY_ICON, parsed.tray));
 };
 
 try {

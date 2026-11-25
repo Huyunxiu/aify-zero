@@ -3,6 +3,7 @@ import { deflateSync } from "node:zlib";
 import { describe, expect, test } from "vitest";
 
 import {
+  chooseSource,
   decodePng,
   encodeIco,
   firstColour,
@@ -321,35 +322,80 @@ describe("the iconset", () => {
 });
 
 describe(parseArguments, () => {
-  test("no path falls back to the default source", () => {
-    expect(parseArguments([], "brand/logo.svg")).toStrictEqual({
-      logo: "brand/logo.svg",
+  test("no path is no name for either role", () => {
+    expect(parseArguments([])).toStrictEqual({
+      appIcon: undefined,
       tray: undefined,
     });
   });
 
-  test("a path replaces the default source", () => {
-    expect(parseArguments(["other.svg"], "brand/logo.svg")).toStrictEqual({
-      logo: "other.svg",
+  test("a path names the app icon", () => {
+    expect(parseArguments(["other.svg"])).toStrictEqual({
+      appIcon: "other.svg",
       tray: undefined,
     });
   });
 
-  test("--tray names the tray source", () => {
-    expect(
-      parseArguments(["other.svg", "--tray", "tray.svg"], "brand/logo.svg")
-    ).toStrictEqual({ logo: "other.svg", tray: "tray.svg" });
+  test("--tray names the tray icon", () => {
+    expect(parseArguments(["other.svg", "--tray", "tray.svg"])).toStrictEqual({
+      appIcon: "other.svg",
+      tray: "tray.svg",
+    });
   });
 
   test("--tray without a file stops the run", () => {
-    expect(() => parseArguments(["--tray"], "brand/logo.svg")).toThrow(
-      "--tray needs a file"
-    );
+    expect(() => parseArguments(["--tray"])).toThrow("--tray needs a file");
   });
 
   test("a second source stops the run", () => {
+    expect(() => parseArguments(["one.svg", "two.png"])).toThrow(
+      "unexpected argument"
+    );
+  });
+});
+
+/** The source files that a role's directory holds, for `chooseMaster`. */
+const holding =
+  (...files: string[]) =>
+  (candidate: string) =>
+    files.includes(candidate);
+
+describe(chooseSource, () => {
+  const candidates = ["brand/app-icon.svg", "brand/app-icon.png"];
+
+  test("the name that exists is the source", () => {
+    expect(
+      chooseSource({
+        candidates,
+        exists: holding("brand/app-icon.svg"),
+        name: "app icon",
+      })
+    ).toBe("brand/app-icon.svg");
+  });
+
+  test("a PNG fills the role when there is no SVG", () => {
+    expect(
+      chooseSource({
+        candidates,
+        exists: holding("brand/app-icon.png"),
+        name: "app icon",
+      })
+    ).toBe("brand/app-icon.png");
+  });
+
+  test("two sources are one too many", () => {
     expect(() =>
-      parseArguments(["one.svg", "two.png"], "brand/logo.svg")
-    ).toThrow("unexpected argument");
+      chooseSource({
+        candidates,
+        exists: holding("brand/app-icon.svg", "brand/app-icon.png"),
+        name: "app icon",
+      })
+    ).toThrow("two sources");
+  });
+
+  test("no name is no source, and the caller decides what that means", () => {
+    expect(
+      chooseSource({ candidates, exists: holding(), name: "app icon" })
+    ).toBeUndefined();
   });
 });

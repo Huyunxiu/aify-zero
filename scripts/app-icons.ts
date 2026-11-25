@@ -157,7 +157,7 @@ export const sourceProblem = (
   }
 
   if (format === "png" && height < minimum) {
-    return `the PNG source is ${width}x${height}, and it needs at least ${minimum} on each side; pass the SVG instead`;
+    return `the PNG source is ${width}x${height}, and it needs at least ${minimum} on each side`;
   }
 
   return undefined;
@@ -381,12 +381,16 @@ export const encodeIco = (entries: IcoEntry[]): Buffer => {
   return Buffer.concat([header, body]);
 };
 
-/** Reads the command line into a logo source and an optional tray source. */
+/**
+ * Reads the command line into an optional app icon source and an optional tray source.
+ *
+ * Both are `undefined` when the command line does not name them, and the caller then takes
+ * the role file from `brand/`.
+ */
 export const parseArguments = (
-  argv: string[],
-  fallback: string
+  argv: string[]
 ): {
-  logo: string;
+  appIcon: string | undefined;
   tray: string | undefined;
 } => {
   const remaining = [...argv];
@@ -403,13 +407,43 @@ export const parseArguments = (
     remaining.splice(trayIndex, 2);
   }
 
-  const logo = remaining.shift() ?? fallback;
+  const appIcon = remaining.shift();
 
   if (remaining.length > 0) {
     throw new Error(
-      `one logo source only; unexpected argument: ${remaining[0] ?? ""}`
+      `one app icon source only; unexpected argument: ${remaining[0] ?? ""}`
     );
   }
 
-  return { logo, tray };
+  return { appIcon, tray };
+};
+
+/**
+ * The one source of an icon role, from the names that it accepts.
+ *
+ * A role has at most one source. Two of them drift apart, so the caller stops the run
+ * instead of picking one.
+ */
+export const chooseSource = (input: {
+  /** The names that the role accepts, in the order that a message shows them. */
+  candidates: readonly string[];
+  /** Whether a name is on disk. */
+  exists: (candidate: string) => boolean;
+  /** The role, as a phrase that a message can name. */
+  name: string;
+}): string | undefined => {
+  const found = input.candidates.filter((candidate) => input.exists(candidate));
+  const [only, ...more] = found;
+
+  if (more.length > 0) {
+    throw new Error(
+      `two sources for ${input.name}: ${found.join(", ")}; keep one`
+    );
+  }
+
+  if (only === undefined) {
+    return undefined;
+  }
+
+  return only;
 };

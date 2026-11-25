@@ -11,7 +11,7 @@
 - [packages/server](./packages/server/GLOSSARY.md)：Bot、设置、项目、会话行和凭据；Bot、默认 Bot、Bot 主目录、Bot 工作目录、模型与供应商在这里定义；浏览器怎么拿到本机 API 的凭据。
 - [packages/db](./packages/db/GLOSSARY.md)：表结构与它的版本历史；数据库语境下的迁移、迁移历史、基线按这里的说法用。
 - [packages/sandbox](./packages/sandbox/GLOSSARY.md)：工具在哪跑、按什么读写文件；沙箱与沙箱适配器的区别只在这里定义。
-- [apps/desktop](./apps/desktop/GLOSSARY.md)：窗口、托盘与系统通知；logo 源、应用图标、托盘图标在这里定义。
+- [apps/desktop](./apps/desktop/GLOSSARY.md)：窗口、托盘与系统通知；图标角色、logo 源、应用图标、托盘图标在这里定义。
 
 ## Relationships
 

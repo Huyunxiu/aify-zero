@@ -6,9 +6,14 @@ words come from `packages/agent`.
 
 ## Language
 
+**Icon Role**:
+One of the two icons that the application shows outside its window: the App Icon and the Tray
+Icon. Each role has its own Logo Source.
+_Avoid_: icon kind, icon type, icon slot
+
 **Logo Source**:
-The one file that an icon is built from. An SVG, square, and the authority for every size of
-that icon.
+The one file that an icon is built from, and the authority for every size of that icon. A
+square drawing: an SVG, or a PNG when there is no vector.
 _Avoid_: 原图, 母版, source image, original artwork
 
 **App Icon**:
