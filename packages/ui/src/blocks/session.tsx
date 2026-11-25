@@ -120,6 +120,7 @@ import {
   QuestionnaireComposer,
 } from "./questionnaire";
 import type { QuestionnairePlacement } from "./questionnaire";
+import { SESSION_COLUMN } from "./session-column";
 import { SessionPanel } from "./session-panel/session-panel";
 import { TitleBar } from "./title-bar";
 import { UserMessage } from "./user-message";
@@ -1267,7 +1268,9 @@ export function Session({
                       >
                         <MessageScroller>
                           <MessageScrollerViewport>
-                            <MessageScrollerContent className="px-0 py-4 max-w-[calc(56rem+16px)] mx-auto">
+                            <MessageScrollerContent
+                              className={cn(SESSION_COLUMN, "py-4")}
+                            >
                               {turns.length === 0 ? (
                                 <Empty className="h-full">
                                   <EmptyHeader>
@@ -1360,7 +1363,12 @@ export function Session({
                       hasOutline && "@min-[1100px]:ps-[104px]"
                     )}
                   >
-                    <div className="mx-auto flex w-full max-w-4xl flex-col gap-2 border-t-0 pt-1 px-4 pb-4">
+                    <div
+                      className={cn(
+                        SESSION_COLUMN,
+                        "gap-2 border-t-0 pt-1 pb-4"
+                      )}
+                    >
                       {missingBotModel ? (
                         <div
                           className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-900 text-xs dark:text-amber-200"
