@@ -1,4 +1,3 @@
-import { eventIteratorToUnproxiedDataStream } from "@orpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -24,12 +23,7 @@ import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
 import { BotAvatar } from "@workspace/ui/blocks/bot-avatar";
 import type { LanguageModelUsage } from "ai";
-import {
-  AlertTriangleIcon,
-  MessageSquareIcon,
-  PanelRightIcon,
-  XIcon,
-} from "lucide-react";
+import { AlertTriangleIcon, PanelRightIcon } from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -57,45 +51,27 @@ import {
 import { Button } from "../components/button";
 import { ButtonGroup } from "../components/button-group";
 import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "../components/empty";
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-  useMessageScroller,
-  useMessageScrollerVisibility,
-} from "../components/message-scroller";
-import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "../components/resizable";
 import { toastManager } from "../components/toast";
-import ProximitySidebar from "../components/ui/proximity-sidebar";
 import { useAgentSession } from "../hooks/use-agent-session";
 import type { SubmitMode } from "../hooks/use-agent-session";
+import { useSubagentAddress } from "../hooks/use-subagent-address";
 import { DEFAULT_LANG, isLang } from "../i18n";
 import { approvalPolicyTarget } from "../lib/approval-policy-target";
 import { flattenModels, parseModelRef, sameModel } from "../lib/models";
 import { client, queryClient } from "../lib/orpc";
+import { openSessionEvents } from "../lib/session-events";
 import { buildSessionOutline } from "../lib/session-outline";
 import type { SessionOutlineSection } from "../lib/session-outline";
+import { findSubagentTitle } from "../lib/subagent-call";
 import { cn } from "../lib/utils";
 import { ApprovalPolicySelect } from "./approval-policy-select";
-import { AssistantMessage } from "./assistant-message";
-import { CompactionMessage } from "./compaction-message";
 import { InboxDock } from "./inbox-dock";
 import { FileLinkProvider } from "./markdown-link";
 import type { FileOpenTarget } from "./markdown-link";
-import { Message, MessageContent, MessageResponse } from "./message";
 import { ModelSelect } from "./model-select";
 import { ProjectSelect } from "./project-select";
 import {
@@ -123,7 +99,8 @@ import type { QuestionnairePlacement } from "./questionnaire";
 import { SESSION_COLUMN } from "./session-column";
 import { SessionPanel } from "./session-panel/session-panel";
 import { TitleBar } from "./title-bar";
-import { UserMessage } from "./user-message";
+import { Transcript } from "./transcript/transcript";
+import type { TranscriptEmpty } from "./transcript/transcript";
 
 const defaultTokenUsage: LanguageModelUsage = {
   inputTokens: 0,
@@ -138,6 +115,12 @@ const defaultTokenUsage: LanguageModelUsage = {
     reasoningTokens: 0,
   },
   totalTokens: 0,
+};
+
+/** What a session with no turn yet says. */
+const EMPTY_SESSION: TranscriptEmpty = {
+  description: "Messages will appear here as the session progresses.",
+  title: "Start a session",
 };
 
 interface AttachmentItemProps {
@@ -211,15 +194,6 @@ export type SessionProps = React.ComponentProps<"div"> & {
    */
   initialProjectId?: string;
   /**
-   * Whether the session is being read rather than written to.
-   *
-   * A subagent's is: its turns belong to the `task` call that made it, and
-   * nothing outside that call can answer a call it was held on. The composer,
-   * the approval buttons and the fork action are left out, so the page shows
-   * the transcript and nothing it cannot honour.
-   */
-  readOnly?: boolean;
-  /**
    * Where a held questionnaire draws its form.
    *
    * `"composer"` — the default — puts it where the prompt input stands, and the
@@ -228,12 +202,6 @@ export type SessionProps = React.ComponentProps<"div"> & {
    * asked. Either one can be chosen per surface without changing the form.
    */
   questionnairePlacement?: QuestionnairePlacement;
-  /**
-   * Closes whatever is showing this session. A pane that can be pointed at
-   * another session needs a way back to its own, and the title bar is where a
-   * reader looks for it.
-   */
-  onClose?: () => void;
   /**
    * Whether an opaque layer stands between the reader and this session.
    *
@@ -244,86 +212,12 @@ export type SessionProps = React.ComponentProps<"div"> & {
   covered: boolean;
 };
 
-/**
- * 读到这个会话接下来发生的事。
- *
- * 按会话定位：正在跑的运行会从它的 `turn.start` 重放，之后的每一次运行都接着
- * 送到同一条连接上。没有运行的会话不是错误，连接建立后等它的第一次运行。
- */
-async function openEvents(
-  sessionId: string,
-  abortSignal: AbortSignal
-): Promise<ReadableStream> {
-  const stream = await client.session.streamSessionEvents(
-    { sessionId },
-    { signal: abortSignal }
-  );
-  return eventIteratorToUnproxiedDataStream(stream);
-}
-
-interface SessionOutlineProps {
-  /**
-   * 全部用户轮次的 id，按发生顺序。
-   *
-   * 被跳过的系统轮次也是滚动锚点，所以活动标记要拿它来判断当前锚点落在哪一节
-   * 之后，不能只看节本身。
-   */
-  anchors: string[];
-  sections: SessionOutlineSection[];
-}
-
-/**
- * 会话大纲：标出读者正在看的那一条，点一下就跳过去。
- *
- * 一节是一次提问，滚动锚点也只标用户轮次，所以活动节就是阅读线上方最后一个
- * 提问。锚点落在被跳过的系统轮次上时，取它之前最近的一节。
- * 跳转交给 scrollToMessage，和“跳到某条消息”是同一个动作。
- */
-function SessionOutline({ anchors, sections }: SessionOutlineProps) {
-  const { t } = useTranslation();
-  const { currentAnchorId } = useMessageScrollerVisibility();
-  const { scrollToMessage } = useMessageScroller();
-
-  const activeId = React.useMemo(() => {
-    const first = sections[0]?.id;
-
-    if (!currentAnchorId) {
-      return first;
-    }
-
-    const anchorIndex = anchors.indexOf(currentAnchorId);
-    if (anchorIndex === -1) {
-      return first;
-    }
-
-    return (
-      sections.findLast((section) => section.anchorIndex <= anchorIndex)?.id ??
-      first
-    );
-  }, [anchors, currentAnchorId, sections]);
-
-  return (
-    <ProximitySidebar
-      activeId={activeId}
-      className="py-6"
-      label={t("sessions.outline")}
-      onSelect={(id) => {
-        scrollToMessage(id, { align: "start", behavior: "smooth" });
-      }}
-      sections={sections}
-      side="left"
-    />
-  );
-}
-
 export function Session({
   sessionId,
   initialTurns = [],
   initialBotId,
   initialProjectId,
-  readOnly = false,
   questionnairePlacement = "composer",
-  onClose,
   covered,
 }: SessionProps) {
   const navigate = useNavigate();
@@ -396,7 +290,6 @@ export function Session({
   const modelSeededRef = React.useRef(false);
 
   const missingBotModel =
-    !readOnly &&
     !userPickedModel &&
     getSettingsQuery.isSuccess &&
     activeBot?.defaultModel !== undefined &&
@@ -739,7 +632,7 @@ export function Session({
       // 页面从下面那条事件流上看到 `run.start` 就知道。
     },
     apiEvents: async ({ sessionId: id, abortSignal }) =>
-      await openEvents(id, abortSignal),
+      await openSessionEvents(id, abortSignal),
     apiResume: async ({ sessionId: id }) => {
       await client.session.resumeSession({ sessionId: id });
     },
@@ -761,8 +654,6 @@ export function Session({
       clear: async ({ sessionId: id }) =>
         await client.session.clearInboxItems({ sessionId: id }),
     },
-    // 只读的子会话没有 composer：不渲染队列，也不发送。
-    allowSend: !readOnly,
     turns: initialTurns,
     onEvent,
   });
@@ -774,11 +665,49 @@ export function Session({
   // not. Inline placement leaves the form to the transcript.
   const pendingQuestionnaire = React.useMemo(
     () =>
-      readOnly || questionnairePlacement !== "composer"
+      questionnairePlacement !== "composer"
         ? undefined
         : findPendingQuestionnaire(turns),
-    [turns, readOnly, questionnairePlacement]
+    [turns, questionnairePlacement]
   );
+
+  // The subagent the address names. It is the reader's standing choice, not the
+  // active tab, so the panel builds that tab when it mounts.
+  const subagentAddress = useSubagentAddress();
+  const namedSubagentSessionId = subagentAddress.selectedSubagentSessionId;
+
+  // The description that the `task` call wrote is also the title of that
+  // session, so naming the tab costs no request. It is only a name: the choice
+  // stands without it, because the address holds the choice and the record may
+  // arrive after it.
+  const namedSubagentTitle = React.useMemo(
+    () =>
+      namedSubagentSessionId === undefined
+        ? undefined
+        : findSubagentTitle(turns, namedSubagentSessionId),
+    [namedSubagentSessionId, turns]
+  );
+
+  const namedSubagent = React.useMemo(
+    () =>
+      namedSubagentSessionId === undefined
+        ? undefined
+        : {
+            sessionId: namedSubagentSessionId,
+            ...(namedSubagentTitle === undefined
+              ? {}
+              : { title: namedSubagentTitle }),
+          },
+    [namedSubagentSessionId, namedSubagentTitle]
+  );
+
+  // A selection the panel cannot show is a dead one: the address names a
+  // subagent, so the panel opens. Closing that tab is what takes the choice back.
+  React.useEffect(() => {
+    if (namedSubagent !== undefined) {
+      setPanelOpen(true);
+    }
+  }, [namedSubagent]);
 
   // 看得见才算读过。回合跑完会把会话留成 `done`（侧栏那个勾），打开着的
   // 页面负责把它抹掉：到达时一次，看着的回合走回 `ready` 时再一次。
@@ -892,8 +821,6 @@ export function Session({
     [turns]
   );
 
-  // 大纲和滚动容器是并排的两个盒子；滚轮落在大纲上时要交回聊天记录。
-  const contentRef = React.useRef<HTMLDivElement>(null);
   // 只有一个提问也显示：长答复里可以从底部一下跳回提问。
   const hasOutline = outlineSections.length > 0;
 
@@ -1150,48 +1077,6 @@ export function Session({
     ]
   );
 
-  const renderTurn = (turn: AgentTurn<AgentToolSet>) => {
-    if (turn.type === "user") {
-      return <UserMessage key={turn.id} turn={turn} />;
-    }
-
-    if (turn.type === "compaction") {
-      const [step] = turn.content;
-      const record = step?.content.find(
-        (part) => part.type === "compaction"
-      )?.record;
-      return <CompactionMessage key={turn.id} record={record} />;
-    }
-
-    if (turn.type === "assistant") {
-      return (
-        <AssistantMessage
-          key={turn.id}
-          bot={activeBot}
-          turn={turn}
-          // A read-only page answers nothing: a call it was held on has no one
-          // here to decide for it, and the row says so rather than offering
-          // buttons that cannot work.
-          onRespondToolApproval={
-            readOnly ? undefined : handleRespondToolApproval
-          }
-          questionnairePlacement={questionnairePlacement}
-          onFork={
-            readOnly
-              ? undefined
-              : (messageId) => {
-                  if (sessionId) {
-                    forkSessionMutation.mutate({ sessionId, messageId });
-                  }
-                }
-          }
-        />
-      );
-    }
-
-    return null;
-  };
-
   return (
     <FileLinkProvider openFile={openFileInPanel}>
       <div className="relative h-full">
@@ -1203,7 +1088,7 @@ export function Session({
             <div className="@container flex h-full min-w-0 flex-col">
               {/* session header */}
               <TitleBar className="sticky top-0 flex h-12 items-center gap-2 px-4">
-                {!onClose && activeBot ? (
+                {activeBot ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -1226,326 +1111,218 @@ export function Session({
                 ) : null}
                 {sessionId && (
                   <div className="min-w-0 truncate text-foreground text-sm max-w-md">
-                    {onClose
-                      ? sessionTitle
-                        ? `Subagent · ${sessionTitle}`
-                        : "Subagent"
-                      : sessionTitle || t("sessions.untitled")}
+                    {sessionTitle || t("sessions.untitled")}
                   </div>
                 )}
-                <div className="ml-auto flex items-center gap-1 [-webkit-app-region:no-drag]">
-                  {onClose && (
-                    <Button
-                      aria-label="Close"
-                      // 面板入口钉在框右上角；关闭按钮给它让出一个按钮加间距。
-                      className={cn(sessionId && !panelOpen && "mr-8")}
-                      // The bar is the window's drag region; a control in it has to
-                      // opt back out of that, or the click drags the window.
-                      onClick={onClose}
-                      size="icon-sm"
-                      variant="ghost"
-                    >
-                      <XIcon className="size-4" />
-                    </Button>
-                  )}
-                </div>
               </TitleBar>
               {/* session container */}
               <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                {/* session content */}
-                <div className="relative flex-1" ref={contentRef}>
-                  <MessageScrollerProvider
-                    autoScroll
-                    defaultScrollPosition="start"
-                    scrollPreviousItemPeek={64}
-                  >
-                    <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
-                      <div
-                        className={cn(
-                          "relative size-full mx-auto flex min-h-full min-w-0 w-full flex-col",
-                          hasOutline && "@min-[1100px]:ps-[104px]"
-                        )}
-                      >
-                        <MessageScroller>
-                          <MessageScrollerViewport>
-                            <MessageScrollerContent
-                              className={cn(SESSION_COLUMN, "py-4")}
-                            >
-                              {turns.length === 0 ? (
-                                <Empty className="h-full">
-                                  <EmptyHeader>
-                                    <EmptyMedia variant="icon">
-                                      <MessageSquareIcon />
-                                    </EmptyMedia>
-                                    {/* A read-only page has just been pointed at a
-                                  child that has written nothing yet, which is
-                                  not the same invitation to type. */}
-                                    <EmptyTitle>
-                                      {readOnly
-                                        ? "Nothing yet"
-                                        : "Start a session"}
-                                    </EmptyTitle>
-                                    <EmptyDescription>
-                                      {readOnly
-                                        ? "This subagent has not written anything yet."
-                                        : "Messages will appear here as the session progresses."}
-                                    </EmptyDescription>
-                                  </EmptyHeader>
-                                </Empty>
-                              ) : (
-                                <>
-                                  {turns.map((turn) => (
-                                    <MessageScrollerItem
-                                      key={turn.id}
-                                      messageId={turn.id}
-                                      scrollAnchor={turn.type === "user"}
-                                    >
-                                      {renderTurn(turn)}
-                                    </MessageScrollerItem>
-                                  ))}
-                                  {finalError && (
-                                    <MessageScrollerItem scrollAnchor={false}>
-                                      <Message from="assistant">
-                                        <MessageContent>
-                                          <MessageResponse className="text-destructive">
-                                            {getErrorMessage(finalError)}
-                                          </MessageResponse>
-                                        </MessageContent>
-                                      </Message>
-                                    </MessageScrollerItem>
-                                  )}
-                                </>
-                              )}
-                            </MessageScrollerContent>
-                          </MessageScrollerViewport>
-                          <MessageScrollerButton />
-                        </MessageScroller>
-                      </div>
-                    </div>
-                    {hasOutline && (
-                      <div
-                        className="absolute inset-y-0 start-0 hidden w-26 @min-[1100px]:block"
-                        onWheel={(event) => {
-                          // 条目多时先让大纲自己滚；还有余量就交回聊天记录。
-                          const list =
-                            event.currentTarget.querySelector<HTMLElement>(
-                              "[data-proximity-list]"
-                            );
-                          if (
-                            event.target instanceof Node &&
-                            list?.contains(event.target) &&
-                            list.scrollHeight > list.clientHeight
-                          ) {
-                            return;
-                          }
-
-                          contentRef.current
-                            ?.querySelector<HTMLElement>(
-                              '[data-slot="message-scroller-viewport"]'
-                            )
-                            ?.scrollBy({ top: event.deltaY });
-                        }}
-                      >
-                        <SessionOutline
-                          anchors={outlineAnchors}
-                          sections={outlineSections}
-                        />
-                      </div>
-                    )}
-                  </MessageScrollerProvider>
+                <div className="min-h-0 flex-1">
+                  <Transcript
+                    bot={activeBot}
+                    empty={EMPTY_SESSION}
+                    error={finalError}
+                    onFork={(messageId) => {
+                      if (sessionId) {
+                        forkSessionMutation.mutate({ sessionId, messageId });
+                      }
+                    }}
+                    onRespondToolApproval={handleRespondToolApproval}
+                    outline={
+                      hasOutline
+                        ? { anchors: outlineAnchors, sections: outlineSections }
+                        : undefined
+                    }
+                    questionnairePlacement={questionnairePlacement}
+                    turns={turns}
+                  />
                 </div>
 
                 {/* session input */}
-                {!readOnly && (
-                  <div
-                    className={cn(
-                      "sticky bottom-0 z-1 w-full",
-                      hasOutline && "@min-[1100px]:ps-[104px]"
-                    )}
-                  >
-                    {/* The bar's width comes out of the record's box, so the
-                        input box reserves the same on both sides; the two
-                        blocks then center on one axis. */}
-                    <div className="px-[var(--scrollbar-size)]">
-                      <div
-                        className={cn(
-                          SESSION_COLUMN,
-                          "gap-2 border-t-0 pt-1 pb-4"
-                        )}
-                      >
-                        {missingBotModel ? (
-                          <div
-                            className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-900 text-xs dark:text-amber-200"
-                            role="alert"
-                          >
-                            <div className="flex items-center gap-2">
-                              <AlertTriangleIcon className="size-4 shrink-0" />
-                              <span>
-                                {t("bots.model.missingWarning", {
-                                  model: `${missingBotModel.providerId}/${missingBotModel.modelId}`,
-                                })}
-                              </span>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => {
-                                void navigate({
-                                  to: "/bots/$botId",
-                                  params: { botId: effectiveBotId },
-                                });
-                              }}
-                            >
-                              {t("bots.actions.configure")}
-                            </Button>
+                <div
+                  className={cn(
+                    "sticky bottom-0 z-1 w-full",
+                    hasOutline && "@min-[1100px]:ps-[104px]"
+                  )}
+                >
+                  {/* The bar's width comes out of the record's box, so the
+                      input box reserves the same on both sides; the two
+                      blocks then center on one axis. */}
+                  <div className="px-[var(--scrollbar-size)]">
+                    <div
+                      className={cn(
+                        SESSION_COLUMN,
+                        "gap-2 border-t-0 pt-1 pb-4"
+                      )}
+                    >
+                      {missingBotModel ? (
+                        <div
+                          className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-900 text-xs dark:text-amber-200"
+                          role="alert"
+                        >
+                          <div className="flex items-center gap-2">
+                            <AlertTriangleIcon className="size-4 shrink-0" />
+                            <span>
+                              {t("bots.model.missingWarning", {
+                                model: `${missingBotModel.providerId}/${missingBotModel.modelId}`,
+                              })}
+                            </span>
                           </div>
-                        ) : null}
-                        <InboxDock
-                          busy={isGenerating}
-                          messages={pendingMessages}
-                          onCancel={handleQueueCancel}
-                          onClear={handleQueueClear}
-                          onSend={handleQueueSend}
-                        />
-                        <PromptInputProvider>
-                          {pendingQuestionnaire ? (
-                            <QuestionnaireComposer
-                              part={pendingQuestionnaire}
-                              onRespond={handleRespondToolApproval}
-                            />
-                          ) : (
-                            <PromptInput
-                              multiple
-                              maxFileSize={5 * 1024 * 1024}
-                              accept="image/png,image/jpeg,image/webp"
-                              onSubmit={handleSubmit}
-                              onError={console.error}
-                            >
-                              <PromptInputAttachmentsDisplay />
-                              <PromptInputBody>
-                                {/* <PromptInputTextarea /> */}
-                                <PromptInputTiptap
-                                  skills={
-                                    listSessionResourcesQuery.data?.skills.map(
-                                      (e) => ({
-                                        ...e,
-                                        type: "skill",
-                                      })
-                                    ) || []
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            onClick={() => {
+                              void navigate({
+                                to: "/bots/$botId",
+                                params: { botId: effectiveBotId },
+                              });
+                            }}
+                          >
+                            {t("bots.actions.configure")}
+                          </Button>
+                        </div>
+                      ) : null}
+                      <InboxDock
+                        busy={isGenerating}
+                        messages={pendingMessages}
+                        onCancel={handleQueueCancel}
+                        onClear={handleQueueClear}
+                        onSend={handleQueueSend}
+                      />
+                      <PromptInputProvider>
+                        {pendingQuestionnaire ? (
+                          <QuestionnaireComposer
+                            part={pendingQuestionnaire}
+                            onRespond={handleRespondToolApproval}
+                          />
+                        ) : (
+                          <PromptInput
+                            multiple
+                            maxFileSize={5 * 1024 * 1024}
+                            accept="image/png,image/jpeg,image/webp"
+                            onSubmit={handleSubmit}
+                            onError={console.error}
+                          >
+                            <PromptInputAttachmentsDisplay />
+                            <PromptInputBody>
+                              {/* <PromptInputTextarea /> */}
+                              <PromptInputTiptap
+                                skills={
+                                  listSessionResourcesQuery.data?.skills.map(
+                                    (e) => ({
+                                      ...e,
+                                      type: "skill",
+                                    })
+                                  ) || []
+                                }
+                                commands={commands}
+                                onEmptyChange={(isEmpty) => {
+                                  if (isEmpty !== isEditorEmpty) {
+                                    setIsEditorEmpty(isEmpty);
                                   }
-                                  commands={commands}
-                                  onEmptyChange={(isEmpty) => {
-                                    if (isEmpty !== isEditorEmpty) {
-                                      setIsEditorEmpty(isEmpty);
-                                    }
-                                  }}
-                                />
-                              </PromptInputBody>
-                              <PromptInputFooter>
-                                <PromptInputTools className="flex-wrap gap-0">
-                                  <PromptInputActionMenu>
-                                    <PromptInputActionMenuTrigger />
-                                    <PromptInputActionMenuContent className="min-w-max">
-                                      <PromptInputActionAddAttachments
-                                        disabled={
-                                          !selectedModelOption?.acceptsImage
-                                        }
-                                      />
-                                    </PromptInputActionMenuContent>
-                                  </PromptInputActionMenu>
-                                  <ProjectSelect
-                                    locked={isProjectLocked}
-                                    onProjectChange={handleProjectChange}
-                                    projectId={selectedProjectId}
-                                    projects={projects}
-                                  />
-                                  <ModelSelect
-                                    models={models}
-                                    model={selectedModel}
-                                    modelEffort={selectedModelEffort}
-                                    onModelChange={handleModelChange}
-                                    onModelEffortChange={
-                                      handleModelEffortChange
-                                    }
-                                  />
-                                  <ApprovalPolicySelect
-                                    approvalPolicy={approvalPolicy}
-                                    onApprovalPolicyChange={
-                                      handleApprovalPolicyChange
-                                    }
-                                  />
-                                </PromptInputTools>
-                                <div className="flex items-center gap-2">
-                                  {isGenerating && (
-                                    <ButtonGroup>
-                                      <Button
-                                        onClick={() =>
-                                          handleBusyModeChange("steering")
-                                        }
-                                        size="xs"
-                                        type="button"
-                                        variant={
-                                          busyMode === "steering"
-                                            ? "secondary"
-                                            : "ghost"
-                                        }
-                                      >
-                                        {t("composer.mode.steering")}
-                                      </Button>
-                                      <Button
-                                        onClick={() =>
-                                          handleBusyModeChange("followup")
-                                        }
-                                        size="xs"
-                                        type="button"
-                                        variant={
-                                          busyMode === "followup"
-                                            ? "secondary"
-                                            : "ghost"
-                                        }
-                                      >
-                                        {t("composer.mode.followup")}
-                                      </Button>
-                                    </ButtonGroup>
-                                  )}
-                                  <Context
-                                    maxTokens={contextWindow}
-                                    modelId={selectedModelOption?.name}
-                                    usage={tokenUsage}
-                                    usedTokens={contextUsedTokens}
-                                  >
-                                    <ContextTrigger />
-                                    <ContextContent>
-                                      <ContextContentHeader />
-                                      <ContextContentBody>
-                                        <ContextInputUsage />
-                                        <ContextOutputUsage />
-                                        <ContextReasoningUsage />
-                                        <ContextCacheUsage />
-                                      </ContextContentBody>
-                                      <ContextContentFooter />
-                                    </ContextContent>
-                                  </Context>
-                                  {isGenerating && (
-                                    <PromptInputStop
-                                      onStop={() => void stop()}
+                                }}
+                              />
+                            </PromptInputBody>
+                            <PromptInputFooter>
+                              <PromptInputTools className="flex-wrap gap-0">
+                                <PromptInputActionMenu>
+                                  <PromptInputActionMenuTrigger />
+                                  <PromptInputActionMenuContent className="min-w-max">
+                                    <PromptInputActionAddAttachments
+                                      disabled={
+                                        !selectedModelOption?.acceptsImage
+                                      }
                                     />
-                                  )}
-                                  <PromptInputSubmit
-                                    disabled={isEditorEmpty || !selectedModel}
-                                    label={submitLabel}
-                                    status={status}
-                                  />
-                                </div>
-                              </PromptInputFooter>
-                            </PromptInput>
-                          )}
-                        </PromptInputProvider>
-                      </div>
+                                  </PromptInputActionMenuContent>
+                                </PromptInputActionMenu>
+                                <ProjectSelect
+                                  locked={isProjectLocked}
+                                  onProjectChange={handleProjectChange}
+                                  projectId={selectedProjectId}
+                                  projects={projects}
+                                />
+                                <ModelSelect
+                                  models={models}
+                                  model={selectedModel}
+                                  modelEffort={selectedModelEffort}
+                                  onModelChange={handleModelChange}
+                                  onModelEffortChange={handleModelEffortChange}
+                                />
+                                <ApprovalPolicySelect
+                                  approvalPolicy={approvalPolicy}
+                                  onApprovalPolicyChange={
+                                    handleApprovalPolicyChange
+                                  }
+                                />
+                              </PromptInputTools>
+                              <div className="flex items-center gap-2">
+                                {isGenerating && (
+                                  <ButtonGroup>
+                                    <Button
+                                      onClick={() =>
+                                        handleBusyModeChange("steering")
+                                      }
+                                      size="xs"
+                                      type="button"
+                                      variant={
+                                        busyMode === "steering"
+                                          ? "secondary"
+                                          : "ghost"
+                                      }
+                                    >
+                                      {t("composer.mode.steering")}
+                                    </Button>
+                                    <Button
+                                      onClick={() =>
+                                        handleBusyModeChange("followup")
+                                      }
+                                      size="xs"
+                                      type="button"
+                                      variant={
+                                        busyMode === "followup"
+                                          ? "secondary"
+                                          : "ghost"
+                                      }
+                                    >
+                                      {t("composer.mode.followup")}
+                                    </Button>
+                                  </ButtonGroup>
+                                )}
+                                <Context
+                                  maxTokens={contextWindow}
+                                  modelId={selectedModelOption?.name}
+                                  usage={tokenUsage}
+                                  usedTokens={contextUsedTokens}
+                                >
+                                  <ContextTrigger />
+                                  <ContextContent>
+                                    <ContextContentHeader />
+                                    <ContextContentBody>
+                                      <ContextInputUsage />
+                                      <ContextOutputUsage />
+                                      <ContextReasoningUsage />
+                                      <ContextCacheUsage />
+                                    </ContextContentBody>
+                                    <ContextContentFooter />
+                                  </ContextContent>
+                                </Context>
+                                {isGenerating && (
+                                  <PromptInputStop onStop={() => void stop()} />
+                                )}
+                                <PromptInputSubmit
+                                  disabled={isEditorEmpty || !selectedModel}
+                                  label={submitLabel}
+                                  status={status}
+                                />
+                              </div>
+                            </PromptInputFooter>
+                          </PromptInput>
+                        )}
+                      </PromptInputProvider>
                     </div>
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </ResizablePanel>
@@ -1567,11 +1344,20 @@ export function Session({
                 {/* 收起时只折叠，不卸载：里面的状态要留到下次打开。 */}
                 <div className="h-full" inert={!panelOpen}>
                   <SessionPanel
+                    bot={activeBot}
                     key={sessionId}
                     onClose={() => setPanelOpen(false)}
+                    onSubagentDropped={(droppedSessionId) => {
+                      // The tab is gone, so the address must stop naming it;
+                      // otherwise a reload brings back a tab just closed.
+                      if (droppedSessionId === namedSubagentSessionId) {
+                        subagentAddress.clear();
+                      }
+                    }}
                     open={panelOpen}
                     openRequest={fileOpenRequest}
                     sessionId={sessionId}
+                    subagentRequest={namedSubagent}
                   />
                 </div>
               </ResizablePanel>

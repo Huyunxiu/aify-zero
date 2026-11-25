@@ -64,7 +64,9 @@ export const StepShell = ({
       </AgentStepTrigger>
       <AgentStepContent>{body}</AgentStepContent>
     </AgentStep>
-    {approvalPart === undefined ? null : (
+    {/* A record nobody can answer draws no buttons. The step's own row still
+        says it is held, and its input sits below the row. */}
+    {approvalPart === undefined || onRespond === undefined ? null : (
       <AgentActivityApproval
         part={approvalPart}
         onRespondToolApproval={onRespond}

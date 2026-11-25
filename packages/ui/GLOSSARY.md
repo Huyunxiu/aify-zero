@@ -1,8 +1,8 @@
 # UI
 
-The session panel and its views: files, changes, terminal. It draws the external
-state a session can reach — workspace files and git changes — as areas a reader can
-click and read.
+The session panel and its views: files, changes, terminal, and a subagent's record. It
+draws the external state a session can reach — workspace files and git changes — as areas
+a reader can click and read.
 
 ## Language
 
@@ -63,6 +63,12 @@ _Avoid_: Link in the chain, node
 The way one step is drawn in the chain: what the row says, and what a click shows. Its
 unit is the kind of part, not the tool name — one view can serve several tools.
 _Avoid_: Tool component, tool panel, renderer
+
+**Subagent View**:
+A view in the session panel. It draws the transcript of a subagent that one `task` call of
+this session started. It takes no input: the turns of a subagent belong to the call that
+made it, and nothing outside that call can answer a call it was held on.
+_Avoid_: Subagent page, subagent pane, mini transcript
 
 **Block**:
 One segment of the interface, made of components, that owns the code computing its own

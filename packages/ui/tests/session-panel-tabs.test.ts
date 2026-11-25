@@ -28,6 +28,24 @@ function idsOf(state: PanelState): string[] {
 }
 
 describe("panel tabs", () => {
+  test("clicking a subagent opens a tab for it", () => {
+    const state = panelReducer(initialPanelState("new"), {
+      id: "agent",
+      subagent: { sessionId: "child-1", title: "Explore the parser" },
+      type: "openSubagent",
+    });
+
+    expect(state.activeId).toBe("agent");
+    expect(state.tabs).toStrictEqual([
+      {
+        files: null,
+        id: "agent",
+        subagent: { sessionId: "child-1", title: "Explore the parser" },
+        view: "subagent",
+      },
+    ]);
+  });
+
   test("choosing a view turns the new-tab page into that view", () => {
     const state = panelReducer(initialPanelState("new"), {
       id: "new",
@@ -37,7 +55,7 @@ describe("panel tabs", () => {
 
     expect(state.activeId).toBe("new");
     expect(state.tabs).toStrictEqual([
-      { files: null, id: "new", view: "files" },
+      { files: null, id: "new", subagent: null, view: "files" },
     ]);
   });
 
@@ -52,6 +70,46 @@ describe("panel tabs", () => {
     expect(idsOf(state)).toStrictEqual(["a", "b"]);
     expect(state.tabs.map((tab) => tab.view)).toStrictEqual(["files", "files"]);
     expect(state.activeId).toBe("b");
+  });
+
+  test("clicking the same subagent again returns to its own tab", () => {
+    const state = run(
+      initialPanelState("new"),
+      {
+        id: "a",
+        subagent: { sessionId: "child-1", title: "Explore the parser" },
+        type: "openSubagent",
+      },
+      {
+        id: "b",
+        subagent: { sessionId: "child-2", title: "Review the tests" },
+        type: "openSubagent",
+      },
+      {
+        id: "c",
+        subagent: { sessionId: "child-1", title: "Explore the parser" },
+        type: "openSubagent",
+      }
+    );
+
+    expect(idsOf(state)).toStrictEqual(["a", "b"]);
+    expect(state.activeId).toBe("a");
+  });
+
+  test("a tab opened cold picks up the name when the record supplies it", () => {
+    const state = run(
+      initialPanelState("new"),
+      { id: "a", subagent: { sessionId: "child-1" }, type: "openSubagent" },
+      {
+        id: "b",
+        subagent: { sessionId: "child-1", title: "Explore the parser" },
+        type: "openSubagent",
+      }
+    );
+
+    expect(idsOf(state)).toStrictEqual(["a"]);
+    expect(state.activeId).toBe("a");
+    expect(state.tabs[0]?.subagent?.title).toBe("Explore the parser");
   });
 
   test("addTab keeps a single empty page", () => {
@@ -82,7 +140,9 @@ describe("panel tabs", () => {
       { id: "a", type: "close" }
     );
 
-    expect(state.tabs).toStrictEqual([{ files: null, id: "a", view: null }]);
+    expect(state.tabs).toStrictEqual([
+      { files: null, id: "a", subagent: null, view: null },
+    ]);
     expect(state.activeId).toBe("a");
   });
 
