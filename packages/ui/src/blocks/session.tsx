@@ -676,8 +676,9 @@ export function Session({
   const namedSubagentSessionId = subagentAddress.selectedSubagentSessionId;
 
   // The description that the `task` call wrote is also the title of that
-  // session, so naming the tab costs no request. Only a call in this record
-  // counts: an id this session never started reads as no selection at all.
+  // session, so naming the tab costs no request. It is only a name: the choice
+  // stands without it, because the address holds the choice and the record may
+  // arrive after it.
   const namedSubagentTitle = React.useMemo(
     () =>
       namedSubagentSessionId === undefined
@@ -688,11 +689,13 @@ export function Session({
 
   const namedSubagent = React.useMemo(
     () =>
-      namedSubagentSessionId === undefined || namedSubagentTitle === undefined
+      namedSubagentSessionId === undefined
         ? undefined
         : {
             sessionId: namedSubagentSessionId,
-            title: namedSubagentTitle,
+            ...(namedSubagentTitle === undefined
+              ? {}
+              : { title: namedSubagentTitle }),
           },
     [namedSubagentSessionId, namedSubagentTitle]
   );

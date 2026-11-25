@@ -1,12 +1,14 @@
 /**
- * 子会话视图：地址指名一个子会话时，右栏那个标签要真的画出它的记录。
+ * The subagent view: when the address names a subagent, the tab in the right
+ * panel must draw that session's record.
  *
- * 这里不生成真的子代理。假供应商派不出 `task` 调用，而视图要的只是「一条会话
- * 的记录」——所以用例把当前会话自己的 id 当成子会话 id 放进地址。这样走的是
- * 真实的读取链：地址 → 面板 → 记录。
+ * No real subagent is made here. The fake provider cannot issue a `task` call,
+ * and the view needs nothing more than the record of one session — so the case
+ * puts the current session's own id in the address as the subagent id. The chain
+ * it drives is the real one: address, panel, record.
  *
- * 断言落在两件用户看得见的事上：记录有高度（不是一块被裁掉的空白），以及那句
- * 回答在里面。父会话的记录同时仍然看得见。
+ * The assertions are on what a reader sees: the record has height (it is not a
+ * clipped blank), the answer is inside it, and the parent record still stands.
  */
 import { expect, test } from "@playwright/test";
 
@@ -52,7 +54,7 @@ test("The subagent view draws the record the address names", async ({
 
     await expect(page.getByText(ANSWER)).toBeVisible();
 
-    // 这条会话自己当子会话：视图读的就是这条会话的记录。
+    // The session is its own subagent: the view reads that session's record.
     const sessionUrl = new URL(page.url());
     const sessionId = sessionUrl.pathname.split("/").at(-1);
     expect(sessionId).toBeTruthy();
@@ -61,8 +63,8 @@ test("The subagent view draws the record the address names", async ({
       `${sessionUrl.origin}${sessionUrl.pathname}?subagent=${sessionId}`
     );
 
-    // 一层一层断言，失败落在哪一步就说清断在哪：标签有没有建出来、面板有没有
-    // 展开、记录有没有挂上、挂上以后有没有高度。
+    // One assertion per step, so a failure names the step that broke: was the tab
+    // built, did the panel open, did the record mount, and does it have height.
     const subagent = page.getByRole("tabpanel", { name: "Subagent" });
     await expect(subagent).toBeVisible();
 
@@ -72,14 +74,14 @@ test("The subagent view draws the record the address names", async ({
     const viewport = subagent.locator(
       '[data-slot="message-scroller-viewport"]'
     );
-    await expect(viewport, "the record never mounted").toBeVisible();
+    await expect(viewport, "the record is not shown").toBeVisible();
 
     const box = await viewport.boundingBox();
     expect(box?.height ?? 0, "the record has no height").toBeGreaterThan(0);
 
     await expect(subagent).toContainText(ANSWER);
-    // 父会话的记录没有让位：它仍在左栏。
-    await expect(page.getByRole("log").getByText(MESSAGE)).toBeVisible();
+    // The parent record did not give way: the left one is still there, first.
+    await expect(page.getByRole("log").first()).toContainText(MESSAGE);
   } catch (error) {
     failed = true;
     throw error;
