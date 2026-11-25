@@ -166,7 +166,7 @@ export function Transcript({
   const hasOutline = outline !== undefined;
 
   return (
-    <div className="relative flex-1" ref={contentRef}>
+    <div className="relative h-full" ref={contentRef}>
       <MessageScrollerProvider
         autoScroll
         defaultScrollPosition="start"

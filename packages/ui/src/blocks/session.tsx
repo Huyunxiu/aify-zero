@@ -1113,24 +1113,26 @@ export function Session({
               </TitleBar>
               {/* session container */}
               <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                <Transcript
-                  bot={activeBot}
-                  empty={EMPTY_SESSION}
-                  error={finalError}
-                  onFork={(messageId) => {
-                    if (sessionId) {
-                      forkSessionMutation.mutate({ sessionId, messageId });
+                <div className="min-h-0 flex-1">
+                  <Transcript
+                    bot={activeBot}
+                    empty={EMPTY_SESSION}
+                    error={finalError}
+                    onFork={(messageId) => {
+                      if (sessionId) {
+                        forkSessionMutation.mutate({ sessionId, messageId });
+                      }
+                    }}
+                    onRespondToolApproval={handleRespondToolApproval}
+                    outline={
+                      hasOutline
+                        ? { anchors: outlineAnchors, sections: outlineSections }
+                        : undefined
                     }
-                  }}
-                  onRespondToolApproval={handleRespondToolApproval}
-                  outline={
-                    hasOutline
-                      ? { anchors: outlineAnchors, sections: outlineSections }
-                      : undefined
-                  }
-                  questionnairePlacement={questionnairePlacement}
-                  turns={turns}
-                />
+                    questionnairePlacement={questionnairePlacement}
+                    turns={turns}
+                  />
+                </div>
 
                 {/* session input */}
                 <div
