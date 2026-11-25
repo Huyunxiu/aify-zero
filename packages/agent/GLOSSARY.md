@@ -213,3 +213,20 @@ The approval category of one tool: read, mutate, exec, interact, or unknown. The
 answers by class, not by tool name. The class of an MCP tool comes from the annotation of
 its server. If that annotation is absent, the class is unknown.
 _Avoid_: 风险等级、权限级别、工具类型
+
+**Attachment (附件)**:
+The bytes one read recorded. A transcript replays its reads, so an attachment never changes:
+the digest of its bytes identifies it, not a name. It is not an Asset: an asset is a mutable
+file an owner replaces by name.
+_Avoid_: 资源、上传、文件、blob
+
+**Content (内容)**:
+What a read answers with, in one of three forms: the text of a file, the entries of a
+directory, or an attachment. The path decides the form; the model does not choose it.
+_Avoid_: 正文、数据、结果
+
+**Input Kind (输入种类)**:
+One media kind a model route declares it accepts, as the settings schema spells it: text,
+image, audio, video, or pdf. A route that declares nothing accepts text only, so an unknown
+route never receives an image.
+_Avoid_: 模态、能力、modality

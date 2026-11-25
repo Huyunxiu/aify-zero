@@ -29,6 +29,7 @@ import type {
   ToolStartDecision,
 } from "../hooks-manager";
 import { applyRuntimeSettingsPatches } from "../hooks-manager";
+import { hideUnsupportedImages } from "../model/input-kinds";
 import type { CallTargetResolver } from "../tools/execution";
 import {
   declaredTools,
@@ -133,6 +134,8 @@ export interface StepRunnerDeps {
    * 每次执行现读：扩展可能在会话装配之后才注册，构造 StepRunner 时它还不存在。
    */
   resolveCallTarget: CallTargetResolver;
+  /** The media kinds the routed model declares; default is text only. */
+  inputKinds(): readonly string[];
 }
 
 /** Maps effort levels to the AI SDK's reasoning levels. */
@@ -389,6 +392,14 @@ export class StepRunner {
       await journal.persistStep(askedTurnId, askedStepId);
     }
 
+    // A session can switch models, so an image an earlier route accepted must not
+    // reach a route that cannot read it. The replacement is a sentence, not a stop:
+    // the bytes belong to a turn that already settled.
+    const requestMessages = hideUnsupportedImages(
+      messages,
+      this.#deps.inputKinds()
+    );
+
     // 大模型调用
     let result;
     try {
@@ -408,7 +419,7 @@ export class StepRunner {
         reasoning: context.modelEffort
           ? MODEL_EFFORT_TO_REASONING[context.modelEffort]
           : undefined,
-        messages,
+        messages: requestMessages,
         abortSignal: context.abortSignal,
         include: {
           requestBody: true,

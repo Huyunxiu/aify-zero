@@ -39,4 +39,36 @@ describe("token estimates", () => {
       estimateMessageTokens(messages[0]!) + estimateMessageTokens(messages[1]!)
     );
   });
+
+  test("prices a tool result by its parts, not by inline bytes", () => {
+    const base64 = "A".repeat(40_000);
+    const message = {
+      role: "tool" as const,
+      content: [
+        {
+          type: "tool-result" as const,
+          toolCallId: "call-1",
+          toolName: "read-file",
+          output: {
+            type: "content" as const,
+            value: [
+              { type: "text" as const, text: "<path>a.png</path>" },
+              {
+                type: "file" as const,
+                data: { type: "data" as const, data: base64 },
+                mediaType: "image/png",
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const tokens = estimateMessageTokens(message);
+
+    // An image costs a fixed amount on the provider side; counting the encoded
+    // bytes would price one screenshot at tens of thousands of tokens.
+    expect(tokens).toBeGreaterThan(1000);
+    expect(tokens).toBeLessThan(2000);
+  });
 });

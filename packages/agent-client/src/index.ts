@@ -1,5 +1,6 @@
 export * from "./approval-policy";
 export * from "./asset";
+export * from "./attachment";
 export * from "./bot";
 export * from "./types";
 export * from "./session-stream";

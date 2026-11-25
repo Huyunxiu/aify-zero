@@ -1,16 +1,30 @@
 import { basename, dirname, join } from "node:path";
 
+import {
+  ATTACHMENT_IMAGE_TYPES,
+  ATTACHMENT_MAX_BYTES,
+  ATTACHMENT_MAX_PIXELS,
+  attachmentOwner,
+} from "@workspace/agent-client";
+import type { AttachmentRef } from "@workspace/agent-client";
 import type { Sandbox } from "@workspace/sandbox";
 import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import { readAttachment, saveAttachment } from "../attachments/store";
 import type { ToolEnvironment } from "../extensions/capabilities";
+import {
+  acceptsInput,
+  inputKindOf,
+  ModelInputRefusedError,
+} from "../model/input-kinds";
 import {
   getFileTypeFromSandbox,
   isBinaryFile,
   toolPathDescription,
 } from "../utils/fs-util";
+import { imageDimensions } from "../utils/image-header";
 import type { ToolOutput } from "./types";
 
 const DEFAULT_READ_LIMIT = 2000;
@@ -18,13 +32,20 @@ const MAX_BYTES = 50 * 1024;
 const MAX_BYTES_LABEL = `${MAX_BYTES / 1024} KB`;
 const MAX_LINE_LENGTH = 2000;
 const MAX_LINE_SUFFIX = `... (line truncated to ${MAX_LINE_LENGTH} chars)`;
-const SUPPORTED_ATTACHMENT_MIMES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
+/** The media types this tool commits; the limits come from the protocol package. */
+const SUPPORTED_ATTACHMENT_MIMES = new Set<string>([
+  ...ATTACHMENT_IMAGE_TYPES,
   "application/pdf",
 ]);
+
+/**
+ * How much of an image the pixel gate reads.
+ *
+ * A JPEG may carry a large colour profile before its frame header, and 4 KB is not
+ * always enough to reach it. A read that gives up on the size also gives up on the
+ * pixel limit, so it asks for more before it decides.
+ */
+const IMAGE_HEADER_BYTES = 256 * 1024;
 
 const DESCRIPTION = `
 Read a file or directory from the local filesystem. If the path does not exist, an error is returned.
@@ -39,7 +60,7 @@ Usage:
 - For a directory, entries come without line numbers, one per line, with a trailing \`/\` for subdirectories. Pass offset and limit to page through a large directory.
 - Call this tool in parallel when you know there are multiple files you want to read.
 - Avoid tiny repeated slices (30 line chunks). If you need more context, read a larger window.
-- This tool can read image files and PDFs and return them as file attachments.
+- This tool can read image files and PDFs and return them as file attachments. Images are stored once and served from storage; the envelope reports their size, and the model only sees them when its route accepts image input.
 `;
 
 async function miss(
@@ -130,29 +151,151 @@ async function readDirectory(
   };
 }
 
-async function readAttachments(
+/** One human-readable byte size for the envelope. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} bytes`;
+  }
+  const kib = bytes / 1024;
+  if (kib < 1024) {
+    return `${Math.max(1, Math.round(kib))} KB`;
+  }
+  return `${(kib / 1024).toFixed(1)} MB`;
+}
+
+/** The envelope every read returns, so the model reads one shape for every file. */
+function attachmentEnvelope(
+  filepath: string,
+  mime: string,
+  bytes: number,
+  size: { width: number; height: number } | undefined
+): string {
+  const kind = mime.startsWith("image/") ? "image" : "file";
+  const dimensions =
+    size === undefined ? "" : `, ${size.width}x${size.height} px`;
+  return [
+    `<path>${filepath}</path>`,
+    `<type>${kind}</type>`,
+    "<content>",
+    `${mime}${dimensions}, ${formatBytes(bytes)}`,
+    "</content>",
+  ].join("\n");
+}
+
+/** What one attachment read needs. */
+interface AttachmentReadInput {
+  readonly sandbox: Sandbox;
+  readonly filepath: string;
+  readonly mime: string;
+  readonly head: Uint8Array;
+  /** The size the filesystem reported, when it reported one. */
+  readonly bytes: number | undefined;
+  readonly agentContext: ToolEnvironment;
+  /** Whether the caller passed `offset` or `limit`, which do not page an attachment. */
+  readonly usedTextPaging: boolean;
+}
+
+/** One refusal for a file this read will not commit, naming the remedy. */
+function refuseAttachment(
+  filepath: string,
+  detail: string,
+  remedy: string
+): Error {
+  return new Error(`cannot read "${filepath}": ${detail} ${remedy}`);
+}
+
+/** The remedy that fits the media type: a PDF is not cropped. */
+function oversizeRemedy(mime: string): string {
+  return mime.startsWith("image/")
+    ? "Crop or shrink the image, then read the smaller copy."
+    : "Split the document, then read the smaller part.";
+}
+
+/** The declared image size, reading more of the file when the first bytes stop short. */
+async function imageSize(
   sandbox: Sandbox,
   filepath: string,
-  mime: string
+  mime: string,
+  head: Uint8Array
+): Promise<{ width: number; height: number } | undefined> {
+  if (!mime.startsWith("image/")) {
+    return undefined;
+  }
+  const direct = imageDimensions(head);
+  if (direct !== undefined || sandbox.readHead === undefined) {
+    return direct;
+  }
+  return imageDimensions(await sandbox.readHead(filepath, IMAGE_HEADER_BYTES));
+}
+
+/**
+ * Commit one image or PDF as an immutable attachment and answer with its envelope.
+ *
+ * Every gate runs before the bytes are read: the route's accepted kinds, the byte
+ * limit, and the pixel limit. A refusal therefore costs no memory and leaves no
+ * record behind.
+ */
+async function readAttachments(
+  input: AttachmentReadInput
 ): Promise<ReadFileToolOutput> {
-  const bytes = await sandbox.readFileBuffer(filepath);
-  const output = `File read successfully, mime.types: ${mime}`;
+  const { sandbox, filepath, mime, head, bytes, agentContext } = input;
+
+  if (!acceptsInput(agentContext.inputKinds ?? ["text"], mime)) {
+    throw new ModelInputRefusedError(filepath, inputKindOf(mime));
+  }
+
+  const size = await imageSize(sandbox, filepath, mime, head);
+  if (size !== undefined && size.width * size.height > ATTACHMENT_MAX_PIXELS) {
+    throw refuseAttachment(
+      filepath,
+      `${size.width}x${size.height} px exceeds the ${ATTACHMENT_MAX_PIXELS}-pixel limit.`,
+      oversizeRemedy(mime)
+    );
+  }
+  if (bytes !== undefined && bytes > ATTACHMENT_MAX_BYTES) {
+    throw refuseAttachment(
+      filepath,
+      `${formatBytes(bytes)} exceeds the ${formatBytes(ATTACHMENT_MAX_BYTES)} limit.`,
+      oversizeRemedy(mime)
+    );
+  }
+
+  const data = await sandbox.readFileBuffer(filepath);
+  // A sandbox that cannot report a size is still bounded after the read: the bytes
+  // never reach storage above the limit.
+  if (data.byteLength > ATTACHMENT_MAX_BYTES) {
+    throw refuseAttachment(
+      filepath,
+      `${formatBytes(data.byteLength)} exceeds the ${formatBytes(ATTACHMENT_MAX_BYTES)} limit.`,
+      oversizeRemedy(mime)
+    );
+  }
+
+  const attachment = await saveAttachment({
+    sessionDir: agentContext.sessionDir,
+    owner: attachmentOwner(agentContext.sessionId),
+    data,
+    mediaType: mime,
+    ...(size === undefined ? {} : { width: size.width, height: size.height }),
+    name: filepath,
+  });
+
+  const envelope = attachmentEnvelope(filepath, mime, data.byteLength, size);
+  const paging = input.usedTextPaging
+    ? "\n\n(offset and limit apply to text files only; the whole attachment was read.)"
+    : "";
+
   return {
-    output,
+    output: envelope + paging,
     code: "ok",
     metadata: {
       type: "attachments",
       filepath,
       mime,
+      bytes: data.byteLength,
+      ...(size === undefined ? {} : { width: size.width, height: size.height }),
     },
-    attachments: [
-      {
-        type: "file-data",
-        filename: filepath,
-        mediaType: mime,
-        data: Buffer.from(bytes).toString("base64"),
-      },
-    ],
+    attachments: [attachment],
   };
 }
 
@@ -325,6 +468,9 @@ type ReadFileToolOutputMetadata =
       type: "attachments";
       filepath: string;
       mime: string;
+      bytes?: number;
+      width?: number;
+      height?: number;
     }
   | {
       type: "binary-file";
@@ -332,23 +478,17 @@ type ReadFileToolOutputMetadata =
       mime: string;
     };
 
+type ReadFileAttachment =
+  | {
+      type: "file-data";
+      data: string;
+      mediaType: string;
+      filename?: string;
+    }
+  | AttachmentRef;
+
 type ReadFileToolOutput = ToolOutput<string, ReadFileToolOutputMetadata> & {
-  attachments?: {
-    type: "file-data";
-    /**
-     * Base-64 encoded media data.
-     */
-    data: string;
-    /**
-     * IANA media type.
-     * @see https://www.iana.org/assignments/media-types/media-types.xhtml
-     */
-    mediaType: string;
-    /**
-     * Optional filename of the file.
-     */
-    filename?: string;
-  }[];
+  attachments?: ReadFileAttachment[];
 };
 
 type CreateReadFileToolProps = {
@@ -397,7 +537,15 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
       );
 
       if (stats.isFile && mime && SUPPORTED_ATTACHMENT_MIMES.has(mime)) {
-        return await readAttachments(sandbox, filepath, mime);
+        return await readAttachments({
+          sandbox,
+          filepath,
+          mime,
+          head: sample,
+          bytes: stats.size,
+          agentContext,
+          usedTextPaging: offset !== undefined || limit !== undefined,
+        });
       }
 
       if (stats.isFile && ext && isBinaryFile(ext, sample)) {
@@ -412,7 +560,22 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
         normalizedLimit
       );
     },
-    toModelOutput({ output }) {
+    async toModelOutput({ output }: { output: ReadFileToolOutput }): Promise<
+      | { type: "error-text"; value: string }
+      | { type: "text"; value: string }
+      | {
+          type: "content";
+          value: (
+            | { type: "text"; text: string }
+            | {
+                type: "file";
+                data: { type: "data"; data: string };
+                mediaType: string;
+                filename?: string;
+              }
+          )[];
+        }
+    > {
       if (output.code === "error") {
         return {
           type: "error-text",
@@ -420,16 +583,44 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
         };
       }
 
-      if (output.attachments?.length) {
+      const items = output.attachments ?? [];
+      if (items.length === 0) {
         return {
-          type: "content",
-          value: output.attachments,
+          type: "text",
+          value: output.output,
         };
       }
 
+      // The envelope carries the path and the size; the files carry the pixels. A
+      // model that receives only the files cannot say where they came from.
+      const files = await Promise.all(
+        items.map(async (item) =>
+          item.type === "file-data"
+            ? {
+                type: "file" as const,
+                data: { type: "data" as const, data: item.data },
+                mediaType: item.mediaType,
+                ...(item.filename === undefined
+                  ? {}
+                  : { filename: item.filename }),
+              }
+            : {
+                type: "file" as const,
+                data: {
+                  type: "data" as const,
+                  data: Buffer.from(
+                    await readAttachment(agentContext.sessionDir, item)
+                  ).toString("base64"),
+                },
+                mediaType: item.mediaType,
+                ...(item.name === undefined ? {} : { filename: item.name }),
+              }
+        )
+      );
+
       return {
-        type: "text",
-        value: output.output,
+        type: "content",
+        value: [{ type: "text", text: output.output }, ...files],
       };
     },
   });

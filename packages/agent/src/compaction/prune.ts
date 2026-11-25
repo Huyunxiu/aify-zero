@@ -1,5 +1,6 @@
 import type { ModelMessage, ToolResultPart } from "ai";
 
+import { attachmentStubText } from "../attachments/text";
 import { estimateMessageTokens } from "./estimate";
 
 /** 用来替代超大工具结果中间被删掉的部分。 */
@@ -38,8 +39,11 @@ function renderContentOutput(
         return part.text;
       }
       const filename = "filename" in part ? part.filename : undefined;
-      const mediaType = "mediaType" in part ? part.mediaType : "file";
-      return `[Attached file ${filename ?? "attachment"} (${mediaType})]`;
+      const mediaType =
+        ("mediaType" in part ? part.mediaType : undefined) ?? "file";
+      // The stub names the path so the model can read the file again; it is the
+      // only handle left once the bytes leave the request.
+      return attachmentStubText(filename, mediaType);
     })
     .join("\n");
 }

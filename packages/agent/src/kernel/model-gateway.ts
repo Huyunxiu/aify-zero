@@ -38,6 +38,11 @@ export interface ModelTarget {
   readonly apiKey: string;
   /** 供应商自带的自定义请求头。 */
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * The media kinds this route declares, as the settings schema spells them.
+   * Absent means text only: an unknown route must not receive an image.
+   */
+  readonly inputKinds?: readonly string[];
 }
 
 /** 把模型引用解析成调用目标；没配置时返回 `undefined`。 */

@@ -1,3 +1,8 @@
+import {
+  acceptsInput,
+  inputKindOf,
+  TEXT_ONLY_INPUT_KINDS,
+} from "@workspace/agent";
 import type { AgentToolSet } from "@workspace/agent";
 import type { AgentTurn, AgentUserTurn } from "@workspace/agent-client";
 import { ModelEffort } from "@workspace/shared/constants";
@@ -13,17 +18,14 @@ export function unsupportedInput(
   configured: ConfiguredModel,
   turn: AgentUserTurn
 ): string | undefined {
-  const accepted = new Set<string>(
-    configured.model.modalities?.input ?? ["text"]
-  );
+  const accepted = configured.model.modalities?.input ?? TEXT_ONLY_INPUT_KINDS;
   for (const step of turn.content) {
     for (const part of step.content) {
       if (part.type !== "file") {
         continue;
       }
-      const [kind] = part.mediaType.split("/");
-      if (kind && !accepted.has(kind)) {
-        return kind;
+      if (!acceptsInput(accepted, part.mediaType)) {
+        return inputKindOf(part.mediaType);
       }
     }
   }
