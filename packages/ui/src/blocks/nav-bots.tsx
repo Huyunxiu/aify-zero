@@ -106,9 +106,7 @@ function BotItem({ bot, onConfigure, onDelete }: BotItemProps) {
         </SidebarRowMenu>
       </div>
       <CollapsibleContent>
-        <div className="pl-2">
-          <BotSessions botId={bot.id} />
-        </div>
+        <BotSessions botId={bot.id} />
       </CollapsibleContent>
     </Collapsible>
   );

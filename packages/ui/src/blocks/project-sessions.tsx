@@ -1,7 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  SidebarMenu,
   SidebarMenuItem,
   SidebarMenuSubButton,
 } from "@workspace/ui/components/sidebar";
@@ -12,6 +11,7 @@ import { client } from "../lib/orpc";
 import { RelativeTime } from "./relative-time";
 import { SessionDeleteDialog } from "./session-delete-dialog";
 import type { DeletableSession } from "./session-delete-dialog";
+import { SessionList } from "./session-list";
 import { SessionRenameDialog } from "./session-rename-dialog";
 import type { RenamableSession } from "./session-rename-dialog";
 import { SessionRowMenuItems } from "./session-row-actions";
@@ -68,7 +68,7 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <SidebarMenu>
+      <SessionList>
         {sessions.map((session) => (
           <SidebarMenuItem key={session.id} className="group/item">
             <SidebarMenuSubButton
@@ -113,7 +113,7 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
           </li>
         ) : null}
         <li ref={sentinelRef} aria-hidden="true" className="h-px" />
-      </SidebarMenu>
+      </SessionList>
       <SessionRenameDialog session={renaming} onOpenChange={setRenaming} />
       <SessionDeleteDialog session={deleting} onOpenChange={setDeleting} />
     </>
