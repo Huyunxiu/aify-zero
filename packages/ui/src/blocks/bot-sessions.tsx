@@ -78,7 +78,7 @@ export function BotSessions({ botId }: { botId: string }) {
             <SidebarMenuItem key={session.id} className="group/item">
               <SidebarMenuSubButton
                 isActive={isCurrent}
-                className="w-full cursor-pointer pr-8 transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none"
+                className="group/scroll w-full cursor-pointer pr-8 transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none"
                 onClick={() =>
                   navigate({
                     to: "/sessions/$sessionId",
