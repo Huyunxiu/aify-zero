@@ -24,7 +24,7 @@ import {
 import { join } from "node:path";
 
 import { isAttachmentDigest } from "@workspace/agent-client";
-import type { AttachmentRef } from "@workspace/agent-client";
+import type { AttachmentRef, AttachmentRegion } from "@workspace/agent-client";
 
 /** The directory that holds one session's attachments. */
 export function attachmentDir(sessionDir: string): string {
@@ -57,6 +57,8 @@ export interface SaveAttachmentInput {
     readonly width: number;
     readonly height: number;
   };
+  /** The fraction of the source the copy shows, for a partial read. */
+  readonly region?: AttachmentRegion;
 }
 
 /**
@@ -121,6 +123,7 @@ function reference(input: SaveAttachmentInput, sha256: string): AttachmentRef {
             height: input.originalDimensions.height,
           },
         }),
+    ...(input.region === undefined ? {} : { region: input.region }),
   };
 }
 

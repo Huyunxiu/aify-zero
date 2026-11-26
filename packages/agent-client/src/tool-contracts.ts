@@ -1,6 +1,6 @@
 import type { Tool } from "ai";
 
-import type { AttachmentRef } from "./attachment";
+import type { AttachmentRef, AttachmentRegion } from "./attachment";
 import type { QuestionnaireAnswers } from "./questionnaire";
 
 /** 一个工具怎么让模型看见。 */
@@ -79,6 +79,7 @@ export type FileReadMetadata =
       bytes?: number;
       width?: number;
       height?: number;
+      region?: AttachmentRegion;
     }
   | { type: "binary-file"; filepath: string; mime: string };
 
@@ -139,6 +140,8 @@ export type ReadFileInput = {
   path: string;
   limit?: number;
   offset?: number;
+  /** An image region to read instead of the whole image; image files only. */
+  region?: AttachmentRegion;
 };
 export type ReadFileOutput = ToolOutput<string, FileReadMetadata> & {
   attachments?: ReadFileAttachment[];

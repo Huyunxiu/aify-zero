@@ -115,4 +115,35 @@ describe("read-file without an image decoder", () => {
       /needs the image decoder/u
     );
   });
+
+  test("should refuse a region instead of reading the whole image", async () => {
+    const dir = await createTempDir();
+    await writeFile(join(dir, "small.png"), pngHeader(40, 20));
+
+    const tool = (() => {
+      const agentContext = {
+        sessionId: "session-1",
+        projectDirs: [dir],
+        primaryProjectDir: dir,
+        sessionDir: dir,
+        inputKinds: ["text", "image"],
+        sandbox: testSandbox(dir),
+      } as unknown as AgentContext;
+      return createReadFileTool({ agentContext });
+    })();
+    const execute = tool.execute as unknown as (
+      input: {
+        path: string;
+        region: { x: number; y: number; width: number; height: number };
+      },
+      options: unknown
+    ) => Promise<unknown>;
+
+    await expect(
+      execute(
+        { path: "small.png", region: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+        { toolCallId: "call-1", messages: [] }
+      )
+    ).rejects.toThrow(/a region needs the image decoder/u);
+  });
 });

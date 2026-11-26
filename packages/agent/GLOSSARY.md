@@ -243,3 +243,13 @@ provider accepts, and the media kinds the model reads. It is read once per step,
 patch can move the session to another model. It is not a `Route`: the route of this file
 redirects a tool call.
 _Avoid_: 模型配置、供应商、通道
+
+**Region (区域)**:
+The part of an image one read keeps, given as four fractions of its width and height. A read
+without a region keeps the whole image; a read with one works at source resolution inside it.
+_Avoid_: 裁剪框、crop、视口
+
+**Crop Box (裁剪框)**:
+The same region as `Region`, in source pixels: where the box starts and how large it is after
+orientation. A region is what a caller asks for; a crop box is what the read did.
+_Avoid_: 矩形、rect、bounding box

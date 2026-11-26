@@ -312,4 +312,151 @@ describe("read-file and image attachments", () => {
     expect(result.output).toContain("application/pdf");
     expect(attachments[0]).not.toHaveProperty("width");
   });
+
+  test("should read the region the model names", async () => {
+    const dir = await createTempDir();
+    const decoder = await loadImageDecoder();
+    /* v8 ignore next -- the suite cannot run without a decoder. */
+    if (decoder === undefined) {
+      throw new Error("the decoder is required to build this fixture");
+    }
+    const source = await decoder({
+      create: { width: 800, height: 400, channels: 3, background: "#336699" },
+    })
+      .png()
+      .toBuffer();
+    await writeFile(join(dir, "screen.png"), source);
+
+    const tool = imageTool(dir, ["text", "image"]);
+    const execute = tool.execute as unknown as (
+      input: {
+        path: string;
+        region: { x: number; y: number; width: number; height: number };
+      },
+      options: unknown
+    ) => Promise<{
+      output: string;
+      metadata: Record<string, unknown>;
+      attachments: Record<string, unknown>[];
+    }>;
+    const result = await execute(
+      { path: "screen.png", region: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+      { toolCallId: "call-1", messages: [] }
+    );
+
+    expect(result.output).toContain("region 0,0,0.5,0.5 of 800x400");
+    expect(result.output).toContain("source box x 0-400, y 0-200");
+    expect(result.metadata.region).toStrictEqual({
+      x: 0,
+      y: 0,
+      width: 0.5,
+      height: 0.5,
+    });
+    expect(result.attachments[0]).toMatchObject({ width: 400, height: 200 });
+  });
+
+  test("should refuse a region that leaves the image", async () => {
+    const dir = await createTempDir();
+    await writeFile(join(dir, "red.png"), PNG_1X1);
+
+    const tool = imageTool(dir, ["text", "image"]);
+    const schema = tool.inputSchema as {
+      safeParse: (value: unknown) => { success: boolean };
+    };
+
+    expect(
+      schema.safeParse({
+        path: "red.png",
+        region: { x: 0.5, y: 0, width: 0.75, height: 1 },
+      }).success
+    ).toBeFalsy();
+    expect(
+      schema.safeParse({
+        path: "red.png",
+        region: { x: 0, y: 0, width: 0.5, height: 0.5 },
+      }).success
+    ).toBeTruthy();
+  });
+
+  test("should ignore a region on a document", async () => {
+    const dir = await createTempDir();
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\n", "ascii");
+    await writeFile(join(dir, "doc.pdf"), pdf);
+
+    const tool = imageTool(dir, ["text", "image", "pdf"]);
+    const execute = tool.execute as unknown as (
+      input: {
+        path: string;
+        region: { x: number; y: number; width: number; height: number };
+      },
+      options: unknown
+    ) => Promise<{ metadata: Record<string, unknown> }>;
+    const result = await execute(
+      { path: "doc.pdf", region: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+      { toolCallId: "call-1", messages: [] }
+    );
+
+    expect(result.metadata).not.toHaveProperty("region");
+  });
+
+  test("should say how to place a coordinate when the crop is still reduced", async () => {
+    const dir = await createTempDir();
+    const decoder = await loadImageDecoder();
+    /* v8 ignore next -- the suite cannot run without a decoder. */
+    if (decoder === undefined) {
+      throw new Error("the decoder is required to build this fixture");
+    }
+    const source = await decoder({
+      create: { width: 4000, height: 4000, channels: 3, background: "#445566" },
+    })
+      .png()
+      .toBuffer();
+    await writeFile(join(dir, "big.png"), source);
+
+    const tool = imageTool(dir, ["text", "image"]);
+    const execute = tool.execute as unknown as (
+      input: {
+        path: string;
+        region: { x: number; y: number; width: number; height: number };
+      },
+      options: unknown
+    ) => Promise<{ output: string }>;
+    const result = await execute(
+      { path: "big.png", region: { x: 0, y: 0, width: 0.5, height: 0.5 } },
+      { toolCallId: "call-1", messages: [] }
+    );
+
+    expect(result.output).toContain("source box x 0-2000, y 0-2000");
+    expect(result.output).toContain("multiply coordinates by");
+    expect(result.output).toContain("add the box origin (0, 0)");
+  });
+
+  test("should say that a region applies to images only", async () => {
+    const dir = await createTempDir();
+    await writeFile(join(dir, "notes.txt"), "hello\n");
+    const pdf = Buffer.from("%PDF-1.4\n1 0 obj\n<<>>\nendobj\n", "ascii");
+    await writeFile(join(dir, "doc.pdf"), pdf);
+
+    const tool = imageTool(dir, ["text", "image", "pdf"]);
+    const execute = tool.execute as unknown as (
+      input: {
+        path: string;
+        region: { x: number; y: number; width: number; height: number };
+      },
+      options: unknown
+    ) => Promise<{ output: string }>;
+    const region = { x: 0, y: 0, width: 0.5, height: 0.5 };
+
+    const text = await execute(
+      { path: "notes.txt", region },
+      { toolCallId: "call-1", messages: [] }
+    );
+    const document = await execute(
+      { path: "doc.pdf", region },
+      { toolCallId: "call-2", messages: [] }
+    );
+
+    expect(text.output).toContain("region applies to images only");
+    expect(document.output).toContain("region applies to images only");
+  });
 });
