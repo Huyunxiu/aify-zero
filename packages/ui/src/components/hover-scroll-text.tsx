@@ -10,6 +10,15 @@ export type HoverScrollTextProps = {
 };
 
 /**
+ * Pixels the text moves in one second.
+ *
+ * The time follows from the hidden width, so a longer title takes longer and
+ * cannot move faster. No cap: a cap turns a long title into a speed that no
+ * reader can follow.
+ */
+const SCROLL_SPEED = 80;
+
+/**
  * 溢出时保留省略号；指针悬停后滑到被藏起来的一端。
  *
  * The pointer must enter this element. To make a wider area start the scroll,
@@ -44,12 +53,9 @@ export function HoverScrollText({
     return () => observer.disconnect();
   }, [value]);
 
-  // Pace it for reading: 12ms per pixel is about 83px/s. The 6s cap stops an
-  // extreme title from running for half a minute, and it does not make a normal
-  // one faster.
   const scrollStyle = {
     "--scroll-distance": `${overflow}px`,
-    "--scroll-duration": `${Math.min(6000, 300 + overflow * 12)}ms`,
+    "--scroll-duration": `${(overflow / SCROLL_SPEED) * 1000}ms`,
   } as React.CSSProperties;
 
   return (
