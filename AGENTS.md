@@ -4,6 +4,7 @@
 2. Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
 3. Fix a bug at its cause, reasoning from first principles and established best practice. Do not patch over the symptom.
 4. Always talk in ASD-STE100 Simplified Technical English. Always read GLOSSARY.md files, and use their ubiquitous language.
+5. Explain at ELI5 level by default. Give more depth only when I ask.
 
 <!--VITE PLUS START-->
 

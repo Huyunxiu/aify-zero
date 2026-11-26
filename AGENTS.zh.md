@@ -6,6 +6,7 @@
 2. 不要多余的二级标签与说明。让排版自己说话。
 3. 修 bug 要修在成因上，从第一性原理与既有实践推理。不要盖住症状。
 4. 一律用 ASD-STE100 Simplified Technical English。先读 GLOSSARY.md，用它规定的说法。
+5. 默认按 ELI5 讲。我要更深时才展开。
 
 <!--VITE PLUS START-->
 
