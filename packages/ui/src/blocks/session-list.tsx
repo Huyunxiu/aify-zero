@@ -12,6 +12,6 @@ import { cn } from "../lib/utils";
  */
 export function SessionList({ className, ...props }: ComponentProps<"ul">) {
   return (
-    <SidebarMenu className={cn("gap-1 py-2 pl-2.5", className)} {...props} />
+    <SidebarMenu className={cn("gap-1 py-2 pl-1.5", className)} {...props} />
   );
 }

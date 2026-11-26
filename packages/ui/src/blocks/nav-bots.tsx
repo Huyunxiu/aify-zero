@@ -66,7 +66,7 @@ function BotItem({ bot, onConfigure, onDelete }: BotItemProps) {
             avatarPath={bot.avatarPath}
             botId={bot.id}
             name={bot.name}
-            size="sm"
+            size="xs"
             version={bot.updatedAt}
           />
           <span className="truncate font-medium">{bot.name}</span>
