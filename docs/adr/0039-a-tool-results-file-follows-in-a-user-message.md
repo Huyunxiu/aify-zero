@@ -6,9 +6,10 @@ Nothing asked what the **protocol** carries, and the two questions have differen
 
 The chat protocol puts text in a tool message. `@ai-sdk/openai-compatible` writes the tool
 output as a string unless `supportsMultiPartToolContent` is set, and this harness never sets
-it, so a `file` part became its own base64 text inside the tool message. The model read
-characters, not pixels, and every later step of the turn sent them again. The responses
-protocol was correct: it turns the same part into an image.
+it, so the whole content array — a `file` part included — became one JSON string inside the
+tool message, the file's bytes spelled as a map of numbers. The model read text, not pixels,
+and every later step of the turn sent it again. The responses protocol was correct: it turns
+the same part into an image.
 
 One model route now answers both questions. `ModelRoute` holds the protocol and the input
 kinds, `route()` reads it from the model target once per step, and request assembly applies
@@ -27,9 +28,9 @@ reaches a user message.
 - **Set `supportsMultiPartToolContent`**: one flag, no moving parts. It is not in the public
   options of the provider, and the chat protocol's own contract keeps a tool message to text;
   a provider that follows the contract would refuse the request that OpenAI accepts.
-- **Keep the bytes in the tool result as base64 and say so**: no request reshaping. It is the
-  current behaviour, and the model reads the encoding as text: 1 MB of image is roughly 330k
-  characters per step.
+- **Keep the bytes in the tool result and say so**: no request reshaping. It is the current
+  behaviour, and the model reads them as text: 1 MB of image becomes millions of characters
+  per step.
 - **Refuse the read on the chat protocol**: no bytes to move. The tool cannot know the
   protocol, because a patch moves the session between the call and the next request, and the
   refusal would remove a capability the responses protocol has.
