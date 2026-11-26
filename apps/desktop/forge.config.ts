@@ -11,6 +11,7 @@ import { VitePlugin } from "@electron-forge/plugin-vite";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { FuseV1Options, FuseVersion } from "@electron/fuses";
 
+import { ensureElectronAppName } from "../../scripts/ensure-electron-app-name";
 import { ensureElectronSignature } from "../../scripts/ensure-electron-signature";
 import { stageRipgrep } from "../../scripts/stage-ripgrep";
 
@@ -37,7 +38,9 @@ const config: ForgeConfig = {
     // `../../packages/db/src/migrations` is copied to Resources/migrations
     // and applied by the packaged main process on startup.
     extraResource: ["./resources", "../../packages/db/src/migrations"],
-    icon: "resources/icons",
+    // electron-packager adds the extension to this base name: icon.icns on macOS,
+    // icon.ico on Windows, and icon.png on Linux.
+    icon: "resources/icons/icon",
   },
   plugins: [
     // libsql（`@libsql/<platform>/index.node`）是原生模块，不能从 asar 里
@@ -91,6 +94,9 @@ const config: ForgeConfig = {
     prePackage: copyRipgrep,
     async preStart() {
       await copyRipgrep();
+      // The Dock reads the name of the running bundle, so the development bundle takes the
+      // product name. The edit breaks the signature, so the repair below runs after it.
+      ensureElectronAppName();
       // 开发期用的 Electron.app 可能没有有效签名；macOS 会因此丢掉系统
       // 通知。每次 start 之前修一次，重装依赖之后也能自愈。
       ensureElectronSignature();

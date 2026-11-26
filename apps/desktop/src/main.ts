@@ -432,9 +432,10 @@ const setupIpcServer = async () => {
   });
 };
 
-// macOS-only startup step: set dock icon and optional multi-instance badge.
+// macOS-only. The Dock takes the icon from the app bundle, so only development needs a
+// runtime override: the bundle that runs there is Electron's own.
 const setupMacDockIcon = () => {
-  if (process.platform !== "darwin" || !app.dock) {
+  if (app.isPackaged || process.platform !== "darwin" || !app.dock) {
     return;
   }
 
