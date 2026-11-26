@@ -66,7 +66,7 @@ function BotItem({ bot, onConfigure, onDelete }: BotItemProps) {
             avatarPath={bot.avatarPath}
             botId={bot.id}
             name={bot.name}
-            size="sm"
+            size="xs"
             version={bot.updatedAt}
           />
           <span className="truncate font-medium">{bot.name}</span>
@@ -106,9 +106,7 @@ function BotItem({ bot, onConfigure, onDelete }: BotItemProps) {
         </SidebarRowMenu>
       </div>
       <CollapsibleContent>
-        <div className="pl-2">
-          <BotSessions botId={bot.id} />
-        </div>
+        <BotSessions botId={bot.id} />
       </CollapsibleContent>
     </Collapsible>
   );

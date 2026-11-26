@@ -8,10 +8,10 @@ import { assetUrl } from "../lib/asset-url";
 import { initialOf } from "../lib/initial";
 import { cn } from "../lib/utils";
 
-export type BotAvatarSize = "sm" | "md" | "lg";
+export type BotAvatarSize = "xs" | "sm" | "md" | "lg";
 
-/** Three Bot sizes, mapped onto the three sizes the avatar component has. */
-const AVATAR_SIZE = { sm: "sm", md: "default", lg: "lg" } as const;
+/** One Bot size per avatar size. */
+const AVATAR_SIZE = { xs: "xs", sm: "sm", md: "default", lg: "lg" } as const;
 
 export interface BotAvatarProps {
   readonly botId: string;

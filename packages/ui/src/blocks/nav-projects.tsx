@@ -62,7 +62,7 @@ function ProjectItem({ project, onEdit }: ProjectItemProps) {
             <SidebarMenuButton className="group/folder-row cursor-pointer pr-14 group-has-data-[sidebar=menu-action]/menu-item:pr-14" />
           }
         >
-          <FolderIcon open={open} size={18} />
+          <FolderIcon open={open} size={20} />
           <span className="truncate">{project.name}</span>
         </CollapsibleTrigger>
         <Tooltip>
