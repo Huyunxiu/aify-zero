@@ -17,6 +17,8 @@
 import type { ModelMessage } from "ai";
 
 import { unseenImageText } from "../attachments/text";
+import type { ToolValuePart } from "./tool-result-content";
+import { isToolFilePart } from "./tool-result-content";
 
 /** A media kind a model route can declare, as the settings schema spells it. */
 export type ModelInputKind = "text" | "image" | "audio" | "video" | "pdf";
@@ -87,27 +89,20 @@ export function hideUnsupportedImages(
       if (part.type !== "tool-result" || part.output.type !== "content") {
         return part;
       }
-      const value: typeof part.output.value = [];
+      const value: ToolValuePart[] = [];
       for (const item of part.output.value) {
-        if (
-          !("mediaType" in item) ||
-          item.mediaType === undefined ||
-          !item.mediaType.startsWith("image/")
-        ) {
+        if (!isToolFilePart(item) || !item.mediaType.startsWith("image/")) {
           value.push(item);
           continue;
         }
         messageChanged = true;
         value.push({
           type: "text",
-          text: unseenImageText(
-            "filename" in item ? item.filename : undefined,
-            item.mediaType
-          ),
+          text: unseenImageText(item.filename, item.mediaType),
         });
       }
       return messageChanged
-        ? ({ ...part, output: { ...part.output, value } } as typeof part)
+        ? { ...part, output: { ...part.output, value } }
         : part;
     });
     if (messageChanged) {

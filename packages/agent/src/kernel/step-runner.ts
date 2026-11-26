@@ -30,6 +30,8 @@ import type {
 } from "../hooks-manager";
 import { applyRuntimeSettingsPatches } from "../hooks-manager";
 import { hideUnsupportedImages } from "../model/input-kinds";
+import type { ModelRoute } from "../model/route";
+import { liftToolResultFiles } from "../model/tool-result-media";
 import type { CallTargetResolver } from "../tools/execution";
 import {
   declaredTools,
@@ -134,8 +136,11 @@ export interface StepRunnerDeps {
    * 每次执行现读：扩展可能在会话装配之后才注册，构造 StepRunner 时它还不存在。
    */
   resolveCallTarget: CallTargetResolver;
-  /** The media kinds the routed model declares; default is text only. */
-  inputKinds(): readonly string[];
+  /**
+   * The route the call goes to: the media its model reads, and the shapes its
+   * protocol accepts. Read per step, because a patch can move the session.
+   */
+  route(): ModelRoute;
 }
 
 /** Maps effort levels to the AI SDK's reasoning levels. */
@@ -392,12 +397,17 @@ export class StepRunner {
       await journal.persistStep(askedTurnId, askedStepId);
     }
 
-    // A session can switch models, so an image an earlier route accepted must not
-    // reach a route that cannot read it. The replacement is a sentence, not a stop:
-    // the bytes belong to a turn that already settled.
-    const requestMessages = hideUnsupportedImages(
-      messages,
-      this.#deps.inputKinds()
+    // Two questions decide whether an image reaches the model, and this is the one
+    // place that asks both. The model may read no image, and the protocol may put no
+    // file in a tool result. The first answer is a sentence in place of the bytes —
+    // not a stop, because the bytes belong to a turn that already settled. The second
+    // answer moves the bytes to a user message, which every protocol carries. The
+    // order is the point: an image the model cannot read is gone before anything
+    // could move it.
+    const route = this.#deps.route();
+    const requestMessages = liftToolResultFiles(
+      hideUnsupportedImages(messages, route.inputKinds),
+      route.protocol
     );
 
     // 大模型调用

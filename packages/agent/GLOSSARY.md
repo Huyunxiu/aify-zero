@@ -227,6 +227,13 @@ _Avoid_: 正文、数据、结果
 
 **Input Kind (输入种类)**:
 One media kind a model route declares it accepts, as the settings schema spells it: text,
-image, audio, video, or pdf. A route that declares nothing accepts text only, so an unknown
-route never receives an image.
+image, audio, video, or pdf. A model route that declares nothing accepts text only, so an
+unknown model route never receives an image.
 _Avoid_: 模态、能力、modality
+
+**Model Route (模型路线)**:
+One model call's destination, in the two facts request assembly needs: the protocol the
+provider accepts, and the media kinds the model reads. It is read once per step, because a
+patch can move the session to another model. It is not a `Route`: the route of this file
+redirects a tool call.
+_Avoid_: 模型配置、供应商、通道
