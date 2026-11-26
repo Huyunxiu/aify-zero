@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import type { AgentContext } from "../../src/agent-context";
+import { loadImageDecoder } from "../../src/attachments/normalize";
 import { createReadFileTool } from "../../src/tools/read-file";
 import { testSandbox } from "../helpers/sandbox.js";
 
@@ -137,14 +138,14 @@ describe("read-file and image attachments", () => {
 
     expect(result.code).toBe("ok");
     expect(result.output).toContain("<type>image</type>");
-    expect(result.output).toContain("image/png, 1x1 px, 69 bytes");
+    // The stored copy is a normalized WebP, not the source PNG.
+    expect(result.output).toContain("image/webp, 1x1 px");
     expect(attachments).toHaveLength(1);
     expect(attachments[0]).toMatchObject({
       type: "attachment",
-      mediaType: "image/png",
+      mediaType: "image/webp",
       width: 1,
       height: 1,
-      bytes: PNG_1X1.byteLength,
       owner: "session:session-1",
     });
   });
@@ -154,13 +155,16 @@ describe("read-file and image attachments", () => {
     await writeFile(join(dir, "red.png"), PNG_1X1);
 
     const result = await readImage(dir, "red.png");
-    const [attachment] = result.attachments as { sha256: string }[];
+    const [attachment] = result.attachments as {
+      sha256: string;
+      bytes: number;
+    }[];
     const sha = attachment?.sha256 ?? "";
     const stored = await readFile(join(dir, "attachments", sha));
 
     await readImage(dir, "red.png");
 
-    expect(stored.byteLength).toBe(PNG_1X1.byteLength);
+    expect(stored.byteLength).toBe(attachment?.bytes);
     await expect(readdir(join(dir, "attachments"))).resolves.toStrictEqual([
       sha,
     ]);
@@ -178,25 +182,48 @@ describe("read-file and image attachments", () => {
     await expect(readdir(join(dir, "attachments"))).rejects.toThrow(/ENOENT/u);
   });
 
-  test("should refuse an image above the pixel limit and name the fix", async () => {
+  test("should normalize a large photo and name the source size", async () => {
     const dir = await createTempDir();
-    await writeFile(join(dir, "huge.png"), pngHeader(6000, 6000));
+    const decoder = await loadImageDecoder();
+    /* v8 ignore next -- the suite cannot run without a decoder. */
+    if (decoder === undefined) {
+      throw new Error("the decoder is required to build this fixture");
+    }
+    const photo = await decoder({
+      create: { width: 2000, height: 2000, channels: 3, background: "#808080" },
+    })
+      .png()
+      .toBuffer();
+    await writeFile(join(dir, "photo.png"), photo);
 
-    await expect(readImage(dir, "huge.png")).rejects.toThrow(
-      /6000x6000 px exceeds the 20000000-pixel limit/u
-    );
+    const result = await readImage(dir, "photo.png");
+    const [attachment] = result.attachments as {
+      width: number;
+      height: number;
+      originalDimensions: { width: number; height: number };
+    }[];
+
+    expect(result.output).toContain("downscaled from 2000x2000 px");
+    expect(result.output).toContain("multiply coordinates by");
+    expect(attachment?.originalDimensions).toStrictEqual({
+      width: 2000,
+      height: 2000,
+    });
+    expect(
+      (attachment?.width ?? 0) * (attachment?.height ?? 0)
+    ).toBeLessThanOrEqual(1_152_000);
   });
 
-  test("should refuse bytes above the size limit before reading them", async () => {
+  test("should refuse an image the decoder cannot read and name the fix", async () => {
     const dir = await createTempDir();
-    const oversized = Buffer.concat([
-      pngHeader(10, 10),
-      Buffer.alloc(2 * 1024 * 1024),
-    ]);
-    await writeFile(join(dir, "big.png"), oversized);
+    // A PNG signature with no image behind it: the header parses, the pixels do not.
+    await writeFile(
+      join(dir, "broken.png"),
+      Buffer.concat([pngHeader(10, 10), Buffer.alloc(8)])
+    );
 
-    await expect(readImage(dir, "big.png")).rejects.toThrow(
-      /exceeds the 2\.0 MB limit/u
+    await expect(readImage(dir, "broken.png")).rejects.toThrow(
+      /do not decode as an image/u
     );
   });
 
@@ -248,7 +275,29 @@ describe("read-file and image attachments", () => {
       "text",
       "file",
     ]);
-    expect(model.value[1]?.mediaType).toBe("image/png");
+    expect(model.value[1]?.mediaType).toBe("image/webp");
+  });
+
+  test("should convert an input format the harness does not store", async () => {
+    const dir = await createTempDir();
+    const decoder = await loadImageDecoder();
+    /* v8 ignore next -- the suite cannot run without a decoder. */
+    if (decoder === undefined) {
+      throw new Error("the decoder is required to build this fixture");
+    }
+    const tiff = await decoder({
+      create: { width: 64, height: 32, channels: 3, background: "#224466" },
+    })
+      .tiff()
+      .toBuffer();
+    await writeFile(join(dir, "scan.tiff"), tiff);
+
+    const result = await readImage(dir, "scan.tiff");
+    const [attachment] = result.attachments as { mediaType: string }[];
+
+    expect(result.code).toBe("ok");
+    expect(result.output).toContain("image/webp, 64x32 px");
+    expect(attachment?.mediaType).toBe("image/webp");
   });
 
   test("should keep a PDF as an attachment without a size", async () => {

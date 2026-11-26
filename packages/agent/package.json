@@ -39,6 +39,7 @@
     "file-type": "catalog:",
     "glob": "catalog:",
     "nanoid": "catalog:",
+    "sharp": "catalog:",
     "temporal-polyfill": "catalog:",
     "turndown": "catalog:",
     "zod": "catalog:"
