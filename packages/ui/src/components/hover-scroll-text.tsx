@@ -38,9 +38,12 @@ export function HoverScrollText({
     return () => observer.disconnect();
   }, [value]);
 
+  // Pace it for reading: 12ms per pixel is about 83px/s. The 6s cap stops an
+  // extreme title from running for half a minute, and it does not make a normal
+  // one faster.
   const scrollStyle = {
     "--scroll-distance": `${overflow}px`,
-    "--scroll-duration": `${Math.min(900, 220 + overflow * 8)}ms`,
+    "--scroll-duration": `${Math.min(6000, 300 + overflow * 12)}ms`,
   } as React.CSSProperties;
 
   return (
@@ -64,7 +67,7 @@ export function HoverScrollText({
       >
         <span
           className={cn(
-            "block w-max whitespace-nowrap transition-transform ease-in-out duration-[var(--scroll-duration)] motion-reduce:transition-none",
+            "block w-max whitespace-nowrap transition-transform ease-linear duration-[var(--scroll-duration)] motion-reduce:transition-none",
             // start 的静止位先把文字左移，和省略号一起露出结尾；悬停滑回 0 露出开头。
             truncate === "start"
               ? "[transform:translateX(calc(-1*var(--scroll-distance)))] group-hover/scroll:[transform:translateX(0)]"
