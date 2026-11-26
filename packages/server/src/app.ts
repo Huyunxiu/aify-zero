@@ -19,6 +19,7 @@ import { languageDetector } from "hono/language";
 import { requestId } from "hono/request-id";
 
 import { registerAssetRoutes } from "./asset/asset.route";
+import { registerAttachmentRoutes } from "./attachment/attachment.route";
 import { authenticate } from "./auth";
 import {
   registerPrivateAuthRoutes,
@@ -174,6 +175,8 @@ export const createApp = ({
   // avatar is its first caller. It sits before the RPC fallback too, so neither goes
   // through a handler match first.
   registerAssetRoutes(app);
+  // Stored attachments: one address per immutable object, so no version redirect.
+  registerAttachmentRoutes(app);
 
   registerPrivateAuthRoutes(app, authOptions);
 

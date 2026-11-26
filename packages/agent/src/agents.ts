@@ -27,6 +27,8 @@ import { StepRunner } from "./kernel/step-runner";
 import { TranscriptJournal } from "./kernel/transcript-journal";
 import { TurnRunner } from "./kernel/turn-runner";
 import { createModelGateway } from "./model/gateway";
+import { routeOf } from "./model/route";
+import type { ModelRoute } from "./model/route";
 import type { AgentStore } from "./storage";
 import { evaluateToolApproval } from "./tool-approval";
 import type { ToolApprovalPattern } from "./tool-approval";
@@ -145,6 +147,17 @@ export class Agent {
   /** 压缩策略与摘要器。 */
   readonly #compaction: CompactionController;
 
+  /**
+   * The route the current model call goes to: the media its model reads, and the
+   * shapes its protocol accepts.
+   *
+   * The resolver is asked each time because a runtime patch can change the model
+   * inside one session, and both answers decide whether an image reaches it.
+   */
+  route(): ModelRoute {
+    return routeOf(this.resolveModel(this.context.model));
+  }
+
   constructor(options: AgentOptions) {
     this.name = options.name;
     this.sessionId = options.sessionId;
@@ -171,6 +184,8 @@ export class Agent {
     this.session = options.session;
     // 扩展只拿到工具需要的环境，拿不到完整的 context。路径在会话内不变，
     // 所以在构造时取一次快照。
+    // The literal cannot say `this`, so the read is bound here, once.
+    const currentRoute = (): ModelRoute => this.route();
     const environment: ToolEnvironment = {
       sessionId: this.sessionId,
       projectDirs: this.context.projectDirs,
@@ -192,6 +207,11 @@ export class Agent {
       ...(this.context.steering === undefined
         ? {}
         : { steering: this.context.steering }),
+      // Read on every use: a patch can move the session to another model route, and
+      // an image the old route accepted must stop reaching the new one.
+      get inputKinds() {
+        return currentRoute().inputKinds;
+      },
       sandbox: this.context.sandbox,
     };
 
@@ -281,6 +301,7 @@ export class Agent {
         this.#compaction.handleOverflow(error, turnId),
       resolveCallTarget: (toolCall) =>
         this.toolRoute.get(toolCall.toolName)?.(toolCall),
+      route: () => this.route(),
     });
 
     this.#turnRunner = new TurnRunner({

@@ -189,7 +189,18 @@ const seedProvider = async (input: {
             baseURL: input.baseURL,
             apiKey: "sk-test",
             active: true,
-            models: [{ id: FAKE_MODEL_ID, name: FAKE_MODEL_ID, active: true }],
+            // The fake provider answers the same way for every media kind, so the model
+            // declares that it reads images. Without it, a case that reads an image would
+            // have the image replaced by a sentence in request assembly: the right
+            // failure, but it would never reach the protocol.
+            models: [
+              {
+                id: FAKE_MODEL_ID,
+                name: FAKE_MODEL_ID,
+                active: true,
+                modalities: { input: ["text", "image"], output: ["text"] },
+              },
+            ],
           },
         ],
       },

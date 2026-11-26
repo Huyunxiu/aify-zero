@@ -43,6 +43,11 @@ export interface ToolEnvironment {
   readonly timers?: SessionTimers;
   /** 用户插话信号；省略时等待只能靠中止或超时结束。 */
   readonly steering?: SteeringSignal;
+  /**
+   * The media kinds the current model route accepts, as the settings schema spells
+   * them. A tool that produces content of another kind must refuse and say so.
+   */
+  readonly inputKinds?: readonly string[];
   /** 工具读写文件和运行命令的环境。 */
   readonly sandbox: Sandbox;
 }

@@ -1,5 +1,6 @@
 import type { Tool } from "ai";
 
+import type { AttachmentRef } from "./attachment";
 import type { QuestionnaireAnswers } from "./questionnaire";
 
 /** 一个工具怎么让模型看见。 */
@@ -22,13 +23,21 @@ export type ToolOutput<
   message?: string | null;
 };
 
-/** 文件附件；read-file 和 load-skill 会带。 */
+/**
+ * An inline file attachment: `load-skill` still carries bytes this way, and old
+ * records exist only in this shape.
+ *
+ * A new read answers with {@link AttachmentRef}, which leaves the bytes in storage.
+ */
 export type FileAttachment = {
   type: "file-data";
   data: string;
   mediaType: string;
   filename?: string;
 };
+
+/** What one read brought back: an immutable reference, or the inline bytes of an old record. */
+export type ReadFileAttachment = FileAttachment | AttachmentRef;
 
 /** 公共的任务投影；jobs 工具的 metadata 用它。 */
 export type PublicJob = {
@@ -63,7 +72,14 @@ export type FileReadMetadata =
       offset: number;
       totalLines?: number;
     }
-  | { type: "attachments"; filepath: string; mime: string }
+  | {
+      type: "attachments";
+      filepath: string;
+      mime: string;
+      bytes?: number;
+      width?: number;
+      height?: number;
+    }
   | { type: "binary-file"; filepath: string; mime: string };
 
 export type DeleteFileInput = { path: string; recursive: boolean };
@@ -125,7 +141,7 @@ export type ReadFileInput = {
   offset?: number;
 };
 export type ReadFileOutput = ToolOutput<string, FileReadMetadata> & {
-  attachments?: FileAttachment[];
+  attachments?: ReadFileAttachment[];
 };
 
 export type WriteFileInput = { content: string; path: string };

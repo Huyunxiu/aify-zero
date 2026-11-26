@@ -1,3 +1,4 @@
+import { TEXT_ONLY_INPUT_KINDS } from "@workspace/agent";
 import type { ModelTargetResolver } from "@workspace/agent";
 
 import type { UserSettings } from "../routers/settings/settings.schema";
@@ -32,6 +33,9 @@ export function createModelTargetResolver(
       baseURL: provider.baseURL,
       apiKey: provider.apiKey,
       ...(provider.headers ? { headers: provider.headers } : {}),
+      // An unconfigured route declares nothing, and nothing means text only: an
+      // image must not reach a route that never said it reads one.
+      inputKinds: model.modalities?.input ?? TEXT_ONLY_INPUT_KINDS,
     };
   };
 }

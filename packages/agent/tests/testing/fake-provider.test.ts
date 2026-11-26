@@ -40,8 +40,35 @@ describe("fake provider", () => {
     expect(text).toContain('"content":"好"');
     expect(text.trimEnd().endsWith("data: [DONE]")).toBeTruthy();
     expect(provider.requests).toStrictEqual([
-      { method: "POST", path: "/v1/chat/completions", stream: true },
+      {
+        method: "POST",
+        path: "/v1/chat/completions",
+        stream: true,
+        body: { stream: true },
+      },
     ]);
+  });
+
+  test("keeps the body each request carried", async () => {
+    const provider = await start({
+      scenario: { name: "answer", rules: [{ answer: "ok" }] },
+    });
+    const messages = [
+      { role: "user", content: "what is in shot.png" },
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: "data:image/png;base64,AAAA" },
+          },
+        ],
+      },
+    ];
+
+    await post(provider.baseURL, { stream: true, messages });
+
+    expect(provider.requests[0]?.body).toMatchObject({ messages });
   });
 
   test("answers a non-streaming request with a JSON completion", async () => {

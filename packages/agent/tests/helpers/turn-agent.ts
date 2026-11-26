@@ -1,6 +1,7 @@
 import { AgentContext } from "../../src/agent-context.js";
 import { AgentSession } from "../../src/agent-session.js";
 import { Agent } from "../../src/agents.js";
+import type { ModelTargetResolver } from "../../src/kernel/model-gateway.js";
 import type { AgentStore } from "../../src/storage/index.js";
 import { asTurns, userTurn } from "../compaction/fixtures.js";
 import { testModel, testResolveModel } from "./model-target.js";
@@ -94,13 +95,21 @@ export const asStore = (store: FakeStore): AgentStore =>
 /**
  * 造一个只跑回合循环的 Agent；会话由调用方持有，便于事后检查会话记录。
  *
- * 额外工具用 `agent.registerTool` 加：构造函数只收内置工具集。
+ * 额外工具用 `agent.registerTool` 加：构造函数只收内置工具集。目录和模型路线可以
+ * 换掉：读文件的用例需要一个真项目目录，打供应商的用例需要一条指向本机服务的路线。
  */
 export const makeAgent = (
   store: FakeStore,
-  options: { session?: AgentSession } = {}
+  options: {
+    session?: AgentSession;
+    projectDir?: string;
+    sessionDir?: string;
+    resolveModel?: ModelTargetResolver;
+  } = {}
 ): { agent: Agent; session: AgentSession } => {
   const session = options.session ?? new AgentSession({ turns: [] });
+  const projectDir = options.projectDir ?? "/tmp";
+  const sessionDir = options.sessionDir ?? "/tmp/sessions/session-1";
   const agent = new Agent({
     approvalPolicy: "edit",
     name: "main",
@@ -109,14 +118,14 @@ export const makeAgent = (
     store: asStore(store),
     tools: {},
     context: new AgentContext({
-      sandbox: testSandbox("/tmp", "/tmp/sessions/session-1"),
+      sandbox: testSandbox(projectDir, sessionDir),
       sessionId: "session-1",
-      projectDirs: ["/tmp"],
-      sessionDir: "/tmp/sessions/session-1",
+      projectDirs: [projectDir],
+      sessionDir,
       model: testModel(),
     }),
     model: testModel(),
-    resolveModel: testResolveModel,
+    resolveModel: options.resolveModel ?? testResolveModel,
   });
 
   return { agent, session };

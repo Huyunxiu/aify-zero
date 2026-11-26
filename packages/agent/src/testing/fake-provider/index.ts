@@ -16,6 +16,13 @@ export type FakeProviderRequest = {
   readonly path: string;
   readonly stream: boolean;
   readonly model?: string;
+  /**
+   * The JSON body the request carried, parsed.
+   *
+   * An assertion reads it to see what the protocol made of the messages: the body is the
+   * only place that shows the shape a provider receives.
+   */
+  readonly body: unknown;
 };
 
 export type FakeProvider = {
@@ -140,6 +147,7 @@ export async function startFakeProvider(
       path: url.pathname,
       stream: parsed.stream === true,
       ...(typeof parsed.model === "string" ? { model: parsed.model } : {}),
+      body: parsed,
     };
     requests.push(seen);
     options.log?.(

@@ -1,4 +1,4 @@
-import type { FileReadMetadata } from "@workspace/agent-client";
+import type { AttachmentRef, FileReadMetadata } from "@workspace/agent-client";
 import { EyeIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -113,7 +113,11 @@ export const summarizeFileRead = (
       return "not found";
     }
     case "attachments": {
-      return metadata.mime;
+      const size =
+        metadata.width === undefined || metadata.height === undefined
+          ? undefined
+          : ` · ${metadata.width}×${metadata.height}`;
+      return size === undefined ? metadata.mime : `${metadata.mime}${size}`;
     }
     case "binary-file": {
       return "binary file";
@@ -130,6 +134,46 @@ export const readFileSummary = (
 ): ReactNode | undefined =>
   summarizeTool(part, (output) => summarizeFileRead(output.metadata));
 
+/** The address of one stored attachment, for an `<img>` source. */
+const attachmentUrl = (attachment: AttachmentRef): string => {
+  const url = new URL("api/attachment", document.baseURI);
+  url.searchParams.set("owner", attachment.owner);
+  url.searchParams.set("sha256", attachment.sha256);
+  return url.href;
+};
+
+/** The image a read committed, when it committed one. */
+const readImage = (
+  part: StepPartOf<"tool-read-file">
+): AttachmentRef | undefined => {
+  if (part.state !== "output-available") {
+    return undefined;
+  }
+  return part.output.attachments?.find(
+    (item): item is AttachmentRef => item.type === "attachment"
+  );
+};
+
+/**
+ * The image the model saw, drawn from the stored bytes.
+ *
+ * The interface could show the text envelope alone, but then a person cannot check
+ * what the model answered about: the pixels are the part that matters.
+ */
+const ReadAttachment = ({ part }: { part: StepPartOf<"tool-read-file"> }) => {
+  const image = readImage(part);
+  if (image === undefined) {
+    return null;
+  }
+  return (
+    <img
+      alt={image.name ?? "attachment"}
+      className="max-h-80 w-fit rounded border border-border"
+      src={attachmentUrl(image)}
+    />
+  );
+};
+
 /** A file the model read: what it was asked for, and what came back. */
 export const ReadFileStep = ({
   part,
@@ -141,6 +185,7 @@ export const ReadFileStep = ({
     approvalPart={part}
     body={
       <StepFrame title="Read">
+        <ReadAttachment part={part} />
         <ToolPanels
           onRespond={onRespond}
           outputLanguage={outputLanguageOf(part)}

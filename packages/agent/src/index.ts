@@ -18,6 +18,7 @@ export type {
 } from "./kernel/model-gateway";
 export * from "./jobs";
 export * from "./mcp";
+export * from "./model/input-kinds";
 export type * from "./types";
 export * from "./stream-registry";
 export * from "./session-events";

@@ -1,4 +1,4 @@
-import type { ModelMessage } from "ai";
+import type { ModelMessage, ToolResultPart } from "ai";
 
 /**
  * 粗略的 token 估算：序列化长度 / 4。
@@ -19,11 +19,42 @@ export function estimateTextTokens(text: string): number {
 
 // 图片在 provider 侧按大致固定的成本计费，与 URL 长度无关；用常量可以避免
 // 一个 data URL 把历史里其它内容的估算完全盖过去。
+//
+// The price is fixed because a model message does not carry the dimensions: the file
+// part names only its media type. A size-aware price needs a seam that still has the
+// attachment reference when it prices the request.
 const IMAGE_TOKENS = 1500;
 const FILE_TOKENS = 200;
 const MESSAGE_OVERHEAD = 4;
 
 type ContentPart = Exclude<ModelMessage["content"], string>[number];
+
+/**
+ * Price one tool result by what the model actually receives.
+ *
+ * A `content` result carries text beside files, and a file's serialized length says
+ * nothing about what the provider charges for it: an image costs a fixed amount, and
+ * a stored reference is a few dozen characters. Pricing the JSON would count a
+ * reference as nothing and a base64 image as hundreds of thousands of tokens.
+ */
+function estimateToolOutputTokens(output: ToolResultPart["output"]): number {
+  if (output.type === "text" || output.type === "error-text") {
+    return estimateTextTokens(output.value);
+  }
+  if (output.type !== "content") {
+    return estimateTokens(output);
+  }
+  let total = 0;
+  for (const part of output.value) {
+    if ("text" in part && typeof part.text === "string") {
+      total += estimateTextTokens(part.text);
+      continue;
+    }
+    const mediaType = "mediaType" in part ? (part.mediaType ?? "") : "";
+    total += mediaType.startsWith("image/") ? IMAGE_TOKENS : FILE_TOKENS;
+  }
+  return total;
+}
 
 function estimatePartTokens(part: ContentPart): number {
   switch (part.type) {
@@ -38,7 +69,7 @@ function estimatePartTokens(part: ContentPart): number {
       return estimateTokens(part.input) + 8;
     }
     case "tool-result": {
-      return estimateTokens(part.output) + 8;
+      return estimateToolOutputTokens(part.output) + 8;
     }
     case "tool-approval-request":
     case "tool-approval-response": {

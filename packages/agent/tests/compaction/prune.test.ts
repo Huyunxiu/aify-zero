@@ -66,4 +66,49 @@ describe(pruneOlderToolResults, () => {
       pruneOlderToolResults(messages, { ...options, keepRecentTokens: 100_000 })
     ).toBe(messages);
   });
+
+  test("renders a content result as a stub that names the path to re-read", () => {
+    const messages: ModelMessage[] = [
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-1",
+            toolName: "read-file",
+            output: {
+              type: "content",
+              value: [
+                { type: "text", text: "short" },
+                {
+                  type: "file",
+                  data: { type: "data", data: "A".repeat(400) },
+                  mediaType: "image/png",
+                  filename: "/tmp/a.png",
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { role: "user", content: "recent" },
+    ];
+
+    // A head wide enough to keep the whole stub: this test is about the sentence
+    // the pruner writes, not about where it cuts.
+    const pruned = pruneOlderToolResults(messages, {
+      ...options,
+      thresholdChars: 40,
+      headChars: 200,
+    });
+    const [part] = (pruned[0] as Extract<ModelMessage, { role: "tool" }>)
+      .content;
+    const output = part as { output?: { type?: string; value?: string } };
+
+    expect(output.output?.type).toBe("text");
+    expect(output.output?.value ?? "").toContain("[Attached file /tmp/a.png");
+    expect(output.output?.value ?? "").toContain(
+      "read it again with read-file"
+    );
+  });
 });
