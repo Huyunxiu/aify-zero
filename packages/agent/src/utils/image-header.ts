@@ -155,7 +155,11 @@ function webpSize(data: Uint8Array): ImageDimensions | undefined {
 
 /**
  * Read the intrinsic dimensions declared by a PNG, JPEG, GIF, or WebP header.
- * @param data - the first bytes of the file; 32 bytes are enough for every format.
+ *
+ * PNG, GIF, and WebP declare the size early: 32 bytes answer for all three. A JPEG
+ * puts its frame header behind the metadata segments a camera writes, so a caller that
+ * reads a short head must widen it before it decides the file declares no size.
+ * @param data - the bytes of the file head.
  * @returns the declared size, or undefined when the bytes are not one of those formats.
  */
 export function imageDimensions(data: Uint8Array): ImageDimensions | undefined {
