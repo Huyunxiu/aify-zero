@@ -1,5 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { HoverScrollText } from "@workspace/ui/components/hover-scroll-text";
 import {
   SidebarMenuItem,
   SidebarMenuSubButton,
@@ -72,14 +73,15 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
         {sessions.map((session) => (
           <SidebarMenuItem key={session.id} className="group/item">
             <SidebarMenuSubButton
-              className="w-full cursor-pointer pr-8"
+              className="group/scroll w-full cursor-pointer pr-8"
               onClick={() => navigate({ to: `/sessions/${session.id}` })}
               render={<button type="button" />}
             >
               <SessionStatus status={session.status} />
-              <span className="min-w-0 flex-1 truncate">
-                {session.title || t("sessions.untitled")}
-              </span>
+              <HoverScrollText
+                className="flex-1"
+                value={session.title || t("sessions.untitled")}
+              />
               {/* 行尾的槽位：平时显时间，悬停时让给右边出现的「…」。 */}
               <RelativeTime
                 at={session.updatedAt}

@@ -1,5 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { HoverScrollText } from "@workspace/ui/components/hover-scroll-text";
 import {
   SidebarMenuItem,
   SidebarMenuSubButton,
@@ -77,7 +78,7 @@ export function BotSessions({ botId }: { botId: string }) {
             <SidebarMenuItem key={session.id} className="group/item">
               <SidebarMenuSubButton
                 isActive={isCurrent}
-                className="w-full cursor-pointer pr-8 transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none"
+                className="group/scroll w-full cursor-pointer pr-8 transition-colors duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none"
                 onClick={() =>
                   navigate({
                     to: "/sessions/$sessionId",
@@ -87,9 +88,10 @@ export function BotSessions({ botId }: { botId: string }) {
                 render={<button type="button" />}
               >
                 <SessionStatus status={session.status} />
-                <span className="min-w-0 flex-1 truncate">
-                  {session.title || t("sessions.untitled")}
-                </span>
+                <HoverScrollText
+                  className="flex-1"
+                  value={session.title || t("sessions.untitled")}
+                />
                 <RelativeTime
                   at={session.updatedAt}
                   className="transition-opacity duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] group-hover/item:opacity-0 group-focus-within/item:opacity-0 motion-reduce:transition-none"

@@ -9,7 +9,22 @@ export type HoverScrollTextProps = {
   value: string;
 };
 
-/** 溢出时保留省略号；指针悬停后滑到被藏起来的一端。 */
+/**
+ * Pixels the text moves in one second.
+ *
+ * The time follows from the hidden width, so a longer title takes longer and
+ * cannot move faster. No cap: a cap turns a long title into a speed that no
+ * reader can follow.
+ */
+const SCROLL_SPEED = 80;
+
+/**
+ * 溢出时保留省略号；指针悬停后滑到被藏起来的一端。
+ *
+ * The pointer must enter this element. To make a wider area start the scroll,
+ * put `group/scroll` on that ancestor: a hovered ancestor of the same name
+ * reaches the `group-hover/scroll` variants inside.
+ */
 export function HoverScrollText({
   className,
   truncate = "end",
@@ -40,7 +55,7 @@ export function HoverScrollText({
 
   const scrollStyle = {
     "--scroll-distance": `${overflow}px`,
-    "--scroll-duration": `${Math.min(900, 220 + overflow * 8)}ms`,
+    "--scroll-duration": `${(overflow / SCROLL_SPEED) * 1000}ms`,
   } as React.CSSProperties;
 
   return (
@@ -64,7 +79,7 @@ export function HoverScrollText({
       >
         <span
           className={cn(
-            "block w-max whitespace-nowrap transition-transform ease-in-out duration-[var(--scroll-duration)] motion-reduce:transition-none",
+            "block w-max whitespace-nowrap transition-transform ease-linear duration-[var(--scroll-duration)] motion-reduce:transition-none",
             // start 的静止位先把文字左移，和省略号一起露出结尾；悬停滑回 0 露出开头。
             truncate === "start"
               ? "[transform:translateX(calc(-1*var(--scroll-distance)))] group-hover/scroll:[transform:translateX(0)]"

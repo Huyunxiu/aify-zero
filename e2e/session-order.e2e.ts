@@ -20,6 +20,16 @@ const COMPOSER_NAME = "What would you like to know?";
 const FIRST = "Session one";
 const SECOND = "Session two";
 
+/**
+ * 侧栏里那一条会话行。
+ *
+ * 标题在一行里有两份：静止那份带省略号，悬停滚动那份是给指针看的。按文字定位会
+ * 命中两处，`toHaveCount(1)` 和 `boundingBox()` 都会因此报错。行按钮的可访问名带
+ * 着标题，而且只存在于列表里，所以按行定位。
+ */
+const sessionRow = (page: Page, title: string) =>
+  page.getByRole("button", { name: new RegExp(title) });
+
 test("Session list: the session used last comes first and shows when it was used", async ({
   page,
 }) => {
@@ -38,7 +48,7 @@ test("Session list: the session used last comes first and shows when it was used
     //    显示一处，所以这里等到它出现即可。
     await newSession.click();
     await sendAndSettle(page, "First message");
-    await expect(page.getByText(FIRST, { exact: true }).first()).toBeVisible();
+    await expect(sessionRow(page, FIRST)).toBeVisible();
 
     // 2. 会话乙的第一个回合。此刻乙既是最晚创建、也是最晚活动的。
     //
@@ -47,14 +57,14 @@ test("Session list: the session used last comes first and shows when it was used
     await page.waitForTimeout(1100);
     await newSession.click();
     await sendAndSettle(page, "Second message");
-    await expect(page.getByText(SECOND, { exact: true }).first()).toBeVisible();
+    await expect(sessionRow(page, SECOND)).toBeVisible();
 
     // 3. 回到甲再跑一个回合。现在甲更早创建、却更晚活动：按创建时刻排它该在下面，
     //    按最后活动排它必须回到第一。
     //
     //    这一步同时是「回到旧会话继续用」这个真实动作：切回来时不需要刷新，甲的
     //    第一个回合就该在屏幕上。
-    await page.getByText(FIRST, { exact: true }).click();
+    await sessionRow(page, FIRST).click();
     await expect(
       page.getByText("First message", { exact: true })
     ).toBeVisible();
@@ -66,16 +76,14 @@ test("Session list: the session used last comes first and shows when it was used
     await newSession.click();
     await expect(page.getByText("Untitled", { exact: true })).toBeVisible();
 
-    // 5. 两行刚跑完，所以都显示同一个档位。位置比较用的是文字节点自身的坐标：
+    // 5. 两行刚跑完，所以都显示同一个档位。位置比较用的是行自身的坐标：
     //    顺序就是用户看到的顺序。
-    await expect(page.getByText(FIRST, { exact: true })).toHaveCount(1);
-    await expect(page.getByText(SECOND, { exact: true })).toHaveCount(1);
+    await expect(sessionRow(page, FIRST)).toHaveCount(1);
+    await expect(sessionRow(page, SECOND)).toHaveCount(1);
     await expect(page.getByText("Just now", { exact: true })).toHaveCount(2);
 
-    const firstRow = await page.getByText(FIRST, { exact: true }).boundingBox();
-    const secondRow = await page
-      .getByText(SECOND, { exact: true })
-      .boundingBox();
+    const firstRow = await sessionRow(page, FIRST).boundingBox();
+    const secondRow = await sessionRow(page, SECOND).boundingBox();
 
     expect(firstRow).not.toBeNull();
     expect(secondRow).not.toBeNull();
