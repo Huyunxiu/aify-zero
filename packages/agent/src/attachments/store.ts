@@ -52,6 +52,11 @@ export interface SaveAttachmentInput {
   readonly height?: number;
   /** The resolved source path, so a later read can find it again. */
   readonly name?: string;
+  /** The source size after orientation, when the stored copy was reduced. */
+  readonly originalDimensions?: {
+    readonly width: number;
+    readonly height: number;
+  };
 }
 
 /**
@@ -108,6 +113,14 @@ function reference(input: SaveAttachmentInput, sha256: string): AttachmentRef {
     ...(input.width === undefined ? {} : { width: input.width }),
     ...(input.height === undefined ? {} : { height: input.height }),
     ...(input.name === undefined ? {} : { name: input.name }),
+    ...(input.originalDimensions === undefined
+      ? {}
+      : {
+          originalDimensions: {
+            width: input.originalDimensions.width,
+            height: input.originalDimensions.height,
+          },
+        }),
   };
 }
 

@@ -44,6 +44,14 @@ export interface AttachmentRef {
   height?: number;
   /** The resolved path the read came from, for a later re-read. */
   name?: string;
+  /**
+   * The source size after orientation and before the stored copy was reduced. Present
+   * only when the stored copy is smaller, so a reader can map coordinates back.
+   */
+  originalDimensions?: {
+    width: number;
+    height: number;
+  };
 }
 
 /** The owner string of one session's attachments. */

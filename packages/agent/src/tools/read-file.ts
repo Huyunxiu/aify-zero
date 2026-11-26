@@ -12,6 +12,12 @@ import { tool } from "ai";
 import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
+import {
+  DECODE_MAX_BYTES,
+  ImageDecodeError,
+  loadImageDecoder,
+  normalizeImage,
+} from "../attachments/normalize";
 import { readAttachment, saveAttachment } from "../attachments/store";
 import type { ToolEnvironment } from "../extensions/capabilities";
 import {
@@ -37,6 +43,26 @@ const SUPPORTED_ATTACHMENT_MIMES = new Set<string>([
   ...ATTACHMENT_IMAGE_TYPES,
   "application/pdf",
 ]);
+
+/**
+ * The image formats the decoder reads and the harness stores as WebP.
+ *
+ * The stored form is always `image/webp`, so these are input types only: a photo from
+ * a phone arrives as HEIC and leaves as WebP.
+ */
+const DECODABLE_IMAGE_MIMES = new Set<string>([
+  ...ATTACHMENT_IMAGE_TYPES,
+  "image/avif",
+  "image/heic",
+  "image/heif",
+  "image/tiff",
+  "image/bmp",
+]);
+
+/** Whether this read can decode and normalize the media type. */
+function isDecodableImage(mime: string): boolean {
+  return DECODABLE_IMAGE_MIMES.has(mime);
+}
 
 /**
  * How much of an image the pixel gate reads.
@@ -168,7 +194,8 @@ function attachmentEnvelope(
   filepath: string,
   mime: string,
   bytes: number,
-  size: { width: number; height: number } | undefined
+  size: { width: number; height: number } | undefined,
+  note = ""
 ): string {
   const kind = mime.startsWith("image/") ? "image" : "file";
   const dimensions =
@@ -177,9 +204,31 @@ function attachmentEnvelope(
     `<path>${filepath}</path>`,
     `<type>${kind}</type>`,
     "<content>",
-    `${mime}${dimensions}, ${formatBytes(bytes)}`,
+    `${mime}${dimensions}, ${formatBytes(bytes)}${note}`,
     "</content>",
   ].join("\n");
+}
+
+/**
+ * How a reader maps a coordinate it measured on the stored copy back onto the source.
+ *
+ * Integer rounding can give the two axes slightly different ratios, so one multiplier
+ * is named only when both round to the same value.
+ */
+function downscaleNote(
+  original: { width: number; height: number } | undefined,
+  stored: { width: number; height: number }
+): string {
+  if (original === undefined) {
+    return "";
+  }
+  const x = (original.width / stored.width).toFixed(2);
+  const y = (original.height / stored.height).toFixed(2);
+  const advice =
+    x === y
+      ? `multiply coordinates by ${x}`
+      : `multiply x coordinates by ${x} and y coordinates by ${y}`;
+  return ` (downscaled from ${original.width}x${original.height} px; ${advice} to locate features in the original file)`;
 }
 
 /** What one attachment read needs. */
@@ -204,6 +253,13 @@ function refuseAttachment(
   return new Error(`cannot read "${filepath}": ${detail} ${remedy}`);
 }
 
+/**
+ * The largest image the raw path stores.
+ *
+ * The decoded path uses the decoder's own guard instead: it works on pixels it can
+ * measure, and it can shrink what is over. These are two rules for two paths, not one
+ * rule written twice.
+ */
 /** The remedy that fits the media type: a PDF is not cropped. */
 function oversizeRemedy(mime: string): string {
   return mime.startsWith("image/")
@@ -229,20 +285,46 @@ async function imageSize(
 }
 
 /**
- * Commit one image or PDF as an immutable attachment and answer with its envelope.
+ * Commit one image or PDF and answer with its envelope.
  *
- * Every gate runs before the bytes are read: the route's accepted kinds, the byte
- * limit, and the pixel limit. A refusal therefore costs no memory and leaves no
- * record behind.
+ * The route gate runs first, because a refusal costs nothing and leaves no record.
+ * An image the decoder reads is stored as a bounded WebP; without a decoder, or for a
+ * PDF, the source bytes are stored as they are, inside a smaller limit.
  */
 async function readAttachments(
   input: AttachmentReadInput
 ): Promise<ReadFileToolOutput> {
-  const { sandbox, filepath, mime, head, bytes, agentContext } = input;
+  const { filepath, mime, agentContext } = input;
 
   if (!acceptsInput(agentContext.inputKinds ?? ["text"], mime)) {
     throw new ModelInputRefusedError(filepath, inputKindOf(mime));
   }
+
+  const decoder = isDecodableImage(mime) ? await loadImageDecoder() : undefined;
+
+  if (decoder === undefined && isDecodableImage(mime)) {
+    // Without a decoder this format has no size the header can declare, so the pixel
+    // limit would not hold. Refusing is the only bounded answer.
+    if (!ATTACHMENT_IMAGE_TYPES.includes(mime as never)) {
+      throw refuseAttachment(
+        filepath,
+        `${mime} needs the image decoder, and this deployment has none.`,
+        "Convert it to PNG or JPEG, then read it again."
+      );
+    }
+    return await commitRawAttachment(input);
+  }
+
+  return decoder === undefined
+    ? await commitRawAttachment(input)
+    : await commitNormalizedImage(input);
+}
+
+/** Store the source bytes unchanged: no decoder, or a document rather than a photo. */
+async function commitRawAttachment(
+  input: AttachmentReadInput
+): Promise<ReadFileToolOutput> {
+  const { sandbox, filepath, mime, head, bytes, agentContext } = input;
 
   const size = await imageSize(sandbox, filepath, mime, head);
   if (size !== undefined && size.width * size.height > ATTACHMENT_MAX_PIXELS) {
@@ -280,7 +362,78 @@ async function readAttachments(
     name: filepath,
   });
 
-  const envelope = attachmentEnvelope(filepath, mime, data.byteLength, size);
+  return attachmentResult(input, attachment, data.byteLength, size);
+}
+
+/** Decode the image, store the bounded copy, and name the source size in the envelope. */
+async function commitNormalizedImage(
+  input: AttachmentReadInput
+): Promise<ReadFileToolOutput> {
+  const { sandbox, filepath, mime, bytes, agentContext } = input;
+
+  // The decoder enforces this too. The read keeps its own check because it refuses
+  // before the bytes enter memory, and the decoder's copy cannot do that.
+  if (bytes !== undefined && bytes > DECODE_MAX_BYTES) {
+    throw refuseAttachment(
+      filepath,
+      `${formatBytes(bytes)} exceeds the ${formatBytes(DECODE_MAX_BYTES)} decode limit.`,
+      oversizeRemedy(mime)
+    );
+  }
+
+  const data = await sandbox.readFileBuffer(filepath);
+  let normalized;
+  try {
+    normalized = await normalizeImage(data);
+  } catch (error) {
+    if (error instanceof ImageDecodeError) {
+      throw refuseAttachment(
+        filepath,
+        `${error.message}.`,
+        "Convert it to PNG or JPEG, then read it again."
+      );
+    }
+    throw error;
+  }
+
+  const size = { width: normalized.width, height: normalized.height };
+  const attachment = await saveAttachment({
+    sessionDir: agentContext.sessionDir,
+    owner: attachmentOwner(agentContext.sessionId),
+    data: normalized.data,
+    mediaType: normalized.mediaType,
+    ...size,
+    ...(normalized.originalDimensions === undefined
+      ? {}
+      : { originalDimensions: normalized.originalDimensions }),
+    name: filepath,
+  });
+
+  return attachmentResult(
+    input,
+    attachment,
+    normalized.data.byteLength,
+    size,
+    downscaleNote(normalized.originalDimensions, size)
+  );
+}
+
+/** The tool result for one committed attachment: envelope, metadata, and the reference. */
+function attachmentResult(
+  input: AttachmentReadInput,
+  attachment: AttachmentRef,
+  bytes: number,
+  size: { width: number; height: number } | undefined,
+  note?: string
+): ReadFileToolOutput {
+  const { filepath } = input;
+  const envelope = attachmentEnvelope(
+    filepath,
+    attachment.mediaType,
+    bytes,
+    size,
+    note
+  );
   const paging = input.usedTextPaging
     ? "\n\n(offset and limit apply to text files only; the whole attachment was read.)"
     : "";
@@ -291,9 +444,9 @@ async function readAttachments(
     metadata: {
       type: "attachments",
       filepath,
-      mime,
-      bytes: data.byteLength,
-      ...(size === undefined ? {} : { width: size.width, height: size.height }),
+      mime: attachment.mediaType,
+      bytes,
+      ...(size === undefined ? {} : size),
     },
     attachments: [attachment],
   };
@@ -536,7 +689,13 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
         filepath
       );
 
-      if (stats.isFile && mime && SUPPORTED_ATTACHMENT_MIMES.has(mime)) {
+      // A decodable image reaches the attachment branch even when the harness would
+      // not store its source format: the stored form is a normalized WebP.
+      if (
+        stats.isFile &&
+        mime &&
+        (SUPPORTED_ATTACHMENT_MIMES.has(mime) || isDecodableImage(mime))
+      ) {
         return await readAttachments({
           sandbox,
           filepath,

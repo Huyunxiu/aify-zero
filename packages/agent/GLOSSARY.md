@@ -231,6 +231,12 @@ image, audio, video, or pdf. A model route that declares nothing accepts text on
 unknown model route never receives an image.
 _Avoid_: 模态、能力、modality
 
+**Normalized Copy (规范化副本)**:
+The stored form of an image attachment: one frame, 8-bit, sRGB, no metadata, inside fixed
+pixel and byte budgets. It is what a read stores; the source file stays where it was, and the
+reference records the original dimensions so a reader can map coordinates back.
+_Avoid_: 缩略图、缓存图、派生图
+
 **Model Route (模型路线)**:
 One model call's destination, in the two facts request assembly needs: the protocol the
 provider accepts, and the media kinds the model reads. It is read once per step, because a

@@ -11,6 +11,8 @@ import { stageRipgrep } from "./stage-ripgrep";
 //     进 JS；
 //   - `node_modules/@lydell/`：PTY 原生绑定和它的平台包；`spawn-helper` 必须是
 //     包外的可执行文件；
+//   - `node_modules/@img/`: sharp's platform packages, which decode an image read; a
+//     native binary cannot be inlined into the bundle;
 //   - `bin/rg`：agent 的 grep/glob 工具要执行的 ripgrep 二进制，不能从包里跑；
 //   - `migrations/`：启动迁移要应用的 SQL，放在 `index.js` 旁边，
 //     `@workspace/db` 不用环境变量就能找到；
@@ -20,6 +22,7 @@ import { stageRipgrep } from "./stage-ripgrep";
 const outputDirectory = path.resolve(process.argv[2] ?? "dist");
 const libsqlSource = path.join(WORKSPACE_ROOT, "node_modules", "@libsql");
 const ptySource = path.join(WORKSPACE_ROOT, "node_modules", "@lydell");
+const sharpSource = path.join(WORKSPACE_ROOT, "node_modules", "@img");
 
 if (!existsSync(libsqlSource)) {
   throw new Error(
@@ -30,6 +33,12 @@ if (!existsSync(libsqlSource)) {
 if (!existsSync(ptySource)) {
   throw new Error(
     `@lydell packages missing at ${ptySource}; run \`vp install\` first.`
+  );
+}
+
+if (!existsSync(sharpSource)) {
+  throw new Error(
+    `sharp platform packages missing at ${sharpSource}; run \`vp install\` first.`
   );
 }
 
@@ -64,6 +73,11 @@ const spawnHelper = path.join(
 if (existsSync(spawnHelper)) {
   await chmod(spawnHelper, 0o755);
 }
+
+await cp(sharpSource, path.join(outputDirectory, "node_modules", "@img"), {
+  recursive: true,
+  preserveTimestamps: true,
+});
 
 await stageRipgrep(path.join(outputDirectory, "bin"));
 
