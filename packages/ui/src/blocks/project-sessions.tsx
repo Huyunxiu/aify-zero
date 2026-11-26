@@ -73,7 +73,7 @@ export function ProjectSessions({ projectId }: { projectId: string }) {
         {sessions.map((session) => (
           <SidebarMenuItem key={session.id} className="group/item">
             <SidebarMenuSubButton
-              className="w-full cursor-pointer pr-8"
+              className="group/scroll w-full cursor-pointer pr-8"
               onClick={() => navigate({ to: `/sessions/${session.id}` })}
               render={<button type="button" />}
             >

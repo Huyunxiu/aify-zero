@@ -9,7 +9,13 @@ export type HoverScrollTextProps = {
   value: string;
 };
 
-/** 溢出时保留省略号；指针悬停后滑到被藏起来的一端。 */
+/**
+ * 溢出时保留省略号；指针悬停后滑到被藏起来的一端。
+ *
+ * The pointer must enter this element. To make a wider area start the scroll,
+ * put `group/scroll` on that ancestor: a hovered ancestor of the same name
+ * reaches the `group-hover/scroll` variants inside.
+ */
 export function HoverScrollText({
   className,
   truncate = "end",
