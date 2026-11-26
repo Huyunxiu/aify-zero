@@ -6,7 +6,7 @@ import {
   ATTACHMENT_MAX_PIXELS,
   attachmentOwner,
 } from "@workspace/agent-client";
-import type { AttachmentRef } from "@workspace/agent-client";
+import type { AttachmentRef, AttachmentRegion } from "@workspace/agent-client";
 import type { Sandbox } from "@workspace/sandbox";
 import { tool } from "ai";
 import { z } from "zod";
@@ -18,6 +18,7 @@ import {
   loadImageDecoder,
   normalizeImage,
 } from "../attachments/normalize";
+import type { NormalizedCrop } from "../attachments/normalize";
 import { readAttachment, saveAttachment } from "../attachments/store";
 import type { ToolEnvironment } from "../extensions/capabilities";
 import {
@@ -87,6 +88,7 @@ Usage:
 - Call this tool in parallel when you know there are multiple files you want to read.
 - Avoid tiny repeated slices (30 line chunks). If you need more context, read a larger window.
 - This tool can read image files and PDFs and return them as file attachments. Images are stored once and served from storage; the envelope reports their size, and the model only sees them when its route accepts image input.
+- Large images are reduced, so small text can become unreadable. Pass region to read one part of the image at its own resolution; the envelope then names the region and its box in the source image.
 `;
 
 async function miss(
@@ -209,26 +211,62 @@ function attachmentEnvelope(
   ].join("\n");
 }
 
-/**
- * How a reader maps a coordinate it measured on the stored copy back onto the source.
- *
- * Integer rounding can give the two axes slightly different ratios, so one multiplier
- * is named only when both round to the same value.
- */
-function downscaleNote(
-  original: { width: number; height: number } | undefined,
-  stored: { width: number; height: number }
+/** The advice for one axis pair: one multiplier when both axes round the same. */
+function coordinateAdvice(
+  source: { width: number; height: number },
+  delivered: { width: number; height: number }
 ): string {
-  if (original === undefined) {
+  const x = (source.width / delivered.width).toFixed(2);
+  const y = (source.height / delivered.height).toFixed(2);
+  return x === y
+    ? `multiply coordinates by ${x}`
+    : `multiply x coordinates by ${x} and y coordinates by ${y}`;
+}
+
+/**
+ * How a reader maps a coordinate it measured on the stored copy back onto the file.
+ *
+ * A cropped read names the region and its source box in pixels, because the region is
+ * where the detail is: a coordinate inside the copy lands inside that box. A read that
+ * only reduced the whole image names the multiplier instead.
+ */
+function imageNote(
+  image: {
+    readonly originalDimensions?: {
+      readonly width: number;
+      readonly height: number;
+    };
+    readonly region?: AttachmentRegion;
+    readonly cropBox?: NormalizedCrop;
+  },
+  delivered: { readonly width: number; readonly height: number }
+): string {
+  const source = image.originalDimensions;
+  const box = image.cropBox;
+  const { region } = image;
+
+  if (region !== undefined && box !== undefined && source !== undefined) {
+    const regionText =
+      // Echoed exactly: rounding would print a region that differs from the pixel box
+      // beside it, and a tiny region would round to the zero the schema refuses.
+      `region ${String(region.x)},${String(region.y)},` +
+      `${String(region.width)},${String(region.height)} of ` +
+      `${source.width}x${source.height}`;
+    const boxText =
+      `source box x ${box.left}-${box.left + box.width}, ` +
+      `y ${box.top}-${box.top + box.height}`;
+    const reduced =
+      box.width !== delivered.width || box.height !== delivered.height;
+    const scale = reduced
+      ? `; ${coordinateAdvice(box, delivered)}, then add the box origin (${box.left}, ${box.top})`
+      : "";
+    return ` (${regionText}; ${boxText}${scale})`;
+  }
+
+  if (source === undefined) {
     return "";
   }
-  const x = (original.width / stored.width).toFixed(2);
-  const y = (original.height / stored.height).toFixed(2);
-  const advice =
-    x === y
-      ? `multiply coordinates by ${x}`
-      : `multiply x coordinates by ${x} and y coordinates by ${y}`;
-  return ` (downscaled from ${original.width}x${original.height} px; ${advice} to locate features in the original file)`;
+  return ` (downscaled from ${source.width}x${source.height} px; ${coordinateAdvice(source, delivered)} to locate features in the original file)`;
 }
 
 /** What one attachment read needs. */
@@ -242,6 +280,18 @@ interface AttachmentReadInput {
   readonly agentContext: ToolEnvironment;
   /** Whether the caller passed `offset` or `limit`, which do not page an attachment. */
   readonly usedTextPaging: boolean;
+  /** The image region to keep; ignored for a document. */
+  readonly region?: AttachmentRegion;
+}
+
+/** Append the note that a region was ignored, for a read that is not an image. */
+function withIgnoredRegion<T extends { readonly output: string }>(
+  result: T
+): T {
+  return {
+    ...result,
+    output: `${result.output}\n\n(region applies to images only; the whole file was read.)`,
+  };
 }
 
 /** One refusal for a file this read will not commit, naming the remedy. */
@@ -301,6 +351,19 @@ async function readAttachments(
   }
 
   const decoder = isDecodableImage(mime) ? await loadImageDecoder() : undefined;
+
+  if (
+    decoder === undefined &&
+    input.region !== undefined &&
+    mime.startsWith("image/")
+  ) {
+    // Ignoring the region would let the model believe it looked closer than it did.
+    throw refuseAttachment(
+      filepath,
+      "a region needs the image decoder, and this deployment has none.",
+      "Read the whole image, or convert it to PNG or JPEG first."
+    );
+  }
 
   if (decoder === undefined && isDecodableImage(mime)) {
     // Without a decoder this format has no size the header can declare, so the pixel
@@ -384,7 +447,7 @@ async function commitNormalizedImage(
   const data = await sandbox.readFileBuffer(filepath);
   let normalized;
   try {
-    normalized = await normalizeImage(data);
+    normalized = await normalizeImage(data, { region: input.region });
   } catch (error) {
     if (error instanceof ImageDecodeError) {
       throw refuseAttachment(
@@ -406,6 +469,7 @@ async function commitNormalizedImage(
     ...(normalized.originalDimensions === undefined
       ? {}
       : { originalDimensions: normalized.originalDimensions }),
+    ...(normalized.region === undefined ? {} : { region: normalized.region }),
     name: filepath,
   });
 
@@ -414,7 +478,8 @@ async function commitNormalizedImage(
     attachment,
     normalized.data.byteLength,
     size,
-    downscaleNote(normalized.originalDimensions, size)
+    imageNote(normalized, size),
+    true
   );
 }
 
@@ -424,7 +489,8 @@ function attachmentResult(
   attachment: AttachmentRef,
   bytes: number,
   size: { width: number; height: number } | undefined,
-  note?: string
+  note?: string,
+  regionApplied = false
 ): ReadFileToolOutput {
   const { filepath } = input;
   const envelope = attachmentEnvelope(
@@ -434,9 +500,15 @@ function attachmentResult(
     size,
     note
   );
-  const paging = input.usedTextPaging
-    ? "\n\n(offset and limit apply to text files only; the whole attachment was read.)"
-    : "";
+  const notes = [
+    input.usedTextPaging
+      ? "(offset and limit apply to text files only; the whole attachment was read.)"
+      : "",
+    input.region === undefined || regionApplied
+      ? ""
+      : "(region applies to images only; the whole attachment was read.)",
+  ].filter((line) => line !== "");
+  const paging = notes.length === 0 ? "" : `\n\n${notes.join(" ")}`;
 
   return {
     output: envelope + paging,
@@ -447,6 +519,7 @@ function attachmentResult(
       mime: attachment.mediaType,
       bytes,
       ...(size === undefined ? {} : size),
+      ...(attachment.region === undefined ? {} : { region: attachment.region }),
     },
     attachments: [attachment],
   };
@@ -575,8 +648,42 @@ async function readTextFile(
   };
 }
 
+/** The part of an image to read, as fractions of its width and height. */
+const REGION_SCHEMA = z
+  .object({
+    x: z
+      .number()
+      .min(0)
+      .max(1)
+      .describe("Left edge, as a fraction of the width"),
+    y: z
+      .number()
+      .min(0)
+      .max(1)
+      .describe("Top edge, as a fraction of the height"),
+    width: z
+      .number()
+      .gt(0)
+      .max(1)
+      .describe("Region width, as a fraction of the image width"),
+    height: z
+      .number()
+      .gt(0)
+      .max(1)
+      .describe("Region height, as a fraction of the image height"),
+  })
+  .refine((region) => region.x + region.width <= 1, {
+    message: "region x + width must not exceed 1",
+  })
+  .refine((region) => region.y + region.height <= 1, {
+    message: "region y + height must not exceed 1",
+  });
+
 const READ_TOOL_INPUT_SCHEMA = z.object({
   path: z.string().describe(toolPathDescription("file or directory to read")),
+  region: REGION_SCHEMA.optional().describe(
+    "Read only this part of an image, as fractions of its size. Use it after reading the whole image, to look closer at a detail without losing resolution."
+  ),
   limit: z.coerce
     .number()
     .int()
@@ -624,6 +731,7 @@ type ReadFileToolOutputMetadata =
       bytes?: number;
       width?: number;
       height?: number;
+      region?: AttachmentRegion;
     }
   | {
       type: "binary-file";
@@ -653,7 +761,7 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
     description: DESCRIPTION,
     inputSchema: READ_TOOL_INPUT_SCHEMA,
     execute: async (input) => {
-      const { offset, limit } = input;
+      const { offset, limit, region } = input;
       const { sandbox } = agentContext;
       const filepath = sandbox.resolvePath(input.path);
 
@@ -668,12 +776,13 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
       }
 
       if (stats.isDirectory) {
-        return await readDirectory(
+        const listed = await readDirectory(
           sandbox,
           filepath,
           normalizedOffset,
           normalizedLimit
         );
+        return region === undefined ? listed : withIgnoredRegion(listed);
       }
 
       // 既不是文件也不是目录：坏符号链接、socket、设备节点。旧实现靠 `stat`
@@ -704,6 +813,7 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
           bytes: stats.size,
           agentContext,
           usedTextPaging: offset !== undefined || limit !== undefined,
+          ...(region === undefined ? {} : { region }),
         });
       }
 
@@ -711,13 +821,14 @@ const createReadFileTool = ({ agentContext }: CreateReadFileToolProps) =>
         return readBinaryFile(filepath, mime);
       }
 
-      return await readTextFile(
+      const read = await readTextFile(
         sandbox,
         filepath,
         mime,
         normalizedOffset,
         normalizedLimit
       );
+      return region === undefined ? read : withIgnoredRegion(read);
     },
     async toModelOutput({ output }: { output: ReadFileToolOutput }): Promise<
       | { type: "error-text"; value: string }

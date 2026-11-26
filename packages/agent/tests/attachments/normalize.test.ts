@@ -133,4 +133,134 @@ describe(normalizeImage, () => {
 
     await expect(normalizeImage(oversized)).rejects.toThrow(/decode limit/u);
   });
+
+  /** A 200x100 image: red on the left half, blue on the right half. */
+  async function twoColours(): Promise<Buffer> {
+    /* v8 ignore next -- the suite cannot run without a decoder. */
+    if (decoder === undefined) {
+      throw new Error("the decoder is required to build this fixture");
+    }
+    const red = await decoder({
+      create: { width: 200, height: 100, channels: 3, background: "#ff0000" },
+    })
+      .png()
+      .toBuffer();
+    const blue = await decoder({
+      create: { width: 100, height: 100, channels: 3, background: "#0000ff" },
+    })
+      .png()
+      .toBuffer();
+    return await decoder(red)
+      .composite([{ input: blue, left: 100, top: 0 }])
+      .png()
+      .toBuffer();
+  }
+
+  test("should keep only the named fraction of the image", async () => {
+    const source = await twoColours();
+
+    const normalized = await normalizeImage(source, {
+      region: { x: 0.5, y: 0, width: 0.5, height: 1 },
+    });
+
+    const { data } = await decoder!(normalized.data)
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    expect(normalized.cropBox).toStrictEqual({
+      left: 100,
+      top: 0,
+      width: 100,
+      height: 100,
+    });
+    expect(normalized.region).toStrictEqual({
+      x: 0.5,
+      y: 0,
+      width: 0.5,
+      height: 1,
+    });
+    expect(normalized.originalDimensions).toStrictEqual({
+      width: 200,
+      height: 100,
+    });
+    // The right half is blue, so the crop must not show the red that surrounds it.
+    expect([data[0], data[1], data[2]]).toStrictEqual([0, 0, 255]);
+  });
+
+  test("should crop at source resolution before it reduces", async () => {
+    // A quarter of a 2000x2000 image is 1000x1000, which is inside the pixel budget,
+    // so the delivered copy keeps the region at its own resolution.
+    const source = await fixture(2000, 2000);
+
+    const normalized = await normalizeImage(source, {
+      region: { x: 0, y: 0, width: 0.5, height: 0.5 },
+    });
+
+    expect(normalized.width).toBe(1000);
+    expect(normalized.height).toBe(1000);
+    expect(normalized.cropBox?.left).toBe(0);
+  });
+
+  test("should apply the region in the space the orientation produces", async () => {
+    /* v8 ignore next -- the suite cannot run without a decoder. */
+    if (decoder === undefined) {
+      throw new Error("the decoder is required to build this fixture");
+    }
+    const red = await decoder({
+      create: { width: 200, height: 100, channels: 3, background: "#ff0000" },
+    })
+      .png()
+      .toBuffer();
+    const blue = await decoder({
+      create: { width: 100, height: 100, channels: 3, background: "#0000ff" },
+    })
+      .png()
+      .toBuffer();
+    const source = await decoder(red)
+      .composite([{ input: blue, left: 100, top: 0 }])
+      .withMetadata({ orientation: 6 })
+      .png()
+      .toBuffer();
+
+    // Orientation 6 shows the stored left half on top, so the bottom half is blue.
+    const normalized = await normalizeImage(source, {
+      region: { x: 0, y: 0.5, width: 1, height: 0.5 },
+    });
+
+    const { data } = await decoder(Buffer.from(normalized.data))
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    expect(normalized.originalDimensions).toStrictEqual({
+      width: 100,
+      height: 200,
+    });
+    expect(normalized.cropBox).toStrictEqual({
+      left: 0,
+      top: 100,
+      width: 100,
+      height: 100,
+    });
+    expect([data[0], data[1], data[2]]).toStrictEqual([0, 0, 255]);
+  });
+
+  test("should still reduce a crop that is over the budget", async () => {
+    // Half of a 4000x4000 image is 2000x2000: 4 MP, above the 1.15 MP budget.
+    const source = await fixture(4000, 4000);
+
+    const normalized = await normalizeImage(source, {
+      region: { x: 0, y: 0, width: 0.5, height: 0.5 },
+    });
+
+    expect(normalized.cropBox).toStrictEqual({
+      left: 0,
+      top: 0,
+      width: 2000,
+      height: 2000,
+    });
+    expect(normalized.width).toBeLessThan(2000);
+    expect(normalized.width * normalized.height).toBeLessThanOrEqual(
+      NORMALIZED_MAX_PIXELS
+    );
+  });
 });

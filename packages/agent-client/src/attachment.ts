@@ -26,6 +26,14 @@ export const ATTACHMENT_IMAGE_TYPES = [
   "image/webp",
 ] as const;
 
+/** The part of an image a read stored, as fractions of the source. */
+export interface AttachmentRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 /** An immutable reference to bytes a session recorded. */
 export interface AttachmentRef {
   /** Discriminates this from the deprecated inline `file-data` upload. */
@@ -52,6 +60,8 @@ export interface AttachmentRef {
     width: number;
     height: number;
   };
+  /** The fraction of the source this copy shows, present only for a partial read. */
+  region?: AttachmentRegion;
 }
 
 /** The owner string of one session's attachments. */

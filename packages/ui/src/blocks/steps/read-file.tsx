@@ -7,6 +7,9 @@ import { StepFrame, StepLabel, StepShell } from "./shell";
 import { summarizeTool } from "./summary";
 import type { StepPartOf, StepViewProps } from "./types";
 
+/** One region fraction as a whole percentage. */
+const pct = (value: number): string => `${Math.round(value * 100)}%`;
+
 /**
  * What a `read-file` call answers with.
  *
@@ -115,9 +118,13 @@ export const summarizeFileRead = (
     case "attachments": {
       const size =
         metadata.width === undefined || metadata.height === undefined
-          ? undefined
+          ? ""
           : ` · ${metadata.width}×${metadata.height}`;
-      return size === undefined ? metadata.mime : `${metadata.mime}${size}`;
+      const region =
+        metadata.region === undefined
+          ? ""
+          : ` · region ${pct(metadata.region.x)},${pct(metadata.region.y)} ${pct(metadata.region.width)}×${pct(metadata.region.height)}`;
+      return `${metadata.mime}${size}${region}`;
     }
     case "binary-file": {
       return "binary file";

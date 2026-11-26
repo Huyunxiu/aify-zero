@@ -31,6 +31,22 @@ export const NORMALIZED_MAX_PIXELS = 1_152_000;
 /** The largest normalized image, in bytes. */
 export const NORMALIZED_MAX_BYTES = 1024 * 1024;
 
+/** The part of an image to keep, as fractions of the source width and height. */
+export interface NormalizedRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** The same part in source pixels, after orientation. */
+export interface NormalizedCrop {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 /** A decoded image in the one form the harness stores. */
 export interface NormalizedImage {
   readonly data: Uint8Array;
@@ -42,6 +58,48 @@ export interface NormalizedImage {
   readonly originalDimensions?: {
     readonly width: number;
     readonly height: number;
+  };
+  /** The fraction of the source this copy shows, present only for a partial read. */
+  readonly region?: NormalizedRegion;
+  /** The same region in source pixels; a reader needs both to place a coordinate. */
+  readonly cropBox?: NormalizedCrop;
+}
+
+/** Choices a caller makes before the decode. */
+export interface NormalizeOptions {
+  /** Keep only this part of the image, measured as fractions of the source. */
+  readonly region?: NormalizedRegion;
+}
+
+/**
+ * The part of a source one region names, in pixels.
+ *
+ * The tool schema already refuses a region that leaves the image; this clamp answers a
+ * direct caller of this module, which cannot rely on that schema having run.
+ */
+function normalizedCrop(
+  region: NormalizedRegion,
+  source: { readonly width: number; readonly height: number }
+): NormalizedCrop {
+  const left = Math.min(
+    Math.max(0, Math.round(region.x * source.width)),
+    source.width - 1
+  );
+  const top = Math.min(
+    Math.max(0, Math.round(region.y * source.height)),
+    source.height - 1
+  );
+  return {
+    left,
+    top,
+    width: Math.max(
+      1,
+      Math.min(Math.round(region.width * source.width), source.width - left)
+    ),
+    height: Math.max(
+      1,
+      Math.min(Math.round(region.height * source.height), source.height - top)
+    ),
   };
 }
 
@@ -149,7 +207,8 @@ async function encode(
  * @throws ImageDecodeError when the bytes cannot be decoded inside the guards.
  */
 export async function normalizeImage(
-  data: Uint8Array
+  data: Uint8Array,
+  options: NormalizeOptions = {}
 ): Promise<NormalizedImage> {
   if (data.byteLength > DECODE_MAX_BYTES) {
     throw new ImageDecodeError(
@@ -191,7 +250,19 @@ export async function normalizeImage(
     );
   }
 
-  const target = normalizedTargetSize(originalWidth, originalHeight);
+  // A crop keeps the source resolution inside the region, then the same budgets
+  // apply to what is left: the region is the only way to keep detail.
+  const cropBox =
+    options.region === undefined
+      ? undefined
+      : normalizedCrop(options.region, {
+          width: originalWidth,
+          height: originalHeight,
+        });
+  const target = normalizedTargetSize(
+    cropBox?.width ?? originalWidth,
+    cropBox?.height ?? originalHeight
+  );
   const keepAlpha = metadata.hasAlpha;
   const qualities: (number | "lossless")[] = keepAlpha
     ? ["lossless"]
@@ -203,8 +274,12 @@ export async function normalizeImage(
 
   for (let attempt = 0; attempt < RESIZE_ATTEMPTS; attempt += 1) {
     for (const quality of qualities) {
-      const resized = decodePipeline(sharp, data)
-        .rotate()
+      let oriented = decodePipeline(sharp, data).rotate();
+      if (cropBox !== undefined) {
+        // sharp extracts before it resizes, so this crops at source resolution.
+        oriented = oriented.extract(cropBox);
+      }
+      const resized = oriented
         .toColourspace("srgb")
         .resize({ width, height, fit: "inside", withoutEnlargement: true });
       let encoded: Buffer;
@@ -220,7 +295,12 @@ export async function normalizeImage(
         smallest = encoded;
       }
       if (encoded.byteLength <= NORMALIZED_MAX_BYTES) {
-        return await finish(encoded, originalWidth, originalHeight);
+        return await finish(encoded, {
+          originalWidth,
+          originalHeight,
+          region: options.region,
+          cropBox,
+        });
       }
     }
     width = Math.max(1, Math.floor(width / 2));
@@ -236,15 +316,28 @@ export async function normalizeImage(
       `the image cannot be stored within the ${NORMALIZED_MAX_BYTES / 1024} KB budget; crop it, then read the smaller copy`
     );
   }
-  return await finish(smallest, originalWidth, originalHeight);
+  return await finish(smallest, {
+    originalWidth,
+    originalHeight,
+    region: options.region,
+    cropBox,
+  });
+}
+
+/** Everything a stored copy must be described against. */
+interface SourceFacts {
+  readonly originalWidth: number;
+  readonly originalHeight: number;
+  readonly region: NormalizedRegion | undefined;
+  readonly cropBox: NormalizedCrop | undefined;
 }
 
 /** Verify the encoded result and describe it. */
 async function finish(
   encoded: Buffer,
-  originalWidth: number,
-  originalHeight: number
+  facts: SourceFacts
 ): Promise<NormalizedImage> {
+  const { originalWidth, originalHeight, region, cropBox } = facts;
   const sharp = await loadImageDecoder();
   /* v8 ignore next -- finish runs only after a successful encode, which needs the decoder. */
   if (sharp === undefined) {
@@ -263,15 +356,20 @@ async function finish(
       "image normalization did not produce a single-frame 8-bit WebP"
     );
   }
-  const downscaled = width !== originalWidth || height !== originalHeight;
+  const reduced =
+    region !== undefined ||
+    width !== originalWidth ||
+    height !== originalHeight;
 
   return {
     data: new Uint8Array(encoded),
     mediaType: "image/webp",
     width,
     height,
-    ...(downscaled
+    ...(reduced
       ? { originalDimensions: { width: originalWidth, height: originalHeight } }
       : {}),
+    ...(region === undefined ? {} : { region }),
+    ...(cropBox === undefined ? {} : { cropBox }),
   };
 }
