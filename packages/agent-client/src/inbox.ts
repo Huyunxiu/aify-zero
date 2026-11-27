@@ -1,6 +1,7 @@
 import type { ModelRef } from "@workspace/shared/model";
 
 import type { AgentUserTurn } from "./types";
+import { JOB_NOTICE_STEP_SOURCE, SUBAGENT_NOTICE_STEP_SOURCE } from "./types";
 
 /**
  * 一条待办项最早能在哪个边界交进去。
@@ -19,6 +20,9 @@ export const JOB_NOTICE_INBOX_KIND = "job-notice";
 /** 定时器到点专用的待办项种类。 */
 export const TIMER_INBOX_KIND = "timer";
 
+/** 子代理落定专用的待办项种类。 */
+export const SUBAGENT_NOTICE_INBOX_KIND = "subagent-settled";
+
 /**
  * 待办项的种类。
  *
@@ -29,7 +33,47 @@ export const TIMER_INBOX_KIND = "timer";
 export type InboxKind =
   | "user-message"
   | typeof JOB_NOTICE_INBOX_KIND
-  | typeof TIMER_INBOX_KIND;
+  | typeof TIMER_INBOX_KIND
+  | typeof SUBAGENT_NOTICE_INBOX_KIND;
+
+/**
+ * 一条完成通知的形状：投进收件箱时记的种类，和它变成回合后 step 上记的来源。
+ *
+ * 两者一起给，因为它们是同一件事的两个位置：一条通知在库里是一种待办项，
+ * 到了 transcript 里就是一种步骤来源。分开给会让它们漂开——投的是子代理，
+ * 回合却标成后台任务。
+ */
+export type NoticeForm = {
+  readonly kind:
+    | typeof JOB_NOTICE_INBOX_KIND
+    | typeof SUBAGENT_NOTICE_INBOX_KIND;
+  readonly source:
+    | typeof JOB_NOTICE_STEP_SOURCE
+    | typeof SUBAGENT_NOTICE_STEP_SOURCE;
+};
+
+/** 后台任务结算后投的那条通知。 */
+export const JOB_NOTICE: NoticeForm = {
+  kind: JOB_NOTICE_INBOX_KIND,
+  source: JOB_NOTICE_STEP_SOURCE,
+};
+
+/** 子代理落定后投的那条通知。 */
+export const SUBAGENT_NOTICE: NoticeForm = {
+  kind: SUBAGENT_NOTICE_INBOX_KIND,
+  source: SUBAGENT_NOTICE_STEP_SOURCE,
+};
+
+/**
+ * 这一种待办项是不是一条完成通知。
+ *
+ * 清掉重启后过期的通知时读它：通知指向的那件事已经不存在，而用户消息和定时器
+ * 不是。
+ * @param kind - 待办项的种类。
+ * @returns 通知为 true。
+ */
+export const isNoticeInboxKind = (kind: InboxKind): boolean =>
+  kind === JOB_NOTICE_INBOX_KIND || kind === SUBAGENT_NOTICE_INBOX_KIND;
 
 /** 起跑一条待办项所需的宿主配置。 */
 export type InboxPayload = {

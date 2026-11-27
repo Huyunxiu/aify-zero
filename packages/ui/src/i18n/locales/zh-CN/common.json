@@ -334,6 +334,9 @@
   "jobNotice": {
     "marker": "后台任务完成"
   },
+  "subagentNotice": {
+    "marker": "子代理落定"
+  },
   "timerNotice": {
     "marker": "定时器到点"
   },

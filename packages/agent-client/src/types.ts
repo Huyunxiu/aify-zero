@@ -882,11 +882,15 @@ export const JOB_NOTICE_STEP_SOURCE = "job-notice";
 /** 定时器到点专用的步骤来源。 */
 export const TIMER_STEP_SOURCE = "timer";
 
+/** 子代理落定专用的步骤来源。 */
+export const SUBAGENT_NOTICE_STEP_SOURCE = "subagent-settled";
+
 /** 一条用户侧步骤的来源。 */
 export type StepSource =
   | "user"
   | typeof JOB_NOTICE_STEP_SOURCE
-  | typeof TIMER_STEP_SOURCE;
+  | typeof TIMER_STEP_SOURCE
+  | typeof SUBAGENT_NOTICE_STEP_SOURCE;
 
 /**
  * 这一步是不是系统写进来的，而不是用户说的话。
@@ -899,7 +903,9 @@ export type StepSource =
 export const isSystemStepSource = (
   source?: StepSource
 ): source is Exclude<StepSource, "user"> =>
-  source === JOB_NOTICE_STEP_SOURCE || source === TIMER_STEP_SOURCE;
+  source === JOB_NOTICE_STEP_SOURCE ||
+  source === TIMER_STEP_SOURCE ||
+  source === SUBAGENT_NOTICE_STEP_SOURCE;
 
 export type AgentStepBase = AgentStepStatus & {
   /**

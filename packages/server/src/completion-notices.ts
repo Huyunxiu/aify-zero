@@ -1,4 +1,5 @@
 import type { AgentRunner } from "@workspace/agent";
+import type { NoticeForm } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 /**
@@ -11,6 +12,8 @@ export type CompletionNotice = {
   sessionId: string;
   text: string;
   dedupeKey: string;
+  /** Which kind of notice this is: the producer's, never the queue's guess. */
+  form: NoticeForm;
 };
 
 /** What the runner answers with when a notice is queued. */

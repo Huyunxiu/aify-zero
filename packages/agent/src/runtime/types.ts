@@ -2,6 +2,7 @@ import type {
   AgentUserTurn,
   ApprovalPolicy,
   TextStreamToolApprovalResponseEvent,
+  NoticeForm,
 } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
@@ -79,10 +80,18 @@ export type EnqueueInput = {
 
 export type EnqueueNoticeInput = {
   sessionId: string;
-  /** 通知正文；与用户消息同构，由任务结算处组好。 */
+  /** 通知正文；与用户消息同构，由结算处组好。 */
   text: string;
-  /** 幂等键；同一个任务重复结算不会投第二条。 */
+  /** 幂等键；同一件事重复结算不会投第二条。 */
   dedupeKey: string;
+  /**
+   * Which notice this is: the inbox kind it is filed under and the step source
+   * its turn carries.
+   *
+   * The producer names it. The runner does not assume a job: two producers
+   * already share this path, and a third would not be a job either.
+   */
+  form: NoticeForm;
 };
 
 export type ResumeInput = {

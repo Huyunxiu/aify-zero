@@ -1,9 +1,15 @@
 import type { AgentRunner, SubagentSettlement } from "@workspace/agent";
+import type { NoticeForm } from "@workspace/agent-client";
 import { describe, expect, test } from "vitest";
 
 import { createSubagentNoticeAdapter } from "../src/subagent-notices.js";
 
-type Queued = { sessionId: string; text: string; dedupeKey: string };
+type Queued = {
+  sessionId: string;
+  text: string;
+  dedupeKey: string;
+  form: NoticeForm;
+};
 
 const settlement = (
   overrides: Partial<SubagentSettlement> = {}
@@ -68,6 +74,12 @@ describe("a settled subagent", () => {
     expect(queued).toHaveLength(1);
     expect(queued[0]?.sessionId).toBe("parent-1");
     expect(queued[0]?.dedupeKey).toBe("subagent-settled:child-1");
+    // The producer names the kind and the step source together: a settlement is
+    // not a job notice, and the turn it becomes must not say it is one.
+    expect(queued[0]?.form).toStrictEqual({
+      kind: "subagent-settled",
+      source: "subagent-settled",
+    });
     expect(queued[0]?.text).toBe(
       [
         "subagent AGENT-1 (explore) settled: done",

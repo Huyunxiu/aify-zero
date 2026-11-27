@@ -1,7 +1,4 @@
-import {
-  JOB_NOTICE_INBOX_KIND,
-  JOB_NOTICE_STEP_SOURCE,
-} from "@workspace/agent-client";
+import { isNoticeInboxKind } from "@workspace/agent-client";
 import type {
   AgentUserTurn,
   InboxItem,
@@ -295,7 +292,7 @@ export class AgentRunner {
     const payload = this.#lastPayload.get(input.sessionId);
     if (payload === undefined) {
       this.#logger.warn(
-        "[runner] cannot deliver a job notice: the session has no model yet",
+        "[runner] cannot deliver a notice: the session has no model yet",
         { sessionId: input.sessionId }
       );
       return undefined;
@@ -316,7 +313,7 @@ export class AgentRunner {
           type: "user",
           createdAt: now,
           status: "done",
-          source: JOB_NOTICE_STEP_SOURCE,
+          source: input.form.source,
           content: [{ type: "text", text: input.text, createdAt: now }],
         },
       ],
@@ -324,7 +321,7 @@ export class AgentRunner {
 
     const item = await this.#store.insertInboxItem({
       sessionId: input.sessionId,
-      kind: JOB_NOTICE_INBOX_KIND,
+      kind: input.form.kind,
       dedupeKey: input.dedupeKey,
       deliverAt,
       content: turn,
@@ -488,7 +485,7 @@ export class AgentRunner {
       try {
         const items = await this.#store.listInboxItems(sessionId);
         const stale = items
-          .filter((item) => item.kind === JOB_NOTICE_INBOX_KIND)
+          .filter((item) => isNoticeInboxKind(item.kind))
           .map((item) => item.id);
         if (stale.length > 0) {
           await this.#store.deleteInboxItems(sessionId, stale);
@@ -497,10 +494,7 @@ export class AgentRunner {
           remaining.push(sessionId);
         }
       } catch (error: unknown) {
-        this.#logger.warn(
-          "[runner] failed to clean up stale job notices",
-          error
-        );
+        this.#logger.warn("[runner] failed to clean up stale notices", error);
         remaining.push(sessionId);
       }
     }

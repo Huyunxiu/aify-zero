@@ -1,3 +1,4 @@
+import { JOB_NOTICE, SUBAGENT_NOTICE } from "@workspace/agent-client";
 import type {
   AgentTurn,
   AgentUserTurn,
@@ -281,11 +282,41 @@ describe("AgentRunner", () => {
       sessionId: "s1",
       text: "background job bash-1 finished",
       dedupeKey: "job-notice:bash-1",
+      form: JOB_NOTICE,
     });
 
     expect(item?.kind).toBe("job-notice");
     expect(item?.deliverAt).toBe("run-boundary");
     expect(item?.content.content[0]?.source).toBe("job-notice");
+
+    await vi.waitFor(() => expect(builder.calls).toHaveLength(2));
+    await runner.shutdown();
+  });
+
+  test("另一种通知按生产者给的那一对值归档，而不是一律记成后台任务", async () => {
+    const store = new FakeStore([session("s1")]);
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
+    await vi.waitFor(() => {
+      expect(builder.calls).toHaveLength(1);
+      expect(runner.state().running).toHaveLength(0);
+    });
+
+    const item = await runner.enqueueNotice({
+      sessionId: "s1",
+      text: "subagent AGENT-1 (explore) settled: done",
+      dedupeKey: "subagent-settled:child-1",
+      form: SUBAGENT_NOTICE,
+    });
+
+    expect(item?.kind).toBe("subagent-settled");
+    expect(item?.content.content[0]?.source).toBe("subagent-settled");
 
     await vi.waitFor(() => expect(builder.calls).toHaveLength(2));
     await runner.shutdown();
@@ -325,6 +356,7 @@ describe("AgentRunner", () => {
       sessionId: "s1",
       text: "background job bash-1 finished",
       dedupeKey: "job-notice:bash-1",
+      form: JOB_NOTICE,
     });
 
     expect(item).toBeUndefined();

@@ -6,7 +6,7 @@ import type {
   JobNoticeAdapter,
   JobRegistry,
 } from "@workspace/agent";
-import { JOB_NOTICE_INBOX_KIND } from "@workspace/agent-client";
+import { JOB_NOTICE, JOB_NOTICE_INBOX_KIND } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 import { createCompletionNotifier } from "./completion-notices";
@@ -89,6 +89,7 @@ export const createJobNoticeAdapter = ({
         sessionId,
         text: notice.text,
         dedupeKey: `${JOB_NOTICE_INBOX_KIND}:${job.id}`,
+        form: JOB_NOTICE,
       });
 
       if (queued === undefined) {

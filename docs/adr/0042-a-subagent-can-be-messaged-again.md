@@ -60,6 +60,11 @@ A completion notice carries the name, the type, the terminal status, and the rep
 no tool. A job notice names one because its payload is a pointer to output too large to inline;
 a subagent notice carries the answer itself, so there is nothing to fetch.
 
+A notice is not a job's notice with another sender. The producer names the
+kind it is filed under and the step source its turn carries, together, so a
+settlement cannot arrive filed as a background job: the parent reads it as a
+subagent's, in the transcript and in the inbox alike.
+
 The one sentence that belongs to every delegation — do not poll, end the turn — lives in the
 subagent catalogue with the rest of the guidance. A rule stated in each notice would be a
 second copy of a rule that already has a home.

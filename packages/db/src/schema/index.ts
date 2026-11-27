@@ -421,9 +421,11 @@ export const inbox_item_table = sqliteTable(
       .unique()
       .$defaultFn(() => randomUUID()),
     sessionId: text("session_id").notNull(),
-    // `job-notice` / `timer` 与 @workspace/agent-client 的同名常量对应；
-    // 数据库层不依赖协议包，这里保留字面量。
-    kind: text("kind", { enum: ["user-message", "job-notice", "timer"] })
+    // `job-notice` / `timer` / `subagent-settled` 与 @workspace/agent-client 的
+    // 同名常量对应；数据库层不依赖协议包，这里保留字面量。
+    kind: text("kind", {
+      enum: ["user-message", "job-notice", "timer", "subagent-settled"],
+    })
       .notNull()
       .default("user-message"),
     dedupeKey: text("dedupe_key").notNull(),

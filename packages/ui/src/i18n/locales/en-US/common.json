@@ -334,6 +334,9 @@
   "jobNotice": {
     "marker": "Background job finished"
   },
+  "subagentNotice": {
+    "marker": "Subagent finished"
+  },
   "timerNotice": {
     "marker": "Timer fired"
   },

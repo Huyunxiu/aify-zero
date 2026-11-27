@@ -4,6 +4,7 @@ import type {
   SubagentNotifier,
   SubagentSettlement,
 } from "@workspace/agent";
+import { SUBAGENT_NOTICE } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 import { createCompletionNotifier } from "./completion-notices";
@@ -62,6 +63,7 @@ export const createSubagentNoticeAdapter = ({
       sessionId: settlement.parentSessionId,
       text: composeSubagentNotice(settlement),
       dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${settlement.sessionId}`,
+      form: SUBAGENT_NOTICE,
     });
   };
 
