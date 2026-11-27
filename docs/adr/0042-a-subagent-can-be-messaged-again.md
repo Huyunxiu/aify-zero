@@ -65,6 +65,13 @@ kind it is filed under and the step source its turn carries, together, so a
 settlement cannot arrive filed as a background job: the parent reads it as a
 subagent's, in the transcript and in the inbox alike.
 
+The writer is a capability, not a port. It began as an object the server built
+and bound to the runner after construction, which meant the layer that settles
+work had to be told about the runner by the layer above it. The runner now
+builds the one writer and hands the same object into every assembly, so an
+extension reaches its session the same way it reaches storage — and a subagent
+is deliberately not given one, because it reports through its transcript.
+
 The one sentence that belongs to every delegation — do not poll, end the turn — lives in the
 subagent catalogue with the rest of the guidance. A rule stated in each notice would be a
 second copy of a rule that already has a home.
