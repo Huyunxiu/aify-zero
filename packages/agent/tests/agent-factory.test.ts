@@ -1,3 +1,4 @@
+import type { InboxItem } from "@workspace/agent-client";
 import { tool } from "ai";
 import type { Tool } from "ai";
 import { describe, expect, test } from "vitest";
@@ -11,6 +12,7 @@ import { renderSections } from "../src/extensions/manager.js";
 import type { ExtensionAPI } from "../src/extensions/types.js";
 import { Extension } from "../src/extensions/types.js";
 import type { ToolCallHookEvent } from "../src/hooks-manager.js";
+import type { NoticeWriter } from "../src/inbox/notice-writer.js";
 import type { CompactionStrategy } from "../src/kernel/compaction-strategy.js";
 import type { AgentStore } from "../src/storage/index.js";
 import type { TimerStore } from "../src/timers/types.js";
@@ -96,6 +98,23 @@ describe("the approval notice in the prompt", () => {
     expect(rendered).toContain(
       "This session refuses writes to disk and shell commands"
     );
+  });
+});
+
+describe("the notice writer a session is assembled with", () => {
+  test("is the one the host handed over, not a second one made here", async () => {
+    // A notice nobody can queue: this test is about which writer arrives, not
+    // what it does.
+    const nothing = undefined as InboxItem | undefined;
+    const notices: NoticeWriter = {
+      write: () => Promise.resolve(nothing),
+      canDeliver: () => false,
+      resetBudget: () => {},
+    };
+
+    const agent = await makeAgent({ notices });
+
+    expect(agent.extensions.capability(Capabilities.notices)).toBe(notices);
   });
 });
 

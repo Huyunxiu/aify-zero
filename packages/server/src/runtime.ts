@@ -7,18 +7,10 @@ import { findConfiguredModel } from "./routers/settings/settings.service";
 import { buildSessionAgent } from "./session/agent";
 import { acceptedEffort } from "./session/model-rules";
 import { SQLiteStore } from "./storage/sqlite-store";
-import { createSubagentNoticeAdapter } from "./subagent-notices";
+import { reportRecoveredSubagents } from "./subagent-notices";
 
 /** 进程里唯一的那一个运行器；所有路由和启动/关停都用它。 */
 const store = new SQLiteStore();
-
-/**
- * The port a settled subagent's notice leaves through.
- *
- * It needs the runner, and the runner is built with the factory that needs this
- * port, so the port is created first and bound after: one dependency direction.
- */
-export const subagentNotices = createSubagentNoticeAdapter({ store });
 
 /** 进程里唯一的那一个投递器；`serve.ts` 启动和关停它。 */
 export const outboxDispatcher = createOutboxDispatcher({ store });
@@ -77,6 +69,7 @@ export const agentRunner = createAgentRunner({
     jobs,
     steering,
     approvalPolicy,
+    notices,
   }) => {
     const configured = await findConfiguredModel(model);
     if (!configured) {
@@ -97,7 +90,7 @@ export const agentRunner = createAgentRunner({
       jobs,
       steering,
       approvalPolicy,
-      subagentNotifier: subagentNotices,
+      ...(notices === undefined ? {} : { notices }),
       ...(positiveEnv(SUBAGENT_LIMIT_ENV) === undefined
         ? {}
         : { subagentLimit: positiveEnv(SUBAGENT_LIMIT_ENV) }),
@@ -108,11 +101,31 @@ export const agentRunner = createAgentRunner({
   },
 });
 
-subagentNotices.bind(agentRunner);
+/**
+ * 上一个进程留下的子代理运行：收尾已经做完，通知它们的父会话。
+ *
+ * 写入走运行器那一个 writer；这里只负责恢复路径的顺序——先唤醒父会话，
+ * 它才有能收通知的模型配置。
+ */
+export const reportRecovered = (
+  recovered: readonly { sessionId: string }[]
+): Promise<void> =>
+  reportRecoveredSubagents({
+    recovered,
+    store,
+    notices: agentRunner.notices,
+    wake: (sessionId) => {
+      agentRunner.wake(sessionId);
+    },
+  });
 
 // 任务结算后，完成通知投进拥有者的收件箱；空闲会话会被唤醒。
 JOB_REGISTRY.setNoticeAdapter(
-  createJobNoticeAdapter({ registry: JOB_REGISTRY, runner: agentRunner, store })
+  createJobNoticeAdapter({
+    registry: JOB_REGISTRY,
+    notices: agentRunner.notices,
+    store,
+  })
 );
 
 /**

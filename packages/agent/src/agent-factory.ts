@@ -30,9 +30,9 @@ import {
   WebToolsExtension,
 } from "./extensions/builtin";
 import { MAIN_INSTRUCTIONS } from "./extensions/builtin/core-instructions";
-import type { SubagentNotifier } from "./extensions/capabilities";
 import { EnvironmentExtension } from "./extensions/environment";
 import type { Extension } from "./extensions/types";
+import type { NoticeWriter } from "./inbox/notice-writer";
 import type { SteeringSignal } from "./inbox/steering";
 import type { JobRegistry } from "./jobs/registry";
 import type { ModelTargetResolver } from "./kernel/model-gateway";
@@ -89,8 +89,8 @@ export interface SessionAgentOptions {
   session: AgentSession;
   /** 运行器实例的注册表；省略时子会话用进程级单例。 */
   streamRegistry?: StreamEventRegistry<AgentToolSet>;
-  /** Where a settled subagent reports. Absent when nobody listens. */
-  subagentNotifier?: SubagentNotifier;
+  /** The notice writer this run may use; the runner builds it. */
+  notices?: NoticeWriter;
   /** How many subagents one session may run at once; the state package's default otherwise. */
   subagentLimit?: number;
   /** The wall clock one subagent run may take, in milliseconds. */
@@ -225,6 +225,7 @@ export async function createSessionAgent(
     model: options.model.ref,
     modelEffort: options.model.effort,
     resolveModel: options.resolveModel,
+    ...(options.notices === undefined ? {} : { notices: options.notices }),
     ...(toolGroups.subagent
       ? {
           subagentFactory: (owner) =>
@@ -234,9 +235,9 @@ export async function createSessionAgent(
               registry:
                 options.streamRegistry ??
                 (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
-              ...(options.subagentNotifier === undefined
+              ...(options.notices === undefined
                 ? {}
-                : { notifier: options.subagentNotifier }),
+                : { notices: options.notices }),
               ...(options.subagentLimit === undefined
                 ? {}
                 : { limit: options.subagentLimit }),

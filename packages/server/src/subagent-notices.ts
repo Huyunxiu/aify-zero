@@ -1,18 +1,12 @@
 import { composeSubagentNotice, subagentTypeOf } from "@workspace/agent";
-import type {
-  AgentRunner,
-  SubagentNotifier,
-  SubagentSettlement,
-} from "@workspace/agent";
-import { SUBAGENT_NOTICE } from "@workspace/agent-client";
+import type { NoticeWriter } from "@workspace/agent";
+import {
+  SUBAGENT_NOTICE,
+  SUBAGENT_NOTICE_INBOX_KIND,
+} from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
-import { createCompletionNotifier } from "./completion-notices";
-
-/** The inbox kind a settled subagent writes, so a retry cannot post the same notice twice. */
-export const SUBAGENT_NOTICE_INBOX_KIND = "subagent-settled";
-
-/** The slice of the store this adapter reads: a row, by id. */
+/** The slice of the store this file reads: a row, by id. */
 type NoticeStore = {
   getSessionById(sessionId: string): Promise<{
     id: string;
@@ -23,89 +17,60 @@ type NoticeStore = {
   } | null>;
 };
 
-export type SubagentNoticeDeps = {
-  store: NoticeStore;
-};
-
-export type SubagentNoticeAdapter = SubagentNotifier & {
-  /**
-   * Hand the runner over after it is built.
-   *
-   * The runner is built with the agent factory that needs this adapter, so the
-   * two cannot be constructed in one order. Binding after both exist keeps one
-   * direction of dependency.
-   */
-  bind(runner: AgentRunner): void;
-  /**
-   * Announce the subagent runs a previous process left behind.
-   *
-   * Recovery already settles those rows; without this, the sessions waiting on
-   * them never learn that the bell will not ring.
-   */
-  reportRecovered(recovered: readonly { sessionId: string }[]): Promise<void>;
-};
-
 /**
- * Turns a subagent settlement into one completion notice in its parent's inbox.
+ * Announce the subagent runs a previous process left behind.
  *
- * It follows the job notice path: the runner decides whether the notice can be
- * delivered at all, and an idle session is woken by the item itself.
+ * Recovery settles those rows, but the sessions waiting on them do not run in
+ * this process yet, so they have no payload and the writer would refuse the
+ * notice without a word. Waking the parent first is what makes the queue accept
+ * it; that ordering is this caller's job, not the writer's.
  */
-export const createSubagentNoticeAdapter = ({
+export async function reportRecoveredSubagents({
+  recovered,
   store,
-}: SubagentNoticeDeps): SubagentNoticeAdapter => {
-  let runner: AgentRunner | undefined;
+  notices,
+  wake,
+}: {
+  recovered: readonly { sessionId: string }[];
+  store: NoticeStore;
+  notices: NoticeWriter;
+  wake: (sessionId: string) => void;
+}): Promise<void> {
+  for (const outcome of recovered) {
+    const row = await store.getSessionById(outcome.sessionId);
 
-  const notices = createCompletionNotifier(() => runner, "subagent-notices");
+    if (
+      row === null ||
+      row.kind !== "subagent" ||
+      row.parentSessionId === null
+    ) {
+      continue;
+    }
 
-  const deliver = (settlement: SubagentSettlement): void => {
-    void notices.queue({
-      sessionId: settlement.parentSessionId,
-      text: composeSubagentNotice(settlement),
-      dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${settlement.sessionId}`,
+    const { parentSessionId } = row;
+    const name = row.subagentName ?? row.id;
+
+    try {
+      wake(parentSessionId);
+    } catch (error) {
+      logger.warn(
+        `[subagent-notices] could not wake ${parentSessionId}: ${String(error)}`
+      );
+      continue;
+    }
+
+    await notices.write({
+      sessionId: parentSessionId,
+      text: composeSubagentNotice({
+        parentSessionId,
+        sessionId: row.id,
+        name,
+        subagentType: subagentTypeOf(row.metadata),
+        status: "error",
+        report: "",
+      }),
+      dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${row.id}`,
       form: SUBAGENT_NOTICE,
     });
-  };
-
-  return {
-    deliver,
-
-    bind(next) {
-      runner = next;
-    },
-
-    async reportRecovered(recovered) {
-      for (const outcome of recovered) {
-        const row = await store.getSessionById(outcome.sessionId);
-
-        if (
-          row === null ||
-          row.kind !== "subagent" ||
-          row.parentSessionId === null
-        ) {
-          continue;
-        }
-
-        // A session that has not run in this process has no delivered payload
-        // yet, and `canDeliverNotice` would refuse the notice without a word.
-        // Waking it first is what makes the queue accept it.
-        try {
-          runner?.wake(row.parentSessionId);
-        } catch (error) {
-          logger.warn(
-            `[subagent-notices] could not wake ${row.parentSessionId}: ${String(error)}`
-          );
-        }
-
-        deliver({
-          parentSessionId: row.parentSessionId,
-          sessionId: row.id,
-          name: row.subagentName ?? row.id,
-          subagentType: subagentTypeOf(row.metadata),
-          status: "error",
-          report: "",
-        });
-      }
-    },
-  };
-};
+  }
+}

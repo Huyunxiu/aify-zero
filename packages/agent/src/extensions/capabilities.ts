@@ -2,6 +2,7 @@ import type { AgentStreamEvent, AgentTurn } from "@workspace/agent-client";
 import type { Sandbox } from "@workspace/sandbox";
 
 import type { HooksManager } from "../hooks-manager";
+import type { NoticeWriter } from "../inbox/notice-writer";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
@@ -110,11 +111,6 @@ export interface SubagentSettlement {
   readonly report: string;
 }
 
-/** The port a settlement leaves through. Absent when nobody is listening. */
-export interface SubagentNotifier {
-  deliver(settlement: SubagentSettlement): void;
-}
-
 /**
  * The delegation surface one session offers to its own tools.
  *
@@ -168,6 +164,13 @@ export function capability<T>(id: string): CapabilityToken<T> {
 export const Capabilities = {
   transcript: capability<TranscriptReader>("transcript"),
   subagents: capability<Subagents>("subagents"),
+  /**
+   * The one way anything settles in the background and tells a session about it.
+   *
+   * An extension that finishes work later reaches its session through this,
+   * instead of being handed a port from outside.
+   */
+  notices: capability<NoticeWriter>("notices"),
   /** 模型调用的端口，供扩展发起自己的模型调用。 */
   model: capability<ModelGateway>("model"),
   /** 会话存储，供扩展读写自己负责的行。 */

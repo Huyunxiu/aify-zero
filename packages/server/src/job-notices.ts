@@ -1,15 +1,13 @@
 import { composeJobNotice } from "@workspace/agent";
 import type {
-  AgentRunner,
   JobId,
   JobNotice,
   JobNoticeAdapter,
   JobRegistry,
+  NoticeWriter,
 } from "@workspace/agent";
 import { JOB_NOTICE, JOB_NOTICE_INBOX_KIND } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
-
-import { createCompletionNotifier } from "./completion-notices";
 
 /** 适配器只依赖删除待办项这一项存储能力。 */
 type NoticeStore = {
@@ -19,7 +17,7 @@ type NoticeStore = {
 /** 投递与撤回完成通知。 */
 export type JobNoticeAdapterDeps = {
   registry: JobRegistry;
-  runner: AgentRunner;
+  notices: NoticeWriter;
   store: NoticeStore;
 };
 
@@ -32,7 +30,7 @@ export type JobNoticeAdapterDeps = {
  */
 export const createJobNoticeAdapter = ({
   registry,
-  runner,
+  notices,
   store,
 }: JobNoticeAdapterDeps): JobNoticeAdapter => {
   /** 已经入队、还没被领取的通知，按任务 id 索引。 */
@@ -40,7 +38,6 @@ export const createJobNoticeAdapter = ({
   /** 正在入队的任务；这期间被撤回的通知要在落地后删掉。 */
   const inFlight = new Set<JobId>();
   const withdrawn = new Set<JobId>();
-  const notices = createCompletionNotifier(() => runner, "job-notices");
 
   const remove = (sessionId: string, itemId: string): void => {
     void store.deleteInboxItems(sessionId, [itemId]).catch((error: unknown) => {
@@ -69,7 +66,7 @@ export const createJobNoticeAdapter = ({
       // 先确认这条通知投得出去，再落实消耗未读输出：中间任何一步失败（会话
       // 没有模型、入队失败、模型自己先读走），游标都留在原处，模型之后照常
       // 读得到这些字节。
-      if (!runner.canDeliverNotice(sessionId)) {
+      if (!notices.canDeliver(sessionId)) {
         return;
       }
 
@@ -85,35 +82,27 @@ export const createJobNoticeAdapter = ({
       }
 
       inFlight.add(job.id);
-      const queued = notices.queue({
-        sessionId,
-        text: notice.text,
-        dedupeKey: `${JOB_NOTICE_INBOX_KIND}:${job.id}`,
-        form: JOB_NOTICE,
-      });
-
-      if (queued === undefined) {
-        inFlight.delete(job.id);
-        return;
-      }
-
-      void queued.then((item) => {
-        inFlight.delete(job.id);
-        if (item === undefined) {
-          return;
-        }
-        if (withdrawn.delete(job.id)) {
-          // 入队期间模型已经自己读走了：通知不必再出现。
-          remove(sessionId, item.id);
-          return;
-        }
-        // 通知真的落库了，现在才把游标推过去。摘要类通知没有消费正文，
-        // 不用落实。
-        if (notice.inline) {
-          commitNoticeOutput(sessionId, job.id);
-        }
-        pending.set(job.id, { sessionId, itemId: item.id });
-      });
+      void notices
+        .write({
+          sessionId,
+          text: notice.text,
+          dedupeKey: `${JOB_NOTICE_INBOX_KIND}:${job.id}`,
+          form: JOB_NOTICE,
+        })
+        .then((item) => {
+          inFlight.delete(job.id);
+          if (item === undefined) {
+            return;
+          }
+          if (withdrawn.delete(job.id)) {
+            remove(sessionId, item.id);
+            return;
+          }
+          if (notice.inline) {
+            commitNoticeOutput(sessionId, job.id);
+          }
+          pending.set(job.id, { sessionId, itemId: item.id });
+        });
     },
 
     withdraw(jobId) {

@@ -17,7 +17,7 @@ import type {
   JobRegistry,
   McpManager,
   SteeringSignal,
-  SubagentNotifier,
+  NoticeWriter,
 } from "@workspace/agent";
 import type { ApprovalPolicy } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
@@ -54,8 +54,8 @@ export interface BuildSessionAgentInput {
   steering?: SteeringSignal;
   /** The Approval Policy of the session, which this Run uses as it is. */
   approvalPolicy: ApprovalPolicy;
-  /** Where a settled subagent reports; the runner delivers it. */
-  subagentNotifier?: SubagentNotifier;
+  /** The notice writer this run was given; absent in tests that do not settle. */
+  notices?: NoticeWriter;
   /** How many subagents one session may run at once. */
   subagentLimit?: number;
   /** The wall clock one subagent run may take, in milliseconds. */
@@ -79,7 +79,7 @@ export async function buildSessionAgent({
   jobs,
   steering,
   approvalPolicy,
-  subagentNotifier,
+  notices,
   subagentLimit,
   subagentTimeoutMs,
 }: BuildSessionAgentInput): Promise<Agent> {
@@ -132,7 +132,7 @@ export async function buildSessionAgent({
     timers: store,
     timeZone,
     steering,
-    ...(subagentNotifier === undefined ? {} : { subagentNotifier }),
+    ...(notices === undefined ? {} : { notices }),
     ...(subagentLimit === undefined ? {} : { subagentLimit }),
     ...(subagentTimeoutMs === undefined ? {} : { subagentTimeoutMs }),
     sandbox,

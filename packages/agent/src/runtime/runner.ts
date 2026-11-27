@@ -117,6 +117,7 @@ export class AgentRunner {
       store: this.#store,
       registry: this.#streams,
       buildAgent: this.#buildAgent,
+      notices: this.#notices,
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       ...(options.outbox === undefined ? {} : { outbox: options.outbox }),
       steering: (sessionId) => this.steeringSignal(sessionId),
@@ -280,6 +281,16 @@ export class AgentRunner {
    * 投递方先用它判断，再决定是否消费任务的未读输出。
    * @param sessionId - 会话 id。
    */
+  /**
+   * The notice writer this runner built.
+   *
+   * The host wires process-wide producers (the job registry, boot recovery) to
+   * this same object; nothing else may build a second one.
+   */
+  get notices(): NoticeWriter {
+    return this.#notices;
+  }
+
   canDeliverNotice(sessionId: string): boolean {
     return !this.#stopped && this.#notices.canDeliver(sessionId);
   }

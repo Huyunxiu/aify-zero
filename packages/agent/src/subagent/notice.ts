@@ -7,7 +7,13 @@
  * — do not poll, end the turn — already lives in the subagent catalogue.
  */
 
+import {
+  SUBAGENT_NOTICE,
+  SUBAGENT_NOTICE_INBOX_KIND,
+} from "@workspace/agent-client";
+
 import type { SubagentSettlement } from "../extensions/capabilities";
+import type { NoticeRequest } from "../inbox/notice-writer";
 
 /** The longest report a notice carries before it says it was cut. */
 const REPORT_BUDGET = 4000;
@@ -37,4 +43,22 @@ export function composeSubagentNotice(settlement: SubagentSettlement): string {
       : report;
 
   return `${head}\n\n${body}`;
+}
+
+/**
+ * The one notice a settlement leaves behind.
+ *
+ * Composition and addressing live together: the text says what happened, the
+ * dedupe key names the child, and the form says it is a subagent's notice. A
+ * producer that assembled these three apart could file a settlement as a job's.
+ */
+export function subagentNoticeRequest(
+  settlement: SubagentSettlement
+): NoticeRequest {
+  return {
+    sessionId: settlement.parentSessionId,
+    text: composeSubagentNotice(settlement),
+    dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${settlement.sessionId}`,
+    form: SUBAGENT_NOTICE,
+  };
 }

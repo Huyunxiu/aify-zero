@@ -9,9 +9,9 @@ import type {
   SubagentHandoff,
   SubagentListResult,
   SubagentSummary,
-  SubagentNotifier,
   Subagents,
 } from "../extensions/capabilities";
+import type { NoticeWriter } from "../inbox/notice-writer";
 import type { AgentStore } from "../storage";
 import type { SessionEndStatus, SessionRecord } from "../storage/types";
 import type { StreamEventRegistry } from "../stream-registry";
@@ -27,15 +27,15 @@ import type { SubagentHost } from "./create";
 import { DEFAULT_SUBAGENT_TYPE, getSubagentDefinition } from "./definitions";
 import type { SubagentDefinition } from "./definitions";
 import { normalizeSubagentName } from "./names";
-import { settledStatus } from "./notice";
+import { settledStatus, subagentNoticeRequest } from "./notice";
 
 export interface SubagentFactoryOptions {
   agent: Agent;
   store: AgentStore;
   /** The runner's registry; a child session must register in it like any other. */
   registry: StreamEventRegistry<AgentToolSet>;
-  /** Where a settlement goes. Absent when nobody listens. */
-  notifier?: SubagentNotifier;
+  /** The one way a settlement reaches the parent session. */
+  notices?: NoticeWriter;
   /** How many subagents one session may run at once. */
   limit?: number;
   /** The wall clock a single child run may take. Zero disables it. */
@@ -97,7 +97,7 @@ export function createSubagentFactory({
   agent,
   store,
   registry,
-  notifier,
+  notices,
   limit = DEFAULT_LIMIT,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   now = Date.now,
@@ -195,14 +195,16 @@ export function createSubagentFactory({
 
     const settled = settledStatus(status, report) as SessionEndStatus;
 
-    notifier?.deliver({
-      parentSessionId,
-      sessionId: child.sessionId,
-      name: child.name ?? child.sessionId,
-      subagentType: definition.name,
-      status: settled,
-      report,
-    });
+    notices?.write(
+      subagentNoticeRequest({
+        parentSessionId,
+        sessionId: child.sessionId,
+        name: child.name ?? child.sessionId,
+        subagentType: definition.name,
+        status: settled,
+        report,
+      })
+    );
 
     // A message that arrived while the run was going starts the next turn now,
     // so a parent never has to send the same sentence twice.

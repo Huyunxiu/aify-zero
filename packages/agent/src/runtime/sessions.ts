@@ -17,6 +17,7 @@ import type { ModelRef } from "@workspace/shared/model";
 
 import { AgentSession } from "../agent-session";
 import type { Agent } from "../agents";
+import type { NoticeWriter } from "../inbox/notice-writer";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { InboxClaim } from "../kernel/run-types";
@@ -58,6 +59,12 @@ export interface SessionLifecycleDeps {
   store: AgentStore;
   registry: StreamEventRegistry<AgentToolSet>;
   buildAgent: (input: BuildAgentInput) => Promise<Agent>;
+  /**
+   * 写完成通知的那一个；两处装配共用，不要各建一个。
+   *
+   * 省略时装配出的 agent 没有这个能力——运行器总会给，只有测试替身会省。
+   */
+  notices?: NoticeWriter;
   jobs?: JobRegistry;
   /** 按会话取插话信号；没有时等待只能靠中止或超时结束。 */
   steering?: (sessionId: string) => SteeringSignal;
@@ -247,6 +254,9 @@ export class SessionLifecycle {
       ...(botId === undefined ? {} : { botId }),
       ...(projectId === undefined ? {} : { projectId }),
       streams: registry,
+      ...(this.#deps.notices === undefined
+        ? {}
+        : { notices: this.#deps.notices }),
       ...(this.#deps.jobs === undefined ? {} : { jobs: this.#deps.jobs }),
       ...(this.#deps.steering === undefined
         ? {}
@@ -443,6 +453,9 @@ export class SessionLifecycle {
         ? {}
         : { projectId: session.projectId }),
       streams: registry,
+      ...(this.#deps.notices === undefined
+        ? {}
+        : { notices: this.#deps.notices }),
       ...(this.#deps.jobs === undefined ? {} : { jobs: this.#deps.jobs }),
       ...(this.#deps.steering === undefined
         ? {}

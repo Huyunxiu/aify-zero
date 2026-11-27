@@ -36,7 +36,7 @@ import { ensureDefaultBot } from "./routers/bot/bot.service";
 import {
   agentRunner,
   outboxDispatcher,
-  subagentNotices,
+  reportRecovered,
   timerScheduler,
 } from "./runtime";
 import { attachWebSocket } from "./ws";
@@ -140,7 +140,7 @@ export async function startServer(
   // The subagent runs a previous process left behind are settled now, but the
   // sessions waiting on them do not know: without a notice each would keep
   // waiting for a bell that will not ring.
-  await subagentNotices.reportRecovered(startup.recovered);
+  await reportRecovered(startup.recovered);
 
   // 运行器起来之后再开扫描：补发的待办项要有运行器才叫得醒。启动那次扫描
   // 会立刻把停机期间到点的定时器投出去，不等第一个周期。

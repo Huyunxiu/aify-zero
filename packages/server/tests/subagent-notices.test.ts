@@ -1,47 +1,29 @@
-import type { AgentRunner, SubagentSettlement } from "@workspace/agent";
-import type { NoticeForm } from "@workspace/agent-client";
-import { describe, expect, test } from "vitest";
+import type { NoticeWriter } from "@workspace/agent";
+import { describe, expect, test, vi } from "vitest";
 
-import { createSubagentNoticeAdapter } from "../src/subagent-notices.js";
+import { reportRecoveredSubagents } from "../src/subagent-notices.js";
 
-type Queued = {
+type Written = {
   sessionId: string;
   text: string;
   dedupeKey: string;
-  form: NoticeForm;
+  form: { kind: string; source: string };
 };
 
-const settlement = (
-  overrides: Partial<SubagentSettlement> = {}
-): SubagentSettlement => ({
-  parentSessionId: "parent-1",
-  sessionId: "child-1",
-  name: "AGENT-1",
-  subagentType: "explore",
-  status: "done",
-  report: "Found the router.",
-  ...overrides,
-});
-
-/** The runner as this adapter uses it: one question, one way to queue a notice. */
-const runner = (deliverable = true) => {
-  const queued: Queued[] = [];
-  const fake = {
-    canDeliverNotice: () => deliverable,
-    enqueueNotice: (input: Queued) => {
-      queued.push(input);
-      return Promise.resolve({ id: "item-1" });
+/** The writer as this caller uses it: one way to write. */
+const writer = () => {
+  const written: Written[] = [];
+  const notices = {
+    write: (request: Written) => {
+      written.push(request);
+      return Promise.resolve();
     },
-  } as unknown as AgentRunner;
+    canDeliver: () => true,
+    resetBudget: () => {},
+  } as unknown as NoticeWriter;
 
-  return { fake, queued };
+  return { notices, written };
 };
-
-/** The delivery is fire-and-forget, so a test waits for the queue turn to land. */
-const settle = () =>
-  new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
 
 const store = (
   rows: Record<
@@ -62,55 +44,13 @@ const store = (
   },
 });
 
-describe("a settled subagent", () => {
-  test("leaves one notice in its parent's inbox, keyed by the child session", async () => {
-    const { fake, queued } = runner();
-    const adapter = createSubagentNoticeAdapter({ store: store({}) });
-    adapter.bind(fake);
+describe("the runs a previous process left behind", () => {
+  test("are announced to the parent that was waiting on them", async () => {
+    const { notices, written } = writer();
+    const wake = vi.fn<(sessionId: string) => void>();
 
-    adapter.deliver(settlement());
-    await settle();
-
-    expect(queued).toHaveLength(1);
-    expect(queued[0]?.sessionId).toBe("parent-1");
-    expect(queued[0]?.dedupeKey).toBe("subagent-settled:child-1");
-    // The producer names the kind and the step source together: a settlement is
-    // not a job notice, and the turn it becomes must not say it is one.
-    expect(queued[0]?.form).toStrictEqual({
-      kind: "subagent-settled",
-      source: "subagent-settled",
-    });
-    expect(queued[0]?.text).toBe(
-      [
-        "subagent AGENT-1 (explore) settled: done",
-        "",
-        "Found the router.",
-      ].join("\n")
-    );
-  });
-
-  test("is not queued for a session that cannot take a notice", async () => {
-    const { fake, queued } = runner(false);
-    const adapter = createSubagentNoticeAdapter({ store: store({}) });
-    adapter.bind(fake);
-
-    adapter.deliver(settlement());
-    await settle();
-
-    expect(queued).toStrictEqual([]);
-  });
-
-  test("is dropped, not thrown, when no runner is bound yet", () => {
-    const adapter = createSubagentNoticeAdapter({ store: store({}) });
-
-    expect(() => adapter.deliver(settlement())).not.toThrow();
-  });
-});
-
-describe("a run the previous process left behind", () => {
-  test("is announced to its parent, so the waiting session learns it stopped", async () => {
-    const { fake, queued } = runner();
-    const adapter = createSubagentNoticeAdapter({
+    await reportRecoveredSubagents({
+      recovered: [{ sessionId: "child-1" }],
       store: store({
         "child-1": {
           kind: "subagent",
@@ -119,18 +59,49 @@ describe("a run the previous process left behind", () => {
           subagentName: "AGENT-3",
         },
       }),
+      notices,
+      wake,
     });
-    adapter.bind(fake);
 
-    await adapter.reportRecovered([{ sessionId: "child-1" }]);
-
-    expect(queued).toHaveLength(1);
-    expect(queued[0]?.text).toContain("subagent AGENT-3 (plan) settled: error");
+    // The parent has not run in this process, so it has no payload: waking it
+    // first is what lets the writer accept the notice at all.
+    expect(wake).toHaveBeenCalledWith("parent-1");
+    expect(written).toHaveLength(1);
+    expect(written[0]?.sessionId).toBe("parent-1");
   });
 
-  test("says nothing about a main session", async () => {
-    const { fake, queued } = runner();
-    const adapter = createSubagentNoticeAdapter({
+  test("name the child, the form, and what settled", async () => {
+    const { notices, written } = writer();
+
+    await reportRecoveredSubagents({
+      recovered: [{ sessionId: "child-1" }],
+      store: store({
+        "child-1": {
+          kind: "subagent",
+          metadata: { subagentType: "plan" },
+          parentSessionId: "parent-1",
+          subagentName: "AGENT-3",
+        },
+      }),
+      notices,
+      wake: () => {},
+    });
+
+    expect(written[0]?.dedupeKey).toBe("subagent-settled:child-1");
+    expect(written[0]?.form).toStrictEqual({
+      kind: "subagent-settled",
+      source: "subagent-settled",
+    });
+    expect(written[0]?.text).toContain(
+      "subagent AGENT-3 (plan) settled: error"
+    );
+  });
+
+  test("say nothing about a main session", async () => {
+    const { notices, written } = writer();
+
+    await reportRecoveredSubagents({
+      recovered: [{ sessionId: "session-1" }],
       store: store({
         "session-1": {
           kind: "main",
@@ -139,11 +110,43 @@ describe("a run the previous process left behind", () => {
           subagentName: null,
         },
       }),
+      notices,
+      wake: () => {},
     });
-    adapter.bind(fake);
 
-    await adapter.reportRecovered([{ sessionId: "session-1" }]);
+    expect(written).toStrictEqual([]);
+  });
 
-    expect(queued).toStrictEqual([]);
+  test("leave the rest of the queue alone when one parent cannot be woken", async () => {
+    const { notices, written } = writer();
+    const rows = {
+      "child-1": {
+        kind: "subagent",
+        metadata: {},
+        parentSessionId: "parent-1",
+        subagentName: "AGENT-1",
+      },
+      "child-2": {
+        kind: "subagent",
+        metadata: {},
+        parentSessionId: "parent-2",
+        subagentName: "AGENT-2",
+      },
+    };
+
+    await reportRecoveredSubagents({
+      recovered: [{ sessionId: "child-1" }, { sessionId: "child-2" }],
+      store: store(rows),
+      notices,
+      wake: (sessionId) => {
+        if (sessionId === "parent-1") {
+          throw new Error("gone");
+        }
+      },
+    });
+
+    expect(written.map((notice) => notice.sessionId)).toStrictEqual([
+      "parent-2",
+    ]);
   });
 });

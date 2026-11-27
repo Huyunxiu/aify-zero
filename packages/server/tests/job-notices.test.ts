@@ -51,16 +51,21 @@ const item = (sessionId = "s1") => ({
   createdAt: 1,
 });
 
+/** The writer as this adapter uses it: one question, one way to write. */
+const writer = (write: EnqueueNotice, canDeliver = true): never =>
+  ({
+    write,
+    canDeliver: () => canDeliver,
+    resetBudget: () => {},
+  }) as never;
+
 describe(createJobNoticeAdapter, () => {
   test("composes the notice and enqueues it for the owner", async () => {
     const enqueueNotice = vi.fn<EnqueueNotice>().mockResolvedValue(item());
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
       registry: { peek: read, read } as never,
-      runner: {
-        enqueueNotice,
-        canDeliverNotice: () => true,
-      } as never,
+      notices: writer(enqueueNotice),
       store: { deleteInboxItems },
     });
 
@@ -81,10 +86,7 @@ describe(createJobNoticeAdapter, () => {
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
       registry: { peek: read, read } as never,
-      runner: {
-        enqueueNotice,
-        canDeliverNotice: () => true,
-      } as never,
+      notices: writer(enqueueNotice),
       store: { deleteInboxItems },
     });
 
@@ -107,10 +109,7 @@ describe(createJobNoticeAdapter, () => {
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
       registry: { peek: read, read } as never,
-      runner: {
-        enqueueNotice,
-        canDeliverNotice: () => true,
-      } as never,
+      notices: writer(enqueueNotice),
       store: { deleteInboxItems },
     });
 
@@ -130,10 +129,7 @@ describe(createJobNoticeAdapter, () => {
     );
     const adapter = createJobNoticeAdapter({
       registry: { peek: readJob, read: readJob } as never,
-      runner: {
-        enqueueNotice,
-        canDeliverNotice: () => false,
-      } as never,
+      notices: writer(enqueueNotice, false),
       store: { deleteInboxItems: vi.fn<DeleteItems>() },
     });
 
@@ -147,10 +143,7 @@ describe(createJobNoticeAdapter, () => {
     const enqueueNotice = vi.fn<EnqueueNotice>();
     const adapter = createJobNoticeAdapter({
       registry: { peek: read, read } as never,
-      runner: {
-        enqueueNotice,
-        canDeliverNotice: () => true,
-      } as never,
+      notices: writer(enqueueNotice),
       store: { deleteInboxItems: vi.fn<DeleteItems>() },
     });
 
@@ -171,10 +164,7 @@ describe(createJobNoticeAdapter, () => {
       .mockRejectedValue(new Error("the store is down"));
     const adapter = createJobNoticeAdapter({
       registry: { peek, read: commit } as never,
-      runner: {
-        enqueueNotice,
-        canDeliverNotice: () => true,
-      } as never,
+      notices: writer(enqueueNotice),
       store: { deleteInboxItems: vi.fn<DeleteItems>() },
     });
 
@@ -199,10 +189,7 @@ describe(createJobNoticeAdapter, () => {
     const deleteInboxItems = vi.fn<DeleteItems>().mockResolvedValue(1);
     const adapter = createJobNoticeAdapter({
       registry: { peek, read: commit } as never,
-      runner: {
-        enqueueNotice,
-        canDeliverNotice: () => true,
-      } as never,
+      notices: writer(enqueueNotice),
       store: { deleteInboxItems },
     });
 
@@ -224,10 +211,7 @@ describe(createJobNoticeAdapter, () => {
     const enqueueNotice = vi.fn<EnqueueNotice>().mockResolvedValue(item());
     const adapter = createJobNoticeAdapter({
       registry: { peek, read: commit } as never,
-      runner: {
-        enqueueNotice,
-        canDeliverNotice: () => true,
-      } as never,
+      notices: writer(enqueueNotice),
       store: { deleteInboxItems: vi.fn<DeleteItems>() },
     });
 
