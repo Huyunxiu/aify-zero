@@ -79,6 +79,54 @@ const definitionOf = (child: SessionRecord): SubagentDefinition =>
 const STARTED = new Map<string, number>();
 
 /**
+ * The one decision at a time about a session's subagents, per parent session.
+ *
+ * Keyed by the parent session and not by the factory, because a factory is
+ * built once per parent run and a child outlives the run that started it: its
+ * settlement arrives later, in a different factory, and must not pass a handoff
+ * or a new delegation.
+ *
+ * Everything that starts, settles or stops a child runs inside this lock, so the
+ * capacity count and the start it guards are one step. Counting the running
+ * subagents and registering the new one are several awaits apart; without the
+ * lock, two calls that arrive together would count the same number and both
+ * start.
+ */
+const LOCKS = new Map<string, Promise<void>>();
+
+async function withSubagentLock<T>(
+  parentSessionId: string,
+  work: () => Promise<T>
+): Promise<T> {
+  const previous = LOCKS.get(parentSessionId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((_resolve) => {
+    release = _resolve;
+  });
+  const ours = previous.then(() => gate);
+  LOCKS.set(parentSessionId, ours);
+
+  await previous;
+  try {
+    return await work();
+  } finally {
+    release();
+    // Nobody is queued behind us: drop the chain instead of growing it with
+    // every decision this session ever made.
+    if (LOCKS.get(parentSessionId) === ours) {
+      LOCKS.delete(parentSessionId);
+    }
+  }
+}
+
+/** The three things every decision about one child needs. */
+type ChildRun = {
+  sessionId: string;
+  name: string | null;
+  definition: SubagentDefinition;
+};
+
+/**
  * Turn one parent agent into the `subagents` capability.
  *
  * A child run is started and left: the delegation answers as soon as the run is
@@ -172,39 +220,6 @@ export function createSubagentFactory({
     definition.model ?? agent.context.model;
 
   /**
-   * One start per child at a time.
-   *
-   * Two callers can start the same child's run: the parent handing over a
-   * sentence as the previous run ends, and the settlement of that run. Both read
-   * the inbox before they start, so without this the same item could open two
-   * runs.
-   */
-  const lanes = new Map<string, Promise<void>>();
-
-  const inLane = async <T>(
-    childSessionId: string,
-    work: () => Promise<T>
-  ): Promise<T> => {
-    const previous = lanes.get(childSessionId) ?? Promise.resolve();
-    let releaseNext!: () => void;
-    const held = new Promise<void>((_resolve) => {
-      releaseNext = _resolve;
-    });
-    const tail = previous.then(() => held);
-    lanes.set(childSessionId, tail);
-
-    await previous;
-    try {
-      return await work();
-    } finally {
-      releaseNext();
-      if (lanes.get(childSessionId) === tail) {
-        lanes.delete(childSessionId);
-      }
-    }
-  };
-
-  /**
    * What is still waiting for this child, oldest first.
    *
    * Every kind, for the same reason a main session's run takes every kind: an
@@ -253,8 +268,7 @@ export function createSubagentFactory({
   };
 
   const settleRun = async (
-    child: { sessionId: string; name: string | null },
-    definition: SubagentDefinition,
+    child: ChildRun,
     childAgent: Agent,
     status: SessionEndStatus,
     timer: ReturnType<typeof setTimeout> | undefined
@@ -264,25 +278,30 @@ export function createSubagentFactory({
     }
     STARTED.delete(child.sessionId);
 
-    // Bookkeeping comes first, and a failure there must not swallow the notice:
-    // a parent waiting for a settlement is the one thing this run owes.
-    try {
-      await registry.unregisterStream(child.sessionId);
-      await store.clearActiveStream(child.sessionId, child.sessionId, status, {
-        recordActivity: true,
-      });
-    } catch (error) {
-      logger.warn("[subagent] failed to settle the child row", error);
-    }
-
     const { report } = readSubagentResult(childAgent.session.turns);
 
     const settled = settledStatus(status, report) as SessionEndStatus;
 
-    // Everything below decides who reads what next, so it takes the lane a
-    // handoff uses: a sentence written while this is deciding must not be
-    // deleted by the discard and then reported as handed over.
-    await inLane(child.sessionId, async () => {
+    // Settling and deciding who reads what next are one step: this run's slot is
+    // free the moment it unregisters, and a delegation that counts in between
+    // would find the room and start while this one opens the next turn.
+    await withSubagentLock(parentSessionId, async () => {
+      // A failure here must not swallow the notice: a parent waiting for a
+      // settlement is the one thing this run owes.
+      try {
+        await registry.unregisterStream(child.sessionId);
+        await store.clearActiveStream(
+          child.sessionId,
+          child.sessionId,
+          status,
+          {
+            recordActivity: true,
+          }
+        );
+      } catch (error) {
+        logger.warn("[subagent] failed to settle the child row", error);
+      }
+
       // The reported word folds an empty report into a failure, but these
       // decisions follow how the run actually ended: a run that finished can
       // still read what it left waiting.
@@ -301,7 +320,7 @@ export function createSubagentFactory({
           parentSessionId,
           sessionId: child.sessionId,
           name: child.name ?? child.sessionId,
-          subagentType: definition.name,
+          subagentType: child.definition.name,
           status: settled,
           report,
           dropped,
@@ -316,17 +335,16 @@ export function createSubagentFactory({
         return;
       }
 
+      // Only the items this settlement left behind justify another turn. With
+      // none, the branch still has turns, and a run would ask the model to
+      // answer a history with no new message.
       const stillWaiting = await waiting(child.sessionId);
       if (stillWaiting.length === 0) {
         return;
       }
 
       try {
-        await runChild({
-          sessionId: child.sessionId,
-          name: child.name,
-          definition,
-        });
+        await runChild({ child });
       } catch (error) {
         logger.warn(
           "[subagent] failed to start the run behind a waiting item",
@@ -337,9 +355,7 @@ export function createSubagentFactory({
   };
 
   const runChild = async (input: {
-    sessionId: string;
-    name: string | null;
-    definition: SubagentDefinition;
+    child: ChildRun;
     /**
      * The turns this run starts from.
      *
@@ -350,8 +366,9 @@ export function createSubagentFactory({
      */
     turns?: AgentTurn<AgentToolSet>[];
   }): Promise<void> => {
-    const base = input.turns ?? (await baseTurns(input.sessionId));
-    const items = await waiting(input.sessionId);
+    const { sessionId, name, definition } = input.child;
+    const base = input.turns ?? (await baseTurns(sessionId));
+    const items = await waiting(sessionId);
     const claims = items.map((item) => ({
       inboxId: item.id,
       turn: item.content,
@@ -363,8 +380,8 @@ export function createSubagentFactory({
     }
 
     const childAgent = buildSubagent(hostOf(), {
-      definition: input.definition,
-      sessionId: input.sessionId,
+      definition,
+      sessionId,
       turns: base,
       store,
     });
@@ -372,35 +389,31 @@ export function createSubagentFactory({
     // 子会话的行和父会话一样要维护状态。这一笔写在 stream 之前：子流可能
     // 在 setActiveStream 落库之前就跑完，那时 onFinish 里的 clearActiveStream
     // 会认不出自己的 streamId 而直接返回，行就永远卡在 running。
-    await store.setActiveStream(input.sessionId, input.sessionId, {
+    await store.setActiveStream(sessionId, sessionId, {
       recordActivity: true,
     });
 
     const timer =
       timeoutMs > 0
         ? setTimeout(() => {
-            logger.warn(
-              `[subagent] ${input.name ?? input.sessionId} hit its time limit`
-            );
+            logger.warn(`[subagent] ${name ?? sessionId} hit its time limit`);
             childAgent.abort();
           }, timeoutMs)
         : undefined;
-
-    const child = { sessionId: input.sessionId, name: input.name };
 
     try {
       const stream = await childAgent.stream({
         turns: base,
         ...(claims.length === 0 ? {} : { claims }),
         model: childAgent.context.model,
-        streamId: input.sessionId,
+        streamId: sessionId,
         signal: { type: "turn" },
         onFinish: async (status) =>
-          await settleRun(child, input.definition, childAgent, status, timer),
+          await settleRun(input.child, childAgent, status, timer),
       });
 
-      registry.registerStream(input.sessionId, childAgent, stream);
-      STARTED.set(input.sessionId, now());
+      registry.registerStream(sessionId, childAgent, stream);
+      STARTED.set(sessionId, now());
     } catch (error) {
       if (timer !== undefined) {
         clearTimeout(timer);
@@ -408,14 +421,9 @@ export function createSubagentFactory({
       await childAgent.dispose();
 
       try {
-        await store.clearActiveStream(
-          input.sessionId,
-          input.sessionId,
-          "error",
-          {
-            recordActivity: true,
-          }
-        );
+        await store.clearActiveStream(sessionId, sessionId, "error", {
+          recordActivity: true,
+        });
       } catch (clearError) {
         logger.warn("[subagent] failed to clear the active stream", clearError);
       }
@@ -426,32 +434,57 @@ export function createSubagentFactory({
 
   return {
     async create(request: SubagentCreateRequest): Promise<SubagentCreated> {
-      await assertCapacity();
+      return await withSubagentLock(parentSessionId, async () => {
+        // The same call replayed while its child still runs is one more sentence:
+        // it adds no child and costs no second run, so the limit does not apply.
+        // Read before the row exists, because a refused call must not leave one.
+        const existing = await store.findSessionByParentToolCall({
+          parentSessionId,
+          toolCallId: request.toolCallId,
+        });
+        const replaysRunningChild =
+          existing !== null && liveEntry(existing.id) !== undefined;
 
-      const { sessionId, name, turns } = await resolveSubagentSession(store, {
-        parentSessionId,
-        toolCallId: request.toolCallId,
-        description: request.description,
-        prompt: request.prompt,
-        botId: agent.context.botId,
-        projectId: agent.context.projectId,
-        approvalPolicy: agent.approvalPolicy,
-        subagentType: request.definition.name,
-      });
+        if (!replaysRunningChild) {
+          await assertCapacity();
+        }
 
-      // The same lane as a handoff: a call that re-runs on an existing child
-      // carries the sentence it just wrote, and that child may also be handed
-      // one. One start at a time.
-      await inLane(sessionId, async () => {
+        const { sessionId, name, turns } = await resolveSubagentSession(store, {
+          parentSessionId,
+          toolCallId: request.toolCallId,
+          description: request.description,
+          prompt: request.prompt,
+          botId: agent.context.botId,
+          projectId: agent.context.projectId,
+          approvalPolicy: agent.approvalPolicy,
+          subagentType: request.definition.name,
+        });
+
+        if (replaysRunningChild) {
+          const row = await store.getSessionById(sessionId);
+          if (row !== null) {
+            await hold({
+              child: row,
+              definition: request.definition,
+              text: request.prompt,
+              dedupeKey: `create:${request.toolCallId}`,
+            });
+          }
+
+          return { name, sessionId };
+        }
+
         await runChild({
-          sessionId,
-          name,
-          definition: request.definition,
+          child: {
+            sessionId,
+            name,
+            definition: request.definition,
+          },
           turns,
         });
-      });
 
-      return { name, sessionId };
+        return { name, sessionId };
+      });
     },
 
     async list(): Promise<SubagentListResult> {
@@ -500,26 +533,29 @@ export function createSubagentFactory({
       const child = await resolveByName(name);
       const definition = definitionOf(child);
 
-      // A sentence that starts a run counts against the limit; one that waits
-      // for a running child does not, because it costs no second run.
-      if (liveEntry(child.id) === undefined) {
-        await assertCapacity();
-      }
+      return await withSubagentLock(parentSessionId, async () => {
+        // Inside the lock this read stays true until the run starts, so the
+        // boundary the item is filed under matches how it will be read.
+        const live = liveEntry(child.id) !== undefined;
 
-      return await inLane(child.id, async () => {
+        // A sentence that starts a run counts against the limit; one that waits
+        // for a running child does not, because it costs no second run.
+        if (!live) {
+          await assertCapacity();
+        }
+
         await hold({ child, definition, text, dedupeKey });
 
-        // Nobody else starts this child inside the lane, so this read decides:
-        // either a run is live and will take the item, or the last one ended and
-        // this call opens the next. Reading it outside the lane would be stale.
-        if (liveEntry(child.id) !== undefined) {
+        if (live) {
           return "queued";
         }
 
         await runChild({
-          sessionId: child.id,
-          name: child.subagentName,
-          definition,
+          child: {
+            sessionId: child.id,
+            name: child.subagentName,
+            definition,
+          },
         });
 
         return "started";
@@ -529,9 +565,9 @@ export function createSubagentFactory({
     async stop({ name }: { name: string }): Promise<SubagentStopped> {
       const child = await resolveByName(name);
 
-      // The same lane as a start: a sentence handed over and a stop must not
+      // The same lock as a start: a sentence handed over and a stop must not
       // pass each other, or the stop could report a run it never reached.
-      return await inLane(child.id, async () => {
+      return await withSubagentLock(parentSessionId, async () => {
         // What it never read goes with the run: the turn that would have read it
         // is the one being stopped. Saying how many went is what keeps the parent
         // from believing a sentence it sent will still arrive.

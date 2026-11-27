@@ -19,7 +19,10 @@ import type {
 import { StreamEventRegistry } from "../src/stream-registry.js";
 import type * as CreateModule from "../src/subagent/create.js";
 import { SUBAGENT_DEFINITIONS } from "../src/subagent/definitions.js";
-import { createSubagentFactory } from "../src/subagent/factory.js";
+import {
+  createSubagentFactory,
+  SubagentLimitReachedError,
+} from "../src/subagent/factory.js";
 import type { AgentToolSet } from "../src/types.js";
 import { testModel } from "./helpers/model-target.js";
 
@@ -175,6 +178,19 @@ class FakeStore {
     if (this.sessions.has(write.id)) {
       return Promise.resolve(false);
     }
+    // The unique index on (parent, name): two delegations in flight compute the
+    // same free number, and the loser has to recompute.
+    if (
+      write.subagentName !== undefined &&
+      write.subagentName !== null &&
+      [...this.sessions.values()].some(
+        (session) =>
+          session.parentSessionId === write.parentSessionId &&
+          session.subagentName === write.subagentName
+      )
+    ) {
+      return Promise.resolve(false);
+    }
 
     this.sessions.set(write.id, {
       id: write.id,
@@ -322,25 +338,43 @@ class FakeStore {
   }
 }
 
-/** A factory over one store; a second call is what a restart looks like. */
-const factoryOver = (store: FakeStore) =>
+/**
+ * The process's stream registry.
+ *
+ * One per process, shared by every factory, the way the server wires it: a
+ * child's run is found by session id regardless of which parent run started it.
+ */
+let registry: StreamEventRegistry<AgentToolSet>;
+
+const newRegistry = () =>
+  new StreamEventRegistry<AgentToolSet>(
+    new SessionEventRegistry<AgentToolSet>()
+  );
+
+const factoryOver = (store: FakeStore, limit = 4) =>
   createSubagentFactory({
     agent: parentAgent(),
     store: asStore(store),
-    registry: new StreamEventRegistry<AgentToolSet>(
-      new SessionEventRegistry<AgentToolSet>()
-    ),
-    limit: 4,
+    registry,
+    limit,
     timeoutMs: 0,
     now: () => 1000,
   });
 
-const fixture = () => {
+/** The same rows in a new process: no live stream, a new factory. */
+const restarted = (store: FakeStore, limit = 4) => {
+  registry = newRegistry();
+
+  return factoryOver(store, limit);
+};
+
+const fixture = (limit = 4) => {
   active = new FakeStore();
+  registry = newRegistry();
   children.made.length = 0;
   notices.written.length = 0;
 
-  return { store: active, subagents: factoryOver(active) };
+  return { store: active, subagents: factoryOver(active, limit) };
 };
 
 const definition = SUBAGENT_DEFINITIONS[0]!;
@@ -407,8 +441,8 @@ describe("a message handed to a subagent", () => {
 
     // A new process: no live run, a new factory over the same rows.
     children.made.length = 0;
-    const restarted = factoryOver(store);
-    const handoff = await restarted.handoff({
+    const next = restarted(store);
+    const handoff = await next.handoff({
       name: "AGENT-1",
       text: "Now check the writer.",
       dedupeKey: "call-3",
@@ -466,6 +500,166 @@ describe("a message handed to a subagent", () => {
     expect(children.made).toHaveLength(2);
     expect(store.items).toHaveLength(0);
     expect(children.made[1]?.runs[0]?.claims).toHaveLength(1);
+  });
+});
+
+describe("the limit on running subagents", () => {
+  test("starts no more than the limit when several arrive at once", async () => {
+    const { subagents } = fixture(2);
+
+    const outcomes = await Promise.allSettled(
+      ["A", "B", "C"].map((letter, index) =>
+        subagents.create({
+          definition: SUBAGENT_DEFINITIONS[0]!,
+          prompt: `Task ${letter}.`,
+          description: `Task ${letter}`,
+          toolCallId: `call-${String(index + 1)}`,
+        })
+      )
+    );
+
+    // Counting the running subagents and starting the next one have to be one
+    // step: three calls that count the same number would all start.
+    const failures: unknown[] = [];
+    for (const outcome of outcomes) {
+      if (outcome.status === "rejected") {
+        failures.push(outcome.reason);
+      }
+    }
+    expect(children.made).toHaveLength(2);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeInstanceOf(SubagentLimitReachedError);
+  });
+
+  test("holds the limit across two factories on one session", async () => {
+    const { store } = fixture(1);
+    const first = factoryOver(store, 1);
+    const second = factoryOver(store, 1);
+
+    // A factory is built once per parent run, so the next run has its own. The
+    // lock and the registry are per process, which is what makes the count hold.
+    const outcomes = await Promise.allSettled([
+      first.create({
+        definition: SUBAGENT_DEFINITIONS[0]!,
+        prompt: "Task A.",
+        description: "Task A",
+        toolCallId: "call-1",
+      }),
+      second.create({
+        definition: SUBAGENT_DEFINITIONS[0]!,
+        prompt: "Task B.",
+        description: "Task B",
+        toolCallId: "call-2",
+      }),
+    ]);
+
+    const failures = outcomes.filter(
+      (outcome) => outcome.status === "rejected"
+    );
+    expect(children.made).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+  });
+
+  test("a decision that throws does not jam the next one", async () => {
+    const { store, subagents } = fixture(4);
+    const saveSession = store.saveSession.bind(store);
+    store.saveSession = (write) =>
+      write.title === "Task A"
+        ? Promise.reject(new Error("db down"))
+        : saveSession(write);
+
+    const outcomes = await Promise.allSettled([
+      subagents.create({
+        definition: SUBAGENT_DEFINITIONS[0]!,
+        prompt: "Task A.",
+        description: "Task A",
+        toolCallId: "call-1",
+      }),
+      subagents.create({
+        definition: SUBAGENT_DEFINITIONS[0]!,
+        prompt: "Task B.",
+        description: "Task B",
+        toolCallId: "call-2",
+      }),
+    ]);
+
+    const failures = outcomes.filter(
+      (outcome) => outcome.status === "rejected"
+    );
+    expect(failures).toHaveLength(1);
+    expect(children.made).toHaveLength(1);
+  });
+
+  test("refuses a new subagent while the limit is full", async () => {
+    const { store, subagents } = fixture(1);
+    await start(subagents);
+
+    await expect(
+      subagents.create({
+        definition: SUBAGENT_DEFINITIONS[0]!,
+        prompt: "Task B.",
+        description: "Task B",
+        toolCallId: "call-2",
+      })
+    ).rejects.toBeInstanceOf(SubagentLimitReachedError);
+
+    // A refused call leaves no row behind: a child that never ran would show up
+    // as idle and could be messaged later.
+    const rows = [...store.sessions.values()].filter(
+      (session) => session.kind === "subagent"
+    );
+    expect(rows).toHaveLength(1);
+  });
+
+  test("takes a replayed create as one more sentence, not a second run", async () => {
+    const { store, subagents } = fixture(1);
+    await start(subagents);
+
+    // The same call again is "say one more thing to that child" (story 19). It
+    // adds no child, so the full limit must not refuse it, and the running child
+    // takes the sentence instead of a second run opening.
+    const replay = await subagents.create({
+      definition: SUBAGENT_DEFINITIONS[0]!,
+      prompt: "Also check the parser.",
+      description: "Find the router",
+      toolCallId: "call-1",
+    });
+
+    expect(replay.name).toBe("AGENT-1");
+    expect(children.made).toHaveLength(1);
+    expect(store.items).toStrictEqual([
+      expect.objectContaining({ deliverAt: "step-boundary" }),
+    ]);
+  });
+
+  test("still hands a sentence to a running subagent when the limit is full", async () => {
+    const { subagents } = fixture(1);
+    await start(subagents);
+
+    // A sentence that waits costs no second run, so the limit does not apply.
+    await expect(
+      subagents.handoff({
+        name: "AGENT-1",
+        text: "Also check the parser.",
+        dedupeKey: "call-2",
+      })
+    ).resolves.toBe("queued");
+  });
+
+  test("keeps one run after a settlement opens the next turn", async () => {
+    const { subagents } = fixture(1);
+    await start(subagents);
+    await subagents.handoff({
+      name: "AGENT-1",
+      text: "Also check the parser.",
+      dedupeKey: "call-2",
+    });
+
+    await children.made[0]?.finish("done");
+
+    const listed = await subagents.list();
+    expect(children.made).toHaveLength(2);
+    expect(listed.running).toBe(1);
   });
 });
 

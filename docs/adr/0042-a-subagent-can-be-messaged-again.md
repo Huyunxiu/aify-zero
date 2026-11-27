@@ -34,6 +34,21 @@ state apart from ordinary slowness. A refusal is recoverable in one step; a dead
 Only running subagents count. A subagent that reported and is waiting for a message holds no
 model stream, so it holds no slot.
 
+The count and the start it guards are one step. Counting the running subagents and registering
+the new one are several awaits apart, so two delegations that arrive together would count the
+same number and both start — the limit would be a hint, not a limit. One lock carries every
+decision about a session's subagents: a start, a settlement that opens the next turn, and a
+stop. It is keyed by the parent session, not by the object that holds the tools, because that
+object is built once per parent run and a child outlives it: the settlement arrives in a later
+run's copy.
+
+A settlement that opens the next turn needs no check of its own. It gives up its slot and takes
+the next one in the same locked step, so the count it sees is the one it leaves behind.
+
+A check in the database was rejected. The count lives in the process's stream registry, not in a
+column, so a row constraint would count a different thing — and the process that can see the
+truth is the one that has to serialize.
+
 ## A repeated call appends instead of discarding
 
 The call was already idempotent by tool call id: the same call re-run found its child session
@@ -88,9 +103,9 @@ its next step boundary, and it lands as Steering inside that turn; anything else
 waits for the next run, which claims it in the transaction that writes its turns.
 That rule is the inbox's (`resolveDeliverAt`), not a copy kept here.
 
-Only one run claims per child at a time. The parent can hand a sentence over at
-the moment the previous run ends, and the settlement of that run also looks for
-what is waiting, so both paths pass through one lane per child.
+Only one run claims at a time. The parent can hand a sentence over at the moment
+the previous run ends, and the settlement of that run also looks for what is
+waiting, so both paths pass through the lock described below.
 
 A run that ends on its own terms opens the next one for items it could not take,
 so a parent never has to send the same sentence twice. A canceled or failed run
