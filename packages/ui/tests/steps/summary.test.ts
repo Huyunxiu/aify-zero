@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 
+import { createSubagentSummary } from "../../src/blocks/steps/create-subagent";
 import { deleteFileSummary } from "../../src/blocks/steps/delete-file";
 import { editFileSummary } from "../../src/blocks/steps/edit-file";
 import { globSummary } from "../../src/blocks/steps/glob";
@@ -12,7 +13,6 @@ import { questionnaireSummary } from "../../src/blocks/steps/questionnaire";
 import { readFileSummary } from "../../src/blocks/steps/read-file";
 import { shellSummary } from "../../src/blocks/steps/shell-tool";
 import { finishedOutput, pendingSummary } from "../../src/blocks/steps/summary";
-import { taskSummary } from "../../src/blocks/steps/task";
 import type { StepPart, StepPartOf } from "../../src/blocks/steps/types";
 import { webFetchSummary } from "../../src/blocks/steps/web-fetch";
 import { writeFileSummary } from "../../src/blocks/steps/write-file";
@@ -367,59 +367,45 @@ describe("delete-file", () => {
   });
 });
 
-describe("task", () => {
-  const task = (extra: Record<string, unknown>) =>
+describe("create-subagent", () => {
+  const delegate = (extra: Record<string, unknown>) =>
     part({
-      type: "tool-task",
+      type: "tool-create-subagent",
       input: { subagent_type: "explore", description: "find the parser" },
       ...extra,
     });
 
-  test("should name the subagent while it is still running", () => {
-    // The one tool that reports before it finishes: its label holds the
-    // description the model wrote, which does not say which subagent ran.
-    expect(taskSummary(task({ state: "input-available" }))).toBe("explore");
+  test("should name the subagent before the call answers", () => {
+    // The row says which subagent is about to work, not what was asked of it:
+    // the description is on the label, and the type is what tells two
+    // delegations in one step apart.
+    expect(createSubagentSummary(delegate({ state: "input-available" }))).toBe(
+      "explore"
+    );
   });
 
-  test("should name the subagent while it is only reporting part-way", () => {
-    // The same call in its next state: the first report is the session it
-    // started, not an answer, and the row still has to say who is at work.
+  test("should still name the subagent after the call returns its name", () => {
     expect(
-      taskSummary(
-        task({
+      createSubagentSummary(
+        delegate({
           state: "output-available",
-          preliminary: true,
           output: {
             code: "ok",
-            output: "",
-            metadata: { status: "running" },
+            output: "started subagent AGENT-1 (explore)",
+            metadata: { status: "running", name: "AGENT-1" },
           },
         })
       )
     ).toBe("explore");
   });
 
-  test("should name the subagent it delegated to", () => {
-    expect(
-      taskSummary(
-        doneTool(
-          "tool-task",
-          { status: "done" },
-          {
-            input: { subagent_type: "general" },
-          }
-        )
-      )
-    ).toBe("general");
-  });
-
-  test("should say nothing for a subagent that did not finish", () => {
-    // A subagent held on an approval, or one that failed, comes back as
+  test("should say nothing for a delegation that did not start", () => {
+    // A refusal, a full session, or a failed start comes back as
     // `code: "error"` — the row's own `Failed` carries that.
     expect(
-      taskSummary(
+      createSubagentSummary(
         part({
-          type: "tool-task",
+          type: "tool-create-subagent",
           state: "output-available",
           input: { subagent_type: "general" },
           output: {

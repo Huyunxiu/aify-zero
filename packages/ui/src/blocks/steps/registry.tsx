@@ -2,6 +2,7 @@ import { isAgentToolPart } from "@workspace/agent-client";
 import type { ComponentType } from "react";
 
 import { CompactionStep } from "./compaction";
+import { CreateSubagentStep } from "./create-subagent";
 import { DeleteFileStep } from "./delete-file";
 import { EditFileStep } from "./edit-file";
 import { FallbackToolStep } from "./fallback-tool";
@@ -15,7 +16,6 @@ import { ReadFileStep } from "./read-file";
 import { ReasoningStep } from "./reasoning";
 import { RetryStep } from "./retry";
 import { ShellToolStep } from "./shell-tool";
-import { TaskStep } from "./task";
 import type { StepPart, StepViewProps } from "./types";
 import { WebFetchStep } from "./web-fetch";
 import { WriteFileStep } from "./write-file";
@@ -48,6 +48,9 @@ export const stepViews: StepViews = {
   "dynamic-tool": FallbackToolStep,
   "tool-bash": ShellToolStep,
   "tool-call-tool": FallbackToolStep,
+  "tool-list-agents": FallbackToolStep,
+  "tool-send-message": FallbackToolStep,
+  "tool-stop-agent": FallbackToolStep,
   "tool-delete-file": DeleteFileStep,
   "tool-edit-file": EditFileStep,
   "tool-glob": GlobStep,
@@ -60,7 +63,10 @@ export const stepViews: StepViews = {
   "tool-questionnaire": QuestionnaireStep,
   "tool-read-file": ReadFileStep,
   "tool-search-tools": FallbackToolStep,
-  "tool-task": TaskStep,
+  "tool-create-subagent": CreateSubagentStep,
+  // A transcript written before the tools were split still holds calls under the
+  // old name. They read as ordinary tool calls: the old view is gone, not aliased.
+  "tool-task": FallbackToolStep,
   "tool-web-fetch": WebFetchStep,
   "tool-write-file": WriteFileStep,
 };

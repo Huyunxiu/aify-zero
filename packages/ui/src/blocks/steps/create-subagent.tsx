@@ -19,8 +19,8 @@ import type { StepPartOf, StepViewProps } from "./types";
 // Which subagent ran. A subagent that ended badly comes back as
 // `code: "error"`, and the shared wrapper has already left the row to say that
 // on its own.
-export const taskSummary = (
-  part: StepPartOf<"tool-task">
+export const createSubagentSummary = (
+  part: StepPartOf<"tool-create-subagent">
 ): ReactNode | undefined =>
   summarizeTool(part, () => part.input?.subagent_type);
 
@@ -38,12 +38,12 @@ export const taskSummary = (
  * selection is ambient, and a chain of props down to here would be a second
  * place that knows about it.
  */
-export const TaskStep = ({
+export const CreateSubagentStep = ({
   part,
   status,
   duration,
   onRespond,
-}: StepViewProps<"tool-task">) => {
+}: StepViewProps<"tool-create-subagent">) => {
   const { select, selectedSubagentSessionId } = useSubagentAddress();
 
   const result = part.output?.output ?? "";
@@ -52,8 +52,10 @@ export const TaskStep = ({
   // nothing else; one that failed outright has no answer at all, and an empty
   // panel under INPUT is worse than none.
   const showResult = result.length > 0;
-  const summary = taskSummary(part);
-  const label = <StepLabel action="Task" detail={part.input?.description} />;
+  const summary = createSubagentSummary(part);
+  const label = (
+    <StepLabel action="Subagent" detail={part.input?.description} />
+  );
 
   if (subagentSessionId) {
     return (

@@ -9,6 +9,8 @@ import type {
 import { JOB_NOTICE_INBOX_KIND } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
+import { createCompletionNotifier } from "./completion-notices";
+
 /** 适配器只依赖删除待办项这一项存储能力。 */
 type NoticeStore = {
   deleteInboxItems(sessionId: string, ids?: readonly string[]): Promise<number>;
@@ -38,6 +40,7 @@ export const createJobNoticeAdapter = ({
   /** 正在入队的任务；这期间被撤回的通知要在落地后删掉。 */
   const inFlight = new Set<JobId>();
   const withdrawn = new Set<JobId>();
+  const notices = createCompletionNotifier(() => runner, "job-notices");
 
   const remove = (sessionId: string, itemId: string): void => {
     void store.deleteInboxItems(sessionId, [itemId]).catch((error: unknown) => {
@@ -82,35 +85,34 @@ export const createJobNoticeAdapter = ({
       }
 
       inFlight.add(job.id);
-      void runner
-        .enqueueNotice({
-          sessionId,
-          text: notice.text,
-          dedupeKey: `${JOB_NOTICE_INBOX_KIND}:${job.id}`,
-        })
-        .then((item) => {
-          inFlight.delete(job.id);
-          if (item === undefined) {
-            return;
-          }
-          if (withdrawn.delete(job.id)) {
-            // 入队期间模型已经自己读走了：通知不必再出现。
-            remove(sessionId, item.id);
-            return;
-          }
-          // 通知真的落库了，现在才把游标推过去。摘要类通知没有消费正文，
-          // 不用落实。
-          if (notice.inline) {
-            commitNoticeOutput(sessionId, job.id);
-          }
-          pending.set(job.id, { sessionId, itemId: item.id });
-        })
-        .catch((error: unknown) => {
-          inFlight.delete(job.id);
-          logger.warn(
-            `job-notices: failed to deliver a notice for ${job.id}: ${String(error)}`
-          );
-        });
+      const queued = notices.queue({
+        sessionId,
+        text: notice.text,
+        dedupeKey: `${JOB_NOTICE_INBOX_KIND}:${job.id}`,
+      });
+
+      if (queued === undefined) {
+        inFlight.delete(job.id);
+        return;
+      }
+
+      void queued.then((item) => {
+        inFlight.delete(job.id);
+        if (item === undefined) {
+          return;
+        }
+        if (withdrawn.delete(job.id)) {
+          // 入队期间模型已经自己读走了：通知不必再出现。
+          remove(sessionId, item.id);
+          return;
+        }
+        // 通知真的落库了，现在才把游标推过去。摘要类通知没有消费正文，
+        // 不用落实。
+        if (notice.inline) {
+          commitNoticeOutput(sessionId, job.id);
+        }
+        pending.set(job.id, { sessionId, itemId: item.id });
+      });
     },
 
     withdraw(jobId) {

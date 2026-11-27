@@ -6,6 +6,8 @@ import type {
 } from "@workspace/agent";
 import { logger } from "@workspace/shared/logger";
 
+import { createCompletionNotifier } from "./completion-notices";
+
 /** The inbox kind a settled subagent writes, so a retry cannot post the same notice twice. */
 export const SUBAGENT_NOTICE_INBOX_KIND = "subagent-settled";
 
@@ -53,26 +55,14 @@ export const createSubagentNoticeAdapter = ({
 }: SubagentNoticeDeps): SubagentNoticeAdapter => {
   let runner: AgentRunner | undefined;
 
-  const deliver = (settlement: SubagentSettlement): void => {
-    const bound = runner;
-    if (bound === undefined) {
-      return;
-    }
-    if (!bound.canDeliverNotice(settlement.parentSessionId)) {
-      return;
-    }
+  const notices = createCompletionNotifier(() => runner, "subagent-notices");
 
-    void bound
-      .enqueueNotice({
-        sessionId: settlement.parentSessionId,
-        text: composeSubagentNotice(settlement),
-        dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${settlement.sessionId}`,
-      })
-      .catch((error: unknown) => {
-        logger.warn(
-          `[subagent-notices] failed to deliver a notice for ${settlement.sessionId}: ${String(error)}`
-        );
-      });
+  const deliver = (settlement: SubagentSettlement): void => {
+    void notices.queue({
+      sessionId: settlement.parentSessionId,
+      text: composeSubagentNotice(settlement),
+      dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${settlement.sessionId}`,
+    });
   };
 
   return {
