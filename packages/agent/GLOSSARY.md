@@ -221,6 +221,13 @@ The state where the runner does not start the next run automatically. A pause is
 automatic progress. It does not close the session.
 _Avoid_: 停止、中断、挂起
 
+**Stop (停止)**:
+The request to end the run a session is making, now. It answers a second question too:
+whether the subagents that run started end with it. The default takes them along; the other
+answer ends the run alone, and the children report later, into an inbox that starts no turn.
+A stop is not a pause: it ends this run, and the next turn starts when the user speaks.
+_Avoid_: 中断、取消、kill
+
 **Approval Policy (审批策略)**:
 The asking stance of one session on tool calls: which calls the session passes, which calls
 it must ask about, and which calls it does not permit. The policy decides only if the

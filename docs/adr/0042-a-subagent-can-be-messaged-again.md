@@ -17,10 +17,34 @@ into a completion notice, and three more tools reach it while it runs or after i
 ## The call no longer waits
 
 A subagent's lifetime is now the parent session's lifetime, not the parent turn's. It stops
-when the parent session is stopped or archived, and it survives the end of the turn that
-started it. The first version tied it to the parent turn because that turn was the only thing
-holding the child's abort scope; keeping that tie would have killed every subagent at the end
-of the turn that made it, which is exactly what background delegation must not do.
+when the parent session is stopped, and it survives the end of the turn that started it. The
+first version tied it to the parent turn because that turn was the only thing holding the
+child's abort scope; keeping that tie would have killed every subagent at the end of the turn
+that made it, which is exactly what background delegation must not do.
+
+## A stop answers one more question
+
+The stop control asked one thing and meant two: end this reply, and end everything it started.
+The two answers are now a choice on the control, because the alternative is a rule that guesses.
+
+The inherited abort scope had to go for the choice to exist. A child used to inherit the
+parent's abort signal, which fixed one answer at construction time — take the child down. The
+session layer now decides at the moment of the stop: the default takes the children with it,
+because a stop that left them writing files and spending tokens would not stop anything; the
+other answer ends the run alone.
+
+A kept child reports as any child does, and its report starts no turn. The parent is paused
+for having been canceled, so the notice waits in the inbox until the person speaks again.
+That is what makes "leave it running and come back later" true rather than a promise the
+screen cannot keep.
+
+The children a stop takes with it write no notice. The user asked for that stop, and the
+parent's next turn should not open with the news that it happened. A run that finished on its
+own still reports: the stop took nothing away from it.
+
+Deleting does not ask. A session that is going away cannot own a running child, and the rows a
+report would arrive in are the rows being removed, so a delete takes the children with it
+before it removes anything.
 
 ## Capacity rejects instead of queueing
 
