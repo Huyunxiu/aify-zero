@@ -166,10 +166,16 @@ export function createSubagentFactory({
     }
     STARTED.delete(child.sessionId);
 
-    await registry.unregisterStream(child.sessionId);
-    await store.clearActiveStream(child.sessionId, child.sessionId, status, {
-      recordActivity: true,
-    });
+    // Bookkeeping comes first, and a failure there must not swallow the notice:
+    // a parent waiting for a settlement is the one thing this run owes.
+    try {
+      await registry.unregisterStream(child.sessionId);
+      await store.clearActiveStream(child.sessionId, child.sessionId, status, {
+        recordActivity: true,
+      });
+    } catch (error) {
+      logger.warn("[subagent] failed to settle the child row", error);
+    }
 
     const { report } = readSubagentResult(childAgent.session.turns);
 
