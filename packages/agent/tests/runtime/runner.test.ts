@@ -456,6 +456,43 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
+  test("start 不唤醒跑不了的子会话，它的行留给下次递话", async () => {
+    const store = new FakeStore([
+      session("s1"),
+      {
+        ...session("c1"),
+        kind: "subagent",
+        parentSessionId: "s1",
+        subagentName: "AGENT-1",
+      },
+    ]);
+    store.claimOnRead = false;
+    store.items.push({
+      seq: 0,
+      id: "message-1",
+      sessionId: "c1",
+      kind: "user-message",
+      dedupeKey: "call-2",
+      deliverAt: "run-boundary",
+      content: userTurn("turn-1"),
+      payload: { model },
+      createdAt: 1,
+    });
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: () => Promise.reject(new Error("must not build")),
+      logger: { warn: () => {} },
+    });
+
+    const report = await runner.start();
+
+    // 子代理的运行由持有它名字的那次调用开启，不是这台运行器的活。
+    expect(report.woken).toStrictEqual([]);
+    expect(store.items.map((item) => item.id)).toStrictEqual(["message-1"]);
+
+    await runner.shutdown();
+  });
+
   test("一次运行领走队列里的全部待办项", async () => {
     const store = new FakeStore([session("s1")]);
     const seen: AgentTurn<never>[][] = [];

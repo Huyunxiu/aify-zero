@@ -19,7 +19,7 @@ const capability = (overrides: Partial<Subagents> = {}): Subagents => ({
   create: () => Promise.resolve({ name: "AGENT-1", sessionId: "child-1" }),
   list: () => Promise.resolve({ running: 0, limit: 8, subagents: [] }),
   handoff: () => Promise.resolve("started"),
-  stop: () => Promise.resolve(true),
+  stop: () => Promise.resolve({ stopped: true, dropped: 0 }),
   ...overrides,
 });
 
@@ -179,12 +179,31 @@ describe("send-message", () => {
     );
 
     expect(result.output).toBe(
-      "queued for AGENT-1; it reads this after its current turn"
+      "queued for AGENT-1; it reads this at its next step boundary, or when it runs again"
     );
     expect(result.metadata).toStrictEqual({
       name: "AGENT-1",
       handoff: "queued",
     });
+  });
+
+  test("gives the message the call id, so a retried call writes one row", async () => {
+    const seen: { name: string; text: string; dedupeKey: string }[] = [];
+    await runTool(
+      createSendMessageTool({
+        subagents: capability({
+          handoff: (request) => {
+            seen.push(request);
+            return Promise.resolve("queued");
+          },
+        }),
+      }),
+      { name: "AGENT-1", text: "Look again." }
+    );
+
+    expect(seen).toStrictEqual([
+      { name: "AGENT-1", text: "Look again.", dedupeKey: "call-1" },
+    ]);
   });
 
   test("refuses a name this session does not hold", async () => {
@@ -206,24 +225,64 @@ describe("stop-agent", () => {
   test("reports a run it stopped", async () => {
     const result = await runTool(
       createStopAgentTool({
-        subagents: capability({ stop: () => Promise.resolve(true) }),
+        subagents: capability({
+          stop: () => Promise.resolve({ stopped: true, dropped: 0 }),
+        }),
       }),
       { name: "AGENT-1" }
     );
 
     expect(result.output).toBe("stopped AGENT-1");
-    expect(result.metadata).toStrictEqual({ name: "AGENT-1", stopped: true });
+    expect(result.metadata).toStrictEqual({
+      name: "AGENT-1",
+      stopped: true,
+      dropped: 0,
+    });
+  });
+
+  test("says how many waiting messages the stop threw away", async () => {
+    const result = await runTool(
+      createStopAgentTool({
+        subagents: capability({
+          stop: () => Promise.resolve({ stopped: true, dropped: 2 }),
+        }),
+      }),
+      { name: "AGENT-1" }
+    );
+
+    expect(result.output).toBe("stopped AGENT-1 and dropped 2 waiting items");
+  });
+
+  test("still says how many it dropped when no run was live", async () => {
+    const result = await runTool(
+      createStopAgentTool({
+        subagents: capability({
+          stop: () => Promise.resolve({ stopped: false, dropped: 1 }),
+        }),
+      }),
+      { name: "AGENT-1" }
+    );
+
+    expect(result.output).toBe(
+      "AGENT-1 was not running and dropped 1 waiting item"
+    );
   });
 
   test("does not claim to have stopped a subagent that already finished", async () => {
     const result = await runTool(
       createStopAgentTool({
-        subagents: capability({ stop: () => Promise.resolve(false) }),
+        subagents: capability({
+          stop: () => Promise.resolve({ stopped: false, dropped: 0 }),
+        }),
       }),
       { name: "AGENT-1" }
     );
 
     expect(result.output).toBe("AGENT-1 was not running");
-    expect(result.metadata).toStrictEqual({ name: "AGENT-1", stopped: false });
+    expect(result.metadata).toStrictEqual({
+      name: "AGENT-1",
+      stopped: false,
+      dropped: 0,
+    });
   });
 });

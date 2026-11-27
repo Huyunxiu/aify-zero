@@ -1,3 +1,5 @@
+import type { AgentTurn } from "@workspace/agent-client";
+import { USER_MESSAGE_INBOX_KIND } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 import { AgentSession } from "../agent-session";
@@ -8,9 +10,11 @@ import type {
   SubagentCreated,
   SubagentHandoff,
   SubagentListResult,
+  SubagentStopped,
   SubagentSummary,
   Subagents,
 } from "../extensions/capabilities";
+import { resolveDeliverAt } from "../inbox/delivery";
 import type { NoticeWriter } from "../inbox/notice-writer";
 import type { AgentStore } from "../storage";
 import type { SessionEndStatus, SessionRecord } from "../storage/types";
@@ -70,15 +74,6 @@ export class SubagentNotFoundError extends Error {
 const definitionOf = (child: SessionRecord): SubagentDefinition =>
   getSubagentDefinition(subagentTypeOf(child.metadata)) ??
   getSubagentDefinition(DEFAULT_SUBAGENT_TYPE)!;
-
-/**
- * Messages waiting for a child's current run to settle.
- *
- * Process-wide, for the same reason the stream registry is: a child run is
- * process-local, so a message that outlives one parent turn still has to reach
- * the run it queued behind.
- */
-const PENDING = new Map<string, string[]>();
 
 /** When each live child run started, so `list-agents` can report its age. */
 const STARTED = new Map<string, number>();
@@ -157,19 +152,104 @@ export function createSubagentFactory({
     return row;
   };
 
-  const turnsFor = async (
-    childSessionId: string,
-    messages: readonly string[]
-  ) => {
+  /** What the child's own transcript holds, before anything new is claimed. */
+  const baseTurns = async (childSessionId: string) => {
     const row = await store.getSessionById(childSessionId);
-    const previous = await store.getBranchTurns(childSessionId, {
-      activeStreamId: row?.activeStreamId ?? undefined,
-    });
 
-    return [
-      ...AgentSession.toAgentTurns(previous),
-      ...messages.map((message) => buildPromptTurn(message)),
-    ];
+    return AgentSession.toAgentTurns(
+      await store.getBranchTurns(childSessionId, {
+        activeStreamId: row?.activeStreamId ?? undefined,
+      })
+    );
+  };
+
+  /**
+   * The model a child runs with: the one its definition pins, else the parent's
+   * current one. A message records the same value when it waits, because the row
+   * shape needs a model and this is the rule that decides it.
+   */
+  const modelFor = (definition: SubagentDefinition) =>
+    definition.model ?? agent.context.model;
+
+  /**
+   * One start per child at a time.
+   *
+   * Two callers can start the same child's run: the parent handing over a
+   * sentence as the previous run ends, and the settlement of that run. Both read
+   * the inbox before they start, so without this the same item could open two
+   * runs.
+   */
+  const lanes = new Map<string, Promise<void>>();
+
+  const inLane = async <T>(
+    childSessionId: string,
+    work: () => Promise<T>
+  ): Promise<T> => {
+    const previous = lanes.get(childSessionId) ?? Promise.resolve();
+    let releaseNext!: () => void;
+    const held = new Promise<void>((_resolve) => {
+      releaseNext = _resolve;
+    });
+    const tail = previous.then(() => held);
+    lanes.set(childSessionId, tail);
+
+    await previous;
+    try {
+      return await work();
+    } finally {
+      releaseNext();
+      if (lanes.get(childSessionId) === tail) {
+        lanes.delete(childSessionId);
+      }
+    }
+  };
+
+  /**
+   * What is still waiting for this child, oldest first.
+   *
+   * Every kind, for the same reason a main session's run takes every kind: an
+   * item that a run should have read must not be left for nobody.
+   */
+  const waiting = async (childSessionId: string) =>
+    await agent.inbox.list(childSessionId);
+
+  /** Throw away what nobody has read; a stop is the one caller. */
+  const discard = async (childSessionId: string): Promise<number> => {
+    let dropped = 0;
+    for (const item of await waiting(childSessionId)) {
+      dropped += await agent.inbox.cancel(childSessionId, item.id);
+    }
+
+    return dropped;
+  };
+
+  /**
+   * Put one sentence in a child's inbox.
+   *
+   * The delivery boundary is the inbox's own rule, not a copy of it: a live turn
+   * can take the item at its next step boundary, and anything else waits for the
+   * next run.
+   */
+  const hold = (input: {
+    child: SessionRecord;
+    definition: SubagentDefinition;
+    text: string;
+    dedupeKey: string;
+  }) => {
+    const entry = liveEntry(input.child.id);
+
+    return agent.inbox.enqueue({
+      sessionId: input.child.id,
+      kind: USER_MESSAGE_INBOX_KIND,
+      dedupeKey: input.dedupeKey,
+      deliverAt: resolveDeliverAt({
+        mode: "steering",
+        running: entry !== undefined,
+        streamKind: entry?.agent.streamKind,
+      }),
+      content: buildPromptTurn(input.text),
+      payload: { model: modelFor(input.definition) },
+    });
   };
 
   const settleRun = async (
@@ -199,49 +279,93 @@ export function createSubagentFactory({
 
     const settled = settledStatus(status, report) as SessionEndStatus;
 
-    void notices()?.write(
-      subagentNoticeRequest({
-        parentSessionId,
-        sessionId: child.sessionId,
-        name: child.name ?? child.sessionId,
-        subagentType: definition.name,
-        status: settled,
-        report,
-      })
-    );
+    // Everything below decides who reads what next, so it takes the lane a
+    // handoff uses: a sentence written while this is deciding must not be
+    // deleted by the discard and then reported as handed over.
+    await inLane(child.sessionId, async () => {
+      // The reported word folds an empty report into a failure, but these
+      // decisions follow how the run actually ended: a run that finished can
+      // still read what it left waiting.
+      //
+      // A run that did not finish drops what it never read, and the notice
+      // carries the count: nothing will start this child again, so an item left
+      // behind would wait for a turn nobody asked for. `wait_review` is the
+      // exception — that run is parked, not over.
+      const dropped =
+        status === "canceled" || status === "error"
+          ? await discard(child.sessionId)
+          : 0;
 
-    // A message that arrived while the run was going starts the next turn now,
-    // so a parent never has to send the same sentence twice.
-    const waiting = PENDING.get(child.sessionId);
-    if (waiting !== undefined && waiting.length > 0) {
-      PENDING.delete(child.sessionId);
+      void notices()?.write(
+        subagentNoticeRequest({
+          parentSessionId,
+          sessionId: child.sessionId,
+          name: child.name ?? child.sessionId,
+          subagentType: definition.name,
+          status: settled,
+          report,
+          dropped,
+          runKey: childAgent.session.turns.at(-1)?.id,
+        })
+      );
+
+      // A run that ended on its own terms may open the next one, so a parent
+      // never has to send the same sentence twice. A run someone stopped must
+      // not: that would be the stop failing to stop.
+      if (status !== "done") {
+        return;
+      }
+
+      const stillWaiting = await waiting(child.sessionId);
+      if (stillWaiting.length === 0) {
+        return;
+      }
 
       try {
         await runChild({
           sessionId: child.sessionId,
           name: child.name,
           definition,
-          turns: await turnsFor(child.sessionId, waiting),
         });
       } catch (error) {
         logger.warn(
-          "[subagent] failed to start the run behind a message",
+          "[subagent] failed to start the run behind a waiting item",
           error
         );
       }
-    }
+    });
   };
 
   const runChild = async (input: {
     sessionId: string;
     name: string | null;
     definition: SubagentDefinition;
-    turns: Awaited<ReturnType<typeof turnsFor>>;
+    /**
+     * The turns this run starts from.
+     *
+     * A subagent that is starting comes with its first turn already in hand. A
+     * run that continues one comes with none: everything it reads is claimed
+     * from the inbox, deleted in the transaction that writes its turns, so no
+     * message becomes two turns when the same run is retried.
+     */
+    turns?: AgentTurn<AgentToolSet>[];
   }): Promise<void> => {
+    const base = input.turns ?? (await baseTurns(input.sessionId));
+    const items = await waiting(input.sessionId);
+    const claims = items.map((item) => ({
+      inboxId: item.id,
+      turn: item.content,
+    }));
+
+    if (base.length === 0 && claims.length === 0) {
+      // Nothing to open a turn with: a stop took the items before this run began.
+      return;
+    }
+
     const childAgent = buildSubagent(hostOf(), {
       definition: input.definition,
       sessionId: input.sessionId,
-      turns: input.turns,
+      turns: base,
       store,
     });
 
@@ -266,7 +390,8 @@ export function createSubagentFactory({
 
     try {
       const stream = await childAgent.stream({
-        turns: input.turns,
+        turns: base,
+        ...(claims.length === 0 ? {} : { claims }),
         model: childAgent.context.model,
         streamId: input.sessionId,
         signal: { type: "turn" },
@@ -314,11 +439,16 @@ export function createSubagentFactory({
         subagentType: request.definition.name,
       });
 
-      await runChild({
-        sessionId,
-        name,
-        definition: request.definition,
-        turns,
+      // The same lane as a handoff: a call that re-runs on an existing child
+      // carries the sentence it just wrote, and that child may also be handed
+      // one. One start at a time.
+      await inLane(sessionId, async () => {
+        await runChild({
+          sessionId,
+          name,
+          definition: request.definition,
+          turns,
+        });
       });
 
       return { name, sessionId };
@@ -361,54 +491,90 @@ export function createSubagentFactory({
     async handoff({
       name,
       text,
+      dedupeKey,
     }: {
       name: string;
       text: string;
+      dedupeKey: string;
     }): Promise<SubagentHandoff> {
       const child = await resolveByName(name);
+      const definition = definitionOf(child);
 
-      if (liveEntry(child.id) !== undefined) {
-        const waiting = PENDING.get(child.id) ?? [];
-        waiting.push(text);
-        PENDING.set(child.id, waiting);
-        return "queued";
+      // A sentence that starts a run counts against the limit; one that waits
+      // for a running child does not, because it costs no second run.
+      if (liveEntry(child.id) === undefined) {
+        await assertCapacity();
       }
 
-      await assertCapacity();
-      await runChild({
-        sessionId: child.id,
-        name: child.subagentName,
-        definition: definitionOf(child),
-        turns: await turnsFor(child.id, [text]),
-      });
+      return await inLane(child.id, async () => {
+        await hold({ child, definition, text, dedupeKey });
 
-      return "started";
+        // Nobody else starts this child inside the lane, so this read decides:
+        // either a run is live and will take the item, or the last one ended and
+        // this call opens the next. Reading it outside the lane would be stale.
+        if (liveEntry(child.id) !== undefined) {
+          return "queued";
+        }
+
+        await runChild({
+          sessionId: child.id,
+          name: child.subagentName,
+          definition,
+        });
+
+        return "started";
+      });
     },
 
-    async stop({ name }: { name: string }): Promise<boolean> {
+    async stop({ name }: { name: string }): Promise<SubagentStopped> {
       const child = await resolveByName(name);
-      const entry = liveEntry(child.id);
 
-      if (entry !== undefined) {
-        entry.agent.abort();
-        return true;
-      }
+      // The same lane as a start: a sentence handed over and a stop must not
+      // pass each other, or the stop could report a run it never reached.
+      return await inLane(child.id, async () => {
+        // What it never read goes with the run: the turn that would have read it
+        // is the one being stopped. Saying how many went is what keeps the parent
+        // from believing a sentence it sent will still arrive.
+        const dropped = await discard(child.id);
+        const entry = liveEntry(child.id);
 
-      // A run whose process is gone leaves the row marked running. Clearing it
-      // is the honest answer to "stop this": it is not running, and the parent
-      // should not keep seeing it as if it were.
-      if (child.activeStreamId !== null) {
-        await store.clearActiveStream(
-          child.id,
-          child.activeStreamId,
-          "canceled",
-          {
-            recordActivity: false,
-          }
-        );
-      }
+        if (entry !== undefined) {
+          entry.agent.abort();
+          return { stopped: true, dropped };
+        }
 
-      return false;
+        // A run whose process is gone leaves the row marked running. Clearing it
+        // is the honest answer to "stop this": it is not running, and the parent
+        // should not keep seeing it as if it were.
+        if (child.activeStreamId !== null) {
+          await store.clearActiveStream(
+            child.id,
+            child.activeStreamId,
+            "canceled",
+            {
+              recordActivity: false,
+            }
+          );
+
+          // The row said a run was going, so this settlement is the first word
+          // the parent gets about it. A parent that stopped it still hears how
+          // it ended, or it waits for a bell that will not ring.
+          void notices()?.write(
+            subagentNoticeRequest({
+              parentSessionId,
+              sessionId: child.id,
+              name: child.subagentName ?? child.id,
+              subagentType: definitionOf(child).name,
+              status: "canceled",
+              report: "",
+              dropped,
+              runKey: child.activeStreamId,
+            })
+          );
+        }
+
+        return { stopped: false, dropped };
+      });
     },
   };
 }

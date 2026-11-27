@@ -76,17 +76,53 @@ The one sentence that belongs to every delegation — do not poll, end the turn 
 subagent catalogue with the rest of the guidance. A rule stated in each notice would be a
 second copy of a rule that already has a home.
 
-## A message queues; it does not interrupt
+## A handed-over sentence waits as an inbox item
 
-A steering word reaches a live turn only through the runner, which owns that
-turn. The delegation layer holds the name and the record, not the turn, so a
-message to a running subagent queues and becomes its next turn. The tool says
-`queued` or `started` rather than claiming to have steered anything.
+What a parent hands to a subagent waits in that subagent's inbox, as an inbox
+item, because the row outlives the call that wrote it: a subagent can finish, be
+stopped, or lose its process, and the item still carries the sentence to the run
+that reads it next.
 
-The same reason decides how an idle subagent starts: this layer builds its turns
-and starts the run itself, instead of writing an inbox item that only the main
-session path can claim. A subagent session is still refused by the runner's
-inbox entry, and opening that door is a separate decision.
+The arrival boundary decides what the sentence becomes. A live turn takes it at
+its next step boundary, and it lands as Steering inside that turn; anything else
+waits for the next run, which claims it in the transaction that writes its turns.
+That rule is the inbox's (`resolveDeliverAt`), not a copy kept here.
+
+Only one run claims per child at a time. The parent can hand a sentence over at
+the moment the previous run ends, and the settlement of that run also looks for
+what is waiting, so both paths pass through one lane per child.
+
+A run that ends on its own terms opens the next one for items it could not take,
+so a parent never has to send the same sentence twice. A canceled or failed run
+does not: nothing will start that child again. Its settlement notice throws away
+the items it never read and says how many. `wait_review` is the exception, since
+that run is parked rather than over.
+
+Stopping a subagent throws its waiting items away too, and `stop-agent` reports
+the count, because the turn that would have read them is the one being stopped. A
+parent session's stop leaves them alone: if that session runs again and messages
+the child, the older sentences arrive in order ahead of the new one.
+
+A restart delivers nothing by itself. The items wait until the parent runs that
+child again, and then they are read ahead of the new sentence. Booting does not
+wake a subagent's session, so nothing runs it in the meantime.
+
+A settlement is one notice per run, not one per child: a child can settle twice,
+and the second notice must not be dropped as a duplicate of an unread first one.
+
+One promise this row cannot make is exactness under a retry. A call that runs
+again after its item was claimed writes a second item, so one sentence can be
+read twice. It cannot be lost the other way: the claim is part of the transaction
+that writes the turn.
+
+The row records a model, which its shape requires and a subagent's session row
+does not carry. `send-message` records the one the child would run with. A run
+resolves the model the same way, so the copy only differs when the parent moves to
+another model in between — and then the run is right.
+
+A subagent session is still refused by the runner's inbox entry, and boot no
+longer wakes one. Its next run is opened by the tool call that holds its name, so
+a wake-up would report a run that never happens.
 
 Withdraw has no counterpart here. A job notice withdraws itself when the model
 reads the output first; a subagent notice carries the answer, so nothing

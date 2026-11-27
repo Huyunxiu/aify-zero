@@ -14,6 +14,14 @@ import { JOB_NOTICE_STEP_SOURCE, SUBAGENT_NOTICE_STEP_SOURCE } from "./types";
  */
 export type DeliverAt = "step-boundary" | "run-boundary";
 
+/**
+ * 一句写给人或父代理看的话专用的待办项种类。
+ *
+ * 用户在界面上写的那条，和父代理递给子代理的那句，都记成这一种：它们都是
+ * 「有人要说的话」，只是写信的人不同。
+ */
+export const USER_MESSAGE_INBOX_KIND = "user-message";
+
 /** 完成通知专用的待办项种类。 */
 export const JOB_NOTICE_INBOX_KIND = "job-notice";
 
@@ -31,7 +39,7 @@ export const SUBAGENT_NOTICE_INBOX_KIND = "subagent-settled";
  * 参与「用户插话」判定。
  */
 export type InboxKind =
-  | "user-message"
+  | typeof USER_MESSAGE_INBOX_KIND
   | typeof JOB_NOTICE_INBOX_KIND
   | typeof TIMER_INBOX_KIND
   | typeof SUBAGENT_NOTICE_INBOX_KIND;

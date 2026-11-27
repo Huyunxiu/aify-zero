@@ -89,7 +89,7 @@ describe("the runs a previous process left behind", () => {
       waitFor: () => Promise.resolve(true),
     });
 
-    expect(written[0]?.dedupeKey).toBe("subagent-settled:child-1");
+    expect(written[0]?.dedupeKey).toBe("subagent-settled:child-1:recovered");
     expect(written[0]?.form).toStrictEqual({
       kind: "subagent-settled",
       source: "subagent-settled",

@@ -32,9 +32,10 @@ export function settledStatus(status: string, report: string): string {
 export function composeSubagentNotice(settlement: SubagentSettlement): string {
   const head = `subagent ${settlement.name} (${settlement.subagentType}) settled: ${settlement.status}`;
   const report = settlement.report.trim();
+  const dropped = droppedLine(settlement.dropped);
 
   if (report.length === 0) {
-    return `${head}\n\nIt finished without a report.`;
+    return `${head}\n\nIt finished without a report.${dropped}`;
   }
 
   const body =
@@ -42,7 +43,38 @@ export function composeSubagentNotice(settlement: SubagentSettlement): string {
       ? `${report.slice(0, REPORT_BUDGET)}\n[report truncated]`
       : report;
 
-  return `${head}\n\n${body}`;
+  return `${head}\n\n${body}${dropped}`;
+}
+
+/**
+ * How many items are written.
+ *
+ * One renderer, because the stop tool and the settlement notice report the same
+ * number: two pluralizers would let the parent read "2 waiting messages" and
+ * "2 waiting items" about one fact.
+ *
+ * @param count - How many items.
+ * @returns The count with its noun, for example `2 waiting items`.
+ */
+export function waitingItems(count: number): string {
+  return `${String(count)} waiting ${count === 1 ? "item" : "items"}`;
+}
+
+/**
+ * The line that says the items never arrived.
+ *
+ * It belongs in the notice rather than in silence: the settlement already tells
+ * the parent the run is over, and this is the one fact that run still owes — what
+ * it accepted and never read.
+ */
+function droppedLine(dropped: number): string {
+  if (dropped === 0) {
+    return "";
+  }
+
+  return `\n\nIt never read ${waitingItems(dropped)}; ${
+    dropped === 1 ? "it is" : "they are"
+  } gone.`;
 }
 
 /**
@@ -58,7 +90,11 @@ export function subagentNoticeRequest(
   return {
     sessionId: settlement.parentSessionId,
     text: composeSubagentNotice(settlement),
-    dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${settlement.sessionId}`,
+    // The run is part of the key: a child can settle more than once, and the
+    // second settlement is not a duplicate of the first.
+    dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${settlement.sessionId}:${
+      settlement.runKey ?? "recovered"
+    }`,
     form: SUBAGENT_NOTICE,
   };
 }

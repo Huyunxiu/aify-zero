@@ -75,6 +75,9 @@ export async function reportRecoveredSubagents({
         subagentType: subagentTypeOf(row.metadata),
         status: "error",
         report: "",
+        // A recovered run's own items are the ones it never read; this path
+        // cannot claim them, so it reports none rather than inventing a count.
+        dropped: 0,
       })
     );
   }

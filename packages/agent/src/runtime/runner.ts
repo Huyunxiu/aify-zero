@@ -1,4 +1,7 @@
-import { isNoticeInboxKind } from "@workspace/agent-client";
+import {
+  isNoticeInboxKind,
+  USER_MESSAGE_INBOX_KIND,
+} from "@workspace/agent-client";
 import type {
   InboxItem,
   InboxPayload,
@@ -150,12 +153,19 @@ export class AgentRunner {
       failures.push(failureOf(error));
     }
 
+    const woken: string[] = [];
     for (const sessionId of pending) {
       this.#paused.delete(sessionId);
+      // `#ready` is the one place that decides whether this runner may start a
+      // session. Waking one it cannot start reports a run that never happens.
+      if (!(await this.#ready(sessionId))) {
+        continue;
+      }
       this.wake(sessionId);
+      woken.push(sessionId);
     }
 
-    return { recovered, woken: pending, failures };
+    return { recovered, woken, failures };
   }
 
   /** 建会话行；已存在时幂等。已删的会话不算「已存在」。 */
@@ -228,7 +238,7 @@ export class AgentRunner {
 
     const item = await this.#store.insertInboxItem({
       sessionId: input.sessionId,
-      kind: "user-message",
+      kind: USER_MESSAGE_INBOX_KIND,
       dedupeKey: input.dedupeKey ?? input.turn.id,
       deliverAt,
       content: input.turn,

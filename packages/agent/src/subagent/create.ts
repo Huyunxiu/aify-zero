@@ -3,6 +3,7 @@ import type {
   AgentTextPart,
   AgentTurn,
   AgentTurnStatus,
+  AgentUserTurn,
   ApprovalPolicy,
 } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
@@ -119,7 +120,7 @@ export function restrictToTools<T>(
  * The turn a prompt becomes, when the subagent is starting rather than
  * resuming. Built like any user turn: one step, holding one text part.
  */
-export function buildPromptTurn(prompt: string): AgentTurn<AgentToolSet> {
+export function buildPromptTurn(prompt: string): AgentUserTurn {
   const createdAt = Date.now();
 
   return {

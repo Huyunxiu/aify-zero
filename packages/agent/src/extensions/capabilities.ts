@@ -101,6 +101,20 @@ export interface SubagentCreated {
  */
 export type SubagentHandoff = "started" | "queued";
 
+/**
+ * What one stop did.
+ *
+ * `dropped` counts the items the stopped run never read. They go with it: the
+ * turn that would have read them is the one that was stopped. The parent is told
+ * the number so it does not keep waiting for an answer to a sentence that no
+ * longer exists anywhere.
+ */
+export interface SubagentStopped {
+  /** Whether a live run was stopped. A subagent that already finished was not. */
+  readonly stopped: boolean;
+  readonly dropped: number;
+}
+
 /** A settled subagent, in the terms its parent is told about it. */
 export interface SubagentSettlement {
   readonly parentSessionId: string;
@@ -109,6 +123,16 @@ export interface SubagentSettlement {
   readonly subagentType: string;
   readonly status: string;
   readonly report: string;
+  /** Items the run never read; they were thrown away with it. Zero means none. */
+  readonly dropped: number;
+  /**
+   * What tells one settlement of a child from the next.
+   *
+   * The notice is filed under it, so two settlements of the same child both
+   * arrive; without it the second is dropped as a duplicate of the first while
+   * the first is still unread.
+   */
+  readonly runKey?: string;
 }
 
 /**
@@ -120,9 +144,13 @@ export interface SubagentSettlement {
 export interface Subagents {
   create(request: SubagentCreateRequest): Promise<SubagentCreated>;
   list(): Promise<SubagentListResult>;
-  handoff(request: { name: string; text: string }): Promise<SubagentHandoff>;
-  /** Whether a live run was stopped. A subagent that already finished was not. */
-  stop(request: { name: string }): Promise<boolean>;
+  handoff(request: {
+    name: string;
+    text: string;
+    /** Stable per tool call: a retried call writes one message, not two. */
+    dedupeKey: string;
+  }): Promise<SubagentHandoff>;
+  stop(request: { name: string }): Promise<SubagentStopped>;
 }
 
 /**

@@ -312,7 +312,12 @@ export type SendMessageToolMetadata = {
 export type SendMessageToolOutput = ToolOutput<string, SendMessageToolMetadata>;
 
 export type StopAgentToolInput = { name: string };
-export type StopAgentToolMetadata = { name: string; stopped?: boolean };
+export type StopAgentToolMetadata = {
+  name: string;
+  stopped?: boolean;
+  /** Messages the stopped run never read; they are gone. */
+  dropped?: number;
+};
 export type StopAgentToolOutput = ToolOutput<string, StopAgentToolMetadata>;
 
 export type SearchToolsInput = { query: string; limit?: number };
