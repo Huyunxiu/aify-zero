@@ -32,6 +32,7 @@ import { DEFAULT_SUBAGENT_TYPE, getSubagentDefinition } from "./definitions";
 import type { SubagentDefinition } from "./definitions";
 import { normalizeSubagentName } from "./names";
 import { settledStatus, subagentNoticeRequest } from "./notice";
+import { takeSilence } from "./silence";
 
 export interface SubagentFactoryOptions {
   agent: Agent;
@@ -315,18 +316,26 @@ export function createSubagentFactory({
           ? await discard(child.sessionId)
           : 0;
 
-      void notices()?.write(
-        subagentNoticeRequest({
-          parentSessionId,
-          sessionId: child.sessionId,
-          name: child.name ?? child.sessionId,
-          subagentType: child.definition.name,
-          status: settled,
-          report,
-          dropped,
-          runKey: childAgent.session.turns.at(-1)?.id,
-        })
-      );
+      // A child taken down with its parent has no one to report to: the parent
+      // asked for the stop, and its next turn should not open with the news
+      // that the stop happened. A run that finished on its own still reports —
+      // the stop took nothing away from it.
+      const silent = takeSilence(child.sessionId) && status !== "done";
+
+      if (!silent) {
+        void notices()?.write(
+          subagentNoticeRequest({
+            parentSessionId,
+            sessionId: child.sessionId,
+            name: child.name ?? child.sessionId,
+            subagentType: child.definition.name,
+            status: settled,
+            report,
+            dropped,
+            runKey: childAgent.session.turns.at(-1)?.id,
+          })
+        );
+      }
 
       // A run that ended on its own terms may open the next one, so a parent
       // never has to send the same sentence twice. A run someone stopped must

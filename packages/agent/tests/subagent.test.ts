@@ -375,7 +375,7 @@ describe("subagent 的 abort scope", () => {
       }
     );
 
-  test("父被停时子 agent 跟着停", async () => {
+  test("父停不会顺手停掉子 agent", async () => {
     const parent = buildParent();
     const { agent: child } = await spawnChild(parent);
 
@@ -383,9 +383,9 @@ describe("subagent 的 abort scope", () => {
 
     parent.abort();
 
-    // 这是 stop 能立刻返回的前提：子 agent 一停，它的流就结束，父那个 task
-    // 调用的 `whenFinished()` 才有东西可等。
-    expect(child.context.abortSignal?.aborted).toBeTruthy();
+    // 停父会话时要不要连子代理一起停，由会话层在那一刻决定，不由派生时接过来
+    // 的信号决定——信号是死的，只给得出一个答案。
+    expect(child.context.abortSignal?.aborted).toBeFalsy();
   });
 
   test("子 agent 自己停不牵连父", async () => {
@@ -394,18 +394,17 @@ describe("subagent 的 abort scope", () => {
 
     child.abort();
 
-    // 并集而不是替代：子 agent 仍然保有自己的 abort 入口。
     expect(child.context.abortSignal?.aborted).toBeTruthy();
     expect(parent.context.abortSignal?.aborted).toBeFalsy();
   });
 
-  test("父已经停了才派生出来的子 agent 一建出来就是停的", async () => {
+  test("父已经停了才派生出来的子 agent 仍然能跑", async () => {
     const parent = buildParent();
     parent.abort();
 
     const { agent: child } = await spawnChild(parent);
 
-    expect(child.context.abortSignal?.aborted).toBeTruthy();
+    expect(child.context.abortSignal?.aborted).toBeFalsy();
   });
 });
 

@@ -29,6 +29,7 @@ import { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
 import { AgentRunnerError } from "./errors";
 import { SessionLifecycle } from "./sessions";
+import type { StopOptions } from "./sessions";
 import type {
   AgentRunnerLogger,
   AgentRunnerStore,
@@ -413,9 +414,16 @@ export class AgentRunner {
     };
   }
 
-  /** 停掉会话正在跑的运行；没有运行时也清理残留标记。 */
-  async stop(sessionId: string): Promise<{ aborted: boolean }> {
-    return await this.#sessions.stop(sessionId);
+  /**
+   * 停掉会话正在跑的运行；没有运行时也清理残留标记。
+   *
+   * `subagents` 决定这次运行拉起的子代理怎么办：默认一起停，`keep` 只停这一轮。
+   */
+  async stop(
+    sessionId: string,
+    options?: StopOptions
+  ): Promise<{ aborted: boolean }> {
+    return await this.#sessions.stop(sessionId, options);
   }
 
   /** 空闲会话按需压缩；落定后唤醒队列。 */

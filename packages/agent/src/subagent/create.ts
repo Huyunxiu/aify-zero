@@ -478,10 +478,10 @@ export function buildSubagent(
     model: resolvedModel,
     resolveModel: parent.resolveModel,
     modelEffort: parent.context.modelEffort,
-    // 父的 abort scope 接进来：父会话被停时子 agent 跟着停。不接的话父的 stop
-    // 要等这个子 agent 跑完才返回——父的 `#runStep` 卡在 `executeToolCalls` 上，
-    // 而 task 的 generator 正 `await entry.whenFinished()`。
-    abortSignal: parent.context.abortSignal,
+    // No inherited abort scope. A parent's stop has two answers — take the
+    // children with it, or leave them running — and a signal fixed at
+    // construction could only ever give the first one. The session layer now
+    // decides, once, at the moment it stops.
   });
 
   // A subagent registers no extensions, so the approval function is inherited

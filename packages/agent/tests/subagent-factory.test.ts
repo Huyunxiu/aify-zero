@@ -23,6 +23,7 @@ import {
   createSubagentFactory,
   SubagentLimitReachedError,
 } from "../src/subagent/factory.js";
+import { silenceSettlement } from "../src/subagent/silence.js";
 import type { AgentToolSet } from "../src/types.js";
 import { testModel } from "./helpers/model-target.js";
 
@@ -730,5 +731,38 @@ describe("stopping a subagent", () => {
       stopped: true,
       dropped: 0,
     });
+  });
+});
+
+describe("a child stopped with its parent", () => {
+  test("writes no notice for a stop the parent asked for", async () => {
+    const { subagents } = fixture();
+    await start(subagents);
+    const [child] = children.made;
+    if (child === undefined) {
+      throw new Error("the create call should have started a child");
+    }
+
+    // The session layer marks the children it takes down with the session. The
+    // mark is what keeps the parent's next turn from opening with the news that
+    // the stop the user asked for happened.
+    silenceSettlement(child.sessionId);
+    await child.finish("canceled");
+
+    expect(notices.written).toStrictEqual([]);
+  });
+
+  test("still reports a run that finished before the stop", async () => {
+    const { subagents } = fixture();
+    await start(subagents);
+    const [child] = children.made;
+    if (child === undefined) {
+      throw new Error("the create call should have started a child");
+    }
+
+    silenceSettlement(child.sessionId);
+    await child.finish("done");
+
+    expect(notices.written).toHaveLength(1);
   });
 });
