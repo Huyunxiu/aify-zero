@@ -1343,12 +1343,12 @@ export function Session({
                                       </DropdownMenuTrigger>
                                       <DropdownMenuContent align="end">
                                         <DropdownMenuItem
-                                          onSelect={() => void stop()}
+                                          onClick={() => void stop()}
                                         >
                                           {t("composer.stop.everything")}
                                         </DropdownMenuItem>
                                         <DropdownMenuItem
-                                          onSelect={() =>
+                                          onClick={() =>
                                             void stop({ keepSubagents: true })
                                           }
                                         >
