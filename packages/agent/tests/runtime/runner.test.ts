@@ -302,7 +302,12 @@ describe("AgentRunner", () => {
     });
 
     await runner.createSession({ sessionId: "s1" });
-    await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
+    await runner.enqueue({
+      sessionId: "s1",
+      turn: userTurn("turn-1"),
+      model,
+      effort: "high",
+    });
     await vi.waitFor(() => {
       expect(builder.calls).toHaveLength(1);
       expect(runner.state().running).toHaveLength(0);
@@ -317,6 +322,9 @@ describe("AgentRunner", () => {
 
     expect(item?.kind).toBe("subagent-settled");
     expect(item?.content.content[0]?.source).toBe("subagent-settled");
+    // 通知唤醒的那次运行要靠这一行拿到模型配置；effort 的键名和读它的人一致，
+    // 否则被通知唤醒的一次运行会退回模型默认档。
+    expect(item?.payload.modelEffort).toBe("high");
 
     await vi.waitFor(() => expect(builder.calls).toHaveLength(2));
     await runner.shutdown();

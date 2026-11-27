@@ -1,7 +1,7 @@
 import { isNoticeInboxKind } from "@workspace/agent-client";
 import type {
-  AgentUserTurn,
   InboxItem,
+  InboxPayload,
   SessionCursor,
   SessionStreamEvent,
 } from "@workspace/agent-client";
@@ -12,6 +12,8 @@ import type { ModelRef } from "@workspace/shared/model";
 import type { Agent } from "../agents";
 import { resolveDeliverAt } from "../inbox/delivery";
 import { InboxItemNotFoundError } from "../inbox/errors";
+import { createNoticeWriter } from "../inbox/notice-writer";
+import type { NoticeWriter } from "../inbox/notice-writer";
 import type { SteeringSignal } from "../inbox/steering";
 import { createSteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
@@ -22,7 +24,6 @@ import { recoverInterruptedRuns } from "../storage/recovery";
 import type { RecoveryOutcome } from "../storage/recovery";
 import { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
-import { generateStepId, generateTurnId } from "../utils/id-util";
 import { AgentRunnerError } from "./errors";
 import { SessionLifecycle } from "./sessions";
 import type {
@@ -54,7 +55,6 @@ export type AgentRunnerOptions = {
 export type StartOutcome = StartedRun | "claimed" | "busy" | "failed";
 
 /** 一条会话自上次用户输入以来，最多被完成通知唤醒几次。 */
-const MAX_NOTICE_WAKES = 8;
 
 /**
  * 会话的常驻运行器。
@@ -79,23 +79,32 @@ export class AgentRunner {
   /** 每个会话一个插话信号；用户消息插进正在跑的回合时触发。 */
   readonly #steering = new Map<string, SteeringSignal>();
   /** 每个会话最近一次起跑用的模型配置；完成通知靠它唤醒会话。 */
-  readonly #lastPayload = new Map<
-    string,
-    { model: ModelRef; effort?: ModelEffort; projectId?: string }
-  >();
-  /** 每条会话自上次用户输入以来，被完成通知唤醒过几次。 */
-  readonly #noticeWakes = new Map<string, number>();
+  readonly #lastPayload = new Map<string, InboxPayload>();
+  /** 写完成通知的那一个；运行器和每个 agent 装配用的是同一个。 */
+  readonly #notices: NoticeWriter;
   /** 正在推进的会话；有值表示这条会话的循环在跑，不是“有一条运行在跑”。 */
   readonly #runs = new Map<string, Promise<void>>();
   /** 不再自动推进的会话，以及原因。不落库。 */
   readonly #paused = new Map<string, PauseReason>();
   #scheduled = false;
+  /** 写完成通知的那一个；运行器和每个 agent 装配用的是同一个。 */
   /** 关停中：不再取新件，正在跑的让它跑完。 */
   #stopped = false;
 
   constructor(options: AgentRunnerOptions) {
     this.#store = options.store;
     this.#buildAgent = options.buildAgent;
+    this.#notices = createNoticeWriter({
+      insert: (item) => this.#store.insertInboxItem(item),
+      isBusy: (sessionId) => {
+        const running = this.#streams.getStreamEntryBySession(sessionId);
+        return running !== undefined && !running.isDone();
+      },
+      payloadOf: (sessionId) => this.#lastPayload.get(sessionId),
+      wake: (sessionId) => {
+        this.wake(sessionId);
+      },
+    });
     this.#logger = options.logger ?? {
       warn: (message, error) => {
         console.warn(message, error);
@@ -191,7 +200,7 @@ export class AgentRunner {
       this.#paused.delete(id);
       this.#steering.delete(id);
       this.#lastPayload.delete(id);
-      this.#noticeWakes.delete(id);
+      this.#notices.resetBudget(id);
       this.#wakeups.delete(id);
     }
 
@@ -230,7 +239,7 @@ export class AgentRunner {
     });
 
     // 用户自己说话了：唤醒预算重新开始，通知不再按上一条链计数。
-    this.#noticeWakes.delete(input.sessionId);
+    this.#notices.resetBudget(input.sessionId);
     this.#rememberPayload(input.sessionId, {
       model: input.model,
       ...(input.effort === undefined ? {} : { effort: input.effort }),
@@ -261,7 +270,7 @@ export class AgentRunner {
       payload.projectId ?? this.#lastPayload.get(sessionId)?.projectId;
     this.#lastPayload.set(sessionId, {
       model: payload.model,
-      ...(payload.effort === undefined ? {} : { effort: payload.effort }),
+      ...(payload.effort === undefined ? {} : { modelEffort: payload.effort }),
       ...(projectId === undefined ? {} : { projectId }),
     });
   }
@@ -272,14 +281,14 @@ export class AgentRunner {
    * @param sessionId - 会话 id。
    */
   canDeliverNotice(sessionId: string): boolean {
-    return !this.#stopped && this.#lastPayload.has(sessionId);
+    return !this.#stopped && this.#notices.canDeliver(sessionId);
   }
 
   /**
    * 投一条完成通知。空闲会话被唤醒，忙的会话排到下一个步边界。
    *
-   * 通知不是用户输入：它不重置唤醒预算，也不触发插话信号。连续唤醒超过
-   * {@link MAX_NOTICE_WAKES} 次时只排队，等下一次用户输入再交给模型。
+   * 通知不是用户输入：它不重置唤醒预算，也不触发插话信号。写入的规则住在
+   * {@link NoticeWriter} 里，和任何一次 agent 装配用的是同一份。
    * @param input - 会话、正文与幂等键。
    * @returns 排入的待办项；会话没有可用的模型配置时返回 undefined。
    */
@@ -289,51 +298,13 @@ export class AgentRunner {
     if (this.#stopped) {
       return undefined;
     }
-    const payload = this.#lastPayload.get(input.sessionId);
-    if (payload === undefined) {
+
+    const item = await this.#notices.write(input);
+    if (item === undefined) {
       this.#logger.warn(
         "[runner] cannot deliver a notice: the session has no model yet",
         { sessionId: input.sessionId }
       );
-      return undefined;
-    }
-
-    const running = this.#streams.getStreamEntryBySession(input.sessionId);
-    const busy = running !== undefined && !running.isDone();
-    const deliverAt = busy ? "step-boundary" : "run-boundary";
-    const now = Date.now();
-    const turn: AgentUserTurn = {
-      id: generateTurnId(),
-      type: "user",
-      createdAt: now,
-      status: "done",
-      content: [
-        {
-          id: generateStepId(),
-          type: "user",
-          createdAt: now,
-          status: "done",
-          source: input.form.source,
-          content: [{ type: "text", text: input.text, createdAt: now }],
-        },
-      ],
-    };
-
-    const item = await this.#store.insertInboxItem({
-      sessionId: input.sessionId,
-      kind: input.form.kind,
-      dedupeKey: input.dedupeKey,
-      deliverAt,
-      content: turn,
-      payload,
-    });
-
-    if (!busy) {
-      const spent = this.#noticeWakes.get(input.sessionId) ?? 0;
-      if (spent < MAX_NOTICE_WAKES) {
-        this.#noticeWakes.set(input.sessionId, spent + 1);
-        this.wake(input.sessionId);
-      }
     }
 
     return item;
