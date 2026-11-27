@@ -583,17 +583,31 @@ export class SessionLifecycle {
   }
 
   /**
-   * 把一个会话派生出的、还挂着流的子会话行清掉。
+   * 把一个会话派生出的、还挂着流的子会话停掉，再把它的行清掉。
+   *
+   * 子代理的运行可以活过派生它的那一轮，而它拿的 abort 作用域属于**那一轮**的
+   * 父 agent，不是会话。所以父运行结束后再停会话，只有这里能把仍在跑的子代理
+   * 停下来；不 abort 的话行说取消了、流还在跑，最后它还会以 `done` 发一条通知。
+   *
+   * 先 abort、等它自己落定，再清行：子代理的收尾要按它自己的终态走一遍，否则
+   * 这里写下的 `canceled` 会和它自己的 `done` 撞车。
    *
    * 只动 `activeStreamId` 非空的行：已经跑完的子会话是 `done`，清它会把它从
    * "没读过"抹成 `canceled`，而它并没有被取消。
    */
   async #clearChildSessions(parentSessionId: string): Promise<void> {
-    const children = await this.#deps.store.listChildSessions(parentSessionId);
+    const { registry, store } = this.#deps;
+    const children = await store.listChildSessions(parentSessionId);
 
     for (const child of children) {
+      const entry = registry.getStreamEntryBySession(child.id);
+      if (entry !== undefined && !entry.isDone()) {
+        entry.agent.abort();
+        await entry.whenFinished();
+      }
+
       if (child.activeStreamId) {
-        await this.#deps.store.clearActiveStream(
+        await store.clearActiveStream(
           child.id,
           child.activeStreamId,
           "canceled",
