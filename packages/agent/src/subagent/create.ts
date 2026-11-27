@@ -25,6 +25,10 @@ import {
   generateTurnId,
 } from "../utils/id-util";
 import type { SubagentDefinition } from "./definitions";
+import { nextSubagentName } from "./names";
+
+/** How many numbers one delegation tries before it gives up on a name. */
+const NAME_ATTEMPTS = 3;
 
 /**
  * The prompt a subagent reads: its own instruction, then every parent section.
@@ -52,19 +56,28 @@ export function renderSubagentInstructions(
 }
 
 /**
- * A subagent may not delegate again, and it has no user to answer a
- * questionnaire: both are barred whatever the definition asks for.
+ * A subagent may not delegate again, may not list or message its siblings, and
+ * has no user to answer a questionnaire: all of these are barred whatever the
+ * definition asks for.
  */
-const FORBIDDEN_SUBAGENT_TOOLS = new Set(["task", "questionnaire"]);
+const FORBIDDEN_SUBAGENT_TOOLS = new Set([
+  "create-subagent",
+  "list-agents",
+  "send-message",
+  "stop-agent",
+  "questionnaire",
+]);
 
 /**
  * The tools a subagent runs with.
  *
- * `task` is dropped because a subagent that could delegate would be able to
- * recurse without bound, and nothing in the run counts the depth or stops it.
- * `questionnaire` is dropped because the subagent prompt already tells it the
- * user cannot be asked anything; offering the tool would only produce a form
- * nobody is there to fill in.
+ * The delegation tools are dropped because a subagent that could delegate would
+ * be able to recurse without bound, and nothing in the run counts the depth or
+ * stops it. The three control tools go with it: a subagent holds no names to
+ * address, because it holds no other subagents. `questionnaire` is dropped
+ * because the subagent prompt already tells it the user cannot be asked
+ * anything; offering the tool would only produce a form nobody is there to fill
+ * in.
  */
 export function selectSubagentTools(
   tools: ToolSet,
@@ -212,6 +225,7 @@ export async function resolveSubagentSession(
     botId,
     projectId,
     approvalPolicy,
+    subagentType = "general",
   }: {
     parentSessionId: string;
     toolCallId: string;
@@ -223,8 +237,20 @@ export async function resolveSubagentSession(
     projectId?: string;
     /** The effective policy of the parent. The child row copies it, or it falls back to Standard. */
     approvalPolicy: ApprovalPolicy;
+    /**
+     * The kind of subagent this row is.
+     *
+     * A row keeps it because a message can arrive long after the call that made
+     * the child, and building it again needs to know what it was: a read-only
+     * subagent must not come back as a general one.
+     */
+    subagentType?: string;
   }
-): Promise<{ sessionId: string; turns: AgentTurn<AgentToolSet>[] }> {
+): Promise<{
+  sessionId: string;
+  name: string | null;
+  turns: AgentTurn<AgentToolSet>[];
+}> {
   const existing = await store.findSessionByParentToolCall({
     parentSessionId,
     toolCallId,
@@ -241,28 +267,53 @@ export async function resolveSubagentSession(
     // 喂一个空 transcript 会让子 agent 连自己的任务书都没有。
     return {
       sessionId: existing.id,
+      name: existing.subagentName,
       turns: turns.length > 0 ? turns : [buildPromptTurn(prompt)],
     };
   }
 
   const sessionId = generateSessionId();
-  await store.saveSession({
-    id: sessionId,
-    title: description,
-    metadata: {},
-    kind: "subagent",
-    parentSessionId,
-    parentToolCallId: toolCallId,
-    ...(botId === undefined ? {} : { botId }),
-    projectId,
-    approvalPolicy,
-  });
 
-  return { sessionId, turns: [buildPromptTurn(prompt)] };
+  // The name is decided by the insert, not before it: two delegations in flight
+  // compute the same free number, and the unique index picks the winner. The
+  // loser recomputes and takes the next number.
+  for (let attempt = 0; attempt < NAME_ATTEMPTS; attempt += 1) {
+    const siblings = await store.listChildSessions(parentSessionId);
+    const name = nextSubagentName(siblings.map((child) => child.subagentName));
+
+    try {
+      const saved = await store.saveSession({
+        id: sessionId,
+        title: description,
+        metadata: { subagentType },
+        kind: "subagent",
+        parentSessionId,
+        parentToolCallId: toolCallId,
+        subagentName: name,
+        ...(botId === undefined ? {} : { botId }),
+        projectId,
+        approvalPolicy,
+      });
+
+      if (saved) {
+        return { sessionId, name, turns: [buildPromptTurn(prompt)] };
+      }
+    } catch {
+      // A unique index refused the row: either the name is taken or this tool
+      // call already landed. Both are answered by looking again.
+    }
+  }
+
+  throw new Error(
+    `could not allocate a subagent name under session ${parentSessionId}`
+  );
 }
 
 export type Subagent = {
   agent: Agent;
+  sessionId: string;
+  /** The name the parent session reaches it by; null for a row older than names. */
+  name: string | null;
   /** The turns to hand to {@link Agent.stream} to start it. */
   turns: AgentTurn<AgentToolSet>[];
 };
@@ -296,27 +347,49 @@ function subagentCompaction(
 
 export async function createSubagent(
   parent: SubagentParent,
+  options: CreateSubagentOptions
+): Promise<Subagent> {
+  const { store, description, prompt } = options;
+  const { sessionId, name, turns } = await resolveSubagentSession(store, {
+    parentSessionId: parent.sessionId,
+    toolCallId: parent.toolCallId,
+    description,
+    prompt,
+    botId: parent.context.botId,
+    projectId: parent.context.projectId,
+    approvalPolicy: parent.approvalPolicy,
+    subagentType: options.definition.name,
+  });
+  const agent = buildSubagent(parent, { ...options, sessionId, turns });
+
+  return { agent, sessionId, name, turns };
+}
+
+/**
+ * Build the runnable Agent for a child session that already exists.
+ *
+ * The composition is the same whether the child is starting or being messaged
+ * again: same parent context, same tool set, same model rule. Only the turns
+ * differ, and the caller supplies them.
+ */
+export function buildSubagent(
+  parent: SubagentParent,
   {
     definition,
-    prompt,
+    turns,
+    sessionId: childSessionId,
     tools,
     model,
     store,
-    description,
-  }: CreateSubagentOptions
-): Promise<Subagent> {
-  const { sessionId: childSessionId, turns } = await resolveSubagentSession(
-    store,
-    {
-      parentSessionId: parent.sessionId,
-      toolCallId: parent.toolCallId,
-      description,
-      prompt,
-      botId: parent.context.botId,
-      projectId: parent.context.projectId,
-      approvalPolicy: parent.approvalPolicy,
-    }
-  );
+  }: {
+    definition: SubagentDefinition;
+    sessionId: string;
+    turns: AgentTurn<AgentToolSet>[];
+    tools?: ToolSet;
+    model?: ModelRef;
+    store: AgentStore;
+  }
+): Agent {
   const session = new AgentSession({ turns });
   const resolvedModel = model ?? definition.model ?? parent.context.model;
 
@@ -372,12 +445,40 @@ export async function createSubagent(
   });
 
   // 子 agent 不重新注册扩展，审批函数一起继承；父之后再注册的函数不会
-  // 出现在子 agent 里。
+  // 出现在子 agent 里。继承时把「问一下」折成拒绝：子会话没有能回答问题
+  // 的人，挂在那里等一个没人看得见的问题比直接拒绝更糟。
   if (parent.toolApprovalPattern) {
-    agent.registerToolApprovalPattern(parent.toolApprovalPattern);
+    agent.registerToolApprovalPattern(
+      refuseAskingApproval(parent.toolApprovalPattern)
+    );
   }
 
-  return { agent, turns };
+  return agent;
+}
+
+/**
+ * The sentence a refused call carries, so the subagent can report the limit
+ * instead of retrying it.
+ */
+export const SUBAGENT_APPROVAL_REFUSAL =
+  "A subagent cannot ask for approval: its permission scope was fixed when it started, and nobody is on the other side of the question. Report the limit instead of retrying.";
+
+/**
+ * Inherit an approval function with its `ask` folded into a refusal.
+ *
+ * The policy is still the parent's: what it lets pass, the child lets pass. Only
+ * the question has nowhere to go.
+ */
+export function refuseAskingApproval(
+  pattern: ToolApprovalPattern
+): ToolApprovalPattern {
+  return async (request) => {
+    const decision = await pattern(request);
+
+    return decision?.decision === "ask"
+      ? { decision: "deny", reason: SUBAGENT_APPROVAL_REFUSAL }
+      : decision;
+  };
 }
 
 /** What a finished subagent left behind for the parent to read. */

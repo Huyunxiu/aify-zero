@@ -1,8 +1,4 @@
-import type {
-  AgentStreamEvent,
-  AgentTurn,
-  AgentTurnStatus,
-} from "@workspace/agent-client";
+import type { AgentStreamEvent, AgentTurn } from "@workspace/agent-client";
 import type { Sandbox } from "@workspace/sandbox";
 
 import type { HooksManager } from "../hooks-manager";
@@ -57,33 +53,67 @@ export interface TranscriptReader {
   turns(): readonly AgentTurn<AgentToolSet>[];
 }
 
-export interface SubagentRequest {
-  definition: SubagentDefinition;
-  prompt: string;
-  description: string;
-  /** 父会话里发起这次调用的工具调用 id。 */
-  toolCallId: string;
+/** One subagent, as `list-agents` reports it. */
+export interface SubagentSummary {
+  readonly name: string;
+  readonly sessionId: string;
+  readonly subagentType: string;
+  /** The session status word: running, idle, done, error, canceled, or wait_review. */
+  readonly status: string;
+  /** How long the current run has been going. Absent when it is not running. */
+  readonly runningMs?: number;
 }
 
-export interface SubagentRunResult {
-  report: string;
-  status: AgentTurnStatus["status"];
-  sessionId: string;
+export interface SubagentListResult {
+  readonly running: number;
+  readonly limit: number;
+  readonly subagents: readonly SubagentSummary[];
+}
+
+export interface SubagentCreateRequest {
+  readonly definition: SubagentDefinition;
+  readonly prompt: string;
+  readonly description: string;
+  /** The parent tool call that made it; the same call re-run finds the same child. */
+  readonly toolCallId: string;
+}
+
+export interface SubagentCreated {
+  /** The name the parent session reaches it by; null only for a row older than names. */
+  readonly name: string | null;
+  readonly sessionId: string;
+}
+
+/** How a message reached its subagent: it started a run now, or queued behind one. */
+export type SubagentDelivery = "started" | "queued";
+
+/** A settled subagent, in the terms its parent is told about it. */
+export interface SubagentSettlement {
+  readonly parentSessionId: string;
+  readonly sessionId: string;
+  readonly name: string;
+  readonly subagentType: string;
+  readonly status: string;
+  readonly report: string;
+}
+
+/** The port a settlement leaves through. Absent when nobody is listening. */
+export interface SubagentNotifier {
+  deliver(settlement: SubagentSettlement): void;
 }
 
 /**
- * 一次已经开始的子会话。
+ * The delegation surface one session offers to its own tools.
  *
- * `sessionId` 在流注册完成后才可用；`wait` 等到子流结束，返回它的最终报告。
+ * Every method is scoped to the session that provides it: a name reaches a child
+ * of that session and no other.
  */
-export interface SubagentRun {
-  readonly sessionId: string;
-  wait(): Promise<SubagentRunResult>;
-}
-
-/** 由父 agent 提供的子会话入口。 */
-export interface SubagentFactory {
-  start(request: SubagentRequest): Promise<SubagentRun>;
+export interface Subagents {
+  create(request: SubagentCreateRequest): Promise<SubagentCreated>;
+  list(): Promise<SubagentListResult>;
+  deliver(request: { name: string; text: string }): Promise<SubagentDelivery>;
+  /** Whether a live run was stopped. A subagent that already finished was not. */
+  stop(request: { name: string }): Promise<boolean>;
 }
 
 /**
@@ -124,7 +154,7 @@ export function capability<T>(id: string): CapabilityToken<T> {
 
 export const Capabilities = {
   transcript: capability<TranscriptReader>("transcript"),
-  subagents: capability<SubagentFactory>("subagents"),
+  subagents: capability<Subagents>("subagents"),
   /** 模型调用的端口，供扩展发起自己的模型调用。 */
   model: capability<ModelGateway>("model"),
   /** 会话存储，供扩展读写自己负责的行。 */

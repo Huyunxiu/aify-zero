@@ -10,7 +10,7 @@ import type { AgentSession } from "./agent-session";
 import { Capabilities } from "./extensions/capabilities";
 import type {
   EventWriter,
-  SubagentFactory,
+  Subagents,
   ToolEnvironment,
   TranscriptReader,
 } from "./extensions/capabilities";
@@ -86,7 +86,7 @@ export type AgentOptions = {
    * 子 agent 不允许再派生，所以它不传这个选项；没有工厂时 `subagents`
    * capability 也不存在，`task` 扩展会在 `use` 时直接报错。
    */
-  subagentFactory?: (agent: Agent) => SubagentFactory;
+  subagentFactory?: (agent: Agent) => Subagents;
   /**
    * 把模型引用解析成调用目标。网关按它取地址、协议和密钥，所以补丁换到别家
    * 供应商时，请求会跟着换。

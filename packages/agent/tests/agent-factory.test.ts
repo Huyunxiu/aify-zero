@@ -108,7 +108,10 @@ describe(createSessionAgent, () => {
         "read-file",
         "write-file",
         "web-fetch",
-        "task",
+        "create-subagent",
+        "list-agents",
+        "send-message",
+        "stop-agent",
         "questionnaire",
       ])
     );
@@ -308,7 +311,7 @@ describe("approval policy", () => {
   test("spawning a subagent is not an interview", async () => {
     const agent = await makeAgent();
 
-    await expect(decide(agent, "task")).resolves.toBeUndefined();
+    await expect(decide(agent, "create-subagent")).resolves.toBeUndefined();
   });
 
   test("unrestricted closes the host's ask for a destructive tool", async () => {
@@ -359,7 +362,7 @@ describe("enabledToolGroups", () => {
     expect(names).not.toContain("read-file");
     expect(names).not.toContain("web-fetch");
     expect(names).not.toContain("timer-set");
-    expect(names).not.toContain("task");
+    expect(names).not.toContain("create-subagent");
     expect(agent.instructions).toBe("Custom persona");
   });
 

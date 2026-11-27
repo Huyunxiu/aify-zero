@@ -84,6 +84,19 @@ class FakeStore {
   getBranchTurns(sessionId: string): Promise<TurnRecord[]> {
     return Promise.resolve(this.#turns.get(sessionId) ?? []);
   }
+
+  /** 只用名字分配读到的东西：这个父会话已经派出去的子行。 */
+  listChildSessions(parentSessionId: string): Promise<SessionRecord[]> {
+    return Promise.resolve(
+      this.saved
+        .filter((session) => session.parentSessionId === parentSessionId)
+        .map((session) => session as unknown as SessionRecord)
+    );
+  }
+
+  findSessionBySubagentName(): Promise<SessionRecord | null> {
+    return Promise.resolve(null);
+  }
 }
 
 const asStore = (store: FakeStore): AgentStore =>
@@ -144,6 +157,7 @@ describe(resolveSubagentSession, () => {
       kind: "subagent",
       parentSessionId: "parent-1",
       parentToolCallId: "call-1",
+      subagentName: "AGENT-1",
     });
     // title 必须非空：运行时读这一行来决定要不要生成标题，读到空标题就会为
     // 一个没人看的会话白花一次模型调用。取的是 task 调用里那句短描述，因为
@@ -244,9 +258,12 @@ describe(selectSubagentTools, () => {
     bash: {},
     grep: {},
     questionnaire: {},
-    task: {},
+    "create-subagent": {},
+    "list-agents": {},
+    "send-message": {},
+    "stop-agent": {},
   } as unknown as Parameters<typeof selectSubagentTools>[0];
-  test("always drops task and questionnaire", () => {
+  test("always drops the delegation tools and the questionnaire", () => {
     expect(Object.keys(selectSubagentTools(tools, definition))).toStrictEqual([
       "bash",
       "grep",
@@ -260,7 +277,7 @@ describe(selectSubagentTools, () => {
     ]);
   });
 
-  test("drops task even when the allow-list asks for it", () => {
+  test("drops the delegation tools even when the allow-list asks for them", () => {
     const narrowed: SubagentDefinition = { ...definition, tools: ["task"] };
     expect(Object.keys(selectSubagentTools(tools, narrowed))).toStrictEqual([]);
   });
@@ -416,7 +433,14 @@ describe("subagent 继承审批函数", () => {
       }
     );
 
-    expect(child.toolApprovalPattern).toBe(askPattern);
+    // 父的函数跟着工具集过来，但「问一下」在子会话里没有能回答的人：它被折成
+    // 一句拒绝，子代理据此把限制写进报告，而不是挂在那里等。
+    await expect(
+      child.toolApprovalPattern?.({} as never)
+    ).resolves.toStrictEqual({
+      decision: "deny",
+      reason: expect.stringContaining("cannot ask for approval"),
+    });
   });
 });
 

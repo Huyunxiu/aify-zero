@@ -3,7 +3,10 @@ import {
   SUBAGENT_DEFINITIONS,
 } from "../../subagent/definitions";
 import type { SubagentDefinition } from "../../subagent/definitions";
-import { createTaskTool } from "../../tools/task";
+import { createCreateSubagentTool } from "../../tools/create-subagent";
+import { createListAgentsTool } from "../../tools/list-agents";
+import { createSendMessageTool } from "../../tools/send-message";
+import { createStopAgentTool } from "../../tools/stop-agent";
 import { Capabilities } from "../capabilities";
 import type { ExtensionAPI, ExtensionOptions } from "../types";
 import { Extension } from "../types";
@@ -16,10 +19,10 @@ export interface SubagentExtensionOptions extends ExtensionOptions {
 const DEFAULT_OPTIONS: SubagentExtensionOptions = { id: "subagent" };
 
 /**
- * 子 agent 扩展：注册 `task` 工具。
+ * 子 agent 扩展：注册四个委派工具。
  *
- * 工具的依赖全部来自 capability：transcript 用来找到自己的调用，subagents
- * 用来创建和等待子会话。它不 import `Agent`。
+ * 工具的依赖全部来自 capability：`subagents` 用来派生、列举、递话和叫停。
+ * 它不 import `Agent`。
  */
 export class SubagentExtension extends Extension {
   readonly #definitions: readonly SubagentDefinition[];
@@ -30,14 +33,18 @@ export class SubagentExtension extends Extension {
   }
 
   init(api: ExtensionAPI): void {
+    const subagents = api.use(Capabilities.subagents);
+
     api.tool(
-      "task",
-      createTaskTool({
-        transcript: api.use(Capabilities.transcript),
-        subagents: api.use(Capabilities.subagents),
+      "create-subagent",
+      createCreateSubagentTool({
+        subagents,
         definitions: this.#definitions,
       })
     );
+    api.tool("list-agents", createListAgentsTool({ subagents }));
+    api.tool("send-message", createSendMessageTool({ subagents }));
+    api.tool("stop-agent", createStopAgentTool({ subagents }));
 
     api.instructionsSection({
       id: `${this.id}:catalogue`,
