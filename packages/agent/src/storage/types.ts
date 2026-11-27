@@ -43,6 +43,8 @@ export type SessionRecord = {
   forkedFromMessageId: string | null;
   parentSessionId: string | null;
   parentToolCallId: string | null;
+  /** The name the parent session reaches this subagent by; null for a `main` row. */
+  subagentName: string | null;
   /** The Approval Policy of this session. A run applies it as it is; nothing tightens it. */
   approvalPolicy: ApprovalPolicy;
   /** 删除时刻；有值即「已删」，读路径当它不存在。 */
@@ -64,6 +66,7 @@ export type SessionWrite = {
   forkedFromMessageId?: string | null;
   parentSessionId?: string | null;
   parentToolCallId?: string | null;
+  subagentName?: string | null;
   approvalPolicy?: ApprovalPolicy;
 };
 

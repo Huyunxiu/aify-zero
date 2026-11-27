@@ -74,6 +74,20 @@ export interface AgentStore {
   }): Promise<SessionRecord | null>;
 
   /**
+   * Find a child session by the name its parent session reaches it by.
+   *
+   * The name is scoped to the parent session: two parents can each hold `AGENT-1`, and
+   * neither can reach the other's. A name the parent never handed out finds nothing.
+   */
+  findSessionBySubagentName({
+    parentSessionId,
+    name,
+  }: {
+    parentSessionId: string;
+    name: string;
+  }): Promise<SessionRecord | null>;
+
+  /**
    * 一个会话派生出的全部子会话，按父会话 id 找。
    *
    * 用来收拾父会话停掉之后的残局。子 agent 的流注册在它自己的会话名下，父的

@@ -373,6 +373,27 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
     return session ?? null;
   }
 
+  async findSessionBySubagentName({
+    parentSessionId,
+    name,
+  }: {
+    parentSessionId: string;
+    name: string;
+  }): Promise<SessionModel | null> {
+    const [session] = await db
+      .select()
+      .from(session_table)
+      .where(
+        and(
+          eq(session_table.parentSessionId, parentSessionId),
+          eq(session_table.subagentName, name)
+        )
+      )
+      .limit(1);
+
+    return session ?? null;
+  }
+
   async listChildSessions(parentSessionId: string): Promise<SessionModel[]> {
     const sessions = await db
       .select()
