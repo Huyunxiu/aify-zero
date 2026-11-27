@@ -1,10 +1,11 @@
 /**
- * 子代理名的形状与分配。
+ * The shape of a subagent name, and how one is chosen.
  *
- * 名字是父会话唯一持有的地址：模型只拿得到名字，拿不到会话 id。它以父会话为
- * 作用域——两个父会话可以各有一个 `AGENT-1`——并且一旦写进行就不再改变，也
- * 不再重用。序号往前走到空位为止，所以并发派生不会撞名：唯一索引拍板，撞了
- * 就重算。
+ * The name is the only address a parent session holds: the model gets the name
+ * and never the session id. It is scoped to the parent, so two parents can each
+ * hold `AGENT-1`; it is fixed when the row is written; and it is never reused.
+ * The number runs to the first free one, so two delegations in flight are settled
+ * by the unique index: the loser recomputes.
  */
 
 const NAME_PREFIX = "AGENT-";

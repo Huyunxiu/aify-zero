@@ -4,7 +4,6 @@ import { z } from "zod";
 
 import type { AgentContext } from "../agent-context";
 import type { Subagents } from "../extensions/capabilities";
-import { SUBAGENT_APPROVAL_REFUSAL } from "../subagent/create";
 import { SubagentNotFoundError } from "../subagent/factory";
 import type { ToolOutput } from "./types";
 
@@ -19,7 +18,7 @@ type SendMessageInput = {
 
 type SendMessageMetadata = {
   name: string;
-  delivery?: "started" | "queued";
+  handoff?: "started" | "queued";
 };
 
 type SendMessageOutput = ToolOutput<string, SendMessageMetadata>;
@@ -42,26 +41,26 @@ export const createSendMessageTool = ({
   tool<SendMessageInput, SendMessageOutput, AgentContext>({
     description: `Send a message to one of this session's subagents. A subagent that is still running reads it as its next turn; one that has reported starts a turn at once.
 
-It reaches only the subagents this session started, by the name create-subagent or list-agents returned. ${SUBAGENT_APPROVAL_REFUSAL}`,
+It reaches only the subagents this session started, by the name create-subagent or list-agents returned.`,
     inputSchema: z.object({
       name: z
         .string()
         .describe(
           "The name of a subagent, as create-subagent or list-agents returned it."
         ),
-      text: z.string().describe("The message to deliver to the subagent."),
+      text: z.string().describe("The message to hand to the subagent."),
     }),
     async execute({ name, text }) {
       try {
-        const delivery = await subagents.deliver({ name, text });
+        const handoff = await subagents.handoff({ name, text });
 
         return {
           output:
-            delivery === "queued"
+            handoff === "queued"
               ? `queued for ${name}; it reads this after its current turn`
-              : `delivered to ${name}; it started a turn`,
+              : `handed to ${name}; it started a turn`,
           code: "ok",
-          metadata: { name, delivery },
+          metadata: { name, handoff },
         };
       } catch (error) {
         if (error instanceof SubagentNotFoundError) {

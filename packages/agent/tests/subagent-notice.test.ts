@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest";
 
-import { composeSubagentNotice } from "../src/subagent/notice.js";
+import {
+  composeSubagentNotice,
+  settledStatus,
+} from "../src/subagent/notice.js";
 
 const settlement = (overrides: Record<string, unknown> = {}) => ({
   parentSessionId: "parent-1",
@@ -23,20 +26,13 @@ describe(composeSubagentNotice, () => {
     );
   });
 
-  test("says a clean finish that carried no report apart from a lost one", () => {
-    const notice = composeSubagentNotice(settlement({ report: "   " }));
-
-    expect(notice).toContain("settled: done");
-    expect(notice).toContain("finished without a report");
-  });
-
-  test("keeps the status word when the run did not finish cleanly", () => {
+  test("says so when nothing came back", () => {
     const notice = composeSubagentNotice(
-      settlement({ status: "aborted", report: "" })
+      settlement({ status: "aborted", report: "   " })
     );
 
     expect(notice).toContain("settled: aborted");
-    expect(notice).toContain("reported nothing");
+    expect(notice).toContain("finished without a report");
   });
 
   test("cuts a report that is too long and says it did", () => {
@@ -46,5 +42,19 @@ describe(composeSubagentNotice, () => {
 
     expect(notice).toContain("[report truncated]");
     expect(notice.length).toBeLessThan(4200);
+  });
+});
+
+describe(settledStatus, () => {
+  test("turns a clean finish that carried no report into a failure", () => {
+    expect(settledStatus("done", "   ")).toBe("error");
+  });
+
+  test("leaves a clean finish that said something alone", () => {
+    expect(settledStatus("done", "Found it.")).toBe("done");
+  });
+
+  test("keeps a status the run already earned", () => {
+    expect(settledStatus("aborted", "")).toBe("aborted");
   });
 });

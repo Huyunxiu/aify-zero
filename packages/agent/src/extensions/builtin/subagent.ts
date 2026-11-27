@@ -19,10 +19,10 @@ export interface SubagentExtensionOptions extends ExtensionOptions {
 const DEFAULT_OPTIONS: SubagentExtensionOptions = { id: "subagent" };
 
 /**
- * 子 agent 扩展：注册四个委派工具。
+ * The subagent extension: it registers the four delegation tools.
  *
- * 工具的依赖全部来自 capability：`subagents` 用来派生、列举、递话和叫停。
- * 它不 import `Agent`。
+ * Every dependency comes through a capability: `subagents` derives, lists, hands
+ * a message to, and stops a subagent. The tools do not import `Agent`.
  */
 export class SubagentExtension extends Extension {
   readonly #definitions: readonly SubagentDefinition[];

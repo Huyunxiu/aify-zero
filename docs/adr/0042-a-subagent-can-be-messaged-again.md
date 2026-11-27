@@ -63,3 +63,19 @@ a subagent notice carries the answer itself, so there is nothing to fetch.
 The one sentence that belongs to every delegation — do not poll, end the turn — lives in the
 subagent catalogue with the rest of the guidance. A rule stated in each notice would be a
 second copy of a rule that already has a home.
+
+## A message queues; it does not interrupt
+
+A steering word reaches a live turn only through the runner, which owns that
+turn. The delegation layer holds the name and the record, not the turn, so a
+message to a running subagent queues and becomes its next turn. The tool says
+`queued` or `started` rather than claiming to have steered anything.
+
+The same reason decides how an idle subagent starts: this layer builds its turns
+and starts the run itself, instead of writing an inbox item that only the main
+session path can claim. A subagent session is still refused by the runner's
+inbox entry, and opening that door is a separate decision.
+
+Withdraw has no counterpart here. A job notice withdraws itself when the model
+reads the output first; a subagent notice carries the answer, so nothing
+consumes it out of band and there is nothing to withdraw.

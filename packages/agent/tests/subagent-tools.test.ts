@@ -18,7 +18,7 @@ import { createStopAgentTool } from "../src/tools/stop-agent.js";
 const capability = (overrides: Partial<Subagents> = {}): Subagents => ({
   create: () => Promise.resolve({ name: "AGENT-1", sessionId: "child-1" }),
   list: () => Promise.resolve({ running: 0, limit: 8, subagents: [] }),
-  deliver: () => Promise.resolve("started"),
+  handoff: () => Promise.resolve("started"),
   stop: () => Promise.resolve(true),
   ...overrides,
 });
@@ -124,6 +124,7 @@ describe("list-agents", () => {
                 {
                   name: "AGENT-1",
                   sessionId: "child-1",
+                  kind: "subagent",
                   subagentType: "explore",
                   status: "running",
                   runningMs: 12 * 60_000,
@@ -131,6 +132,7 @@ describe("list-agents", () => {
                 {
                   name: "AGENT-2",
                   sessionId: "child-2",
+                  kind: "subagent",
                   subagentType: "general",
                   status: "idle",
                 },
@@ -156,22 +158,22 @@ describe("send-message", () => {
   test("says it started a turn when the subagent was idle", async () => {
     const result = await runTool(
       createSendMessageTool({
-        subagents: capability({ deliver: () => Promise.resolve("started") }),
+        subagents: capability({ handoff: () => Promise.resolve("started") }),
       }),
       { name: "AGENT-1", text: "Look again." }
     );
 
     expect(result).toStrictEqual({
-      output: "delivered to AGENT-1; it started a turn",
+      output: "handed to AGENT-1; it started a turn",
       code: "ok",
-      metadata: { name: "AGENT-1", delivery: "started" },
+      metadata: { name: "AGENT-1", handoff: "started" },
     });
   });
 
   test("says it queued when the subagent is still working", async () => {
     const result = await runTool(
       createSendMessageTool({
-        subagents: capability({ deliver: () => Promise.resolve("queued") }),
+        subagents: capability({ handoff: () => Promise.resolve("queued") }),
       }),
       { name: "AGENT-1", text: "Also check the tests." }
     );
@@ -181,7 +183,7 @@ describe("send-message", () => {
     );
     expect(result.metadata).toStrictEqual({
       name: "AGENT-1",
-      delivery: "queued",
+      handoff: "queued",
     });
   });
 
@@ -189,7 +191,7 @@ describe("send-message", () => {
     const result = await runTool(
       createSendMessageTool({
         subagents: capability({
-          deliver: () => Promise.reject(new SubagentNotFoundError("AGENT-9")),
+          handoff: () => Promise.reject(new SubagentNotFoundError("AGENT-9")),
         }),
       }),
       { name: "AGENT-9", text: "Hello." }

@@ -12,17 +12,23 @@ import type { SubagentSettlement } from "../extensions/capabilities";
 /** The longest report a notice carries before it says it was cut. */
 const REPORT_BUDGET = 4000;
 
+/**
+ * The status a settlement is reported with.
+ *
+ * A run that ended clean and said nothing is not an answer: its last turn ended
+ * on a tool call, so the parent was handed nothing to act on. It settles as an
+ * error, because nothing else in the notice would say so.
+ */
+export function settledStatus(status: string, report: string): string {
+  return status === "done" && report.trim().length === 0 ? "error" : status;
+}
+
 export function composeSubagentNotice(settlement: SubagentSettlement): string {
   const head = `subagent ${settlement.name} (${settlement.subagentType}) settled: ${settlement.status}`;
   const report = settlement.report.trim();
 
   if (report.length === 0) {
-    // A run that settled clean and said nothing is not an answer: its last turn
-    // ended on a tool call. Say which of the two happened, so the parent can
-    // tell an empty answer from a lost one.
-    return settlement.status === "done"
-      ? `${head}\n\nIt finished without a report: its last turn ended without one.`
-      : `${head}\n\nIt reported nothing.`;
+    return `${head}\n\nIt finished without a report.`;
   }
 
   const body =

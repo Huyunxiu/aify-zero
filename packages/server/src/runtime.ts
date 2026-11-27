@@ -13,8 +13,10 @@ import { createSubagentNoticeAdapter } from "./subagent-notices";
 const store = new SQLiteStore();
 
 /**
- * 子代理落定的通知口。它要运行器，运行器又要它装配的工厂，所以先建口、
- * 后绑定：只有一个依赖方向。
+ * The port a settled subagent's notice leaves through.
+ *
+ * It needs the runner, and the runner is built with the factory that needs this
+ * port, so the port is created first and bound after: one dependency direction.
  */
 export const subagentNotices = createSubagentNoticeAdapter({ store });
 

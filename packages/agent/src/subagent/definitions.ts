@@ -41,6 +41,9 @@ const SUBAGENT_PREAMBLE = `You are a subagent launched by a parent agent to carr
 - Your last message must be the text report itself. A turn that ends on a tool call leaves the parent with no report.
 - Finish with a concise report of what you found or did, written for the parent agent. State what you did not do as clearly as what you did.`;
 
+/** The subagent a row falls back to when it names none, or names one that is gone. */
+export const DEFAULT_SUBAGENT_TYPE = "general";
+
 export const SUBAGENT_DEFINITIONS: readonly SubagentDefinition[] = [
   {
     name: "general",

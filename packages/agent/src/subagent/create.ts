@@ -24,6 +24,7 @@ import {
   generateStepId,
   generateTurnId,
 } from "../utils/id-util";
+import { DEFAULT_SUBAGENT_TYPE } from "./definitions";
 import type { SubagentDefinition } from "./definitions";
 import { nextSubagentName } from "./names";
 
@@ -141,7 +142,7 @@ export function buildPromptTurn(prompt: string): AgentTurn<AgentToolSet> {
 /** 把模型引用解析成调用目标。子 agent 继承父的这份函数，跑在别家的模型上也能拿到地址和密钥。 */
 export type ProviderResolver = ModelTargetResolver;
 
-export type SubagentParent = {
+export type SubagentHost = {
   /** The parent's environment: its project/session directories, skills, and model. */
   context: AgentContext;
   /** The pool the subagent's own tool set is drawn from. */
@@ -162,10 +163,8 @@ export type SubagentParent = {
   toolRoute: ReadonlyMap<string, CallTargetResolver>;
   /** 父的模型解析函数：子 agent 用它解析自己的模型。 */
   resolveModel: ModelTargetResolver;
-  /** 派生它的父会话 id。 */
+  /** The parent session's id. */
   sessionId: string;
-  /** 父会话里这次 `task` 调用的 id。和父会话 id 一起唯一确定一个子会话。 */
-  toolCallId: string;
   /**
    * 父的工具审批函数。
    *
@@ -183,6 +182,17 @@ export type SubagentParent = {
    * with no error. When the parent tightens to Standard, the child must not be looser.
    */
   approvalPolicy: ApprovalPolicy;
+};
+
+/**
+ * The host, plus the call that is delegating.
+ *
+ * Building a child again needs the host and nothing else; only the first
+ * delegation has a tool call to be idempotent against.
+ */
+export type SubagentParent = SubagentHost & {
+  /** 父会话里这次 `task` 调用的 id。和父会话 id 一起唯一确定一个子会话。 */
+  toolCallId: string;
 };
 
 export type CreateSubagentOptions = {
@@ -225,7 +235,7 @@ export async function resolveSubagentSession(
     botId,
     projectId,
     approvalPolicy,
-    subagentType = "general",
+    subagentType = DEFAULT_SUBAGENT_TYPE,
   }: {
     parentSessionId: string;
     toolCallId: string;
@@ -335,7 +345,7 @@ export function subagentTypeOf(metadata: unknown): string {
     }
   }
 
-  return "general";
+  return DEFAULT_SUBAGENT_TYPE;
 }
 
 export type Subagent = {
@@ -355,7 +365,7 @@ export type Subagent = {
  * 策略或摘要器时，原样继承。
  */
 function subagentCompaction(
-  parent: SubagentParent,
+  parent: SubagentHost,
   model: ModelRef
 ): Pick<AgentContext, "compaction" | "summarize"> {
   const { context } = parent;
@@ -402,7 +412,7 @@ export async function createSubagent(
  * differ, and the caller supplies them.
  */
 export function buildSubagent(
-  parent: SubagentParent,
+  parent: SubagentHost,
   {
     definition,
     turns,
@@ -473,9 +483,10 @@ export function buildSubagent(
     abortSignal: parent.context.abortSignal,
   });
 
-  // 子 agent 不重新注册扩展，审批函数一起继承；父之后再注册的函数不会
-  // 出现在子 agent 里。继承时把「问一下」折成拒绝：子会话没有能回答问题
-  // 的人，挂在那里等一个没人看得见的问题比直接拒绝更糟。
+  // A subagent registers no extensions, so the approval function is inherited
+  // with the tool set; one the parent registers later does not reach it. The
+  // inherited function folds `ask` into a refusal: nobody answers for a child,
+  // and parking on a question no surface shows is worse than refusing it.
   if (parent.toolApprovalPattern) {
     agent.registerToolApprovalPattern(
       refuseAskingApproval(parent.toolApprovalPattern)

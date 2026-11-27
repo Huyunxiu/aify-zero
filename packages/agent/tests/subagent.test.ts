@@ -204,8 +204,9 @@ describe(resolveSubagentSession, () => {
     });
 
     expect(sessionId).toBe(existingId);
-    // 复用路径不该再插一行；新的 brief 追加在这条会话的末尾，而不是把它说过
-    // 的话整段丢掉——重跑一次调用就是再给它说一句。
+    // The reuse path writes no second row; the new brief is appended to the end
+    // of the child's own transcript instead of the whole thing being discarded:
+    // running the call again is one more sentence to the same subagent.
     expect(store.saved).toHaveLength(0);
     expect(turns.map(textOf)).toStrictEqual([
       "Find the thing.",

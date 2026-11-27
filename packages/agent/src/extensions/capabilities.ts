@@ -57,6 +57,14 @@ export interface TranscriptReader {
 export interface SubagentSummary {
   readonly name: string;
   readonly sessionId: string;
+  /**
+   * What kind of thing the name reaches.
+   *
+   * It is a constant today, and it is here so the shape does not change when a
+   * session can also reach a bot or a team by name: a reader picks a row by its
+   * kind, not by which tool listed it.
+   */
+  readonly kind: "subagent";
   readonly subagentType: string;
   /** The session status word: running, idle, done, error, canceled, or wait_review. */
   readonly status: string;
@@ -84,8 +92,13 @@ export interface SubagentCreated {
   readonly sessionId: string;
 }
 
-/** How a message reached its subagent: it started a run now, or queued behind one. */
-export type SubagentDelivery = "started" | "queued";
+/**
+ * How a handoff reached its subagent: it started a run now, or queued behind one.
+ *
+ * "Handoff" is the inbound side — a sentence put into a model loop. "Delivery"
+ * is the outbound side, and it belongs to the completion notice below.
+ */
+export type SubagentHandoff = "started" | "queued";
 
 /** A settled subagent, in the terms its parent is told about it. */
 export interface SubagentSettlement {
@@ -111,7 +124,7 @@ export interface SubagentNotifier {
 export interface Subagents {
   create(request: SubagentCreateRequest): Promise<SubagentCreated>;
   list(): Promise<SubagentListResult>;
-  deliver(request: { name: string; text: string }): Promise<SubagentDelivery>;
+  handoff(request: { name: string; text: string }): Promise<SubagentHandoff>;
   /** Whether a live run was stopped. A subagent that already finished was not. */
   stop(request: { name: string }): Promise<boolean>;
 }

@@ -94,6 +94,17 @@ export const createSubagentNoticeAdapter = ({
           continue;
         }
 
+        // A session that has not run in this process has no delivered payload
+        // yet, and `canDeliverNotice` would refuse the notice without a word.
+        // Waking it first is what makes the queue accept it.
+        try {
+          runner?.wake(row.parentSessionId);
+        } catch (error) {
+          logger.warn(
+            `[subagent-notices] could not wake ${row.parentSessionId}: ${String(error)}`
+          );
+        }
+
         deliver({
           parentSessionId: row.parentSessionId,
           sessionId: row.id,

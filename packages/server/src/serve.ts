@@ -137,8 +137,9 @@ export async function startServer(
     logger.warn("[startup] agent runner recovery failed", failure.error);
   }
 
-  // 上一个进程留下的子代理运行已经收尾，但等它的人还不知道：补一条落定通知，
-  // 否则那个会话会一直等一个不会再响的铃。
+  // The subagent runs a previous process left behind are settled now, but the
+  // sessions waiting on them do not know: without a notice each would keep
+  // waiting for a bell that will not ring.
   await subagentNotices.reportRecovered(startup.recovered);
 
   // 运行器起来之后再开扫描：补发的待办项要有运行器才叫得醒。启动那次扫描

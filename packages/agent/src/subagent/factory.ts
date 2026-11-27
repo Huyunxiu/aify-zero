@@ -6,13 +6,14 @@ import { Capabilities } from "../extensions/capabilities";
 import type {
   SubagentCreateRequest,
   SubagentCreated,
-  SubagentDelivery,
+  SubagentHandoff,
   SubagentListResult,
+  SubagentSummary,
   SubagentNotifier,
   Subagents,
 } from "../extensions/capabilities";
 import type { AgentStore } from "../storage";
-import type { SessionRecord } from "../storage/types";
+import type { SessionEndStatus, SessionRecord } from "../storage/types";
 import type { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
 import {
@@ -22,10 +23,11 @@ import {
   resolveSubagentSession,
   subagentTypeOf,
 } from "./create";
-import type { SubagentParent } from "./create";
-import { getSubagentDefinition } from "./definitions";
+import type { SubagentHost } from "./create";
+import { DEFAULT_SUBAGENT_TYPE, getSubagentDefinition } from "./definitions";
 import type { SubagentDefinition } from "./definitions";
 import { normalizeSubagentName } from "./names";
+import { settledStatus } from "./notice";
 
 export interface SubagentFactoryOptions {
   agent: Agent;
@@ -69,7 +71,7 @@ export class SubagentNotFoundError extends Error {
 /** The definition a child was started as; a row written before types reads as general. */
 const definitionOf = (child: SessionRecord): SubagentDefinition =>
   getSubagentDefinition(subagentTypeOf(child.metadata)) ??
-  getSubagentDefinition("general")!;
+  getSubagentDefinition(DEFAULT_SUBAGENT_TYPE)!;
 
 /**
  * Messages waiting for a child's current run to settle.
@@ -102,15 +104,15 @@ export function createSubagentFactory({
 }: SubagentFactoryOptions): Subagents {
   const parentSessionId = agent.sessionId;
 
-  // 父的审批函数在 start 时读：组合根在构造之后才注册，构造工厂时可能还没注册完。
-  const parentOf = (toolCallId: string): SubagentParent => ({
+  // The parent's approval function is read at start time: the composition root
+  // registers it after this factory is built, so reading it now would miss it.
+  const hostOf = (): SubagentHost => ({
     context: agent.context,
     tools: agent.tools,
     toolExposure: agent.toolExposure,
     toolRoute: agent.toolRoute,
     resolveModel: agent.resolveModel,
     sessionId: parentSessionId,
-    toolCallId,
     toolApprovalPattern: agent.toolApprovalPattern,
     compaction: agent.extensions.capability(Capabilities.compaction),
     approvalPolicy: agent.approvalPolicy,
@@ -124,6 +126,18 @@ export function createSubagentFactory({
   const liveEntry = (childSessionId: string) => {
     const entry = registry.getStreamEntryBySession(childSessionId);
     return entry !== undefined && !entry.isDone() ? entry : undefined;
+  };
+
+  /** Refuse before a new run starts, whichever tool would start it. */
+  const assertCapacity = async (): Promise<void> => {
+    const rows = await children();
+    const running = rows.filter(
+      (child) => liveEntry(child.id) !== undefined
+    ).length;
+
+    if (running >= limit) {
+      throw new SubagentLimitReachedError(limit);
+    }
   };
 
   const resolveByName = async (name: string): Promise<SessionRecord> => {
@@ -158,7 +172,7 @@ export function createSubagentFactory({
     child: { sessionId: string; name: string | null },
     definition: SubagentDefinition,
     childAgent: Agent,
-    status: Parameters<Parameters<Agent["stream"]>[0]["onFinish"]>[0],
+    status: SessionEndStatus,
     timer: ReturnType<typeof setTimeout> | undefined
   ): Promise<void> => {
     if (timer !== undefined) {
@@ -179,12 +193,14 @@ export function createSubagentFactory({
 
     const { report } = readSubagentResult(childAgent.session.turns);
 
+    const settled = settledStatus(status, report) as SessionEndStatus;
+
     notifier?.deliver({
       parentSessionId,
       sessionId: child.sessionId,
       name: child.name ?? child.sessionId,
       subagentType: definition.name,
-      status,
+      status: settled,
       report,
     });
 
@@ -216,7 +232,7 @@ export function createSubagentFactory({
     definition: SubagentDefinition;
     turns: Awaited<ReturnType<typeof turnsFor>>;
   }): Promise<void> => {
-    const childAgent = buildSubagent(parentOf(""), {
+    const childAgent = buildSubagent(hostOf(), {
       definition: input.definition,
       sessionId: input.sessionId,
       turns: input.turns,
@@ -279,14 +295,7 @@ export function createSubagentFactory({
 
   return {
     async create(request: SubagentCreateRequest): Promise<SubagentCreated> {
-      const siblings = await children();
-      const running = siblings.filter(
-        (child) => liveEntry(child.id) !== undefined
-      ).length;
-
-      if (running >= limit) {
-        throw new SubagentLimitReachedError(limit);
-      }
+      await assertCapacity();
 
       const { sessionId, name, turns } = await resolveSubagentSession(store, {
         parentSessionId,
@@ -313,15 +322,23 @@ export function createSubagentFactory({
       const rows = await children();
       const named = rows.filter((child) => child.subagentName !== null);
 
-      const subagents = named.map((child) => {
+      // One authority decides what "running" means: the live stream entry. A row
+      // that still says running without one is what a dead process leaves behind,
+      // and reporting it as running would put a number on a run nobody can see.
+      const subagents = named.map((child): SubagentSummary => {
         const live = liveEntry(child.id) !== undefined;
         const started = STARTED.get(child.id);
 
         return {
           name: child.subagentName!,
           sessionId: child.id,
+          kind: "subagent",
           subagentType: subagentTypeOf(child.metadata),
-          status: live ? "running" : child.status,
+          status: live
+            ? "running"
+            : child.status === "running"
+              ? "idle"
+              : child.status,
           ...(live && started !== undefined
             ? { runningMs: Math.max(0, now() - started) }
             : {}),
@@ -335,13 +352,13 @@ export function createSubagentFactory({
       };
     },
 
-    async deliver({
+    async handoff({
       name,
       text,
     }: {
       name: string;
       text: string;
-    }): Promise<SubagentDelivery> {
+    }): Promise<SubagentHandoff> {
       const child = await resolveByName(name);
 
       if (liveEntry(child.id) !== undefined) {
@@ -351,6 +368,7 @@ export function createSubagentFactory({
         return "queued";
       }
 
+      await assertCapacity();
       await runChild({
         sessionId: child.id,
         name: child.subagentName,

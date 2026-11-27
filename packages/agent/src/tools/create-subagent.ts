@@ -50,7 +50,7 @@ export const createCreateSubagentTool = ({
 > => {
   const names = definitions.map((definition) => definition.name).join(", ");
 
-  const description = `Delegate a self-contained task to a subagent. It works in its own transcript, inside this session's sandbox and session directory. The call returns as soon as the subagent starts; its report arrives later as a message, so end the turn instead of waiting or polling.
+  const description = `Delegate a self-contained task to a subagent. It works in its own transcript, inside this session's sandbox and session directory. The call returns as soon as the subagent starts; its report arrives later as a message.
 
 Available subagents: ${names}.
 
