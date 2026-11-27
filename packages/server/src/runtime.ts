@@ -31,6 +31,24 @@ export const outboxDispatcher = createOutboxDispatcher({ store });
 const SCAN_MS_ENV = "AIFY_TIMER_SCAN_MS";
 
 /** 环境变量给出的扫描间隔；没设或不是正数时返回 undefined，用调度器的默认值。 */
+/**
+ * The subagent knobs, in the environment for the same reason the timer scan is:
+ * no settings surface yet, and a test needs to move them.
+ */
+const SUBAGENT_LIMIT_ENV = "AIFY_SUBAGENT_LIMIT";
+const SUBAGENT_TIMEOUT_ENV = "AIFY_SUBAGENT_TIMEOUT_MS";
+
+/** A positive whole number from the environment; unset or malformed means "use the default". */
+const positiveEnv = (name: string): number | undefined => {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") {
+    return undefined;
+  }
+
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+};
+
 const timerScanMs = (): number | undefined => {
   const raw = process.env[SCAN_MS_ENV];
   if (raw === undefined || raw === "") {
@@ -78,6 +96,12 @@ export const agentRunner = createAgentRunner({
       steering,
       approvalPolicy,
       subagentNotifier: subagentNotices,
+      ...(positiveEnv(SUBAGENT_LIMIT_ENV) === undefined
+        ? {}
+        : { subagentLimit: positiveEnv(SUBAGENT_LIMIT_ENV) }),
+      ...(positiveEnv(SUBAGENT_TIMEOUT_ENV) === undefined
+        ? {}
+        : { subagentTimeoutMs: positiveEnv(SUBAGENT_TIMEOUT_ENV) }),
     });
   },
 });

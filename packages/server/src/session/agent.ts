@@ -56,6 +56,10 @@ export interface BuildSessionAgentInput {
   approvalPolicy: ApprovalPolicy;
   /** Where a settled subagent reports; the runner delivers it. */
   subagentNotifier?: SubagentNotifier;
+  /** How many subagents one session may run at once. */
+  subagentLimit?: number;
+  /** The wall clock one subagent run may take, in milliseconds. */
+  subagentTimeoutMs?: number;
 }
 
 /**
@@ -76,6 +80,8 @@ export async function buildSessionAgent({
   steering,
   approvalPolicy,
   subagentNotifier,
+  subagentLimit,
+  subagentTimeoutMs,
 }: BuildSessionAgentInput): Promise<Agent> {
   const sessionDir = getSessionDir(sessionId);
   mkdirSync(sessionDir, { recursive: true });
@@ -127,6 +133,8 @@ export async function buildSessionAgent({
     timeZone,
     steering,
     ...(subagentNotifier === undefined ? {} : { subagentNotifier }),
+    ...(subagentLimit === undefined ? {} : { subagentLimit }),
+    ...(subagentTimeoutMs === undefined ? {} : { subagentTimeoutMs }),
     sandbox,
     toolApprovalPattern: createMcpToolApprovalPattern(
       mcpManager,

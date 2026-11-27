@@ -91,6 +91,10 @@ export interface SessionAgentOptions {
   streamRegistry?: StreamEventRegistry<AgentToolSet>;
   /** Where a settled subagent reports. Absent when nobody listens. */
   subagentNotifier?: SubagentNotifier;
+  /** How many subagents one session may run at once; the state package's default otherwise. */
+  subagentLimit?: number;
+  /** The wall clock one subagent run may take, in milliseconds. */
+  subagentTimeoutMs?: number;
   model: SessionModel;
   /** 把模型引用解析成供应商的接入信息。 */
   resolveModel: ModelTargetResolver;
@@ -233,6 +237,12 @@ export async function createSessionAgent(
               ...(options.subagentNotifier === undefined
                 ? {}
                 : { notifier: options.subagentNotifier }),
+              ...(options.subagentLimit === undefined
+                ? {}
+                : { limit: options.subagentLimit }),
+              ...(options.subagentTimeoutMs === undefined
+                ? {}
+                : { timeoutMs: options.subagentTimeoutMs }),
             }),
         }
       : {}),
