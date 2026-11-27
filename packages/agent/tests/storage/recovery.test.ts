@@ -32,6 +32,7 @@ const session = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   parentSessionId: null,
   parentToolCallId: null,
   subagentName: null,
+  lastPayload: null,
   approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),

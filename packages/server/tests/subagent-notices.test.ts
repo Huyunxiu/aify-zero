@@ -1,5 +1,6 @@
 import type { NoticeWriter } from "@workspace/agent";
-import { describe, expect, test, vi } from "vitest";
+import type { InboxPayload } from "@workspace/agent-client";
+import { describe, expect, test } from "vitest";
 
 import { reportRecoveredSubagents } from "../src/subagent-notices.js";
 
@@ -8,6 +9,7 @@ type Written = {
   text: string;
   dedupeKey: string;
   form: { kind: string; source: string };
+  payload?: InboxPayload;
 };
 
 /** The writer as this caller uses it: one way to write. */
@@ -25,16 +27,17 @@ const writer = () => {
   return { notices, written };
 };
 
+type Row = {
+  kind: string;
+  metadata: unknown;
+  parentSessionId: string | null;
+  subagentName: string | null;
+  lastPayload: InboxPayload | null;
+};
+
 const store = (
-  rows: Record<
-    string,
-    {
-      kind: string;
-      metadata: unknown;
-      parentSessionId: string | null;
-      subagentName: string | null;
-    }
-  >
+  rows: Record<string, Row>,
+  turns: Record<string, unknown[]> = {}
 ) => ({
   getSessionById: (sessionId: string) => {
     const row = rows[sessionId];
@@ -42,33 +45,80 @@ const store = (
       row === undefined ? null : { id: sessionId, ...row }
     );
   },
+  getBranchTurns: (sessionId: string) =>
+    Promise.resolve((turns[sessionId] ?? []) as never[]),
+});
+
+/** A parent that ran before, so its row remembers what to wake it with. */
+const parentRow = (lastPayload?: InboxPayload | null): Row => ({
+  kind: "main",
+  metadata: {},
+  parentSessionId: null,
+  subagentName: null,
+  lastPayload:
+    lastPayload === undefined
+      ? { model: { providerId: "test", modelId: "test-model" } }
+      : lastPayload,
+});
+
+const childRow = (overrides: Partial<Row> = {}): Row => ({
+  kind: "subagent",
+  metadata: { subagentType: "plan" },
+  parentSessionId: "parent-1",
+  subagentName: "AGENT-3",
+  lastPayload: null,
+  ...overrides,
+});
+
+/** The child's own last answer, as the recovery path reads it back. */
+const announcedTurn = (text: string) => ({
+  content: {
+    id: "turn-1",
+    type: "assistant",
+    createdAt: 1,
+    status: "error",
+    content: [
+      {
+        id: "step-1",
+        type: "assistant",
+        createdAt: 1,
+        status: "done",
+        content: [{ type: "text", text, createdAt: 1, state: "done" }],
+      },
+    ],
+  },
 });
 
 describe("the runs a previous process left behind", () => {
   test("are announced to the parent that was waiting on them", async () => {
     const { notices, written } = writer();
-    const wake = vi.fn<(sessionId: string) => void>();
+
+    await reportRecoveredSubagents({
+      recovered: [{ sessionId: "child-1" }],
+      store: store({ "child-1": childRow(), "parent-1": parentRow() }),
+      notices,
+    });
+
+    expect(written).toHaveLength(1);
+    expect(written[0]?.sessionId).toBe("parent-1");
+  });
+
+  test("carry the configuration that lets a wake-up run start", async () => {
+    const { notices, written } = writer();
+    const model = { providerId: "test", modelId: "test-model" };
 
     await reportRecoveredSubagents({
       recovered: [{ sessionId: "child-1" }],
       store: store({
-        "child-1": {
-          kind: "subagent",
-          metadata: { subagentType: "plan" },
-          parentSessionId: "parent-1",
-          subagentName: "AGENT-3",
-        },
+        "child-1": childRow(),
+        "parent-1": parentRow({ model, modelEffort: "high" }),
       }),
       notices,
-      wake,
-      waitFor: () => Promise.resolve(true),
     });
 
-    // The parent has not run in this process, so it has no payload: waking it
-    // first is what lets the writer accept the notice at all.
-    expect(wake).toHaveBeenCalledWith("parent-1");
-    expect(written).toHaveLength(1);
-    expect(written[0]?.sessionId).toBe("parent-1");
+    // The parent never ran in this process, so the writer has no configuration
+    // of its own to wake it with; the notice carries the row's.
+    expect(written[0]?.payload).toStrictEqual({ model, modelEffort: "high" });
   });
 
   test("name the child, the form, and what settled", async () => {
@@ -76,17 +126,8 @@ describe("the runs a previous process left behind", () => {
 
     await reportRecoveredSubagents({
       recovered: [{ sessionId: "child-1" }],
-      store: store({
-        "child-1": {
-          kind: "subagent",
-          metadata: { subagentType: "plan" },
-          parentSessionId: "parent-1",
-          subagentName: "AGENT-3",
-        },
-      }),
+      store: store({ "child-1": childRow(), "parent-1": parentRow() }),
       notices,
-      wake: () => {},
-      waitFor: () => Promise.resolve(true),
     });
 
     expect(written[0]?.dedupeKey).toBe("subagent-settled:child-1:recovered");
@@ -99,22 +140,30 @@ describe("the runs a previous process left behind", () => {
     );
   });
 
-  test("are dropped, with a reason, when the parent never becomes ready", async () => {
+  test("include what the child had already said", async () => {
     const { notices, written } = writer();
 
     await reportRecoveredSubagents({
       recovered: [{ sessionId: "child-1" }],
-      store: store({
-        "child-1": {
-          kind: "subagent",
-          metadata: {},
-          parentSessionId: "parent-1",
-          subagentName: "AGENT-1",
-        },
-      }),
+      store: store(
+        { "child-1": childRow(), "parent-1": parentRow() },
+        { "child-1": [announcedTurn("Found it in the router.")] }
+      ),
       notices,
-      wake: () => {},
-      waitFor: () => Promise.resolve(false),
+    });
+
+    // The run did not finish, but its last answer is still evidence the parent
+    // should get: without it, every recovery reads as a silent failure.
+    expect(written[0]?.text).toContain("Found it in the router.");
+  });
+
+  test("are skipped, with a reason, when the parent has no configuration", async () => {
+    const { notices, written } = writer();
+
+    await reportRecoveredSubagents({
+      recovered: [{ sessionId: "child-1" }],
+      store: store({ "child-1": childRow(), "parent-1": parentRow(null) }),
+      notices,
     });
 
     expect(written).toStrictEqual([]);
@@ -126,48 +175,29 @@ describe("the runs a previous process left behind", () => {
     await reportRecoveredSubagents({
       recovered: [{ sessionId: "session-1" }],
       store: store({
-        "session-1": {
-          kind: "main",
-          metadata: {},
-          parentSessionId: null,
-          subagentName: null,
-        },
+        "session-1": parentRow(),
       }),
       notices,
-      wake: () => {},
-      waitFor: () => Promise.resolve(true),
     });
 
     expect(written).toStrictEqual([]);
   });
 
-  test("leave the rest of the queue alone when one parent cannot be woken", async () => {
+  test("leave the rest of the queue alone when one parent cannot be told", async () => {
     const { notices, written } = writer();
-    const rows = {
-      "child-1": {
-        kind: "subagent",
-        metadata: {},
-        parentSessionId: "parent-1",
-        subagentName: "AGENT-1",
-      },
-      "child-2": {
-        kind: "subagent",
-        metadata: {},
-        parentSessionId: "parent-2",
-        subagentName: "AGENT-2",
-      },
-    };
 
     await reportRecoveredSubagents({
       recovered: [{ sessionId: "child-1" }, { sessionId: "child-2" }],
-      store: store(rows),
+      store: store({
+        "child-1": childRow(),
+        "parent-1": parentRow(null),
+        "child-2": childRow({
+          parentSessionId: "parent-2",
+          subagentName: "AGENT-2",
+        }),
+        "parent-2": parentRow(),
+      }),
       notices,
-      wake: (sessionId) => {
-        if (sessionId === "parent-1") {
-          throw new Error("gone");
-        }
-      },
-      waitFor: () => Promise.resolve(true),
     });
 
     expect(written.map((notice) => notice.sessionId)).toStrictEqual([

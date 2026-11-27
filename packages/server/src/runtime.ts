@@ -104,8 +104,8 @@ export const agentRunner = createAgentRunner({
 /**
  * 上一个进程留下的子代理运行：收尾已经做完，通知它们的父会话。
  *
- * 写入走运行器那一个 writer；这里只负责恢复路径的顺序——先唤醒父会话，
- * 它才有能收通知的模型配置。
+ * 写入走运行器那一个 writer。父会话在这个进程里可能一次都没跑过，所以通知
+ * 自带一份模型配置——会话行记着它上次起跑用的那个。
  */
 export const reportRecovered = (
   recovered: readonly { sessionId: string }[]
@@ -114,10 +114,6 @@ export const reportRecovered = (
     recovered,
     store,
     notices: agentRunner.notices,
-    wake: (sessionId) => {
-      agentRunner.wake(sessionId);
-    },
-    waitFor: (sessionId) => agentRunner.waitForNoticeTarget(sessionId, 2000),
   });
 
 // 任务结算后，完成通知投进拥有者的收件箱；空闲会话会被唤醒。

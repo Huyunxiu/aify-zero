@@ -84,8 +84,6 @@ export class AgentRunner {
   readonly #notices: NoticeWriter;
   /** 正在推进的会话；有值表示这条会话的循环在跑，不是“有一条运行在跑”。 */
   readonly #runs = new Map<string, Promise<void>>();
-  /** Sessions waiting to become deliverable again; woken when a payload lands. */
-  readonly #payloadWaiters = new Map<string, Set<() => void>>();
   /** 不再自动推进的会话，以及原因。不落库。 */
   readonly #paused = new Map<string, PauseReason>();
   #scheduled = false;
@@ -255,7 +253,7 @@ export class AgentRunner {
     this.#notices.resetBudget(input.sessionId);
     this.#rememberPayload(input.sessionId, {
       model: input.model,
-      ...(input.effort === undefined ? {} : { effort: input.effort }),
+      ...(input.effort === undefined ? {} : { modelEffort: input.effort }),
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
     });
 
@@ -275,25 +273,42 @@ export class AgentRunner {
    * @param sessionId - 会话 id。
    * @param payload - 本次起跑拿到的配置。
    */
-  #rememberPayload(
-    sessionId: string,
-    payload: { model: ModelRef; effort?: ModelEffort; projectId?: string }
-  ): void {
+  #rememberPayload(sessionId: string, payload: InboxPayload): InboxPayload {
     const projectId =
       payload.projectId ?? this.#lastPayload.get(sessionId)?.projectId;
-    const waiting = this.#payloadWaiters.get(sessionId);
-    if (waiting !== undefined) {
-      this.#payloadWaiters.delete(sessionId);
-      for (const settle of waiting) {
-        settle();
-      }
-    }
-
-    this.#lastPayload.set(sessionId, {
+    const remembered: InboxPayload = {
       model: payload.model,
-      ...(payload.effort === undefined ? {} : { modelEffort: payload.effort }),
+      ...(payload.modelEffort === undefined
+        ? {}
+        : { modelEffort: payload.modelEffort }),
       ...(projectId === undefined ? {} : { projectId }),
-    });
+    };
+    this.#lastPayload.set(sessionId, remembered);
+
+    return remembered;
+  }
+
+  /**
+   * Remember the configuration a run starts with, here and in the session row.
+   *
+   * The row is for the next process: a deferred item — a timer, or the notice a
+   * crash leaves for its parent — has to wake a session this process never ran.
+   * A failed write changes nothing about this run, so it is logged and dropped.
+   */
+  async #rememberModel(
+    sessionId: string,
+    payload: InboxPayload
+  ): Promise<void> {
+    const remembered = this.#rememberPayload(sessionId, payload);
+
+    try {
+      await this.#store.setLastPayload(sessionId, remembered);
+    } catch (error) {
+      this.#logger.warn(
+        "[runner] failed to remember the payload this session ran with",
+        error
+      );
+    }
   }
 
   /**
@@ -306,54 +321,12 @@ export class AgentRunner {
     return this.#notices;
   }
 
-  /**
-   * Wait until this session could take a notice.
-   *
-   * Recovery wakes a session that has not run in this process, and its model
-   * payload only exists once that run starts. The caller needs to know when the
-   * wake has landed, or it writes into nothing and loses the notice.
-   *
-   * @param sessionId - the session that must become deliverable.
-   * @param timeoutMs - how long to wait.
-   * @returns whether the session could take a notice before the wait ran out.
-   */
-  async waitForNoticeTarget(
-    sessionId: string,
-    timeoutMs: number
-  ): Promise<boolean> {
-    if (this.#notices.canDeliver(sessionId)) {
-      return true;
-    }
-
-    let landed!: () => void;
-    const deliverable = new Promise<void>((resolve) => {
-      landed = resolve;
-    });
-    const waiting = this.#payloadWaiters.get(sessionId) ?? new Set();
-    waiting.add(landed);
-    this.#payloadWaiters.set(sessionId, waiting);
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const expired = new Promise<boolean>((resolve) => {
-      timer = setTimeout(() => {
-        resolve(false);
-      }, timeoutMs);
-    });
-
-    try {
-      return await Promise.race([deliverable.then(() => true), expired]);
-    } finally {
-      clearTimeout(timer);
-      this.#payloadWaiters.get(sessionId)?.delete(landed);
-    }
-  }
-
   /** 审批恢复：答复写回 step，再起一次运行。 */
   async resume(input: ResumeInput): Promise<RunStart> {
     this.#paused.delete(input.sessionId);
-    this.#rememberPayload(input.sessionId, {
+    await this.#rememberModel(input.sessionId, {
       model: input.model,
-      ...(input.effort === undefined ? {} : { effort: input.effort }),
+      ...(input.effort === undefined ? {} : { modelEffort: input.effort }),
     });
 
     const result = await this.#sessions.resume({
@@ -638,11 +611,11 @@ export class AgentRunner {
     // 模型配置取这一批里最新的那条：`startFromInbox` 也按它起跑。
     const latest = items.at(-1);
     if (latest !== undefined) {
-      this.#rememberPayload(sessionId, {
+      await this.#rememberModel(sessionId, {
         model: latest.payload.model,
-        ...(typeof latest.payload.modelEffort === "string"
-          ? { effort: latest.payload.modelEffort as ModelEffort }
-          : {}),
+        ...(latest.payload.modelEffort === undefined
+          ? {}
+          : { modelEffort: latest.payload.modelEffort }),
         ...(latest.payload.projectId === undefined
           ? {}
           : { projectId: latest.payload.projectId }),

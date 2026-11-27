@@ -176,6 +176,17 @@ export const project_table = sqliteTable(
 export type ProjectModel = InferSelectModel<typeof project_table>;
 export type ProjectInsertModel = InferInsertModel<typeof project_table>;
 
+/**
+ * The shape of `last_payload`; it mirrors `InboxPayload` in
+ * `@workspace/agent-client`, which this package does not depend on. Change both
+ * together.
+ */
+export type SessionPayloadColumn = {
+  model: { providerId: string; modelId: string };
+  modelEffort?: string;
+  projectId?: string;
+};
+
 export const session_table = sqliteTable(
   "session",
   {
@@ -249,6 +260,18 @@ export const session_table = sqliteTable(
      * among the parent session's children, and never reused. A `main` row leaves it null.
      */
     subagentName: text("subagent_name"),
+    /**
+     * The payload the last run started with, in the shape of
+     * `inbox_item.payload`.
+     *
+     * A deferred item wakes a session, and the process that holds the wake may
+     * never have run it: a timer carries its own payload for that reason, and a
+     * crash-recovery notice has nothing but this row to go on. Null for a
+     * session that has not run since this column existed.
+     */
+    lastPayload: text("last_payload", {
+      mode: "json",
+    }).$type<SessionPayloadColumn | null>(),
     /**
      * 删除时刻。有值即「已删」：列表和所有读接口都当它不存在。
      *

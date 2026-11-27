@@ -454,6 +454,18 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
     return session ?? null;
   }
 
+  async setLastPayload(
+    sessionId: string,
+    payload: InboxPayload
+  ): Promise<number> {
+    const result = await db
+      .update(session_table)
+      .set({ lastPayload: payload })
+      .where(eq(session_table.id, sessionId));
+
+    return result.rowsAffected;
+  }
+
   async listSessionSubtreeIds(sessionId: string): Promise<string[]> {
     return await collectSessionSubtree(db, sessionId);
   }

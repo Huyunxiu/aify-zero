@@ -3,6 +3,7 @@ import type {
   AgentTurn,
   AgentUserTurn,
   InboxItem,
+  InboxPayload,
 } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
 import { describe, expect, test, vi } from "vitest";
@@ -28,6 +29,7 @@ const session = (id: string): SessionRecord => ({
   parentSessionId: null,
   parentToolCallId: null,
   subagentName: null,
+  lastPayload: null,
   approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),
@@ -62,6 +64,8 @@ class FakeStore {
   readonly cleared: { sessionId: string; streamId: string; status: string }[] =
     [];
   readonly interrupted: SessionRecord[] = [];
+  /** The payload each start wrote to its session row, in order. */
+  readonly lastPayloads: { sessionId: string; payload: InboxPayload }[] = [];
   /** 成功路径在读取时就把行交出去，模拟真实 store 在写 turn 时删除。 */
   claimOnRead = true;
 
@@ -182,6 +186,11 @@ class FakeStore {
 
   listChildSessions() {
     return Promise.resolve([]);
+  }
+
+  setLastPayload(sessionId: string, payload: InboxPayload) {
+    this.lastPayloads.push({ sessionId, payload });
+    return Promise.resolve(1);
   }
 
   updateTurn() {
@@ -330,33 +339,30 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
-  test("一个被唤醒的会话等它真的能收通知，再让调用方写", async () => {
-    // Recovery wakes a session that never ran in this process; the payload a
-    // notice needs only exists once that run starts. Writing before this point
-    // loses the notice without a word.
+  test("writes the payload a run starts with, so the next process can wake it", async () => {
     const store = new FakeStore([session("s1")]);
+    const builder = fakeBuildAgent(fakeAgent());
     const runner = createAgentRunner({
       store: asRunnerStore(store),
-      buildAgent: fakeBuildAgent(fakeAgent()).build,
+      buildAgent: builder.build,
     });
 
     await runner.createSession({ sessionId: "s1" });
-
-    const deliverable = runner.waitForNoticeTarget("s1", 1000);
-    await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
-
-    await expect(deliverable).resolves.toBeTruthy();
-    await runner.shutdown();
-  });
-
-  test("等不到就如实说没等到，而不是一直挂着", async () => {
-    const store = new FakeStore([session("s1")]);
-    const runner = createAgentRunner({
-      store: asRunnerStore(store),
-      buildAgent: fakeBuildAgent(fakeAgent()).build,
+    await runner.enqueue({
+      sessionId: "s1",
+      turn: userTurn("turn-1"),
+      model,
+      effort: "high",
     });
 
-    await expect(runner.waitForNoticeTarget("s1", 10)).resolves.toBeFalsy();
+    // The next process has no such map: a deferred item wakes the session with
+    // what this row kept.
+    await vi.waitFor(() =>
+      expect(store.lastPayloads).toStrictEqual([
+        { sessionId: "s1", payload: { model, modelEffort: "high" } },
+      ])
+    );
+
     await runner.shutdown();
   });
 
@@ -378,6 +384,50 @@ describe("AgentRunner", () => {
       expect(builder.calls).toHaveLength(1);
       expect(runner.state().running).toHaveLength(0);
     });
+    await runner.shutdown();
+  });
+
+  test("takes a notice that carries its own payload, and wakes on it", async () => {
+    const store = new FakeStore([session("s1")]);
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+
+    // Crash recovery is this caller: the parent never ran here, so the writer
+    // has no payload of its own, and the notice carries one or never arrives.
+    const item = await runner.notices.write({
+      sessionId: "s1",
+      text: "subagent AGENT-1 (explore) settled: error",
+      dedupeKey: "subagent-settled:child-1:recovered",
+      form: SUBAGENT_NOTICE,
+      payload: { model },
+    });
+
+    expect(item?.payload).toStrictEqual({ model });
+    // The notice is not just written: the wake-up run really starts from it.
+    await vi.waitFor(() => expect(builder.calls).toHaveLength(1));
+    await runner.shutdown();
+  });
+
+  test("a failed payload write does not stop the run", async () => {
+    const store = new FakeStore([session("s1")]);
+    store.setLastPayload = () => Promise.reject(new Error("db busy"));
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+      logger: { warn: () => {} },
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
+
+    // Losing the snapshot costs the next process its wake-up, not this run.
+    await vi.waitFor(() => expect(builder.calls).toHaveLength(1));
     await runner.shutdown();
   });
 

@@ -40,8 +40,9 @@ _Avoid_: 转录、对话记录、历史
 **Run (运行)**:
 One model execution from start to end, identified by a run id. At its start, the run claims
 every inbox item, makes each item a user turn, and then drives the assistant turn that
-follows the last one. The event stream, the claim, and a pause all have the run as their
-boundary.
+follows the last one. It also writes its payload onto the session: the next process has no
+memory of it, and a deferred item still has to wake that session. The event stream, the
+claim, and a pause all have the run as their boundary.
 _Avoid_: 任务、会话、流
 
 **Inbox (收件箱)**:
@@ -55,6 +56,13 @@ where the item can enter: in the middle of the current run, or at the next run. 
 claim many items. Each item is still a separate user turn. Only one reply exists, and it
 follows the last turn.
 _Avoid_: 消息、事件、任务、合并
+
+**Payload (载荷)**:
+The configuration a run needs to start: the model, the effort, and the project it works in.
+An inbox item carries one, because the item is what starts the run. A session keeps the
+last one it used, because a deferred item may have to wake a session that the current
+process has never run.
+_Avoid_: 模型配置、参数、配置
 
 **Outbox (发件箱)**:
 The reply records of a session that settled and did not reach a person. It is the opposite

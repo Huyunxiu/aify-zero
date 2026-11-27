@@ -139,6 +139,29 @@ A subagent session is still refused by the runner's inbox entry, and boot no
 longer wakes one. Its next run is opened by the tool call that holds its name, so
 a wake-up would report a run that never happens.
 
+## A session remembers the payload it last ran with
+
+The notice a crash leaves for a parent is written by the next process, which has
+never run that session. A wake-up run needs a payload, and the only copy lived in
+memory, so the notice was written into nothing: waking the session found an empty
+inbox, the run never started, and the send gave up after a timeout.
+
+So a run writes its payload onto the session row, and the recovery path hands
+that snapshot to the writer — the same shape a timer carries for the same reason.
+A session with none is skipped with a warning: it has not run since this column
+existed, so there is nothing to wake it with and nothing to tell it.
+
+The notice also reports what the child had already said, and the status it
+settled as. A crash does not make every run a failure: one that had answered and
+only failed to clear its marker settles as done. An empty answer still settles as
+an error, which is the rule a live settlement already uses.
+
+One case stays blind: a stored model that is no longer configured. The write
+succeeds and the wake-up run fails, which the runner logs and pauses; the notice
+waits in the inbox and the next boot drops it as stale. Detecting that here would
+mean reading the model configuration in the boot path, which this process does
+not do.
+
 Withdraw has no counterpart here. A job notice withdraws itself when the model
 reads the output first; a subagent notice carries the answer, so nothing
 consumes it out of band and there is nothing to withdraw.

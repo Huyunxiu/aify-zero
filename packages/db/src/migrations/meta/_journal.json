@@ -155,6 +155,13 @@
       "when": 1795748171554,
       "tag": "0021_omniscient_carnage",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1795789127247,
+      "tag": "0022_natural_pixie",
+      "breakpoints": true
     }
   ]
 }

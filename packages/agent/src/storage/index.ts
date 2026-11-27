@@ -5,6 +5,7 @@ import type {
   DeliverAt,
   EnqueueInboxInput,
   InboxItem,
+  InboxPayload,
 } from "@workspace/agent-client";
 
 import type {
@@ -164,6 +165,15 @@ export interface AgentStore {
     streamId: string,
     options: StreamActivityOption
   ): Promise<number>;
+
+  /**
+   * Remember the payload a run started with.
+   *
+   * It is the snapshot a deferred wake needs when this process has never run the
+   * session: a timer carries its own, and a crash-recovery notice has only this
+   * row to go on.
+   */
+  setLastPayload(sessionId: string, payload: InboxPayload): Promise<number>;
 
   /**
    * Clears the marker only while it still names this `streamId`, and settles

@@ -22,6 +22,7 @@ const session = (id: string): SessionRecord => ({
   parentSessionId: null,
   parentToolCallId: null,
   subagentName: null,
+  lastPayload: null,
   approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),
@@ -64,6 +65,10 @@ class Store {
 
   findSessionRow(id: string) {
     return Promise.resolve(this.sessions.get(id) ?? null);
+  }
+
+  setLastPayload() {
+    return Promise.resolve(1);
   }
 
   saveSession(write: { id: string }) {

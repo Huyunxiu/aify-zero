@@ -24,6 +24,14 @@ export type NoticeRequest = {
   dedupeKey: string;
   /** Which notice this is. The producer names it; the writer does not guess. */
   form: NoticeForm;
+  /**
+   * The model the wake-up run needs, when the writer cannot know it.
+   *
+   * A producer that settles inside a live run leaves this out: the session just
+   * ran, so the writer holds its configuration. A producer that speaks for a
+   * previous process has to carry one, the way a timer carries its payload.
+   */
+  payload?: InboxPayload;
 };
 
 /**
@@ -42,7 +50,12 @@ export type NoticeWriter = {
    * A caller must read undefined as "this will not arrive".
    */
   write(request: NoticeRequest): Promise<InboxItem | undefined>;
-  /** Whether the session could take a notice right now. */
+  /**
+   * Whether the session could take a notice that carries no payload of its own.
+   *
+   * A producer that supplies one — the crash-recovery path does — needs no
+   * answer to this: the item carries what the wake-up run needs.
+   */
   canDeliver(sessionId: string): boolean;
   /** A person spoke: the run of notice-driven wakes starts again. */
   resetBudget(sessionId: string): void;
@@ -73,8 +86,8 @@ export function createNoticeWriter(deps: NoticeWriterDeps): NoticeWriter {
   const spent = new Map<string, number>();
 
   return {
-    async write({ sessionId, text, dedupeKey, form }) {
-      const payload = deps.payloadOf(sessionId);
+    async write({ sessionId, text, dedupeKey, form, payload: given }) {
+      const payload = given ?? deps.payloadOf(sessionId);
       if (payload === undefined) {
         return;
       }

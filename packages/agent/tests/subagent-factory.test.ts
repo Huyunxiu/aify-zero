@@ -207,6 +207,7 @@ class FakeStore {
       parentSessionId: write.parentSessionId ?? null,
       parentToolCallId: write.parentToolCallId ?? null,
       subagentName: write.subagentName ?? null,
+      lastPayload: null,
       approvalPolicy: write.approvalPolicy ?? "edit",
       deletedAt: null,
       createdAt: new Date(1),
