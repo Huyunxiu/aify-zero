@@ -30,6 +30,7 @@ import {
   WebToolsExtension,
 } from "./extensions/builtin";
 import { MAIN_INSTRUCTIONS } from "./extensions/builtin/core-instructions";
+import type { SubagentNotifier } from "./extensions/capabilities";
 import { EnvironmentExtension } from "./extensions/environment";
 import type { Extension } from "./extensions/types";
 import type { SteeringSignal } from "./inbox/steering";
@@ -88,6 +89,8 @@ export interface SessionAgentOptions {
   session: AgentSession;
   /** 运行器实例的注册表；省略时子会话用进程级单例。 */
   streamRegistry?: StreamEventRegistry<AgentToolSet>;
+  /** Where a settled subagent reports. Absent when nobody listens. */
+  subagentNotifier?: SubagentNotifier;
   model: SessionModel;
   /** 把模型引用解析成供应商的接入信息。 */
   resolveModel: ModelTargetResolver;
@@ -227,6 +230,9 @@ export async function createSessionAgent(
               registry:
                 options.streamRegistry ??
                 (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
+              ...(options.subagentNotifier === undefined
+                ? {}
+                : { notifier: options.subagentNotifier }),
             }),
         }
       : {}),

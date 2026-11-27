@@ -20,6 +20,7 @@ import {
   buildSubagent,
   readSubagentResult,
   resolveSubagentSession,
+  subagentTypeOf,
 } from "./create";
 import type { SubagentParent } from "./create";
 import { getSubagentDefinition } from "./definitions";
@@ -65,25 +66,10 @@ export class SubagentNotFoundError extends Error {
   }
 }
 
-/**
- * The subagent type a child was started as.
- *
- * It rides on the session row's metadata: a message can arrive long after the
- * call that made the child, and building the child again has to know what it
- * was. A read-only subagent must not come back as a general one.
- */
-const typeOf = (child: SessionRecord): string => {
-  const { metadata } = child;
-
-  if (metadata !== null && typeof metadata === "object") {
-    const value = (metadata as { subagentType?: unknown }).subagentType;
-    if (typeof value === "string") {
-      return value;
-    }
-  }
-
-  return "general";
-};
+/** The definition a child was started as; a row written before types reads as general. */
+const definitionOf = (child: SessionRecord): SubagentDefinition =>
+  getSubagentDefinition(subagentTypeOf(child.metadata)) ??
+  getSubagentDefinition("general")!;
 
 /**
  * Messages waiting for a child's current run to settle.
@@ -152,9 +138,6 @@ export function createSubagentFactory({
 
     return row;
   };
-
-  const definitionOf = (child: SessionRecord): SubagentDefinition =>
-    getSubagentDefinition(typeOf(child)) ?? getSubagentDefinition("general")!;
 
   const turnsFor = async (
     childSessionId: string,
@@ -331,7 +314,7 @@ export function createSubagentFactory({
         return {
           name: child.subagentName!,
           sessionId: child.id,
-          subagentType: typeOf(child),
+          subagentType: subagentTypeOf(child.metadata),
           status: live ? "running" : child.status,
           ...(live && started !== undefined
             ? { runningMs: Math.max(0, now() - started) }

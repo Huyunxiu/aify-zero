@@ -265,10 +265,20 @@ export async function resolveSubagentSession(
 
     // 行写了但一轮都没落下——进程恰好死在两次写之间。这种情况当作没跑过：
     // 喂一个空 transcript 会让子 agent 连自己的任务书都没有。
+    if (turns.length === 0) {
+      return {
+        sessionId: existing.id,
+        name: existing.subagentName,
+        turns: [buildPromptTurn(prompt)],
+      };
+    }
+
+    // 同一个调用再跑一次是「再给它说一句」，不是「把它说过的话丢掉」。这条
+    // 路和递话走同一个追加：一个子会话只有一条往下的路。
     return {
       sessionId: existing.id,
       name: existing.subagentName,
-      turns: turns.length > 0 ? turns : [buildPromptTurn(prompt)],
+      turns: [...turns, buildPromptTurn(prompt)],
     };
   }
 
@@ -307,6 +317,25 @@ export async function resolveSubagentSession(
   throw new Error(
     `could not allocate a subagent name under session ${parentSessionId}`
   );
+}
+
+/**
+ * The subagent type a row was started as.
+ *
+ * It rides on the session row's metadata: a message can arrive long after the
+ * call that made the child, and building the child again has to know what it
+ * was. A read-only subagent must not come back as a general one. A row written
+ * before types existed reads as general.
+ */
+export function subagentTypeOf(metadata: unknown): string {
+  if (metadata !== null && typeof metadata === "object") {
+    const value = (metadata as { subagentType?: unknown }).subagentType;
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+
+  return "general";
 }
 
 export type Subagent = {

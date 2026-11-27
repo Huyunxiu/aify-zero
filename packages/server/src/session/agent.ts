@@ -17,6 +17,7 @@ import type {
   JobRegistry,
   McpManager,
   SteeringSignal,
+  SubagentNotifier,
 } from "@workspace/agent";
 import type { ApprovalPolicy } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
@@ -53,6 +54,8 @@ export interface BuildSessionAgentInput {
   steering?: SteeringSignal;
   /** The Approval Policy of the session, which this Run uses as it is. */
   approvalPolicy: ApprovalPolicy;
+  /** Where a settled subagent reports; the runner delivers it. */
+  subagentNotifier?: SubagentNotifier;
 }
 
 /**
@@ -72,6 +75,7 @@ export async function buildSessionAgent({
   jobs,
   steering,
   approvalPolicy,
+  subagentNotifier,
 }: BuildSessionAgentInput): Promise<Agent> {
   const sessionDir = getSessionDir(sessionId);
   mkdirSync(sessionDir, { recursive: true });
@@ -122,6 +126,7 @@ export async function buildSessionAgent({
     timers: store,
     timeZone,
     steering,
+    ...(subagentNotifier === undefined ? {} : { subagentNotifier }),
     sandbox,
     toolApprovalPattern: createMcpToolApprovalPattern(
       mcpManager,

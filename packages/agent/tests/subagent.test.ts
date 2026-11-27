@@ -204,10 +204,14 @@ describe(resolveSubagentSession, () => {
     });
 
     expect(sessionId).toBe(existingId);
-    // 复用路径不该再插一行，也不该把 prompt turn 追加第二遍。
+    // 复用路径不该再插一行；新的 brief 追加在这条会话的末尾，而不是把它说过
+    // 的话整段丢掉——重跑一次调用就是再给它说一句。
     expect(store.saved).toHaveLength(0);
-    expect(turns).toHaveLength(2);
-    expect(turns[0] && textOf(turns[0])).toBe("Find the thing.");
+    expect(turns.map(textOf)).toStrictEqual([
+      "Find the thing.",
+      "Found it.",
+      "Find the thing.",
+    ]);
     expect(readSubagentResult(turns).report).toBe("Found it.");
   });
 

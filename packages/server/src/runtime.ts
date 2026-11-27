@@ -7,9 +7,16 @@ import { findConfiguredModel } from "./routers/settings/settings.service";
 import { buildSessionAgent } from "./session/agent";
 import { acceptedEffort } from "./session/model-rules";
 import { SQLiteStore } from "./storage/sqlite-store";
+import { createSubagentNoticeAdapter } from "./subagent-notices";
 
 /** 进程里唯一的那一个运行器；所有路由和启动/关停都用它。 */
 const store = new SQLiteStore();
+
+/**
+ * 子代理落定的通知口。它要运行器，运行器又要它装配的工厂，所以先建口、
+ * 后绑定：只有一个依赖方向。
+ */
+export const subagentNotices = createSubagentNoticeAdapter({ store });
 
 /** 进程里唯一的那一个投递器；`serve.ts` 启动和关停它。 */
 export const outboxDispatcher = createOutboxDispatcher({ store });
@@ -70,9 +77,12 @@ export const agentRunner = createAgentRunner({
       jobs,
       steering,
       approvalPolicy,
+      subagentNotifier: subagentNotices,
     });
   },
 });
+
+subagentNotices.bind(agentRunner);
 
 // 任务结算后，完成通知投进拥有者的收件箱；空闲会话会被唤醒。
 JOB_REGISTRY.setNoticeAdapter(

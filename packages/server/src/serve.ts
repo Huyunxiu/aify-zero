@@ -33,7 +33,12 @@ import { issueLoginLink, resolveLoginWebOrigin } from "./login-link";
 import { setMcpOAuthRedirectUrl } from "./mcp/oauth";
 import { shutdownMcp } from "./mcp/registry";
 import { ensureDefaultBot } from "./routers/bot/bot.service";
-import { agentRunner, outboxDispatcher, timerScheduler } from "./runtime";
+import {
+  agentRunner,
+  outboxDispatcher,
+  subagentNotices,
+  timerScheduler,
+} from "./runtime";
 import { attachWebSocket } from "./ws";
 
 /** 监听地址：显式参数优先，其次环境变量，最后回落到 loopback + 18086。 */
@@ -131,6 +136,10 @@ export async function startServer(
   for (const failure of startup.failures) {
     logger.warn("[startup] agent runner recovery failed", failure.error);
   }
+
+  // 上一个进程留下的子代理运行已经收尾，但等它的人还不知道：补一条落定通知，
+  // 否则那个会话会一直等一个不会再响的铃。
+  await subagentNotices.reportRecovered(startup.recovered);
 
   // 运行器起来之后再开扫描：补发的待办项要有运行器才叫得醒。启动那次扫描
   // 会立刻把停机期间到点的定时器投出去，不等第一个周期。
