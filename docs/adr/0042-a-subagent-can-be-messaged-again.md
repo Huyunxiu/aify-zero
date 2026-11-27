@@ -32,7 +32,7 @@ Assistant that is itself waiting for a subagent, and nothing in this runtime can
 state apart from ordinary slowness. A refusal is recoverable in one step; a deadlock is not.
 
 Only running subagents count. A subagent that reported and is waiting for a message holds no
-model stream, so it holds no slot.
+model stream, so it holds no slot. The limit is 8, and `AIFY_SUBAGENT_LIMIT` sets it at start.
 
 The count and the start it guards are one step. Counting the running subagents and registering
 the new one are several awaits apart, so two delegations that arrive together would count the
@@ -59,15 +59,21 @@ Now that a message can be delivered on purpose, one path is enough. A repeated c
 its brief to the same subagent, exactly as a message does. Two paths to one transcript would
 have drifted, and the discarding one would have kept a silent bug.
 
+What the brief does depends on the child, and the child decides it, not the call. Against a
+running child the brief becomes an inbox item that the child reads at its next step; it starts
+nothing and takes no slot, because it adds no run. Against a child that has stopped it does
+start a run, so it counts, and it can be refused for capacity like any other start.
+
 ## A background unit that never settles is silent
 
 A synchronous call that hangs is visible: the Assistant is stuck inside it. A background
 subagent that hangs is invisible — nothing is blocked, the session simply goes quiet.
 
-So every subagent run has a wall clock limit, generous by default, and the limit settles the
-run and sends the notice. The service also settles the runs of a previous process at start and
-sends their notices, which the recovery path already did for sessions in general but not for
-the people waiting on them.
+So every subagent run has a wall clock limit, one hour by default, and the limit settles the
+run and sends the notice. `AIFY_SUBAGENT_TIMEOUT_MS` sets it at start, next to the capacity
+knob, because neither has a settings surface yet. The service also settles the runs of a
+previous process at start and sends their notices, which the recovery path already did for
+sessions in general but not for the people waiting on them.
 
 ## The notice reports facts, not instructions
 
