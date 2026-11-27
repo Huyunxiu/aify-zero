@@ -1,9 +1,5 @@
-import { composeSubagentNotice, subagentTypeOf } from "@workspace/agent";
+import { subagentNoticeRequest, subagentTypeOf } from "@workspace/agent";
 import type { NoticeWriter } from "@workspace/agent";
-import {
-  SUBAGENT_NOTICE,
-  SUBAGENT_NOTICE_INBOX_KIND,
-} from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 /** The slice of the store this file reads: a row, by id. */
@@ -30,11 +26,14 @@ export async function reportRecoveredSubagents({
   store,
   notices,
   wake,
+  waitFor,
 }: {
   recovered: readonly { sessionId: string }[];
   store: NoticeStore;
   notices: NoticeWriter;
   wake: (sessionId: string) => void;
+  /** Whether the session became able to take a notice after being woken. */
+  waitFor: (sessionId: string) => Promise<boolean>;
 }): Promise<void> {
   for (const outcome of recovered) {
     const row = await store.getSessionById(outcome.sessionId);
@@ -59,18 +58,24 @@ export async function reportRecoveredSubagents({
       continue;
     }
 
-    await notices.write({
-      sessionId: parentSessionId,
-      text: composeSubagentNotice({
+    // Waking only schedules the run; the session can take a notice once that
+    // run has a model payload. Writing before that point loses the notice.
+    if (!(await waitFor(parentSessionId))) {
+      logger.warn(
+        `[subagent-notices] ${parentSessionId} never became ready for its notice`
+      );
+      continue;
+    }
+
+    await notices.write(
+      subagentNoticeRequest({
         parentSessionId,
         sessionId: row.id,
         name,
         subagentType: subagentTypeOf(row.metadata),
         status: "error",
         report: "",
-      }),
-      dedupeKey: `${SUBAGENT_NOTICE_INBOX_KIND}:${row.id}`,
-      form: SUBAGENT_NOTICE,
-    });
+      })
+    );
   }
 }

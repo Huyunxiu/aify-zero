@@ -235,9 +235,6 @@ export async function createSessionAgent(
               registry:
                 options.streamRegistry ??
                 (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
-              ...(options.notices === undefined
-                ? {}
-                : { notices: options.notices }),
               ...(options.subagentLimit === undefined
                 ? {}
                 : { limit: options.subagentLimit }),

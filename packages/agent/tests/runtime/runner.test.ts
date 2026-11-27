@@ -263,7 +263,7 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
-  test("enqueueNotice 在空闲会话开一次运行，并把通知标成 job-notice", async () => {
+  test("一条通知在空闲会话上开一次运行，并标成 job-notice", async () => {
     const store = new FakeStore([session("s1")]);
     const builder = fakeBuildAgent(fakeAgent());
     const runner = createAgentRunner({
@@ -278,7 +278,7 @@ describe("AgentRunner", () => {
       expect(runner.state().running).toHaveLength(0);
     });
 
-    const item = await runner.enqueueNotice({
+    const item = await runner.notices.write({
       sessionId: "s1",
       text: "background job bash-1 finished",
       dedupeKey: "job-notice:bash-1",
@@ -313,7 +313,7 @@ describe("AgentRunner", () => {
       expect(runner.state().running).toHaveLength(0);
     });
 
-    const item = await runner.enqueueNotice({
+    const item = await runner.notices.write({
       sessionId: "s1",
       text: "subagent AGENT-1 (explore) settled: done",
       dedupeKey: "subagent-settled:child-1",
@@ -330,7 +330,37 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
-  test("canDeliverNotice 只在会话有模型配置时为真", async () => {
+  test("一个被唤醒的会话等它真的能收通知，再让调用方写", async () => {
+    // Recovery wakes a session that never ran in this process; the payload a
+    // notice needs only exists once that run starts. Writing before this point
+    // loses the notice without a word.
+    const store = new FakeStore([session("s1")]);
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: fakeBuildAgent(fakeAgent()).build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+
+    const deliverable = runner.waitForNoticeTarget("s1", 1000);
+    await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
+
+    await expect(deliverable).resolves.toBeTruthy();
+    await runner.shutdown();
+  });
+
+  test("等不到就如实说没等到，而不是一直挂着", async () => {
+    const store = new FakeStore([session("s1")]);
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: fakeBuildAgent(fakeAgent()).build,
+    });
+
+    await expect(runner.waitForNoticeTarget("s1", 10)).resolves.toBeFalsy();
+    await runner.shutdown();
+  });
+
+  test("只有会话有模型配置时才能收通知", async () => {
     const store = new FakeStore([session("s1")]);
     const builder = fakeBuildAgent(fakeAgent());
     const runner = createAgentRunner({
@@ -339,10 +369,10 @@ describe("AgentRunner", () => {
     });
 
     await runner.createSession({ sessionId: "s1" });
-    expect(runner.canDeliverNotice("s1")).toBeFalsy();
+    expect(runner.notices.canDeliver("s1")).toBeFalsy();
 
     await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
-    expect(runner.canDeliverNotice("s1")).toBeTruthy();
+    expect(runner.notices.canDeliver("s1")).toBeTruthy();
 
     await vi.waitFor(() => {
       expect(builder.calls).toHaveLength(1);
@@ -351,7 +381,7 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
-  test("enqueueNotice 在没有模型配置时只记日志", async () => {
+  test("没有模型配置时通知只被拒绝，不抛错", async () => {
     const store = new FakeStore([session("s1")]);
     const runner = createAgentRunner({
       store: asRunnerStore(store),
@@ -360,7 +390,7 @@ describe("AgentRunner", () => {
     });
 
     await runner.createSession({ sessionId: "s1" });
-    const item = await runner.enqueueNotice({
+    const item = await runner.notices.write({
       sessionId: "s1",
       text: "background job bash-1 finished",
       dedupeKey: "job-notice:bash-1",

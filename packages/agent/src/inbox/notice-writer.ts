@@ -62,6 +62,10 @@ export type NoticeWriterDeps = {
   payloadOf(sessionId: string): InboxPayload | undefined;
   /** Starts the session, if it is idle. */
   wake(sessionId: string): void;
+  /** The runner has stopped taking work: nothing new is accepted. */
+  isStopped(): boolean;
+  /** A failed write is logged, never thrown: it must not turn a settlement into an error. */
+  warn(message: string, error?: unknown): void;
 };
 
 export function createNoticeWriter(deps: NoticeWriterDeps): NoticeWriter {
@@ -94,14 +98,20 @@ export function createNoticeWriter(deps: NoticeWriterDeps): NoticeWriter {
         ],
       };
 
-      const item = await deps.insert({
-        sessionId,
-        kind: form.kind,
-        dedupeKey,
-        deliverAt: busy ? "step-boundary" : "run-boundary",
-        content: turn,
-        payload,
-      });
+      let item: InboxItem;
+      try {
+        item = await deps.insert({
+          sessionId,
+          kind: form.kind,
+          dedupeKey,
+          deliverAt: busy ? "step-boundary" : "run-boundary",
+          content: turn,
+          payload,
+        });
+      } catch (error: unknown) {
+        deps.warn(`[notices] failed to write a notice for ${sessionId}`, error);
+        return;
+      }
 
       if (!busy) {
         const used = spent.get(sessionId) ?? 0;
@@ -115,7 +125,7 @@ export function createNoticeWriter(deps: NoticeWriterDeps): NoticeWriter {
     },
 
     canDeliver(sessionId) {
-      return deps.payloadOf(sessionId) !== undefined;
+      return !deps.isStopped() && deps.payloadOf(sessionId) !== undefined;
     },
 
     resetBudget(sessionId) {

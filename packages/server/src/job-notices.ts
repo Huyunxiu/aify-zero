@@ -102,6 +102,14 @@ export const createJobNoticeAdapter = ({
             commitNoticeOutput(sessionId, job.id);
           }
           pending.set(job.id, { sessionId, itemId: item.id });
+        })
+        .catch((error: unknown) => {
+          // Without this the job stays "in flight" for the life of the process,
+          // and a failure nobody sees is a notification nobody gets.
+          inFlight.delete(job.id);
+          logger.warn(
+            `job-notices: failed to queue a notice for ${job.id}: ${String(error)}`
+          );
         });
     },
 

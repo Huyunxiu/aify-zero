@@ -61,6 +61,7 @@ describe("the runs a previous process left behind", () => {
       }),
       notices,
       wake,
+      waitFor: () => Promise.resolve(true),
     });
 
     // The parent has not run in this process, so it has no payload: waking it
@@ -85,6 +86,7 @@ describe("the runs a previous process left behind", () => {
       }),
       notices,
       wake: () => {},
+      waitFor: () => Promise.resolve(true),
     });
 
     expect(written[0]?.dedupeKey).toBe("subagent-settled:child-1");
@@ -95,6 +97,27 @@ describe("the runs a previous process left behind", () => {
     expect(written[0]?.text).toContain(
       "subagent AGENT-3 (plan) settled: error"
     );
+  });
+
+  test("are dropped, with a reason, when the parent never becomes ready", async () => {
+    const { notices, written } = writer();
+
+    await reportRecoveredSubagents({
+      recovered: [{ sessionId: "child-1" }],
+      store: store({
+        "child-1": {
+          kind: "subagent",
+          metadata: {},
+          parentSessionId: "parent-1",
+          subagentName: "AGENT-1",
+        },
+      }),
+      notices,
+      wake: () => {},
+      waitFor: () => Promise.resolve(false),
+    });
+
+    expect(written).toStrictEqual([]);
   });
 
   test("say nothing about a main session", async () => {
@@ -112,6 +135,7 @@ describe("the runs a previous process left behind", () => {
       }),
       notices,
       wake: () => {},
+      waitFor: () => Promise.resolve(true),
     });
 
     expect(written).toStrictEqual([]);
@@ -143,6 +167,7 @@ describe("the runs a previous process left behind", () => {
           throw new Error("gone");
         }
       },
+      waitFor: () => Promise.resolve(true),
     });
 
     expect(written.map((notice) => notice.sessionId)).toStrictEqual([

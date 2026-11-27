@@ -32,7 +32,6 @@ import type {
   BuildAgentInput,
   CreateSessionInput,
   EnqueueInput,
-  EnqueueNoticeInput,
   PauseReason,
   ResumeInput,
   StartedRun,
@@ -53,8 +52,6 @@ export type AgentRunnerOptions = {
 
 /** 起跑一条待办项的结果。 */
 export type StartOutcome = StartedRun | "claimed" | "busy" | "failed";
-
-/** 一条会话自上次用户输入以来，最多被完成通知唤醒几次。 */
 
 /**
  * 会话的常驻运行器。
@@ -84,16 +81,25 @@ export class AgentRunner {
   readonly #notices: NoticeWriter;
   /** 正在推进的会话；有值表示这条会话的循环在跑，不是“有一条运行在跑”。 */
   readonly #runs = new Map<string, Promise<void>>();
+  /** Sessions waiting to become deliverable again; woken when a payload lands. */
+  readonly #payloadWaiters = new Map<string, Set<() => void>>();
   /** 不再自动推进的会话，以及原因。不落库。 */
   readonly #paused = new Map<string, PauseReason>();
   #scheduled = false;
-  /** 写完成通知的那一个；运行器和每个 agent 装配用的是同一个。 */
   /** 关停中：不再取新件，正在跑的让它跑完。 */
   #stopped = false;
 
   constructor(options: AgentRunnerOptions) {
     this.#store = options.store;
     this.#buildAgent = options.buildAgent;
+    this.#logger = options.logger ?? {
+      warn: (message, error) => {
+        console.warn(message, error);
+      },
+    };
+
+    this.#sessionEvents = new SessionEventRegistry<AgentToolSet>();
+    this.#streams = new StreamEventRegistry(this.#sessionEvents);
     this.#notices = createNoticeWriter({
       insert: (item) => this.#store.insertInboxItem(item),
       isBusy: (sessionId) => {
@@ -104,15 +110,11 @@ export class AgentRunner {
       wake: (sessionId) => {
         this.wake(sessionId);
       },
-    });
-    this.#logger = options.logger ?? {
+      isStopped: () => this.#stopped,
       warn: (message, error) => {
-        console.warn(message, error);
+        this.#logger.warn(message, error);
       },
-    };
-
-    this.#sessionEvents = new SessionEventRegistry<AgentToolSet>();
-    this.#streams = new StreamEventRegistry(this.#sessionEvents);
+    });
     this.#sessions = new SessionLifecycle({
       store: this.#store,
       registry: this.#streams,
@@ -269,6 +271,14 @@ export class AgentRunner {
   ): void {
     const projectId =
       payload.projectId ?? this.#lastPayload.get(sessionId)?.projectId;
+    const waiting = this.#payloadWaiters.get(sessionId);
+    if (waiting !== undefined) {
+      this.#payloadWaiters.delete(sessionId);
+      for (const settle of waiting) {
+        settle();
+      }
+    }
+
     this.#lastPayload.set(sessionId, {
       model: payload.model,
       ...(payload.effort === undefined ? {} : { modelEffort: payload.effort }),
@@ -276,11 +286,6 @@ export class AgentRunner {
     });
   }
 
-  /**
-   * 这个会话现在能不能收完成通知：有模型配置，且运行器没有在关停。
-   * 投递方先用它判断，再决定是否消费任务的未读输出。
-   * @param sessionId - 会话 id。
-   */
   /**
    * The notice writer this runner built.
    *
@@ -291,34 +296,46 @@ export class AgentRunner {
     return this.#notices;
   }
 
-  canDeliverNotice(sessionId: string): boolean {
-    return !this.#stopped && this.#notices.canDeliver(sessionId);
-  }
-
   /**
-   * 投一条完成通知。空闲会话被唤醒，忙的会话排到下一个步边界。
+   * Wait until this session could take a notice.
    *
-   * 通知不是用户输入：它不重置唤醒预算，也不触发插话信号。写入的规则住在
-   * {@link NoticeWriter} 里，和任何一次 agent 装配用的是同一份。
-   * @param input - 会话、正文与幂等键。
-   * @returns 排入的待办项；会话没有可用的模型配置时返回 undefined。
+   * Recovery wakes a session that has not run in this process, and its model
+   * payload only exists once that run starts. The caller needs to know when the
+   * wake has landed, or it writes into nothing and loses the notice.
+   *
+   * @param sessionId - the session that must become deliverable.
+   * @param timeoutMs - how long to wait.
+   * @returns whether the session could take a notice before the wait ran out.
    */
-  async enqueueNotice(
-    input: EnqueueNoticeInput
-  ): Promise<InboxItem | undefined> {
-    if (this.#stopped) {
-      return undefined;
+  async waitForNoticeTarget(
+    sessionId: string,
+    timeoutMs: number
+  ): Promise<boolean> {
+    if (this.#notices.canDeliver(sessionId)) {
+      return true;
     }
 
-    const item = await this.#notices.write(input);
-    if (item === undefined) {
-      this.#logger.warn(
-        "[runner] cannot deliver a notice: the session has no model yet",
-        { sessionId: input.sessionId }
-      );
-    }
+    let landed!: () => void;
+    const deliverable = new Promise<void>((resolve) => {
+      landed = resolve;
+    });
+    const waiting = this.#payloadWaiters.get(sessionId) ?? new Set();
+    waiting.add(landed);
+    this.#payloadWaiters.set(sessionId, waiting);
 
-    return item;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<boolean>((resolve) => {
+      timer = setTimeout(() => {
+        resolve(false);
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([deliverable.then(() => true), expired]);
+    } finally {
+      clearTimeout(timer);
+      this.#payloadWaiters.get(sessionId)?.delete(landed);
+    }
   }
 
   /** 审批恢复：答复写回 step，再起一次运行。 */

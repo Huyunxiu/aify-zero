@@ -1,7 +1,7 @@
 import type { AgentUserTurn, InboxItem } from "@workspace/agent-client";
 import {
   isAgentTextPart,
-  JOB_NOTICE_INBOX_KIND,
+  isNoticeInboxKind,
   TIMER_INBOX_KIND,
 } from "@workspace/agent-client";
 import { SendIcon, XIcon } from "lucide-react";
@@ -74,7 +74,7 @@ export const InboxDock = ({
         {messages.map((message) => (
           <li className="flex items-center gap-2" key={message.id}>
             <Badge className="shrink-0" variant="secondary">
-              {message.kind === JOB_NOTICE_INBOX_KIND
+              {isNoticeInboxKind(message.kind)
                 ? t("inbox.notice")
                 : message.kind === TIMER_INBOX_KIND
                   ? t("inbox.timer")

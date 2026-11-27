@@ -117,6 +117,7 @@ export const reportRecovered = (
     wake: (sessionId) => {
       agentRunner.wake(sessionId);
     },
+    waitFor: (sessionId) => agentRunner.waitForNoticeTarget(sessionId, 2000),
   });
 
 // 任务结算后，完成通知投进拥有者的收件箱；空闲会话会被唤醒。

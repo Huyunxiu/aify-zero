@@ -34,8 +34,6 @@ export interface SubagentFactoryOptions {
   store: AgentStore;
   /** The runner's registry; a child session must register in it like any other. */
   registry: StreamEventRegistry<AgentToolSet>;
-  /** The one way a settlement reaches the parent session. */
-  notices?: NoticeWriter;
   /** How many subagents one session may run at once. */
   limit?: number;
   /** The wall clock a single child run may take. Zero disables it. */
@@ -97,12 +95,18 @@ export function createSubagentFactory({
   agent,
   store,
   registry,
-  notices,
   limit = DEFAULT_LIMIT,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   now = Date.now,
 }: SubagentFactoryOptions): Subagents {
   const parentSessionId = agent.sessionId;
+
+  /**
+   * The capability, read when a settlement happens rather than when the factory
+   * is built: the agent is still under construction at that point.
+   */
+  const notices = (): NoticeWriter | undefined =>
+    agent.extensions.capability(Capabilities.notices);
 
   // The parent's approval function is read at start time: the composition root
   // registers it after this factory is built, so reading it now would miss it.
@@ -195,7 +199,7 @@ export function createSubagentFactory({
 
     const settled = settledStatus(status, report) as SessionEndStatus;
 
-    notices?.write(
+    void notices()?.write(
       subagentNoticeRequest({
         parentSessionId,
         sessionId: child.sessionId,
