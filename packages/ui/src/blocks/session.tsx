@@ -23,7 +23,11 @@ import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
 import { BotAvatar } from "@workspace/ui/blocks/bot-avatar";
 import type { LanguageModelUsage } from "ai";
-import { AlertTriangleIcon, PanelRightIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  ChevronDownIcon,
+  PanelRightIcon,
+} from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -50,6 +54,12 @@ import {
 } from "../blocks/token-context";
 import { Button } from "../components/button";
 import { ButtonGroup } from "../components/button-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/dropdown-menu";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -638,8 +648,11 @@ export function Session({
     },
     // Stopping is located by session id, so nothing here has to carry the
     // stream id the POST handed back.
-    apiStop: async ({ sessionId: id }) => {
-      await client.session.stopSession({ sessionId: id });
+    apiStop: async ({ sessionId: id, keepSubagents }) => {
+      await client.session.stopSession({
+        sessionId: id,
+        ...(keepSubagents === true ? { keepSubagents: true } : {}),
+      });
     },
     apiInbox: {
       list: async ({ sessionId: id }) => {
@@ -1308,7 +1321,42 @@ export function Session({
                                   </ContextContent>
                                 </Context>
                                 {isGenerating && (
-                                  <PromptInputStop onStop={() => void stop()} />
+                                  <div className="flex items-center">
+                                    <PromptInputStop
+                                      onStop={() => void stop()}
+                                    />
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger
+                                        render={
+                                          <Button
+                                            aria-label={t(
+                                              "composer.stop.options"
+                                            )}
+                                            className="-ml-px rounded-l-none"
+                                            size="icon-sm"
+                                            type="button"
+                                            variant="outline"
+                                          />
+                                        }
+                                      >
+                                        <ChevronDownIcon className="size-4" />
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                          onSelect={() => void stop()}
+                                        >
+                                          {t("composer.stop.everything")}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onSelect={() =>
+                                            void stop({ keepSubagents: true })
+                                          }
+                                        >
+                                          {t("composer.stop.replyOnly")}
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
                                 )}
                                 <PromptInputSubmit
                                   disabled={isEditorEmpty || !selectedModel}

@@ -318,6 +318,11 @@
       "default": "发送",
       "steering": "发送引导消息",
       "followup": "发送排队消息"
+    },
+    "stop": {
+      "options": "停止选项",
+      "everything": "停止本轮，并停掉子代理",
+      "replyOnly": "只停本轮，子代理继续运行"
     }
   },
   "inbox": {

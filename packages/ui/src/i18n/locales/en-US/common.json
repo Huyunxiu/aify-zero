@@ -318,6 +318,11 @@
       "default": "Send",
       "steering": "Send as steering message",
       "followup": "Send as queued message"
+    },
+    "stop": {
+      "options": "Stop options",
+      "everything": "Stop the reply and its subagents",
+      "replyOnly": "Stop the reply, keep subagents running"
     }
   },
   "inbox": {

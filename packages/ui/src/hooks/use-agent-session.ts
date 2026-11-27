@@ -53,6 +53,16 @@ export type SubmitOptions = {
   payload?: Record<string, unknown>;
 };
 
+/**
+ * What a stop does to the subagents a session started.
+ *
+ * Absent means the default: the stop takes them with it. `keepSubagents` ends
+ * only this run, and the children report when they finish.
+ */
+export type StopOptions = {
+  readonly keepSubagents?: boolean;
+};
+
 export type UseAgentSessionOptions = {
   id: string;
   api?: string;
@@ -93,7 +103,7 @@ export type UseAgentSessionOptions = {
    *
    * 和其他回调一样，只在 store 建立时读一次。
    */
-  apiStop?: (options: { sessionId: string }) => Promise<unknown>;
+  apiStop?: (options: { sessionId: string } & StopOptions) => Promise<unknown>;
   /**
    * Durable pending-message queue. Read when the store is created, like the
    * other API callbacks.
@@ -169,7 +179,7 @@ export type UseAgentSessionResponse = {
    * 屏幕先落定，服务端的那次运行随后停下——它活得比发起它的请求久。会话的
    * 连接留着，下一次运行的 `run.start` 还要送到这里。
    */
-  stop: () => Promise<void>;
+  stop: (options?: StopOptions) => Promise<void>;
   error: Error | undefined;
   status: AgentSessionStatus;
 };
@@ -249,7 +259,7 @@ type AgentSessionStore = {
   addToolApprovalResponse: (
     options: AddToolApprovalResponseOptions
   ) => Promise<void>;
-  stop: () => Promise<void>;
+  stop: (options?: StopOptions) => Promise<void>;
   /** 页面卸载：停掉连接与重连。 */
   destroy: () => void;
   /** 页面挂载：开始读这个会话；`destroy` 之后也能再开一次。 */
@@ -1046,7 +1056,7 @@ export function createAgentSessionStore({
    * 连接留着：停下一次运行不等于这个会话不再有人看，下一次运行的
    * `run.start` 还要送到这里。
    */
-  const stop = async (): Promise<void> => {
+  const stop = async (options: StopOptions = {}): Promise<void> => {
     if (!apiStop) {
       return;
     }
@@ -1054,7 +1064,10 @@ export function createAgentSessionStore({
     settleRun(undefined);
 
     try {
-      await apiStop({ sessionId: id });
+      await apiStop({
+        sessionId: id,
+        ...(options.keepSubagents === true ? { keepSubagents: true } : {}),
+      });
     } catch {
       // 停一条没在跑的运行是空操作，不是失败；传输失败也已经由本地落定覆盖。
     }
