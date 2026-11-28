@@ -58,6 +58,72 @@ describe("the session ledger file", () => {
     expect(read.skipped).toBe(0);
   });
 
+  test("closes a line that a crash cut in half before it appends", async () => {
+    const path = tempPath();
+    const writer = LedgerWriter.open({ path });
+    writer.append(process, "e1");
+    writer.close();
+    appendFileSync(path, '{"line":2,"v":1,"at":1,"epoch":"e', "utf-8");
+
+    const second = LedgerWriter.open({ path });
+    second.append(runEnd, "e1");
+    second.close();
+
+    const read = await readLedger(path);
+
+    expect(read.records.map((record) => record.type)).toStrictEqual([
+      "note.process",
+      "stream.run.end",
+    ]);
+    // The cut line keeps line 2, so the record after it starts at 3. The number is the
+    // evidence that a record was lost.
+    expect(read.records.map((record) => record.line)).toStrictEqual([1, 3]);
+    expect(read.skipped).toBe(1);
+    expect(read.tailTruncated).toBeFalsy();
+  });
+
+  test("keeps the number of a cut line that parses", async () => {
+    const path = tempPath();
+    const writer = LedgerWriter.open({ path });
+    writer.append(process, "e1");
+    writer.close();
+    // A whole record that a crash left without its newline: a reader takes it as it is.
+    appendFileSync(
+      path,
+      '{"line":2,"v":1,"at":1,"epoch":null,"type":"stream.run.end","streamId":"k0"}',
+      "utf-8"
+    );
+
+    const second = LedgerWriter.open({ path });
+    second.append(runEnd, "e1");
+    second.close();
+
+    const read = await readLedger(path);
+
+    expect(read.records.map((record) => record.line)).toStrictEqual([1, 2, 3]);
+    expect(read.skipped).toBe(0);
+    expect(read.tailTruncated).toBeFalsy();
+  });
+
+  test("resumes past a record larger than the tail window", async () => {
+    const path = tempPath();
+    const writer = LedgerWriter.open({ path });
+    writer.append(
+      { type: "stream.run.end", streamId: "k1", failure: "x".repeat(70_000) },
+      "e1"
+    );
+    writer.close();
+
+    const second = LedgerWriter.open({ path });
+    second.append(runEnd, "e1");
+    second.close();
+
+    const read = await readLedger(path);
+
+    expect(read.records.map((record) => record.line)).toStrictEqual([1, 2]);
+    expect(read.skipped).toBe(0);
+  });
+
   test("skips a broken line in the middle and counts it", async () => {
     const path = tempPath();
     const writer = LedgerWriter.open({ path });

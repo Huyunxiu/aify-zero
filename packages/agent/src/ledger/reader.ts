@@ -55,7 +55,7 @@ export async function readLedger(
     if (raw === "") {
       continue;
     }
-    const record = parseLine(raw);
+    const record = parseLedgerLine(raw);
     if (record === null) {
       if (!endsWell && index === complete.length - 1) {
         tailTruncated = true;
@@ -84,8 +84,11 @@ export async function readLedger(
  *
  * Only the fields a reader needs to place a record are checked. The rest is kept as it
  * arrived, so a record this build does not know survives the trip to a build that does.
+ *
+ * The writer resumes from the tail with this same function, so "a line that is a record" has
+ * one definition and the two ends of the file cannot disagree about it.
  */
-function parseLine(raw: string): LedgerRecord | null {
+export function parseLedgerLine(raw: string): LedgerRecord | null {
   let value: unknown;
   try {
     value = JSON.parse(raw);
