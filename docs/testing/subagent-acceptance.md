@@ -33,6 +33,11 @@ the model it lists: `fake-fast`.
 The scene starts over when you restart the fake provider. Do that between the two passes
 below.
 
+If the API restarted while a subagent was still running, its startup recovery opens a turn.
+Wait for that turn to end before you restart the fake provider: the turn answers through the
+same provider, spends the scene's rules, and the next request then reports `the scenario ran
+out of rules`.
+
 ## Pass 1 — the chain, and the two answers of Stop
 
 ### 1. A delegation returns before the child does
