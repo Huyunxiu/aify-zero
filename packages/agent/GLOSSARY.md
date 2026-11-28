@@ -24,6 +24,12 @@ The handle one session uses to reach one of its subagents. It is unique among th
 subagents, and it does not change. Two sessions can each hold a subagent of the same name.
 _Avoid_: id、句柄、别名
 
+**Subagent Supervisor (子代理监管器)**:
+The runner-owned instance object that serializes subagent starts, settlements, and stops per
+parent session, tracks live run ages, silences children stopped with their parent, and announces
+crashed child runs at startup.
+_Avoid_: 子代理工厂、监管服务、全局锁
+
 **Turn (回合)**:
 One exchange between the user and the model, in the order of a session. A user turn holds
 one input. An assistant turn holds the answer to it. One run can make many user turns and

@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+
 import { JOB_NOTICE, SUBAGENT_NOTICE } from "@workspace/agent-client";
 import type {
   AgentTurn,
@@ -8,11 +10,16 @@ import type {
 import type { ModelRef } from "@workspace/shared/model";
 import { describe, expect, test, vi } from "vitest";
 
-import type { AgentSession } from "../../src/agent-session";
-import type { Agent } from "../../src/agents";
+import { AgentContext } from "../../src/agent-context";
+import { AgentSession } from "../../src/agent-session";
+import { Agent } from "../../src/agents";
+import type { Subagents } from "../../src/extensions/capabilities";
 import type { AgentRunnerStore } from "../../src/runtime";
 import { createAgentRunner } from "../../src/runtime";
 import type { SessionRecord, SessionEndStatus } from "../../src/storage";
+import { getSubagentDefinition } from "../../src/subagent/definitions";
+import { SubagentLimitReachedError } from "../../src/subagent/supervisor";
+import { testSandbox } from "../helpers/sandbox";
 
 const session = (id: string): SessionRecord => ({
   id,
@@ -184,7 +191,7 @@ class FakeStore {
     return Promise.resolve(1);
   }
 
-  listChildSessions() {
+  listChildSessions(_parentSessionId?: string): Promise<SessionRecord[]> {
     return Promise.resolve([]);
   }
 
@@ -692,6 +699,194 @@ describe("AgentRunner", () => {
 
     await runnerA.shutdown();
     await runnerB.shutdown();
+  });
+
+  test("forwards subagentLimit, subagentTimeoutMs, and now into child lifecycle", async () => {
+    class SubagentStore extends FakeStore {
+      override saveSession(write: Partial<SessionRecord> & { id: string }) {
+        const current = this.sessions.get(write.id) ?? session(write.id);
+        this.sessions.set(write.id, { ...current, ...write });
+        return Promise.resolve(true);
+      }
+
+      findSessionByParentToolCall({
+        parentSessionId,
+        toolCallId,
+      }: {
+        parentSessionId: string;
+        toolCallId: string;
+      }) {
+        for (const entry of this.sessions.values()) {
+          if (
+            entry.parentSessionId === parentSessionId &&
+            entry.parentToolCallId === toolCallId
+          ) {
+            return Promise.resolve(entry);
+          }
+        }
+        return Promise.resolve(null);
+      }
+
+      override listChildSessions(parentSessionId: string) {
+        return Promise.resolve(
+          [...this.sessions.values()].filter(
+            (entry) => entry.parentSessionId === parentSessionId
+          )
+        );
+      }
+
+      saveTurn() {
+        return Promise.resolve(1);
+      }
+
+      beginTurn() {
+        return Promise.resolve();
+      }
+
+      saveStep() {
+        return Promise.resolve(1);
+      }
+    }
+
+    const server = createServer((_request, response) => {
+      // Keep the stream request open until childAgent.abort() fires.
+      response.on("close", () => {
+        response.end();
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => {
+        resolve();
+      });
+    });
+
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("expected tcp server address");
+    }
+    const baseURL = `http://127.0.0.1:${String(address.port)}/v1`;
+
+    const store = new SubagentStore([session("s1")]);
+    let clock = 1000;
+    const seenFactories: ((agent: Agent) => Subagents)[] = [];
+    const seenClaims: { inboxId: string; turn: AgentTurn<never> }[] = [];
+
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      subagentLimit: 1,
+      subagentTimeoutMs: 25,
+      now: () => clock,
+      buildAgent: (input) => {
+        if (input.subagentFactory) {
+          seenFactories.push(input.subagentFactory);
+        }
+        return Promise.resolve(
+          fakeAgent((options) => {
+            if (options.claims) {
+              seenClaims.push(...options.claims);
+            }
+            void options.onFinish("done");
+          })
+        );
+      },
+    });
+
+    try {
+      await runner.enqueue({
+        sessionId: "s1",
+        turn: userTurn("turn-1"),
+        model,
+      });
+
+      await vi.waitFor(() => expect(seenFactories).toHaveLength(1));
+
+      const parent = new Agent({
+        name: "main",
+        sessionId: "s1",
+        approvalPolicy: "edit",
+        session: new AgentSession({ turns: [] }),
+        store: asRunnerStore(store) as never,
+        model,
+        resolveModel: (ref) => ({
+          ref,
+          name: "test-provider",
+          protocol: "openai-chat",
+          baseURL,
+          apiKey: "test-key",
+        }),
+        context: new AgentContext({
+          sessionId: "s1",
+          projectDirs: ["/tmp"],
+          sessionDir: "/tmp/sessions/s1",
+          sandbox: testSandbox("/tmp", "/tmp/sessions/s1"),
+          model,
+        }),
+      });
+
+      const subagents = seenFactories[0]!(parent);
+      const definition = getSubagentDefinition("general")!;
+
+      const created = await subagents.create({
+        toolCallId: "tc-1",
+        definition,
+        description: "hang until timeout",
+        prompt: "wait",
+      });
+
+      // Advancing the injected clock confirms `now` drives `runningMs`.
+      clock = 2500;
+      const listed = await subagents.list();
+
+      expect(listed.limit).toBe(1);
+      expect(listed.running).toBe(1);
+      expect(listed.subagents).toMatchObject([
+        {
+          sessionId: created.sessionId,
+          status: "running",
+          runningMs: 1500,
+        },
+      ]);
+
+      await expect(
+        subagents.create({
+          toolCallId: "tc-2",
+          definition,
+          description: "exceeds limit",
+          prompt: "second",
+        })
+      ).rejects.toBeInstanceOf(SubagentLimitReachedError);
+
+      // The 25ms `subagentTimeoutMs` aborts the hanging child and emits its notice.
+      await vi.waitFor(() =>
+        expect(
+          store.cleared.some(
+            (entry) =>
+              entry.sessionId === created.sessionId &&
+              entry.status === "timed-out"
+          )
+        ).toBeTruthy()
+      );
+      await vi.waitFor(() =>
+        expect(
+          seenClaims.some((claim) => {
+            const part = claim.turn.content[0]?.content[0];
+            return (
+              part?.type === "text" && part.text.includes("settled: timed-out")
+            );
+          })
+        ).toBeTruthy()
+      );
+    } finally {
+      server.closeAllConnections();
+      await Promise.all([
+        runner.shutdown(),
+        new Promise<void>((resolve) => {
+          server.close(() => {
+            resolve();
+          });
+        }),
+      ]);
+    }
   });
 });
 

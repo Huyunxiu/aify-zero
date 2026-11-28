@@ -30,6 +30,7 @@ import {
   WebToolsExtension,
 } from "./extensions/builtin";
 import { MAIN_INSTRUCTIONS } from "./extensions/builtin/core-instructions";
+import type { Subagents } from "./extensions/capabilities";
 import { EnvironmentExtension } from "./extensions/environment";
 import type { Extension } from "./extensions/types";
 import type { NoticeWriter } from "./inbox/notice-writer";
@@ -87,14 +88,12 @@ export interface SessionAgentOptions {
   name?: string;
   store: AgentStore;
   session: AgentSession;
-  /** 运行器实例的注册表；省略时子会话用进程级单例。 */
+  /** Stream registry for the standalone fallback subagent factory when no runner supplies `subagentFactory`. */
   streamRegistry?: StreamEventRegistry<AgentToolSet>;
+  /** Runner-owned subagent factory; defaults to a standalone factory when omitted. */
+  subagentFactory?: (agent: Agent) => Subagents;
   /** The notice writer this run may use; the runner builds it. */
   notices?: NoticeWriter;
-  /** How many subagents one session may run at once; the state package's default otherwise. */
-  subagentLimit?: number;
-  /** The wall clock one subagent run may take, in milliseconds. */
-  subagentTimeoutMs?: number;
   model: SessionModel;
   /** 把模型引用解析成供应商的接入信息。 */
   resolveModel: ModelTargetResolver;
@@ -228,20 +227,19 @@ export async function createSessionAgent(
     ...(options.notices === undefined ? {} : { notices: options.notices }),
     ...(toolGroups.subagent
       ? {
-          subagentFactory: (owner) =>
-            createSubagentFactory({
-              agent: owner,
-              store: options.store,
-              registry:
-                options.streamRegistry ??
-                (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
-              ...(options.subagentLimit === undefined
-                ? {}
-                : { limit: options.subagentLimit }),
-              ...(options.subagentTimeoutMs === undefined
-                ? {}
-                : { timeoutMs: options.subagentTimeoutMs }),
-            }),
+          subagentFactory:
+            options.subagentFactory ??
+            ((owner) =>
+              createSubagentFactory({
+                agent: owner,
+                store: options.store,
+                registry:
+                  options.streamRegistry ??
+                  (STREAM_REGISTRY as StreamEventRegistry<AgentToolSet>),
+                ...(options.notices === undefined
+                  ? {}
+                  : { notices: options.notices }),
+              })),
         }
       : {}),
   });

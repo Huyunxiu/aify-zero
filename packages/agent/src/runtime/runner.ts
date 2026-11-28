@@ -26,6 +26,7 @@ import type { SessionEndStatus } from "../storage";
 import { recoverInterruptedRuns } from "../storage/recovery";
 import type { RecoveryOutcome } from "../storage/recovery";
 import { StreamEventRegistry } from "../stream-registry";
+import { SubagentSupervisor } from "../subagent/supervisor";
 import type { AgentToolSet } from "../types";
 import { generateSessionId } from "../utils/id-util";
 import { AgentRunnerError } from "./errors";
@@ -53,6 +54,12 @@ export type AgentRunnerOptions = {
   /** 运行落定后留一条发件箱记录；宿主不关心通知时可以不给。 */
   outbox?: OutboxRecorder;
   logger?: AgentRunnerLogger;
+  /** Maximum number of subagents one parent session may run at once. */
+  subagentLimit?: number;
+  /** Wall-clock limit in milliseconds for a single subagent run; 0 disables it. */
+  subagentTimeoutMs?: number;
+  /** Clock for measuring subagent run age; defaults to Date.now. */
+  now?: () => number;
 };
 
 /** 起跑一条待办项的结果。 */
@@ -74,6 +81,7 @@ export class AgentRunner {
   readonly #logger: AgentRunnerLogger;
   readonly #sessionEvents: SessionEventRegistry<AgentToolSet>;
   readonly #streams: StreamEventRegistry<AgentToolSet>;
+  readonly #subagents: SubagentSupervisor;
   readonly #sessions: SessionLifecycle;
 
   /** 等一次微任务批量处理的会话；不是队列本身，收件箱才是。 */
@@ -118,11 +126,27 @@ export class AgentRunner {
         this.#logger.warn(message, error);
       },
     });
+    this.#subagents = new SubagentSupervisor({
+      store: this.#store,
+      registry: this.#streams,
+      notices: this.#notices,
+      ...(options.subagentLimit === undefined
+        ? {}
+        : { limit: options.subagentLimit }),
+      ...(options.subagentTimeoutMs === undefined
+        ? {}
+        : { timeoutMs: options.subagentTimeoutMs }),
+      ...(options.now === undefined ? {} : { now: options.now }),
+      warn: (message, error) => {
+        this.#logger.warn(message, error);
+      },
+    });
     this.#sessions = new SessionLifecycle({
       store: this.#store,
       registry: this.#streams,
       buildAgent: this.#buildAgent,
       notices: this.#notices,
+      subagents: this.#subagents,
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       ...(options.outbox === undefined ? {} : { outbox: options.outbox }),
       steering: (sessionId) => this.steeringSignal(sessionId),
@@ -149,6 +173,14 @@ export class AgentRunner {
     try {
       pending = await this.#store.listPendingInboxSessionIds();
       pending = await this.#dropStaleNotices(pending);
+    } catch (error) {
+      failures.push(failureOf(error));
+    }
+
+    // Report recovered subagents after dropping stale notices from the prior
+    // process so freshly written recovery notices stay queued and wake parents.
+    try {
+      await this.#subagents.reportRecovered(recovered);
     } catch (error) {
       failures.push(failureOf(error));
     }

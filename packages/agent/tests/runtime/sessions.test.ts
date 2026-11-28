@@ -9,27 +9,43 @@ import { SessionLifecycle } from "../../src/runtime/sessions";
 import type { BuildAgentInput } from "../../src/runtime/types";
 import type { AgentStore, TurnRecord, TurnWrite } from "../../src/storage";
 import type { SessionEndStatus, SessionRecord } from "../../src/storage/types";
-import { takeSilence } from "../../src/subagent/silence";
+import { SubagentSupervisor } from "../../src/subagent/supervisor";
 import {
   assistantStep,
   assistantTurn,
   userTurn,
 } from "./helpers/compaction-fixtures";
 
-const asStore = (store: Partial<AgentStore>): AgentStore => store as AgentStore;
+const asStore = (store: Partial<AgentStore>): AgentStore =>
+  ({
+    deleteInboxItems: () => Promise.resolve(0),
+    ...store,
+  }) as AgentStore;
+
+const asSupervisor = (store: AgentStore, registry: unknown) =>
+  new SubagentSupervisor({
+    store,
+    registry: registry as never,
+  });
 
 const makeLifecycle = (
   store: Partial<AgentStore>,
-  entries: Record<string, unknown> = {}
-): SessionLifecycle =>
-  new SessionLifecycle({
-    store: asStore(store),
-    registry: {
-      getStreamEntryBySession: (sessionId: string) => entries[sessionId],
-    } as never,
+  entries: Record<string, unknown> = {},
+  subagents?: SubagentSupervisor
+): SessionLifecycle => {
+  const fullStore = asStore(store);
+  const registry = {
+    getStreamEntryBySession: (sessionId: string) => entries[sessionId],
+  } as never;
+
+  return new SessionLifecycle({
+    store: fullStore,
+    registry,
     buildAgent: () =>
       Promise.reject(new Error("buildAgent must not run in this test")),
+    subagents: subagents ?? asSupervisor(fullStore, registry),
   });
+};
 
 const sessionRow = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   id: "s1",
@@ -85,8 +101,12 @@ describe(SessionLifecycle, () => {
     // only here.
     const order: string[] = [];
     let finished!: () => void;
+    let done = false;
     const childDone = new Promise<void>((resolve) => {
-      finished = resolve;
+      finished = () => {
+        done = true;
+        resolve();
+      };
     });
     const cleared: { sessionId: string; status: string }[] = [];
 
@@ -102,7 +122,7 @@ describe(SessionLifecycle, () => {
       },
       {
         c1: {
-          isDone: () => false,
+          isDone: () => done,
           agent: {
             abort: () => {
               order.push("abort");
@@ -151,35 +171,30 @@ describe(SessionLifecycle, () => {
     expect(aborted).toBeFalsy();
   });
 
-  test("stop marks the children it takes down, before it aborts them", async () => {
-    // The mark is what stops their settlements from reporting a stop the user
-    // asked for. It has to be in place before the abort, because the abort is
-    // what settles them.
-    let marked: boolean | undefined;
+  test("stop delegates child teardown to SubagentSupervisor.stopChildren", async () => {
+    const stoppedParents: string[] = [];
+    const supervisor = {
+      stopChildren: (parentSessionId: string) => {
+        stoppedParents.push(parentSessionId);
+        return Promise.resolve();
+      },
+      forParent: () => {
+        throw new Error("not used");
+      },
+    } as unknown as SubagentSupervisor;
 
     const lifecycle = makeLifecycle(
       {
         getSessionById: () => Promise.resolve(sessionRow()),
-        clearActiveStream: () => Promise.resolve(1),
-        listChildSessions: () =>
-          Promise.resolve([sessionRow({ id: "c1", activeStreamId: "cs1" })]),
       },
-      {
-        c1: {
-          isDone: () => false,
-          agent: {
-            abort: () => {
-              marked = takeSilence("c1");
-            },
-          },
-          whenFinished: () => Promise.resolve(),
-        },
-      }
+      {},
+      supervisor
     );
 
     await lifecycle.stop("s1");
+    await lifecycle.stop("s1", { subagents: "keep" });
 
-    expect(marked).toBeTruthy();
+    expect(stoppedParents).toStrictEqual(["s1"]);
   });
 
   test("a stop that keeps the subagents leaves them running", async () => {
@@ -229,6 +244,7 @@ describe(SessionLifecycle, () => {
     // A session that is going away cannot own a running child: the row a
     // settlement would write into is the row this delete removes.
     const order: string[] = [];
+    let childDone = false;
 
     const lifecycle = makeLifecycle(
       {
@@ -246,9 +262,10 @@ describe(SessionLifecycle, () => {
       },
       {
         c1: {
-          isDone: () => false,
+          isDone: () => childDone,
           agent: {
             abort: () => {
+              childDone = true;
               order.push("abort:c1");
             },
           },
@@ -260,6 +277,36 @@ describe(SessionLifecycle, () => {
     await lifecycle.delete("s1");
 
     expect(order).toStrictEqual(["abort:c1", "clear:c1", "delete"]);
+  });
+
+  test("delete delegates child teardown to SubagentSupervisor.stopChildren", async () => {
+    const order: string[] = [];
+    const supervisor = {
+      stopChildren: (parentSessionId: string) => {
+        order.push(`stopChildren:${parentSessionId}`);
+        return Promise.resolve();
+      },
+      forParent: () => {
+        throw new Error("not used");
+      },
+    } as unknown as SubagentSupervisor;
+
+    const lifecycle = makeLifecycle(
+      {
+        findSessionRow: () => Promise.resolve(sessionRow()),
+        deleteSession: () => {
+          order.push("delete");
+          return Promise.resolve({ removed: true, sessionIds: ["s1"] });
+        },
+      },
+      {},
+      supervisor
+    );
+
+    const result = await lifecycle.delete("s1");
+
+    expect(result).toStrictEqual({ removed: true, sessionIds: ["s1"] });
+    expect(order).toStrictEqual(["stopChildren:s1", "delete"]);
   });
 
   test("fork copies turns without rewriting ids", async () => {
@@ -411,24 +458,29 @@ const fakeAgent = () => {
 };
 
 describe("SessionLifecycle.startFromInbox", () => {
-  const make = (input: { agent: unknown; branch?: unknown[] }) =>
-    new SessionLifecycle({
-      store: asStore({
-        getSessionById: () => Promise.resolve(sessionRow()),
-        getBranchTurns: () =>
-          Promise.resolve(
-            (input.branch ?? []).map((content) => ({ content })) as never
-          ),
-        setActiveStream: () => Promise.resolve(1),
-        clearActiveStream: () => Promise.resolve(1),
-      }),
-      registry: {
-        getStreamEntryBySession: () => null,
-        registerStream: () => {},
-        unregisterStream: () => Promise.resolve(true),
-      } as never,
-      buildAgent: () => Promise.resolve(input.agent as never),
+  const make = (input: { agent: unknown; branch?: unknown[] }) => {
+    const store = asStore({
+      getSessionById: () => Promise.resolve(sessionRow()),
+      getBranchTurns: () =>
+        Promise.resolve(
+          (input.branch ?? []).map((content) => ({ content })) as never
+        ),
+      setActiveStream: () => Promise.resolve(1),
+      clearActiveStream: () => Promise.resolve(1),
     });
+    const registry = {
+      getStreamEntryBySession: () => null,
+      registerStream: () => {},
+      unregisterStream: () => Promise.resolve(true),
+    } as never;
+
+    return new SessionLifecycle({
+      store,
+      registry,
+      buildAgent: () => Promise.resolve(input.agent as never),
+      subagents: asSupervisor(store, registry),
+    });
+  };
 
   test("认领这条待办项，并把它的回合接在 branch 后面", async () => {
     const { agent, seen } = fakeAgent();
@@ -493,28 +545,31 @@ describe("SessionLifecycle.startFromInbox", () => {
       turns?: readonly { id: string }[];
     }[] = [];
 
+    const store = asStore({
+      getSessionById: () => Promise.resolve(sessionRow()),
+      getBranchTurns: () => Promise.resolve([]),
+      setActiveStream: () => Promise.resolve(1),
+      clearActiveStream: () => Promise.resolve(1),
+    });
+    const registry = {
+      getStreamEntryBySession: () => null,
+      registerStream: (
+        _streamId: string,
+        _agent: unknown,
+        _stream: unknown,
+        options?: {
+          turnIds?: readonly string[];
+          turns?: readonly { id: string }[];
+        }
+      ) => {
+        registered.push(options ?? {});
+      },
+      unregisterStream: () => Promise.resolve(true),
+    } as never;
+
     const lifecycle = new SessionLifecycle({
-      store: asStore({
-        getSessionById: () => Promise.resolve(sessionRow()),
-        getBranchTurns: () => Promise.resolve([]),
-        setActiveStream: () => Promise.resolve(1),
-        clearActiveStream: () => Promise.resolve(1),
-      }),
-      registry: {
-        getStreamEntryBySession: () => null,
-        registerStream: (
-          _streamId: string,
-          _agent: unknown,
-          _stream: unknown,
-          options?: {
-            turnIds?: readonly string[];
-            turns?: readonly { id: string }[];
-          }
-        ) => {
-          registered.push(options ?? {});
-        },
-        unregisterStream: () => Promise.resolve(true),
-      } as never,
+      store,
+      registry,
       buildAgent: () =>
         Promise.resolve({
           stream: (options: StreamOptions) => {
@@ -523,6 +578,7 @@ describe("SessionLifecycle.startFromInbox", () => {
           },
           dispose: () => Promise.resolve(),
         } as never),
+      subagents: asSupervisor(store, registry),
     });
 
     await lifecycle.startFromInbox({
@@ -553,14 +609,17 @@ describe("SessionLifecycle.startFromInbox", () => {
 
 describe("SessionLifecycle startFromInbox guards", () => {
   test("子会话不能从收件箱起跑", async () => {
+    const store = asStore({
+      getSessionById: () => Promise.resolve(sessionRow({ kind: "subagent" })),
+    });
+    const registry = {
+      getStreamEntryBySession: () => {},
+    } as never;
     const lifecycle = new SessionLifecycle({
-      store: asStore({
-        getSessionById: () => Promise.resolve(sessionRow({ kind: "subagent" })),
-      }),
-      registry: {
-        getStreamEntryBySession: () => {},
-      } as never,
+      store,
+      registry,
       buildAgent: () => Promise.reject(new Error("must not build")),
+      subagents: asSupervisor(store, registry),
     });
 
     await expect(
@@ -575,26 +634,29 @@ describe("SessionLifecycle startFromInbox guards", () => {
 describe("approval policy on SessionLifecycle", () => {
   const lifecycleFor = (seen: BuildAgentInput[]) => {
     const { agent } = fakeAgent();
+    const store = asStore({
+      getSessionById: () =>
+        Promise.resolve(
+          sessionRow({ approvalPolicy: "edit", botId: "b-custom" })
+        ),
+      getBranchTurns: () => Promise.resolve([]),
+      setActiveStream: () => Promise.resolve(1),
+      clearActiveStream: () => Promise.resolve(1),
+    });
+    const registry = {
+      getStreamEntryBySession: () => null,
+      registerStream: () => {},
+      unregisterStream: () => Promise.resolve(true),
+    } as never;
 
     return new SessionLifecycle({
-      store: asStore({
-        getSessionById: () =>
-          Promise.resolve(
-            sessionRow({ approvalPolicy: "edit", botId: "b-custom" })
-          ),
-        getBranchTurns: () => Promise.resolve([]),
-        setActiveStream: () => Promise.resolve(1),
-        clearActiveStream: () => Promise.resolve(1),
-      }),
-      registry: {
-        getStreamEntryBySession: () => null,
-        registerStream: () => {},
-        unregisterStream: () => Promise.resolve(true),
-      } as never,
+      store,
+      registry,
       buildAgent: (input) => {
         seen.push(input);
         return Promise.resolve(agent as never);
       },
+      subagents: asSupervisor(store, registry),
     });
   };
 

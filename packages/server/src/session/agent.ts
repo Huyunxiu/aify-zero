@@ -48,18 +48,14 @@ export interface BuildSessionAgentInput {
   projectId?: string;
   session: BuildAgentInput["session"];
   store: SQLiteStore;
-  /** Runner stream registry; child sessions share it. */
-  streams: BuildAgentInput["streams"];
+  /** Runner-owned subagent factory; child sessions share its supervisor. */
+  subagentFactory?: BuildAgentInput["subagentFactory"];
   jobs?: JobRegistry;
   steering?: SteeringSignal;
   /** The Approval Policy of the session, which this Run uses as it is. */
   approvalPolicy: ApprovalPolicy;
   /** The notice writer this run was given; absent in tests that do not settle. */
   notices?: NoticeWriter;
-  /** How many subagents one session may run at once. */
-  subagentLimit?: number;
-  /** The wall clock one subagent run may take, in milliseconds. */
-  subagentTimeoutMs?: number;
 }
 
 /**
@@ -75,13 +71,11 @@ export async function buildSessionAgent({
   projectId,
   session,
   store,
-  streams,
+  subagentFactory,
   jobs,
   steering,
   approvalPolicy,
   notices,
-  subagentLimit,
-  subagentTimeoutMs,
 }: BuildSessionAgentInput): Promise<Agent> {
   const sessionDir = getSessionDir(sessionId);
   mkdirSync(sessionDir, { recursive: true });
@@ -118,7 +112,7 @@ export async function buildSessionAgent({
     sessionId,
     store,
     session,
-    streamRegistry: streams,
+    ...(subagentFactory === undefined ? {} : { subagentFactory }),
     model: { ref: configured.ref, effort },
     resolveModel: createModelTargetResolver(settings),
     projectDirs: dirs.projectDirs,
@@ -134,8 +128,6 @@ export async function buildSessionAgent({
     timeZone,
     steering,
     ...(notices === undefined ? {} : { notices }),
-    ...(subagentLimit === undefined ? {} : { subagentLimit }),
-    ...(subagentTimeoutMs === undefined ? {} : { subagentTimeoutMs }),
     sandbox,
     toolApprovalPattern: createMcpToolApprovalPattern(
       mcpManager,

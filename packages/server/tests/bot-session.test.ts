@@ -235,8 +235,7 @@ describe("bot session integration", () => {
   });
 
   test("buildSessionAgent applies Bot instructions, disabled tool groups, isolated HOME, and env", async () => {
-    const { AgentSession, SessionEventRegistry, StreamEventRegistry } =
-      await import("@workspace/agent");
+    const { AgentSession } = await import("@workspace/agent");
     const { buildSessionAgent } = await import("../src/session/agent");
     const { findConfiguredModel } =
       await import("../src/routers/settings/settings.service");
@@ -267,7 +266,6 @@ describe("bot session integration", () => {
       botId: bot.id,
       session: new AgentSession({ turns: [] }),
       store,
-      streams: new StreamEventRegistry(new SessionEventRegistry()),
       approvalPolicy: "edit",
     });
 

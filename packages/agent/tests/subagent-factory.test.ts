@@ -7,8 +7,8 @@ import type {
 import { describe, expect, test, vi } from "vitest";
 
 import type { Agent } from "../src/agents.js";
-import { Capabilities } from "../src/extensions/capabilities.js";
 import { AgentInbox } from "../src/inbox/agent-inbox.js";
+import type { NoticeWriter } from "../src/inbox/notice-writer.js";
 import { SessionEventRegistry } from "../src/session-events.js";
 import type { AgentStore } from "../src/storage/index.js";
 import type {
@@ -23,14 +23,14 @@ import {
   createSubagentFactory,
   SubagentLimitReachedError,
 } from "../src/subagent/factory.js";
-import { silenceSettlement } from "../src/subagent/silence.js";
+import { SubagentSupervisor } from "../src/subagent/supervisor.js";
 import type { AgentToolSet } from "../src/types.js";
 import { testModel } from "./helpers/model-target.js";
 
 /**
- * One child run, as its parent's factory started it.
+ * One child run, as the supervisor started it.
  *
- * The run is fake because the subject here is what the factory decides, not what
+ * The run is fake because the subject here is what the supervisor decides, not what
  * the kernel writes: whether a run starts, what it claims, and what a stop does
  * to the words that were waiting. The turn rows are the kernel's business and
  * have their own suite.
@@ -58,7 +58,7 @@ type FakeChild = {
 
 const children = vi.hoisted(() => ({ made: [] as FakeChild[] }));
 
-// The child agent is the kernel's end of the seam. The factory is what the tests
+// The child agent is the kernel's end of the seam. The supervisor is what the tests
 // read, so the agent is replaced by one whose stream the test can end.
 vi.mock(import("../src/subagent/create.js"), async (importOriginal) => {
   const actual = await importOriginal<typeof CreateModule>();
@@ -75,8 +75,17 @@ vi.mock(import("../src/subagent/create.js"), async (importOriginal) => {
 /** The store the fake child claims its rows in; set by `fixture()`. */
 let active: FakeStore;
 
-/** What the factory told the parent; cleared by `fixture()`. */
+/** What the supervisor told the parent; cleared by `fixture()`. */
 const notices = vi.hoisted(() => ({ written: [] as string[] }));
+
+const noticeWriter = (): NoticeWriter => ({
+  write: (request) => {
+    notices.written.push(request.text);
+    return Promise.resolve(undefined as InboxItem | undefined);
+  },
+  canDeliver: () => true,
+  resetBudget: () => {},
+});
 
 /**
  * A child run whose ending the test decides.
@@ -146,7 +155,7 @@ function fakeChild(sessionId: string): FakeChild {
 const asStore = (store: FakeStore): AgentStore =>
   store as unknown as AgentStore;
 
-/** A parent agent with only the fields the factory reads; the child is faked. */
+/** A parent agent with only the fields the supervisor reads; the child is faked. */
 const parentAgent = (): Agent =>
   ({
     sessionId: "parent-1",
@@ -160,17 +169,7 @@ const parentAgent = (): Agent =>
     approvalPolicy: "edit",
     inbox: new AgentInbox(asStore(active)),
     extensions: {
-      capability: (token: unknown) =>
-        token === Capabilities.notices
-          ? {
-              write: (request: { text: string }) => {
-                notices.written.push(request.text);
-                return Promise.resolve();
-              },
-              canDeliver: () => true,
-              resetBudget: () => {},
-            }
-          : undefined,
+      capability: () => {},
     },
   }) as unknown as Agent;
 
@@ -355,9 +354,9 @@ class FakeStore {
 }
 
 /**
- * The process's stream registry.
+ * The runner's stream registry.
  *
- * One per process, shared by every factory, the way the server wires it: a
+ * One per runner, shared by its supervisor, the way the server wires it: a
  * child's run is found by session id regardless of which parent run started it.
  */
 let registry: StreamEventRegistry<AgentToolSet>;
@@ -367,21 +366,38 @@ const newRegistry = () =>
     new SessionEventRegistry<AgentToolSet>()
   );
 
-const factoryOver = (store: FakeStore, limit = 4, timeoutMs = 0) =>
+const supervisorOver = (
+  store: FakeStore,
+  limit = 4,
+  timeoutMs = 0,
+  targetRegistry = registry,
+  now = () => 1000
+) =>
+  new SubagentSupervisor({
+    store: asStore(store),
+    registry: targetRegistry,
+    notices: noticeWriter(),
+    limit,
+    timeoutMs,
+    now,
+  });
+
+const standaloneOver = (store: FakeStore, limit = 4, timeoutMs = 0) =>
   createSubagentFactory({
     agent: parentAgent(),
     store: asStore(store),
     registry,
+    notices: noticeWriter(),
     limit,
     timeoutMs,
     now: () => 1000,
   });
 
-/** The same rows in a new process: no live stream, a new factory. */
+/** The same rows in a new process: no live stream, a new supervisor. */
 const restarted = (store: FakeStore, limit = 4) => {
   registry = newRegistry();
 
-  return factoryOver(store, limit);
+  return supervisorOver(store, limit).forParent(parentAgent());
 };
 
 const fixture = (limit = 4, timeoutMs = 0) => {
@@ -390,7 +406,12 @@ const fixture = (limit = 4, timeoutMs = 0) => {
   children.made.length = 0;
   notices.written.length = 0;
 
-  return { store: active, subagents: factoryOver(active, limit, timeoutMs) };
+  const supervisor = supervisorOver(active, limit, timeoutMs);
+  return {
+    store: active,
+    supervisor,
+    subagents: supervisor.forParent(parentAgent()),
+  };
 };
 
 const definition = SUBAGENT_DEFINITIONS[0]!;
@@ -455,7 +476,7 @@ describe("a message handed to a subagent", () => {
       dedupeKey: "call-2",
     });
 
-    // A new process: no live run, a new factory over the same rows.
+    // A new runner: no live run, a new supervisor over the same rows.
     children.made.length = 0;
     const next = restarted(store);
     const handoff = await next.handoff({
@@ -547,13 +568,13 @@ describe("the limit on running subagents", () => {
     expect(failures[0]).toBeInstanceOf(SubagentLimitReachedError);
   });
 
-  test("holds the limit across two factories on one session", async () => {
-    const { store } = fixture(1);
-    const first = factoryOver(store, 1);
-    const second = factoryOver(store, 1);
+  test("holds the limit across two capability handles from the same supervisor", async () => {
+    const { supervisor } = fixture(1);
+    const first = supervisor.forParent(parentAgent());
+    const second = supervisor.forParent(parentAgent());
 
-    // A factory is built once per parent run, so the next run has its own. The
-    // lock and the registry are per process, which is what makes the count hold.
+    // A capability handle is built once per parent run, so consecutive runs
+    // share the supervisor's lock and registry.
     const outcomes = await Promise.allSettled([
       first.create({
         definition: SUBAGENT_DEFINITIONS[0]!,
@@ -574,6 +595,126 @@ describe("the limit on running subagents", () => {
     );
     expect(children.made).toHaveLength(1);
     expect(failures).toHaveLength(1);
+  });
+
+  test("isolates locks, limits, timestamps, and silence across supervisor instances", async () => {
+    const storeA = new FakeStore();
+    const storeB = new FakeStore();
+    const registryA = newRegistry();
+    const registryB = newRegistry();
+    let clockA = 1000;
+    let clockB = 5000;
+    const supervisorA = supervisorOver(storeA, 1, 0, registryA, () => clockA);
+    const supervisorB = supervisorOver(storeB, 1, 0, registryB, () => clockB);
+
+    children.made.length = 0;
+    notices.written.length = 0;
+
+    active = storeA;
+    const subagentsA = supervisorA.forParent(parentAgent());
+    await subagentsA.create({
+      definition,
+      prompt: "Task A.",
+      description: "Task A",
+      toolCallId: "call-a",
+    });
+
+    active = storeB;
+    const subagentsB = supervisorB.forParent(parentAgent());
+    await subagentsB.create({
+      definition,
+      prompt: "Task B.",
+      description: "Task B",
+      toolCallId: "call-b",
+    });
+
+    // Instance A being at capacity does not block instance B, and clock ticks stay separate.
+    clockA = 2500;
+    clockB = 8000;
+    const listA = await subagentsA.list();
+    const listB = await subagentsB.list();
+    expect(listA.subagents[0]?.runningMs).toBe(1500);
+    expect(listB.subagents[0]?.runningMs).toBe(3000);
+
+    // Stopping children on supervisor A does not silence a child running in supervisor B.
+    active = storeA;
+    children.made[0]!.finishOnAbort = true;
+    await supervisorA.stopChildren("parent-1");
+    expect(notices.written).toStrictEqual([]);
+
+    active = storeB;
+    await children.made[1]?.finish("canceled");
+    expect(notices.written).toHaveLength(1);
+  });
+
+  test("does not block one supervisor's parent lock while another supervisor holds the same parentSessionId lock", async () => {
+    const storeA = new FakeStore();
+    const storeB = new FakeStore();
+    const supervisorA = supervisorOver(storeA, 4, 0, newRegistry());
+    const supervisorB = supervisorOver(storeB, 4, 0, newRegistry());
+
+    let releaseLockA!: () => void;
+    const gateA = new Promise<void>((resolve) => {
+      releaseLockA = resolve;
+    });
+    let enteredLockA!: () => void;
+    const lockAEntered = new Promise<void>((resolve) => {
+      enteredLockA = resolve;
+    });
+
+    const originalFindA = storeA.findSessionByParentToolCall.bind(storeA);
+    storeA.findSessionByParentToolCall = async (input) => {
+      enteredLockA();
+      await gateA;
+      return await originalFindA(input);
+    };
+
+    const events: string[] = [];
+
+    active = storeA;
+    const callA = supervisorA
+      .forParent(parentAgent())
+      .create({
+        definition,
+        prompt: "Task A.",
+        description: "Task A",
+        toolCallId: "call-a",
+      })
+      .then(() => {
+        events.push("A");
+      });
+
+    await lockAEntered;
+
+    // A second call on the same supervisor A must wait behind A's lock, while
+    // supervisor B on the same parentSessionId proceeds without waiting.
+    const queuedOnA = supervisorA
+      .forParent(parentAgent())
+      .create({
+        definition,
+        prompt: "Task A2.",
+        description: "Task A2",
+        toolCallId: "call-a2",
+      })
+      .then(() => {
+        events.push("A2");
+      });
+
+    active = storeB;
+    await supervisorB.forParent(parentAgent()).create({
+      definition,
+      prompt: "Task B.",
+      description: "Task B",
+      toolCallId: "call-b",
+    });
+    events.push("B");
+
+    expect(events).toStrictEqual(["B"]);
+
+    active = storeA;
+    releaseLockA();
+    await Promise.all([callA, queuedOnA]);
+    expect(events).toStrictEqual(["B", "A", "A2"]);
   });
 
   test("a decision that throws does not jam the next one", async () => {
@@ -684,8 +825,8 @@ describe("the time limit on a run", () => {
     const { store, subagents } = fixture(4, 50);
     await start(subagents);
 
-    // The kernel ends an aborted run as canceled. Only the factory knows that
-    // the clock is what aborted it, so it names the cause in the settlement.
+    // The kernel ends an aborted run as canceled. Only the supervisor knows
+    // that the clock aborted it, so it names the cause in the settlement.
     children.made[0]!.finishOnAbort = true;
 
     await vi.waitFor(() => {
@@ -751,7 +892,7 @@ describe("stopping a subagent", () => {
     row.activeStreamId = "gone";
     row.status = "running";
 
-    const stopped = await factoryOver(store).stop({ name: "AGENT-1" });
+    const stopped = await standaloneOver(store).stop({ name: "AGENT-1" });
 
     expect(stopped).toStrictEqual({ stopped: false, dropped: 0 });
     expect(notices.written.at(-1)).toContain("settled: canceled");
@@ -769,34 +910,139 @@ describe("stopping a subagent", () => {
 });
 
 describe("a child stopped with its parent", () => {
-  test("writes no notice for a stop the parent asked for", async () => {
-    const { subagents } = fixture();
+  test("silences canceled children, discards unread inbox items, and finishes without deadlocking", async () => {
+    const { store, supervisor, subagents } = fixture();
+    await start(subagents);
+    await subagents.handoff({
+      name: "AGENT-1",
+      text: "Also check the parser.",
+      dedupeKey: "call-2",
+    });
+
+    const [child] = children.made;
+    if (child === undefined) {
+      throw new Error("the create call should have started a child");
+    }
+    child.finishOnAbort = true;
+
+    await supervisor.stopChildren("parent-1");
+
+    expect(notices.written).toStrictEqual([]);
+    expect(store.items).toStrictEqual([]);
+    expect(store.sessions.get(child.sessionId)?.activeStreamId).toBeNull();
+    expect(store.sessions.get(child.sessionId)?.status).toBe("canceled");
+  });
+
+  test("still reports a run that finished cleanly while stopChildren runs", async () => {
+    const { supervisor, subagents } = fixture();
     await start(subagents);
     const [child] = children.made;
     if (child === undefined) {
       throw new Error("the create call should have started a child");
     }
 
-    // The session layer marks the children it takes down with the session. The
-    // mark is what keeps the parent's next turn from opening with the news that
-    // the stop the user asked for happened.
-    silenceSettlement(child.sessionId);
-    await child.finish("canceled");
+    child.session.turns.push({
+      id: "turn-done",
+      type: "assistant",
+      createdAt: 1,
+      status: "done",
+      content: [
+        {
+          id: "step-done",
+          type: "assistant",
+          createdAt: 1,
+          status: "done",
+          model: "test-model",
+          content: [
+            { type: "text", text: "All done.", state: "done", createdAt: 1 },
+          ],
+        },
+      ],
+    } as AgentTurn<AgentToolSet>);
+    child.abort = () => {
+      void child.finish("done");
+    };
 
+    await supervisor.stopChildren("parent-1");
+
+    expect(notices.written).toHaveLength(1);
+    expect(notices.written[0]).toContain("settled: done");
+    expect(notices.written[0]).toContain("All done.");
+  });
+
+  test("clears leftover silence marks when a child was idle during stopChildren", async () => {
+    const { supervisor, subagents } = fixture();
+    await start(subagents);
+    await children.made[0]?.finish("done");
+    notices.written.length = 0;
+
+    // Stopping children while idle adds and clears silence marks in `finally`.
+    await supervisor.stopChildren("parent-1");
+
+    // A later run on the same child that cancels must still write its notice.
+    await subagents.handoff({
+      name: "AGENT-1",
+      text: "Run again.",
+      dedupeKey: "call-2",
+    });
+    await children.made[1]?.finish("canceled");
+
+    expect(notices.written).toHaveLength(1);
+    expect(notices.written[0]).toContain("settled: canceled");
+  });
+
+  test("clears stale activeStreamId rows with no live stream entry", async () => {
+    const { store, supervisor } = fixture();
+    await store.saveSession({
+      id: "stale-child",
+      title: "Stale child",
+      kind: "subagent",
+      parentSessionId: "parent-1",
+      parentToolCallId: "call-stale",
+      subagentName: "AGENT-1",
+      metadata: { subagentType: "general" },
+    });
+    const row = store.sessions.get("stale-child")!;
+    row.activeStreamId = "dead-stream";
+    row.status = "running";
+
+    await supervisor.stopChildren("parent-1");
+
+    expect(row.activeStreamId).toBeNull();
+    expect(row.status).toBe("canceled");
     expect(notices.written).toStrictEqual([]);
   });
 
-  test("still reports a run that finished before the stop", async () => {
-    const { subagents } = fixture();
+  test("keeps a still-live child's activeStreamId and silence mark if stopChildren fails mid-phase", async () => {
+    const { store, supervisor, subagents } = fixture();
     await start(subagents);
-    const [child] = children.made;
-    if (child === undefined) {
-      throw new Error("the create call should have started a child");
-    }
+    await subagents.create({
+      definition,
+      prompt: "Second task.",
+      description: "Second task",
+      toolCallId: "call-2",
+    });
 
-    silenceSettlement(child.sessionId);
-    await child.finish("done");
+    const first = children.made[0]!;
+    const second = children.made[1]!;
+    second.abort = () => {
+      throw new Error("abort failed");
+    };
 
-    expect(notices.written).toHaveLength(1);
+    await expect(supervisor.stopChildren("parent-1")).rejects.toThrow(
+      "abort failed"
+    );
+
+    // Both children are still live after the partial abort failure: Phase (c)
+    // must not wipe their running activeStreamId or drop their silence marks.
+    expect(store.sessions.get(first.sessionId)?.activeStreamId).toBe(
+      first.sessionId
+    );
+    expect(store.sessions.get(second.sessionId)?.activeStreamId).toBe(
+      second.sessionId
+    );
+
+    await first.finish("canceled");
+    expect(notices.written).toStrictEqual([]);
   });
 });

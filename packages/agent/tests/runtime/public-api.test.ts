@@ -187,4 +187,17 @@ describe("public API", () => {
 
     await runner.shutdown();
   });
+
+  test("does not export internal subagent helpers from @workspace/agent", async () => {
+    const pkg = await import("@workspace/agent");
+
+    for (const internal of [
+      "readSubagentResult",
+      "settledStatus",
+      "subagentNoticeRequest",
+      "subagentTypeOf",
+    ]) {
+      expect(Object.hasOwn(pkg, internal)).toBeFalsy();
+    }
+  });
 });

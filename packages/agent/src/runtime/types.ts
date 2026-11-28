@@ -8,14 +8,14 @@ import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 
 import type { AgentSession } from "../agent-session";
+import type { Agent } from "../agents";
+import type { Subagents } from "../extensions/capabilities";
 import type { InboxMode } from "../inbox/delivery";
 import type { NoticeWriter } from "../inbox/notice-writer";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
 import type { AgentStore, SessionEndStatus } from "../storage";
 import type { RecoveryOutcome, RecoveryStore } from "../storage/recovery";
-import type { StreamEventRegistry } from "../stream-registry";
-import type { AgentToolSet } from "../types";
 
 /** 运行器需要的那一面：会话、turn、step、收件箱，加上恢复。 */
 export type AgentRunnerStore = AgentStore & RecoveryStore;
@@ -110,8 +110,8 @@ export type BuildAgentInput = {
   effort?: ModelEffort;
   botId?: string;
   projectId?: string;
-  /** 子会话工厂复用它，否则子会话会绕过运行器的锁。 */
-  streams: StreamEventRegistry<AgentToolSet>;
+  /** Subagent capability factory scoped to the runner's supervisor. */
+  subagentFactory?: (agent: Agent) => Subagents;
   /**
    * The writer this assembly uses to settle background work.
    *
