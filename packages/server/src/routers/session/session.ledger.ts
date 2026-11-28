@@ -1,6 +1,4 @@
-import { join } from "node:path";
-
-import { LEDGER_FILE, readLedger } from "@workspace/agent";
+import { ledgerPath, readLedger } from "@workspace/agent";
 import z from "zod";
 
 import { getSessionDir } from "../../config";
@@ -37,7 +35,7 @@ export const streamSessionLedger = publicProcedure
       });
     }
 
-    const path = join(getSessionDir(input.sessionId), LEDGER_FILE);
+    const path = ledgerPath(getSessionDir(input.sessionId));
 
     return await readLedger(path, {
       ...(input.from === undefined ? {} : { from: input.from }),

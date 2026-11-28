@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 
 import type {
   AgentStreamEvent,
@@ -13,13 +12,8 @@ import type { ModelEffort } from "@workspace/shared/constants";
 import type { ModelRef } from "@workspace/shared/model";
 import type { ToolSet } from "ai";
 
+import { ledgerPath, ledgerPromptDir, ledgerPromptPath } from "./layout";
 import { LedgerWriter } from "./writer";
-
-/** The file a session's ledger lives in, under its own directory. */
-export const LEDGER_FILE = "ledger.jsonl";
-
-/** The directory that holds a system prompt, one file per digest. */
-export const LEDGER_PROMPT_DIR = join("ledger", "prompts");
 
 /** How much typing one step may hold before the record says it was cut. */
 const DEFAULT_DELTA_BUDGET = 256 * 1024;
@@ -296,12 +290,12 @@ export class SessionLedgerRecorder {
     text: string
   ): { sha256: string; bytes: number } {
     const sha256 = digestOf(text);
-    const directory = join(this.#options.dirOf(sessionId), LEDGER_PROMPT_DIR);
+    const sessionDir = this.#options.dirOf(sessionId);
 
     try {
-      mkdirSync(directory, { recursive: true });
+      mkdirSync(ledgerPromptDir(sessionDir), { recursive: true });
       // The digest names the bytes, so the same prompt twice is the same file.
-      writeFileSync(join(directory, sha256), text, { flag: "wx" });
+      writeFileSync(ledgerPromptPath(sessionDir, sha256), text, { flag: "wx" });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
         this.#unopened += 1;
@@ -320,7 +314,7 @@ export class SessionLedgerRecorder {
     let writer: LedgerWriter | undefined;
     try {
       writer = LedgerWriter.open({
-        path: join(this.#options.dirOf(sessionId), LEDGER_FILE),
+        path: ledgerPath(this.#options.dirOf(sessionId)),
         ...(this.#options.now === undefined ? {} : { now: this.#options.now }),
       });
     } catch {
