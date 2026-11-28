@@ -50,6 +50,13 @@ export type RunnerState = {
   running: string[];
   waiting: string[];
   paused: { sessionId: string; reason: PauseReason }[];
+  /**
+   * How many ledger writes failed in this process.
+   *
+   * A ledger that cannot be written leaves no replay and no error, so the number is the
+   * only sign that evidence is missing. It is not durable: a restart starts at zero.
+   */
+  ledgerFailures: number;
 };
 
 export type CreateSessionInput = {

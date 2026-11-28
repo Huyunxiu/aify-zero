@@ -502,6 +502,7 @@ export class AgentRunner {
         sessionId,
         reason,
       })),
+      ledgerFailures: this.#ledger?.failures ?? 0,
     };
   }
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -678,6 +678,34 @@ describe("the ledger of the inbox", () => {
 
     expect(discarded).toHaveLength(1);
     expect(discarded[0]).toMatchObject({ inboxItemId: item.id });
+  });
+});
+
+describe("the ledger in the runner state", () => {
+  test("reports a write that never landed", async () => {
+    const blocked = join(mkdtempSync(join(tmpdir(), "ledger-")), "blocked");
+    writeFileSync(blocked, "", "utf-8");
+    const store = new FakeStore([session("s1")]);
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: fakeBuildAgent(fakeAgent()).build,
+      ledger: new SessionLedgerRecorder({
+        // A file where the session directory belongs, so nothing under it can be created.
+        dirOf: () => blocked,
+        pid: 413,
+        appVersion: "0.4.1",
+      }),
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    await runner.enqueue({
+      sessionId: "s1",
+      turn: userTurn("turn-1"),
+      model,
+      mode: "followup",
+    });
+
+    expect(runner.state().ledgerFailures).toBe(1);
   });
 });
 
