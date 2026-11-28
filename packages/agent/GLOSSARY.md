@@ -25,6 +25,20 @@ summaries to it, and the text of a covered turn stays there: compaction changes 
 model-side history, not the transcript.
 _Avoid_: 转录、对话记录、历史
 
+**Session Ledger (会话流水)**:
+The append-only record of one session: the events it showed and the facts it never showed.
+A stream record holds the process on the screen; a note holds a cause, an effective setting,
+or a settled step. It sits beside the transcript and never replaces it, and the database
+does not hold it. Only a replay reads it, and it keeps what happened, not what it means.
+_Avoid_: 日志、事件日志、journal、tape、录像
+
+**Replay (回放)**:
+The act of reading the ledger and showing the session again. A replay reruns no model and
+repeats no tool effect: the content comes from the settled steps, and the events give the
+order. It reads the ledger alone, so a broken ledger cannot corrupt the transcript and a
+wrong row cannot corrupt a replay.
+_Avoid_: 重放、重算、回滚、time travel
+
 **Run (运行)**:
 One model execution from start to end, identified by a run id. At its start, the run claims
 every inbox item, makes each item a user turn, and then drives the assistant turn that
@@ -165,8 +179,10 @@ _Avoid_: 插件、模块、集成
 **System Prompt (系统提示)**:
 The text a session sends as the model's instructions with every step request. It starts with an
 identity: the main session reads `MAIN_INSTRUCTIONS`, and a subagent reads its own preamble. Each
-instructions section then contributes its block, in priority order. Nothing else writes it: a start patch
-changes the call, not the prompt. The code names this field `instructions`.
+instructions section then contributes its block, in priority order. A `turn_start` hook may then
+replace the whole text as that turn starts, and a start patch changes the call rather than the
+prompt. It does not change inside one turn: every step of a turn reads the same text. The code
+names this field `instructions`.
 _Avoid_: 提示词、提示片段、系统消息、system message
 
 **Instructions Section (指令段)**:
