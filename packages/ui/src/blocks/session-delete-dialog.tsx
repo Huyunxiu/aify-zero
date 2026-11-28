@@ -14,6 +14,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc";
+import { sessionTurnsQueryKey } from "../lib/session-orpc-transport";
 
 /** 删除只需要这两个字段，列表里拿到的会话够用。 */
 export type DeletableSession = {
@@ -50,7 +51,7 @@ export function SessionDeleteDialog({
       await queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
       // 删掉的会话不该在缓存里留一份：切回来会挂载到一个不存在的东西上。
       queryClient.removeQueries({ queryKey: ["getSession", sessionId] });
-      queryClient.removeQueries({ queryKey: ["listSessionTurns", sessionId] });
+      queryClient.removeQueries({ queryKey: sessionTurnsQueryKey(sessionId) });
       queryClient.removeQueries({
         queryKey: ["listSessionResources", sessionId],
       });

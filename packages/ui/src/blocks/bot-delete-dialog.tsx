@@ -17,6 +17,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { client } from "../lib/orpc";
+import { sessionTurnsQueryKey } from "../lib/session-orpc-transport";
 
 export type DeletableBot = {
   id: string;
@@ -55,7 +56,7 @@ export function BotDeleteDialog({ bot, onOpenChange }: BotDeleteDialogProps) {
       for (const sessionId of deletedSessionSet) {
         queryClient.removeQueries({ queryKey: ["getSession", sessionId] });
         queryClient.removeQueries({
-          queryKey: ["listSessionTurns", sessionId],
+          queryKey: sessionTurnsQueryKey(sessionId),
         });
         queryClient.removeQueries({
           queryKey: ["listSessionResources", sessionId],
