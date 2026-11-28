@@ -1,10 +1,12 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 import { RIPGREP_PATH_ENV } from "@workspace/shared/constants";
 
 const RG_BINARY = process.platform === "win32" ? "rg.exe" : "rg";
+const VSCODE_RIPGREP_PACKAGE = "@vscode/ripgrep";
 
 /**
  * Resolved executable, cached for the process lifetime.
@@ -53,28 +55,76 @@ function candidatePaths(): string[] {
   return candidates;
 }
 
+export interface ResolveRipgrepOptions {
+  /** Override package binary lookup; tests pass a stub to verify PATH fallback. */
+  readonly resolvePackageBinary?: () => string | undefined;
+}
+
+/**
+ * Resolves the ripgrep binary shipped by the installed `@vscode/ripgrep`
+ * package for local development and tests where no staged `bin/rg` exists.
+ *
+ * Resolved lazily through `createRequire` instead of a static import so
+ * bundled server builds (which stage `bin/rg` separately and omit
+ * `@vscode/ripgrep` from their `node_modules`) never fail at module load.
+ */
+function resolvePackageRipgrep(): string | undefined {
+  const platformPackage = `@vscode/ripgrep-${process.platform}-${process.arch}`;
+  const binarySpecifier = `${platformPackage}/bin/${RG_BINARY}`;
+
+  try {
+    const requireFromModule = createRequire(import.meta.url);
+    const packageEntry = requireFromModule.resolve(VSCODE_RIPGREP_PACKAGE);
+    const resolved = createRequire(packageEntry).resolve(binarySpecifier);
+
+    // Packaged Electron builds cannot execute binaries inside an `.asar` archive.
+    if (resolved.split(path.sep).some((segment) => segment.endsWith(".asar"))) {
+      return undefined;
+    }
+
+    return resolved;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolves the ripgrep executable using the priority order:
+ * `AIFY_RIPGREP_PATH` -> staged binary -> `@vscode/ripgrep` package binary -> `rg` on `PATH`.
+ */
+export function resolveRipgrepPath(
+  options: ResolveRipgrepOptions = {}
+): string {
+  for (const candidate of candidatePaths()) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  const packageBinary = (
+    options.resolvePackageBinary ?? resolvePackageRipgrep
+  )();
+  if (packageBinary !== undefined && existsSync(packageBinary)) {
+    return packageBinary;
+  }
+
+  return RG_BINARY;
+}
+
 /**
  * Returns the ripgrep executable the tools should invoke.
  *
- * Prefers a binary shipped by the current package and falls back to `rg` on
- * `PATH` (which keeps `vp run dev:server` and local development working without
- * a staged copy).
+ * Resolution order: `AIFY_RIPGREP_PATH` -> staged binary -> installed
+ * `@vscode/ripgrep` package binary -> `rg` on `PATH`.
  *
- * @returns An absolute path to the staged binary, or `rg` / `rg.exe`.
+ * @returns An absolute path to a staged or package binary, or `rg` / `rg.exe`.
  */
 export function getRipgrepPath(): string {
   if (ripgrepPath !== undefined) {
     return ripgrepPath;
   }
 
-  for (const candidate of candidatePaths()) {
-    if (existsSync(candidate)) {
-      ripgrepPath = candidate;
-      return candidate;
-    }
-  }
-
-  ripgrepPath = RG_BINARY;
+  ripgrepPath = resolveRipgrepPath();
   return ripgrepPath;
 }
 
