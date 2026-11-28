@@ -588,6 +588,21 @@ describe("AgentRunner", () => {
       logger: { warn: () => {} },
     });
 
+    const reader = runner.subscribe("s1").getReader();
+    const events: { type: string; failure?: string }[] = [];
+    const readAll = (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        events.push(value as { type: string; failure?: string });
+        if (value.type === "run.end") {
+          break;
+        }
+      }
+    })();
+
     await runner.createSession({ sessionId: "s1" });
     await runner.enqueue({
       sessionId: "s1",
@@ -600,6 +615,11 @@ describe("AgentRunner", () => {
         { sessionId: "s1", reason: "error" },
       ]);
     });
+    await readAll;
+    await reader.cancel();
+    expect(events.find((event) => event.type === "run.end")?.failure).toContain(
+      "model is not configured"
+    );
     expect(store.items).toHaveLength(1);
 
     await runner.shutdown();

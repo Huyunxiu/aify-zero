@@ -1007,12 +1007,7 @@ export function Session({
       ],
     };
 
-    // The server writes the session row when the first turn arrives, with an
-    // empty title; refresh now so the row shows up with its localized
-    // placeholder, and again when the title event lands.
-    if (turns.length === 0) {
-      void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
-    }
+    const isFirstTurn = turns.length === 0;
 
     try {
       // 新会话直接发送；已有会话先入队，再按顺序 drain。空闲时 mode 不参与。
@@ -1030,6 +1025,10 @@ export function Session({
           approvalPolicy,
         },
       });
+      // Refresh the sidebar once `submit` confirms the session row exists on the server.
+      if (isFirstTurn) {
+        void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+      }
     } catch (error) {
       // 入队或发送被拒绝时，PromptInput 不会清空编辑器；这里负责让用户看到原因。
       toastManager.add({

@@ -89,17 +89,18 @@ export async function buildSessionAgent({
   const dirs = await resolveSessionDirectories({ botId, projectId });
   const { bot } = dirs;
 
-  const sandbox = await acquireSessionSandbox({
-    sessionId,
-    projectDirs: dirs.projectDirs,
-    sessionDir,
-    sandbox: bot.sandbox,
-    readOnlyDirs: [dirs.botSkillsDir],
-    env: bot.env,
-    homeDir: dirs.botIsolatedHomeDir,
-  });
-
-  const settings = await getUserSettings();
+  const [sandbox, settings] = await Promise.all([
+    acquireSessionSandbox({
+      sessionId,
+      projectDirs: dirs.projectDirs,
+      sessionDir,
+      sandbox: bot.sandbox,
+      readOnlyDirs: [dirs.botSkillsDir],
+      env: bot.env,
+      homeDir: dirs.botIsolatedHomeDir,
+    }),
+    getUserSettings(),
+  ]);
   const timeZone = timeZoneOrHost(settings.timeZone);
   const mcpManager = getMcpManager();
   const effectiveMcpServers = resolveEffectiveMcpServers(

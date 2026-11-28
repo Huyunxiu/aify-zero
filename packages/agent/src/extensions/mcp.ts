@@ -44,12 +44,17 @@ export class McpExtension extends Extension {
 
     this.#unavailable = [];
 
-    for (const server of this.#servers) {
-      if (!server.enabled) {
-        continue;
-      }
+    const enabled = this.#servers.filter((server) => server.enabled);
+    // Acquire enabled MCP servers concurrently so cold starts do not stack
+    // serially, while preserving declaration order when registering tools.
+    const acquired = await Promise.all(
+      enabled.map(async (server) => ({
+        server,
+        lease: await this.#manager.acquire(server),
+      }))
+    );
 
-      const lease = await this.#manager.acquire(server);
+    for (const { server, lease } of acquired) {
       this.#leases.push(lease);
 
       if (lease.status !== "ready") {

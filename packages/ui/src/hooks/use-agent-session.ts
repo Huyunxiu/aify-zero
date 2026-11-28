@@ -196,6 +196,8 @@ type SendTurnsOptions = {
   payload?: Record<string, unknown>;
   /** 这条 user turn 来自 Inbox 的哪一行；服务端在同一事务里认领。 */
   inboxId?: string;
+  /** Keep `"submitted"` status after acceptance until `run.start` arrives. */
+  expectRun?: boolean;
   /** 服务端收下了这条（消息已落库）时调用。 */
   onAccepted?: () => void;
   /** 流拿到之前失败时调用，参数是原始错误。 */
@@ -395,6 +397,8 @@ export function createAgentSessionStore({
   let assembler: AgentTurnAssembler<AgentToolSet> | null = null;
   /** 已经发出、还没有起跑的 user 回合，按回合 id 存。 */
   const pendingTurns = new Map<string, AgentUserTurn>();
+  /** User turns appended optimistically before `run.start` confirms them. */
+  const optimisticTurnIds = new Set<string>();
   let inbox: InboxItem[] = [];
   let inboxRevision = 0;
 
@@ -472,7 +476,29 @@ export function createAgentSessionStore({
       if (revision !== inboxRevision) {
         return;
       }
-      inbox = messages;
+      if (status === "submitted" && optimisticTurnIds.size > 0) {
+        // Keep the optimistic turn in the transcript only until `run.start` or failure settles it.
+        inbox = messages.filter(
+          (item) => !optimisticTurnIds.has(item.content.id)
+        );
+      } else {
+        if (runStreamId === undefined && optimisticTurnIds.size > 0) {
+          // If an early stop left the message in the inbox, remove the optimistic turn so it does not render twice.
+          const reconciledIds = new Set<string>();
+          for (const item of messages) {
+            if (optimisticTurnIds.has(item.content.id)) {
+              optimisticTurnIds.delete(item.content.id);
+              reconciledIds.add(item.content.id);
+            }
+          }
+          if (reconciledIds.size > 0) {
+            currentTurns = currentTurns.filter(
+              (turn) => !reconciledIds.has(turn.id)
+            );
+          }
+        }
+        inbox = messages;
+      }
       notify();
     } catch {
       // 下一次 settle 或用户操作会再试。
@@ -518,16 +544,29 @@ export function createAgentSessionStore({
    * 落定之后立刻对齐队列：待办项可能已经被服务端领走，队列该少一条了。
    */
   const settleRun = (failure: Error | undefined): void => {
-    if (runStreamId === undefined) {
+    const hadStream = runStreamId !== undefined;
+    if (!hadStream && status !== "submitted") {
       return;
     }
 
     runStreamId = undefined;
-    // 这条流没走完就结束了：还挂着的 part 按定义是没跑完的，收尾成 aborted。
-    assembler?.settle(failure ? "error" : "aborted");
+    if (hadStream) {
+      // Settle any in-progress parts on the active assembler before reading the final snapshot.
+      assembler?.settle(failure ? "error" : "aborted");
+      if (assembler) {
+        currentTurns = [...assembler.turns];
+      }
+    }
+    if (failure !== undefined && optimisticTurnIds.size > 0) {
+      currentTurns = currentTurns.filter(
+        (turn) => !optimisticTurnIds.has(turn.id)
+      );
+      optimisticTurnIds.clear();
+    }
+    assembler = null;
     currentError = failure;
     status = failure ? "error" : "ready";
-    commit();
+    notify();
 
     void refreshInbox();
   };
@@ -573,11 +612,15 @@ export function createAgentSessionStore({
     // 通知）靠事件带来的内容接进记录。
     const adopted: AgentUserTurn[] = [];
     for (const turnId of event.turnIds ?? []) {
+      optimisticTurnIds.delete(turnId);
       const turn = adoptTurn(
         turnId,
         event.turns?.find((entry) => entry.id === turnId)
       );
-      if (turn !== undefined) {
+      if (
+        turn !== undefined &&
+        !currentTurns.some((existing) => existing.id === turn.id)
+      ) {
         adopted.push(turn);
       }
     }
@@ -791,6 +834,7 @@ export function createAgentSessionStore({
     abortSignal,
     payload,
     inboxId,
+    expectRun = false,
     onAccepted,
     onRejected,
   }: SendTurnsOptions): Promise<void> => {
@@ -840,33 +884,52 @@ export function createAgentSessionStore({
 
     onAccepted?.();
 
-    // 服务端已经收下。运行要么已经在跑（`run.start` 到过），要么还没轮到它；
-    // 两种情况都不该让状态停在「发送中」。
-    if (idle && runStreamId === undefined) {
+    // When expecting a run on the event stream, stay in `"submitted"` until `run.start` arrives.
+    if (idle && runStreamId === undefined && !expectRun) {
       status = "ready";
       notify();
     }
   };
 
   /**
-   * 直接开始一个回合。
+   * Starts the first turn directly before a session row exists for the inbox.
    *
-   * 首条消息还没有 session 行可以挂 Inbox，只能走这条路；`onAccepted` 在服务端
-   * 收下后才 resolve，编辑器因此只在真正收下后才清空。
+   * Appends the turn optimistically so the transcript updates immediately, and
+   * clears it if the request or run startup fails.
    */
-  const sendDirect = (
+  const sendDirect = async (
     turn: AgentUserTurn,
     payload: Record<string, unknown> | undefined
-  ): Promise<void> =>
-    new Promise((resolve, reject) => {
-      void sendTurns({
-        turns: [...currentTurns, turn],
+  ): Promise<void> => {
+    const optimistic = !currentTurns.some((entry) => entry.id === turn.id);
+    if (optimistic) {
+      optimisticTurnIds.add(turn.id);
+      currentTurns = [...currentTurns, turn];
+      if (runStreamId !== undefined) {
+        notify();
+      }
+    }
+
+    try {
+      await sendTurns({
+        turns: currentTurns,
         abortSignal: new AbortController().signal,
         payload,
-        onAccepted: resolve,
-        onRejected: reject,
+        expectRun: apiEvents !== undefined,
+        onRejected: () => {
+          if (optimistic) {
+            optimisticTurnIds.delete(turn.id);
+            currentTurns = currentTurns.filter((entry) => entry.id !== turn.id);
+            if (runStreamId !== undefined) {
+              notify();
+            }
+          }
+        },
       });
-    });
+    } catch (error) {
+      throw toError(error);
+    }
+  };
 
   const submit = async ({
     turn,

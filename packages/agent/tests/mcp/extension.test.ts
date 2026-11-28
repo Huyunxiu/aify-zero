@@ -179,4 +179,57 @@ describe(McpExtension, () => {
     expect(close).not.toHaveBeenCalled();
     expect(manager.statuses([server])[0]?.status).toBe("ready");
   });
+
+  test("acquires enabled servers concurrently while registering tools in order", async () => {
+    const started: string[] = [];
+    let resolveFirst!: (tools: McpToolDefinition[]) => void;
+    let resolveSecond!: (tools: McpToolDefinition[]) => void;
+
+    const firstServer: McpServerConfig = {
+      ...server,
+      id: "first",
+      name: "first",
+    };
+    const secondServer: McpServerConfig = {
+      ...server,
+      id: "second",
+      name: "second",
+    };
+
+    const manager = new McpManager({
+      createConnection: (config) => ({
+        listTools: () => {
+          started.push(config.id);
+          return new Promise<McpToolDefinition[]>((resolve) => {
+            if (config.id === "first") {
+              resolveFirst = resolve;
+            } else {
+              resolveSecond = resolve;
+            }
+          });
+        },
+        callTool: () => Promise.resolve({ content: [] } as CallToolResult),
+        close: () => Promise.resolve(),
+      }),
+    });
+
+    const { api, tools } = createApi();
+    const extension = new McpExtension({
+      id: "mcp",
+      manager,
+      servers: [firstServer, secondServer],
+    });
+
+    const initPromise = extension.init(api);
+    await vi.waitFor(() => expect(started).toStrictEqual(["first", "second"]));
+
+    resolveSecond([definitions[1]!]);
+    resolveFirst([definitions[0]!]);
+    await initPromise;
+
+    expect([...tools.keys()]).toStrictEqual([
+      "first__create_issue",
+      "second__list_issues",
+    ]);
+  });
 });

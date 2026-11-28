@@ -501,4 +501,143 @@ describe("createAgentSessionStore queue", () => {
 
     opened[1]!.close();
   });
+
+  test("optimistically shows the first turn and keeps submitted until run.start", async () => {
+    const events = sessionEvents();
+    const inbox = createInbox();
+    let resolveSend!: () => void;
+    const store = storeOf({
+      apiInbox: inbox.api,
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () =>
+        new Promise<void>((resolve) => {
+          resolveSend = resolve;
+        }),
+    });
+
+    await flush();
+
+    const pendingSubmit = store.submit({
+      turn: userTurn("u1", "Hello first"),
+      payload: { model: TEST_MODEL },
+    });
+
+    // Immediately visible in transcript and submitted before the server accepts.
+    expect(store.getTurns().map((turn) => turn.id)).toStrictEqual(["u1"]);
+    expect(store.getStatus()).toBe("submitted");
+
+    resolveSend();
+    await pendingSubmit;
+
+    // Stays submitted after createSession returns while waiting for run.start.
+    expect(store.getTurns().map((turn) => turn.id)).toStrictEqual(["u1"]);
+    expect(store.getStatus()).toBe("submitted");
+
+    events.runStart("run-1", 1, ["u1"]);
+    await vi.waitFor(() => expect(store.getStatus()).toBe("streaming"));
+    expect(store.getTurns().map((turn) => turn.id)).toStrictEqual(["u1"]);
+
+    events.close();
+  });
+
+  test("rolls back the optimistic first turn when apiSend rejects", async () => {
+    const events = sessionEvents();
+    const inbox = createInbox();
+    const store = storeOf({
+      apiInbox: inbox.api,
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => Promise.reject(new Error("network failed")),
+    });
+
+    await flush();
+
+    await expect(
+      store.submit({
+        turn: userTurn("u1", "Will fail"),
+        payload: { model: TEST_MODEL },
+      })
+    ).rejects.toThrow("network failed");
+
+    expect(store.getTurns()).toStrictEqual([]);
+    expect(store.getStatus()).toBe("error");
+
+    events.close();
+  });
+
+  test("rolls back the optimistic turn and reconciles inbox when startup fails on stream", async () => {
+    const events = sessionEvents();
+    const firstTurn = userTurn("u1", "Startup fails");
+    let serverInbox: InboxItem[] = [];
+    const apiInbox: InboxApi = {
+      list: vi.fn<InboxApi["list"]>(() => Promise.resolve([...serverInbox])),
+      enqueue: vi.fn<InboxApi["enqueue"]>(),
+      cancel: vi.fn<InboxApi["cancel"]>(() => Promise.resolve()),
+      clear: vi.fn<InboxApi["clear"]>(() => Promise.resolve()),
+    };
+
+    const store = storeOf({
+      apiInbox,
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => {
+        serverInbox = [inboxMessage("item-1", 0, firstTurn)];
+        return Promise.resolve();
+      },
+    });
+
+    await flush();
+
+    await store.submit({
+      turn: firstTurn,
+      payload: { model: TEST_MODEL },
+    });
+
+    expect(store.getTurns().map((turn) => turn.id)).toStrictEqual(["u1"]);
+    expect(store.getStatus()).toBe("submitted");
+
+    events.send({ seq: 1, streamId: "failed-run", type: "run.start" });
+    events.send({
+      failure: "model is not configured",
+      seq: 2,
+      streamId: "failed-run",
+      type: "run.end",
+    });
+
+    await vi.waitFor(() => expect(store.getStatus()).toBe("error"));
+    expect(store.getTurns()).toStrictEqual([]);
+    await vi.waitFor(() =>
+      expect(store.getInbox().map((item) => item.id)).toStrictEqual(["item-1"])
+    );
+
+    events.close();
+  });
+
+  test("stopping while submitted settles status back to ready", async () => {
+    const events = sessionEvents();
+    const stops: unknown[] = [];
+    const store = storeOf({
+      apiInbox: createInbox().api,
+      apiEvents: () => Promise.resolve(events.stream),
+      apiSend: () => Promise.resolve(),
+      apiStop: () => {
+        stops.push(true);
+        return Promise.resolve();
+      },
+    });
+
+    await flush();
+
+    await store.submit({
+      turn: userTurn("u1", "Stop before run.start"),
+      payload: { model: TEST_MODEL },
+    });
+
+    expect(store.getStatus()).toBe("submitted");
+
+    await store.stop();
+
+    expect(stops).toHaveLength(1);
+    expect(store.getStatus()).toBe("ready");
+
+    events.close();
+  });
 });

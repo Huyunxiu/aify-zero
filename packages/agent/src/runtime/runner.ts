@@ -27,6 +27,7 @@ import { recoverInterruptedRuns } from "../storage/recovery";
 import type { RecoveryOutcome } from "../storage/recovery";
 import { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
+import { generateSessionId } from "../utils/id-util";
 import { AgentRunnerError } from "./errors";
 import { SessionLifecycle } from "./sessions";
 import type { StopOptions } from "./sessions";
@@ -648,6 +649,15 @@ export class AgentRunner {
       this.#logger.warn("[runner] failed to start a run", error);
       // 起不来的会话要留下原因，否则 state() 里它既没在跑也没暂停。
       this.#paused.set(sessionId, "error");
+      // Notify subscribed clients that the run failed before a stream opened so
+      // they leave the submitted state and show the failure.
+      const failedStreamId = generateSessionId();
+      this.#sessionEvents.startRun(sessionId, failedStreamId);
+      this.#sessionEvents.endRun(
+        sessionId,
+        failedStreamId,
+        getErrorMessage(error)
+      );
       return "failed";
     }
   }
