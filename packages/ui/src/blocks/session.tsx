@@ -1152,12 +1152,7 @@ export function Session({
                 </div>
 
                 {/* session input */}
-                <div
-                  className={cn(
-                    "sticky bottom-0 z-1 w-full",
-                    hasOutline && "@min-[1100px]:ps-[104px]"
-                  )}
-                >
+                <div className="sticky bottom-0 z-1 w-full">
                   {/* The bar's width comes out of the record's box, so the
                       input box reserves the same on both sides; the two
                       blocks then center on one axis. */}
