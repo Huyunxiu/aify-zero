@@ -207,3 +207,30 @@ describe("the settings a turn ran under", () => {
     expect(readdirSync(join(dir, "ledger", "prompts"))).toStrictEqual([digest]);
   });
 });
+
+describe("closing one session", () => {
+  test("keeps the typing of another session that is still running", () => {
+    const dir = tempDir();
+    const recorder = new SessionLedgerRecorder({
+      dirOf: () => dir,
+      pid: 413,
+      appVersion: "0.4.1",
+    });
+
+    recorder.startRun("s1", "e1", "k1");
+    recorder.event("s1", "e1", "k1", delta("p1", "你"));
+    recorder.startRun("s2", "e1", "k2");
+    recorder.event("s2", "e1", "k2", delta("p2", "好"));
+
+    // 关掉 s1 的文件，s2 的现场必须还在。
+    recorder.closeSession("s1");
+    recorder.endRun("s2", "e1", "k2");
+    recorder.event("s2", "e1", "k2", stepFailed("p2"));
+
+    const backlog = recordsOf(join(dir, "ledger.jsonl")).find(
+      (record) => record.type === "note.step.delta-backlog"
+    );
+
+    expect(backlog).toMatchObject({ stepId: "p2" });
+  });
+});

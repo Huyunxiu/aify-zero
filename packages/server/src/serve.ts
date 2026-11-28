@@ -33,7 +33,12 @@ import { issueLoginLink, resolveLoginWebOrigin } from "./login-link";
 import { setMcpOAuthRedirectUrl } from "./mcp/oauth";
 import { shutdownMcp } from "./mcp/registry";
 import { ensureDefaultBot } from "./routers/bot/bot.service";
-import { agentRunner, outboxDispatcher, timerScheduler } from "./runtime";
+import {
+  agentRunner,
+  outboxDispatcher,
+  sessionLedger,
+  timerScheduler,
+} from "./runtime";
 import { attachWebSocket } from "./ws";
 
 /** 监听地址：显式参数优先，其次环境变量，最后回落到 loopback + 18086。 */
@@ -198,6 +203,10 @@ export async function startServer(
     await Promise.all([timerScheduler.stop(), outboxDispatcher.stop()]);
     // 再停止取件：正在跑的运行让它跑完，队列留给下一次启动。
     await agentRunner.shutdown();
+
+    // 运行停了，流水不会再有新的写入：把每个文件推到盘上再关。不加这一步，退出
+    // 前最后一步只停在操作系统的缓存里，断电就没了。
+    sessionLedger.close();
 
     // WebSocket 要先退干净：它自己会等连接收起，而 closeAllConnections() 是硬断。
     await closeWebSocket();

@@ -215,7 +215,7 @@ export class SessionLedgerRecorder {
   closeSession(sessionId: string): void {
     this.#writers.get(sessionId)?.close();
     this.#writers.delete(sessionId);
-    this.#buffers.clear();
+    this.#dropBuffers(sessionId);
   }
 
   close(): void {
@@ -224,6 +224,20 @@ export class SessionLedgerRecorder {
     }
     this.#writers.clear();
     this.#buffers.clear();
+  }
+
+  /**
+   * Forgets one session's pending typing.
+   *
+   * Only that session's: a main session and a subagent run at the same time, and closing
+   * one file must not throw away the other's evidence.
+   */
+  #dropBuffers(sessionId: string): void {
+    for (const key of this.#buffers.keys()) {
+      if (key.startsWith(`${sessionId}\u0000`)) {
+        this.#buffers.delete(key);
+      }
+    }
   }
 
   #write(
