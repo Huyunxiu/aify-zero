@@ -71,7 +71,8 @@ describe("the timeline a replay rebuilds", () => {
     registry.publish("session-1", "stream-1", stepStart("p1"));
     registry.publish("session-1", "stream-1", stepDone("p1"));
     registry.publish("session-1", "stream-1", turnDone());
-    // 内容在事件之后到：落定晚于结束，正是两遍投影的理由。
+    // The content arrives after the event: it settles later than the end, which is why
+    // the projection takes two passes.
     recorder.note("session-1", null, {
       type: "note.step.settled",
       turnId: "t1",

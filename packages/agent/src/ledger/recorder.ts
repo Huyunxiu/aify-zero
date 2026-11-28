@@ -104,7 +104,8 @@ export class SessionLedgerRecorder {
       return;
     }
 
-    // 每一步的边界推一次盘：断电最多丢当前这一步，而不是整段运行。
+    // One push to the disk at each step boundary: a power loss takes the current step, not
+    // the whole run.
     this.#writers.get(sessionId)?.settle();
     if (event.status !== "error" && event.status !== "aborted") {
       this.#buffers.delete(bufferKey(sessionId, event.stepId));
@@ -137,8 +138,8 @@ export class SessionLedgerRecorder {
       ...(failure === undefined ? {} : { failure }),
     });
 
-    // 一个从没落定的步骤把打字过程留在这里：中途被停、进程要退出，都是它。这
-    // 正是要复现的那种现场，所以倒出来而不是丢掉。
+    // A step that never settled keeps its typing here: it was stopped midway, or the process
+    // is going away. That is the scene a replay is for, so it becomes one note, not a loss.
     for (const [key, held] of this.#buffers) {
       if (!key.startsWith(`${sessionId}\u0000`)) {
         continue;
@@ -177,8 +178,9 @@ export class SessionLedgerRecorder {
       };
     }
   ): void {
-    // 正文存不下来时仍然写这条记录：摘要是对的，缺的只是那份文件。少了模型和
-    // 审批策略，这条记录就白记了，而这正是它存在的理由。
+    // The record is written even when the text cannot be stored: the digest is right and only
+    // the file is missing. Without the model and the policy the record would say nothing, and
+    // that is the reason it exists.
     const instructions = this.#storePrompt(
       sessionId,
       settings.instructions.text

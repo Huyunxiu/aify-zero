@@ -117,7 +117,7 @@ describe("a recorded run", () => {
       ])
     );
 
-    // 生效值和内容：这两样是「复现故障」真正缺的东西。
+    // The effective settings and the content: the two things a replay of a fault lacks.
     const settings = records.find(
       (record) => record.type === "note.turn.settings"
     );
@@ -132,7 +132,7 @@ describe("a recorded run", () => {
     );
     expect(settled).toMatchObject({ type: "note.step.settled" });
 
-    // 边界按顺序：先起跑，后结束。
+    // The boundaries in order: the start first, the end after.
     const types = records.map((record) => record.type);
     expect(types.indexOf("stream.run.start")).toBeLessThan(
       types.indexOf("stream.run.end")

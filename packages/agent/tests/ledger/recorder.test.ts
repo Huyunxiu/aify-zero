@@ -222,7 +222,7 @@ describe("closing one session", () => {
     recorder.startRun("s2", "e1", "k2");
     recorder.event("s2", "e1", "k2", delta("p2", "好"));
 
-    // 关掉 s1 的文件，s2 的现场必须还在。
+    // Close s1's file. s2's scene must still be there.
     recorder.closeSession("s1");
     recorder.endRun("s2", "e1", "k2");
     recorder.event("s2", "e1", "k2", stepFailed("p2"));
