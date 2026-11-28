@@ -2,8 +2,8 @@
  * Reads which subagent the session panel shows, and changes that choice.
  *
  * The choice lives in the address, so this hook is the only place that reads and
- * writes it: the `task` row writes it when the reader clicks, and the panel
- * reads it when it mounts. Two readers of one address would drift apart, so both
+ * writes it: the `create-subagent` row writes it when the reader clicks, and the
+ * panel reads it when it mounts. Two readers of one address would drift apart, so both
  * go through here.
  *
  * The address records a selection, not a visibility: it says which subagent the

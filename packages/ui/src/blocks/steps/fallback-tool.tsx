@@ -5,7 +5,7 @@ import { WrenchIcon } from "lucide-react";
 import { ToolPanels } from "../tool-panels";
 import { StepFrame, StepLabel, StepShell } from "./shell";
 import { pendingSummary } from "./summary";
-import type { StepViewPropsOf } from "./types";
+import type { StepPart, StepViewPropsOf } from "./types";
 
 /**
  * Which tool this row is about.
@@ -38,7 +38,7 @@ export const FallbackToolStep = ({
   duration,
   onRespond,
 }: StepViewPropsOf<
-  "tool-search-tools" | "tool-call-tool" | "dynamic-tool"
+  "dynamic-tool" | Extract<StepPart["type"], `tool-${string}`>
 >) => {
   const toolName = getDisplayedToolName(part);
   const separator = toolName.indexOf("__");

@@ -6,7 +6,9 @@ it. The English file is the authority. The Chinese copy is a translation.
 ## What is English
 
 - every Markdown file in the repository
-- code comments, including TSDoc
+- code comments, including TSDoc. A new comment is English, and so is a comment a change
+  touches; the comments a change leaves alone keep the language the file already uses (see
+  [Code comments](#code-comments))
 - log messages and the error messages that a person reads
 - commit messages, PR titles, and PR descriptions
 
@@ -68,7 +70,16 @@ the quote between backticks.
 A new comment is English. A comment that you change becomes English. The other comments
 in a Chinese file stay Chinese until someone changes that part of the file.
 
-## The check
+## The comment check
+
+`vp run check:comments` fails on a Chinese comment on a line a commit adds. It reads the
+staged diff and the staged content, so a comment the change does not touch is never read —
+that is the rule in [Code comments](#code-comments), as a check.
+
+`vp staged` runs it on a commit that stages a TypeScript file, together with formatting and
+lint (`vite.config.ts`).
+
+## The document check
 
 CI runs `vp run check:docs`. The check reads the manifest. It reports five defects:
 
@@ -78,4 +89,4 @@ CI runs `vp run check:docs`. The check reads the manifest. It reports five defec
 - the manifest names a document that does not exist
 - the manifest names a copy
 
-No check reads language. A person reads language.
+No check reads the language of a document. A person reads that.

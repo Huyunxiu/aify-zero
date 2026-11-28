@@ -69,6 +69,7 @@
       "getKey": "Get a key",
       "console": "Console",
       "apiKeyPlaceholder": "e.g. sk-...",
+      "keyFromEnv": "Key from environment: {{name}}",
       "showApiKey": "Show key",
       "hideApiKey": "Hide key",
       "headers": "Extra headers",
@@ -261,6 +262,7 @@
       "waitReview": "Awaiting review",
       "done": "Done",
       "canceled": "Canceled",
+      "timedOut": "Timed out",
       "error": "Error"
     }
   },
@@ -318,6 +320,11 @@
       "default": "Send",
       "steering": "Send as steering message",
       "followup": "Send as queued message"
+    },
+    "stop": {
+      "options": "Stop options",
+      "everything": "Stop the reply and its subagents",
+      "replyOnly": "Stop the reply, keep subagents running"
     }
   },
   "inbox": {
@@ -333,6 +340,9 @@
   },
   "jobNotice": {
     "marker": "Background job finished"
+  },
+  "subagentNotice": {
+    "marker": "Subagent finished"
   },
   "timerNotice": {
     "marker": "Timer fired"

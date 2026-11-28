@@ -37,6 +37,7 @@ export const enqueueInboxItem = publicProcedure
   .errors({
     SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND,
     MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+    PROVIDER_KEY_MISSING: ErrorMap.PROVIDER_KEY_MISSING,
   })
   .input(
     type<{

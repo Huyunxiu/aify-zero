@@ -29,6 +29,12 @@
 
 <!--VITE PLUS END-->
 
+## 环境
+
+`CI=true vp install --frozen-lockfile` 不需要终端就能装；直接 `vp install` 在要重建
+`node_modules` 时会停下等确认。检查在改动没碰过的文件里失败时，跑 `vp run doctor`：它点名
+缺的原生包或浏览器，以及修好它的命令。见 `docs/development/environment.md`。
+
 ## Agent skills
 
 ### Issue 跟踪
@@ -52,7 +58,8 @@ footer，不放在 subject。不要用 `git commit --no-verify`。见 `docs/agen
 
 ### 语言
 
-仓库里的每段文字都是英文，每份文档有一份中文副本。见 `docs/agents/language.md`。
+每份文档都是英文，并且有一份中文副本。新写或改动到的代码注释是英文；改动没碰到的注释沿用
+所在文件的语言。见 `docs/agents/language.md`。
 
 ### 评审
 

@@ -63,18 +63,20 @@ vp dev
 第一行是非流式请求：会话的标题生成也走同一个供应商。一条 `stream=true` 就是一次
 真正的模型调用，所以上面是「失败两次、重试两次、成功」。
 
-## 八个场景，各自该看到什么
+## 十个场景，各自该看到什么
 
-| `--scenario`                   | 替身的日志                            | 屏幕                                                                                    |
-| ------------------------------ | ------------------------------------- | --------------------------------------------------------------------------------------- |
-| `retry-then-succeed`           | answer → fail 429 → fail 429 → answer | `Retry 1/5`、`Retry 2/5`，各约 2 秒（来自 `Retry-After: 2`），然后答案                  |
-| `mid-stream-error`             | answer → fail mid-stream → answer     | 先出现半句「先给你半句，」，再 `Retry 1/5`（约 2 秒退避，没有头），然后「这次说完了。」 |
-| `unauthorized`                 | answer → fail 401                     | 立刻 `Failed`，没有重试行                                                               |
-| `title-does-not-eat-a-failure` | answer → fail 503 → answer            | `Retry 1/5`，然后答案                                                                   |
-| `slow-stream`                  | answer                                | 空白约 1.5 秒才出第一个字                                                               |
-| `broken-stream`                | answer → corrupt                      | `Failed`，没有重试；畸形块不是供应商错误，本来就不该重试                                |
-| `edit-then-answer`             | answer → toolCall → answer            | 先出现一行 `Edit notes.md` 与 `+1 −1`，再出答案；改动视图能列出这个文件                 |
-| `job-notice`                   | answer → toolCall(`bash`) → answer    | 先出现一行 `Bash`，回合结束约 5 秒后出现完成通知，被唤醒的回合再答一句                  |
+| `--scenario`                   | 替身的日志                                   | 屏幕                                                                                                                                                      |
+| ------------------------------ | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `retry-then-succeed`           | answer → fail 429 → fail 429 → answer        | `Retry 1/5`、`Retry 2/5`，各约 2 秒（来自 `Retry-After: 2`），然后答案                                                                                    |
+| `mid-stream-error`             | answer → fail mid-stream → answer            | 先出现半句「先给你半句，」，再 `Retry 1/5`（约 2 秒退避，没有头），然后「这次说完了。」                                                                   |
+| `unauthorized`                 | answer → fail 401                            | 立刻 `Failed`，没有重试行                                                                                                                                 |
+| `title-does-not-eat-a-failure` | answer → fail 503 → answer                   | `Retry 1/5`，然后答案                                                                                                                                     |
+| `slow-stream`                  | answer                                       | 空白约 1.5 秒才出第一个字                                                                                                                                 |
+| `broken-stream`                | answer → corrupt                             | `Failed`，没有重试；畸形块不是供应商错误，本来就不该重试                                                                                                  |
+| `edit-then-answer`             | answer → toolCall → answer                   | 先出现一行 `Edit notes.md` 与 `+1 −1`，再出答案；改动视图能列出这个文件                                                                                   |
+| `job-notice`                   | answer → toolCall(`bash`) → answer           | 先出现一行 `Bash`，回合结束约 5 秒后出现完成通知，被唤醒的回合再答一句                                                                                    |
+| `subagent`                     | answer → toolCall → 子代答 → answer → answer | 先出现一行 `Subagent`，父回合立刻结束；约 1.5 秒后出现 `Subagent finished`，被唤醒的回合再答一句。父子两边同一个模型、都流式，靠 `when.bodyContains` 区分 |
+| `subagent-stop`                | 同上，子代理首块等 25 秒                     | 同上，但子代理慢到够你按 `Stop`：试「停止」与「只停本轮」两个答案                                                                                         |
 
 规则按顺序消费，所以重启替身就从头再走一遍。
 

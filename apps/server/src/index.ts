@@ -26,9 +26,10 @@ dotenv.config({
   quiet: true,
 });
 
-// 打包产物把 rg 放在与 `dist/index.js` 同级的 `dist/bin/` 里。显式告诉
-// agent 的 grep/glob 工具用这一份，避免打包后依赖目标机器的 PATH。开发期
-// (`src/index.ts`) 没有这个文件，保持原来的 PATH 探测。
+// Packaged builds stage `rg` in `dist/bin/` beside `dist/index.js`. Point the
+// agent's search tools at it explicitly so deployed servers never depend on
+// host PATH. Development (`src/index.ts`) has no staged binary and lets
+// `@workspace/agent` resolve `@vscode/ripgrep` or `PATH`.
 const bundledRipgrep = resolve(
   sourceDirectory,
   "bin",

@@ -32,10 +32,13 @@ export const pendingSummary = (
       : "awaiting approval";
   }
 
-  // A `task` call is the one row worth reading before it has finished: its
-  // label holds the description the model wrote, which does not say which
-  // subagent is at work.
-  if (part.type === "tool-task" && part.state === "input-available") {
+  // A `create-subagent` call is the one row worth reading before it has
+  // finished: its label holds the description the model wrote, which does not
+  // say which subagent is at work.
+  if (
+    part.type === "tool-create-subagent" &&
+    part.state === "input-available"
+  ) {
     return part.input?.subagent_type;
   }
 
@@ -58,7 +61,7 @@ type OutputOf<ANSWERED> = ANSWERED extends { output: infer OUTPUT }
  *
  * A call that reported `code: "error"` did not succeed — the row's own `Failed`
  * label carries that — and a call still running has nothing to read. This is not
- * `getPartStatus`: a `task` that is only reporting from part-way through is
+ * `getPartStatus`: a call that reported its name before finishing is
  * `running` on the row and still has a result worth reading, so the two
  * questions stay apart on purpose.
  *

@@ -72,6 +72,8 @@ const sessionRow: SessionRecord = {
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
+  subagentName: null,
+  lastPayload: null,
   approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),

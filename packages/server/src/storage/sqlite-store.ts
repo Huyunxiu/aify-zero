@@ -373,6 +373,27 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
     return session ?? null;
   }
 
+  async findSessionBySubagentName({
+    parentSessionId,
+    name,
+  }: {
+    parentSessionId: string;
+    name: string;
+  }): Promise<SessionModel | null> {
+    const [session] = await db
+      .select()
+      .from(session_table)
+      .where(
+        and(
+          eq(session_table.parentSessionId, parentSessionId),
+          eq(session_table.subagentName, name)
+        )
+      )
+      .limit(1);
+
+    return session ?? null;
+  }
+
   async listChildSessions(parentSessionId: string): Promise<SessionModel[]> {
     const sessions = await db
       .select()
@@ -431,6 +452,18 @@ export class SQLiteStore implements AgentStore, OutboxRecorder, TimerStore {
       .limit(1);
 
     return session ?? null;
+  }
+
+  async setLastPayload(
+    sessionId: string,
+    payload: InboxPayload
+  ): Promise<number> {
+    const result = await db
+      .update(session_table)
+      .set({ lastPayload: payload })
+      .where(eq(session_table.id, sessionId));
+
+    return result.rowsAffected;
   }
 
   async listSessionSubtreeIds(sessionId: string): Promise<string[]> {

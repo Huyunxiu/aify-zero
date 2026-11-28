@@ -1,0 +1,33 @@
+{
+  "name": "subagent-stop",
+  "models": ["fake-fast"],
+  "rules": [
+    { "when": { "stream": false }, "answer": "Start a subagent" },
+    {
+      "when": { "stream": true },
+      "toolCall": {
+        "id": "call_subagent_1",
+        "name": "create-subagent",
+        "args": {
+          "subagent_type": "explore",
+          "description": "Find the router",
+          "prompt": "Find where the HTTP router is defined."
+        }
+      }
+    },
+    {
+      "when": { "stream": true, "bodyContains": "launched by a parent agent" },
+      "slow": { "firstChunkMs": 25000 },
+      "answer": "The router is in apps/server/src/router.ts."
+    },
+    {
+      "when": { "stream": true },
+      "answer": "Started AGENT-1. It will report when it is done."
+    },
+    {
+      "when": { "stream": true },
+      "answer": "AGENT-1 says the router is in apps/server/src/router.ts."
+    },
+    { "when": { "stream": false }, "answer": "Subagent finished" }
+  ]
+}

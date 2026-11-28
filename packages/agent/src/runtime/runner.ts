@@ -1,10 +1,10 @@
 import {
-  JOB_NOTICE_INBOX_KIND,
-  JOB_NOTICE_STEP_SOURCE,
+  isNoticeInboxKind,
+  USER_MESSAGE_INBOX_KIND,
 } from "@workspace/agent-client";
 import type {
-  AgentUserTurn,
   InboxItem,
+  InboxPayload,
   SessionCursor,
   SessionStreamEvent,
 } from "@workspace/agent-client";
@@ -15,6 +15,8 @@ import type { ModelRef } from "@workspace/shared/model";
 import type { Agent } from "../agents";
 import { resolveDeliverAt } from "../inbox/delivery";
 import { InboxItemNotFoundError } from "../inbox/errors";
+import { createNoticeWriter } from "../inbox/notice-writer";
+import type { NoticeWriter } from "../inbox/notice-writer";
 import type { SteeringSignal } from "../inbox/steering";
 import { createSteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
@@ -25,16 +27,16 @@ import { recoverInterruptedRuns } from "../storage/recovery";
 import type { RecoveryOutcome } from "../storage/recovery";
 import { StreamEventRegistry } from "../stream-registry";
 import type { AgentToolSet } from "../types";
-import { generateStepId, generateTurnId } from "../utils/id-util";
+import { generateSessionId } from "../utils/id-util";
 import { AgentRunnerError } from "./errors";
 import { SessionLifecycle } from "./sessions";
+import type { StopOptions } from "./sessions";
 import type {
   AgentRunnerLogger,
   AgentRunnerStore,
   BuildAgentInput,
   CreateSessionInput,
   EnqueueInput,
-  EnqueueNoticeInput,
   PauseReason,
   ResumeInput,
   StartedRun,
@@ -55,9 +57,6 @@ export type AgentRunnerOptions = {
 
 /** 起跑一条待办项的结果。 */
 export type StartOutcome = StartedRun | "claimed" | "busy" | "failed";
-
-/** 一条会话自上次用户输入以来，最多被完成通知唤醒几次。 */
-const MAX_NOTICE_WAKES = 8;
 
 /**
  * 会话的常驻运行器。
@@ -82,12 +81,9 @@ export class AgentRunner {
   /** 每个会话一个插话信号；用户消息插进正在跑的回合时触发。 */
   readonly #steering = new Map<string, SteeringSignal>();
   /** 每个会话最近一次起跑用的模型配置；完成通知靠它唤醒会话。 */
-  readonly #lastPayload = new Map<
-    string,
-    { model: ModelRef; effort?: ModelEffort; projectId?: string }
-  >();
-  /** 每条会话自上次用户输入以来，被完成通知唤醒过几次。 */
-  readonly #noticeWakes = new Map<string, number>();
+  readonly #lastPayload = new Map<string, InboxPayload>();
+  /** 写完成通知的那一个；运行器和每个 agent 装配用的是同一个。 */
+  readonly #notices: NoticeWriter;
   /** 正在推进的会话；有值表示这条会话的循环在跑，不是“有一条运行在跑”。 */
   readonly #runs = new Map<string, Promise<void>>();
   /** 不再自动推进的会话，以及原因。不落库。 */
@@ -107,10 +103,26 @@ export class AgentRunner {
 
     this.#sessionEvents = new SessionEventRegistry<AgentToolSet>();
     this.#streams = new StreamEventRegistry(this.#sessionEvents);
+    this.#notices = createNoticeWriter({
+      insert: (item) => this.#store.insertInboxItem(item),
+      isBusy: (sessionId) => {
+        const running = this.#streams.getStreamEntryBySession(sessionId);
+        return running !== undefined && !running.isDone();
+      },
+      payloadOf: (sessionId) => this.#lastPayload.get(sessionId),
+      wake: (sessionId) => {
+        this.wake(sessionId);
+      },
+      isStopped: () => this.#stopped,
+      warn: (message, error) => {
+        this.#logger.warn(message, error);
+      },
+    });
     this.#sessions = new SessionLifecycle({
       store: this.#store,
       registry: this.#streams,
       buildAgent: this.#buildAgent,
+      notices: this.#notices,
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       ...(options.outbox === undefined ? {} : { outbox: options.outbox }),
       steering: (sessionId) => this.steeringSignal(sessionId),
@@ -141,12 +153,19 @@ export class AgentRunner {
       failures.push(failureOf(error));
     }
 
+    const woken: string[] = [];
     for (const sessionId of pending) {
       this.#paused.delete(sessionId);
+      // `#ready` is the one place that decides whether this runner may start a
+      // session. Waking one it cannot start reports a run that never happens.
+      if (!(await this.#ready(sessionId))) {
+        continue;
+      }
       this.wake(sessionId);
+      woken.push(sessionId);
     }
 
-    return { recovered, woken: pending, failures };
+    return { recovered, woken, failures };
   }
 
   /** 建会话行；已存在时幂等。已删的会话不算「已存在」。 */
@@ -194,7 +213,7 @@ export class AgentRunner {
       this.#paused.delete(id);
       this.#steering.delete(id);
       this.#lastPayload.delete(id);
-      this.#noticeWakes.delete(id);
+      this.#notices.resetBudget(id);
       this.#wakeups.delete(id);
     }
 
@@ -219,7 +238,7 @@ export class AgentRunner {
 
     const item = await this.#store.insertInboxItem({
       sessionId: input.sessionId,
-      kind: "user-message",
+      kind: USER_MESSAGE_INBOX_KIND,
       dedupeKey: input.dedupeKey ?? input.turn.id,
       deliverAt,
       content: input.turn,
@@ -233,10 +252,10 @@ export class AgentRunner {
     });
 
     // 用户自己说话了：唤醒预算重新开始，通知不再按上一条链计数。
-    this.#noticeWakes.delete(input.sessionId);
+    this.#notices.resetBudget(input.sessionId);
     this.#rememberPayload(input.sessionId, {
       model: input.model,
-      ...(input.effort === undefined ? {} : { effort: input.effort }),
+      ...(input.effort === undefined ? {} : { modelEffort: input.effort }),
       ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
     });
 
@@ -256,98 +275,60 @@ export class AgentRunner {
    * @param sessionId - 会话 id。
    * @param payload - 本次起跑拿到的配置。
    */
-  #rememberPayload(
-    sessionId: string,
-    payload: { model: ModelRef; effort?: ModelEffort; projectId?: string }
-  ): void {
+  #rememberPayload(sessionId: string, payload: InboxPayload): InboxPayload {
     const projectId =
       payload.projectId ?? this.#lastPayload.get(sessionId)?.projectId;
-    this.#lastPayload.set(sessionId, {
+    const remembered: InboxPayload = {
       model: payload.model,
-      ...(payload.effort === undefined ? {} : { effort: payload.effort }),
+      ...(payload.modelEffort === undefined
+        ? {}
+        : { modelEffort: payload.modelEffort }),
       ...(projectId === undefined ? {} : { projectId }),
-    });
-  }
-
-  /**
-   * 这个会话现在能不能收完成通知：有模型配置，且运行器没有在关停。
-   * 投递方先用它判断，再决定是否消费任务的未读输出。
-   * @param sessionId - 会话 id。
-   */
-  canDeliverNotice(sessionId: string): boolean {
-    return !this.#stopped && this.#lastPayload.has(sessionId);
-  }
-
-  /**
-   * 投一条完成通知。空闲会话被唤醒，忙的会话排到下一个步边界。
-   *
-   * 通知不是用户输入：它不重置唤醒预算，也不触发插话信号。连续唤醒超过
-   * {@link MAX_NOTICE_WAKES} 次时只排队，等下一次用户输入再交给模型。
-   * @param input - 会话、正文与幂等键。
-   * @returns 排入的待办项；会话没有可用的模型配置时返回 undefined。
-   */
-  async enqueueNotice(
-    input: EnqueueNoticeInput
-  ): Promise<InboxItem | undefined> {
-    if (this.#stopped) {
-      return undefined;
-    }
-    const payload = this.#lastPayload.get(input.sessionId);
-    if (payload === undefined) {
-      this.#logger.warn(
-        "[runner] cannot deliver a job notice: the session has no model yet",
-        { sessionId: input.sessionId }
-      );
-      return undefined;
-    }
-
-    const running = this.#streams.getStreamEntryBySession(input.sessionId);
-    const busy = running !== undefined && !running.isDone();
-    const deliverAt = busy ? "step-boundary" : "run-boundary";
-    const now = Date.now();
-    const turn: AgentUserTurn = {
-      id: generateTurnId(),
-      type: "user",
-      createdAt: now,
-      status: "done",
-      content: [
-        {
-          id: generateStepId(),
-          type: "user",
-          createdAt: now,
-          status: "done",
-          source: JOB_NOTICE_STEP_SOURCE,
-          content: [{ type: "text", text: input.text, createdAt: now }],
-        },
-      ],
     };
+    this.#lastPayload.set(sessionId, remembered);
 
-    const item = await this.#store.insertInboxItem({
-      sessionId: input.sessionId,
-      kind: JOB_NOTICE_INBOX_KIND,
-      dedupeKey: input.dedupeKey,
-      deliverAt,
-      content: turn,
-      payload,
-    });
+    return remembered;
+  }
 
-    if (!busy) {
-      const spent = this.#noticeWakes.get(input.sessionId) ?? 0;
-      if (spent < MAX_NOTICE_WAKES) {
-        this.#noticeWakes.set(input.sessionId, spent + 1);
-        this.wake(input.sessionId);
-      }
+  /**
+   * Remember the configuration a run starts with, here and in the session row.
+   *
+   * The row is for the next process: a deferred item — a timer, or the notice a
+   * crash leaves for its parent — has to wake a session this process never ran.
+   * A failed write changes nothing about this run, so it is logged and dropped.
+   */
+  async #rememberModel(
+    sessionId: string,
+    payload: InboxPayload
+  ): Promise<void> {
+    const remembered = this.#rememberPayload(sessionId, payload);
+
+    try {
+      await this.#store.setLastPayload(sessionId, remembered);
+    } catch (error) {
+      this.#logger.warn(
+        "[runner] failed to remember the payload this session ran with",
+        error
+      );
     }
+  }
 
-    return item;
+  /**
+   * The notice writer this runner built.
+   *
+   * The host wires process-wide producers (the job registry, boot recovery) to
+   * this same object; nothing else may build a second one.
+   */
+  get notices(): NoticeWriter {
+    return this.#notices;
   }
 
   /** 审批恢复：答复写回 step，再起一次运行。 */
   async resume(input: ResumeInput): Promise<RunStart> {
     this.#paused.delete(input.sessionId);
-    this.#rememberPayload(input.sessionId, {
+    await this.#rememberModel(input.sessionId, {
       model: input.model,
-      ...(input.effort === undefined ? {} : { effort: input.effort }),
+      ...(input.effort === undefined ? {} : { modelEffort: input.effort }),
     });
 
     const result = await this.#sessions.resume({
@@ -434,9 +415,16 @@ export class AgentRunner {
     };
   }
 
-  /** 停掉会话正在跑的运行；没有运行时也清理残留标记。 */
-  async stop(sessionId: string): Promise<{ aborted: boolean }> {
-    return await this.#sessions.stop(sessionId);
+  /**
+   * 停掉会话正在跑的运行；没有运行时也清理残留标记。
+   *
+   * `subagents` 决定这次运行拉起的子代理怎么办：默认一起停，`keep` 只停这一轮。
+   */
+  async stop(
+    sessionId: string,
+    options?: StopOptions
+  ): Promise<{ aborted: boolean }> {
+    return await this.#sessions.stop(sessionId, options);
   }
 
   /** 空闲会话按需压缩；落定后唤醒队列。 */
@@ -488,7 +476,7 @@ export class AgentRunner {
       try {
         const items = await this.#store.listInboxItems(sessionId);
         const stale = items
-          .filter((item) => item.kind === JOB_NOTICE_INBOX_KIND)
+          .filter((item) => isNoticeInboxKind(item.kind))
           .map((item) => item.id);
         if (stale.length > 0) {
           await this.#store.deleteInboxItems(sessionId, stale);
@@ -497,10 +485,7 @@ export class AgentRunner {
           remaining.push(sessionId);
         }
       } catch (error: unknown) {
-        this.#logger.warn(
-          "[runner] failed to clean up stale job notices",
-          error
-        );
+        this.#logger.warn("[runner] failed to clean up stale notices", error);
         remaining.push(sessionId);
       }
     }
@@ -547,10 +532,11 @@ export class AgentRunner {
   }
 
   /**
-   * 一条会话的循环：取一批、跑完、再看一眼。
+   * One session's loop: claim a batch, run it, look again.
    *
-   * 只有 `done` 会继续；`error` 和 `canceled` 停下来并记住原因，`wait_review`
-   * 直接停——历史里有一条工具调用没有结果，结构上不该推进。
+   * Only `done` continues. `error`, `canceled`, and `timed-out` stop and keep the
+   * reason. `wait_review` stops outright: the transcript holds a tool call with
+   * no result, so the structure must not advance.
    */
   async #runSession(sessionId: string): Promise<void> {
     for (;;) {
@@ -598,7 +584,11 @@ export class AgentRunner {
       return true;
     }
 
-    this.#paused.set(sessionId, status === "canceled" ? "canceled" : "error");
+    // A run stopped by its clock is still a stop, not a failure.
+    this.#paused.set(
+      sessionId,
+      status === "canceled" || status === "timed-out" ? "canceled" : "error"
+    );
     return false;
   }
 
@@ -635,11 +625,11 @@ export class AgentRunner {
     // 模型配置取这一批里最新的那条：`startFromInbox` 也按它起跑。
     const latest = items.at(-1);
     if (latest !== undefined) {
-      this.#rememberPayload(sessionId, {
+      await this.#rememberModel(sessionId, {
         model: latest.payload.model,
-        ...(typeof latest.payload.modelEffort === "string"
-          ? { effort: latest.payload.modelEffort as ModelEffort }
-          : {}),
+        ...(latest.payload.modelEffort === undefined
+          ? {}
+          : { modelEffort: latest.payload.modelEffort }),
         ...(latest.payload.projectId === undefined
           ? {}
           : { projectId: latest.payload.projectId }),
@@ -659,6 +649,15 @@ export class AgentRunner {
       this.#logger.warn("[runner] failed to start a run", error);
       // 起不来的会话要留下原因，否则 state() 里它既没在跑也没暂停。
       this.#paused.set(sessionId, "error");
+      // Notify subscribed clients that the run failed before a stream opened so
+      // they leave the submitted state and show the failure.
+      const failedStreamId = generateSessionId();
+      this.#sessionEvents.startRun(sessionId, failedStreamId);
+      this.#sessionEvents.endRun(
+        sessionId,
+        failedStreamId,
+        getErrorMessage(error)
+      );
       return "failed";
     }
   }

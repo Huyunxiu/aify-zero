@@ -4,26 +4,30 @@ import type {
   AgentTurn,
 } from "@workspace/agent-client";
 
-/** The `task` part of a step: the one call that starts a subagent. */
-type TaskPart = Extract<
+/** The one call that starts a subagent, as the protocol spells it. */
+const SUBAGENT_CALL = "tool-create-subagent";
+
+/** A `create-subagent` part of a step. */
+type SubagentCallPart = Extract<
   AgentAssistantPart<AgentToolSet>,
-  { type: "tool-task" }
+  { type: typeof SUBAGENT_CALL }
 >;
 
 /**
- * Reads the session id that a `task` call reports for the subagent it started.
+ * Reads the session id that a `create-subagent` call reports for the subagent it started.
  *
  * The call reports the id before it finishes, so a reader can follow the row
  * while the subagent still works. A call that never got that far has no id.
  *
- * @param part - The `task` part of a step.
+ * @param part - The `create-subagent` part of a step.
  * @returns The session id of the subagent; undefined when the call made none.
  */
-export const subagentSessionIdOf = (part: TaskPart): string | undefined =>
-  part.output?.metadata?.sessionId;
+export const subagentSessionIdOf = (
+  part: SubagentCallPart
+): string | undefined => part.output?.metadata?.sessionId;
 
 /**
- * Finds the description that the `task` call which started this subagent wrote.
+ * Finds the description that the `create-subagent` call which started this subagent wrote.
  *
  * The row of that session carries the same text as its title, so the record
  * already names it. A name for a tab costs no request.
@@ -48,7 +52,7 @@ export function findSubagentTitle(
     for (const step of turn.content) {
       for (const part of step.content) {
         if (
-          part.type === "tool-task" &&
+          part.type === SUBAGENT_CALL &&
           subagentSessionIdOf(part) === subagentSessionId
         ) {
           return part.input?.description;

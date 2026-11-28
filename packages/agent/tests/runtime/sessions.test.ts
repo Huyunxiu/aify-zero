@@ -9,6 +9,7 @@ import { SessionLifecycle } from "../../src/runtime/sessions";
 import type { BuildAgentInput } from "../../src/runtime/types";
 import type { AgentStore, TurnRecord, TurnWrite } from "../../src/storage";
 import type { SessionEndStatus, SessionRecord } from "../../src/storage/types";
+import { takeSilence } from "../../src/subagent/silence";
 import {
   assistantStep,
   assistantTurn,
@@ -17,11 +18,14 @@ import {
 
 const asStore = (store: Partial<AgentStore>): AgentStore => store as AgentStore;
 
-const makeLifecycle = (store: Partial<AgentStore>): SessionLifecycle =>
+const makeLifecycle = (
+  store: Partial<AgentStore>,
+  entries: Record<string, unknown> = {}
+): SessionLifecycle =>
   new SessionLifecycle({
     store: asStore(store),
     registry: {
-      getStreamEntryBySession: () => {},
+      getStreamEntryBySession: (sessionId: string) => entries[sessionId],
     } as never,
     buildAgent: () =>
       Promise.reject(new Error("buildAgent must not run in this test")),
@@ -41,6 +45,8 @@ const sessionRow = (overrides: Partial<SessionRecord> = {}): SessionRecord => ({
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
+  subagentName: null,
+  lastPayload: null,
   approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),
@@ -71,6 +77,189 @@ describe(SessionLifecycle, () => {
       { sessionId: "s1", streamId: "s1", status: "canceled" },
       { sessionId: "c1", streamId: "cs1", status: "canceled" },
     ]);
+  });
+
+  test("stop aborts a child that is still running before it clears the row", async () => {
+    // A child can outlive the run that started it, and it holds that run's
+    // abort scope, not the session's. Stopping the session later reaches it
+    // only here.
+    const order: string[] = [];
+    let finished!: () => void;
+    const childDone = new Promise<void>((resolve) => {
+      finished = resolve;
+    });
+    const cleared: { sessionId: string; status: string }[] = [];
+
+    const lifecycle = makeLifecycle(
+      {
+        getSessionById: () => Promise.resolve(sessionRow()),
+        clearActiveStream: (sessionId, _streamId, status) => {
+          cleared.push({ sessionId, status });
+          return Promise.resolve(1);
+        },
+        listChildSessions: () =>
+          Promise.resolve([sessionRow({ id: "c1", activeStreamId: "cs1" })]),
+      },
+      {
+        c1: {
+          isDone: () => false,
+          agent: {
+            abort: () => {
+              order.push("abort");
+              finished();
+            },
+          },
+          whenFinished: () => {
+            order.push("wait");
+            return childDone;
+          },
+        },
+      }
+    );
+
+    await lifecycle.stop("s1");
+
+    expect(order).toStrictEqual(["abort", "wait"]);
+    expect(cleared).toStrictEqual([{ sessionId: "c1", status: "canceled" }]);
+  });
+
+  test("stop does not abort a child that already finished", async () => {
+    let aborted = false;
+
+    const lifecycle = makeLifecycle(
+      {
+        getSessionById: () => Promise.resolve(sessionRow()),
+        clearActiveStream: () => Promise.resolve(1),
+        listChildSessions: () =>
+          Promise.resolve([sessionRow({ id: "c1", activeStreamId: "cs1" })]),
+      },
+      {
+        c1: {
+          isDone: () => true,
+          agent: {
+            abort: () => {
+              aborted = true;
+            },
+          },
+          whenFinished: () => Promise.resolve(),
+        },
+      }
+    );
+
+    await lifecycle.stop("s1");
+
+    expect(aborted).toBeFalsy();
+  });
+
+  test("stop marks the children it takes down, before it aborts them", async () => {
+    // The mark is what stops their settlements from reporting a stop the user
+    // asked for. It has to be in place before the abort, because the abort is
+    // what settles them.
+    let marked: boolean | undefined;
+
+    const lifecycle = makeLifecycle(
+      {
+        getSessionById: () => Promise.resolve(sessionRow()),
+        clearActiveStream: () => Promise.resolve(1),
+        listChildSessions: () =>
+          Promise.resolve([sessionRow({ id: "c1", activeStreamId: "cs1" })]),
+      },
+      {
+        c1: {
+          isDone: () => false,
+          agent: {
+            abort: () => {
+              marked = takeSilence("c1");
+            },
+          },
+          whenFinished: () => Promise.resolve(),
+        },
+      }
+    );
+
+    await lifecycle.stop("s1");
+
+    expect(marked).toBeTruthy();
+  });
+
+  test("a stop that keeps the subagents leaves them running", async () => {
+    let aborted = false;
+    const cleared: string[] = [];
+
+    const lifecycle = makeLifecycle(
+      {
+        getSessionById: () => Promise.resolve(sessionRow()),
+        clearActiveStream: (sessionId) => {
+          cleared.push(sessionId);
+          return Promise.resolve(1);
+        },
+        listChildSessions: () =>
+          Promise.resolve([sessionRow({ id: "c1", activeStreamId: "cs1" })]),
+      },
+      {
+        s1: {
+          isDone: () => false,
+          streamId: "s1",
+          agent: {
+            abort: () => {
+              aborted = true;
+            },
+          },
+          whenFinished: () => Promise.resolve(),
+        },
+        c1: {
+          isDone: () => false,
+          agent: {
+            abort: () => {
+              throw new Error("a kept subagent must not be stopped");
+            },
+          },
+          whenFinished: () => Promise.resolve(),
+        },
+      }
+    );
+
+    await lifecycle.stop("s1", { subagents: "keep" });
+
+    expect(aborted).toBeTruthy();
+    expect(cleared).toStrictEqual(["s1"]);
+  });
+
+  test("delete stops the children before their rows go", async () => {
+    // A session that is going away cannot own a running child: the row a
+    // settlement would write into is the row this delete removes.
+    const order: string[] = [];
+
+    const lifecycle = makeLifecycle(
+      {
+        findSessionRow: () => Promise.resolve(sessionRow()),
+        listChildSessions: () =>
+          Promise.resolve([sessionRow({ id: "c1", activeStreamId: "cs1" })]),
+        clearActiveStream: (sessionId) => {
+          order.push(`clear:${sessionId}`);
+          return Promise.resolve(1);
+        },
+        deleteSession: () => {
+          order.push("delete");
+          return Promise.resolve({ removed: true, sessionIds: ["s1", "c1"] });
+        },
+      },
+      {
+        c1: {
+          isDone: () => false,
+          agent: {
+            abort: () => {
+              order.push("abort:c1");
+            },
+          },
+          whenFinished: () => Promise.resolve(),
+        },
+      }
+    );
+
+    await lifecycle.delete("s1");
+
+    expect(order).toStrictEqual(["abort:c1", "clear:c1", "delete"]);
   });
 
   test("fork copies turns without rewriting ids", async () => {

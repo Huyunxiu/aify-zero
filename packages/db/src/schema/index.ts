@@ -176,6 +176,17 @@ export const project_table = sqliteTable(
 export type ProjectModel = InferSelectModel<typeof project_table>;
 export type ProjectInsertModel = InferInsertModel<typeof project_table>;
 
+/**
+ * The shape of `last_payload`; it mirrors `InboxPayload` in
+ * `@workspace/agent-client`, which this package does not depend on. Change both
+ * together.
+ */
+export type SessionPayloadColumn = {
+  model: { providerId: string; modelId: string };
+  modelEffort?: string;
+  projectId?: string;
+};
+
 export const session_table = sqliteTable(
   "session",
   {
@@ -211,7 +222,15 @@ export const session_table = sqliteTable(
     activeHeadId: text("active_head_id"),
     activeStreamId: text("active_stream_id"),
     status: text("status", {
-      enum: ["idle", "running", "wait_review", "done", "canceled", "error"],
+      enum: [
+        "idle",
+        "running",
+        "wait_review",
+        "done",
+        "canceled",
+        "timed-out",
+        "error",
+      ],
     })
       .notNull()
       .default("idle"),
@@ -233,13 +252,34 @@ export const session_table = sqliteTable(
     forkedFromSessionId: text("forked_from_session_id"),
     forkedFromMessageId: text("forked_from_message_id"),
     /**
-     * 派生这行的父会话，以及父会话里那次工具调用的 id。
+     * 派生这行的父会话，以及父会话里派生它的那次工具调用的 id。
      *
-     * 两者一起唯一定位一次 `task` 调用，父 turn 被 resume 时靠它找回同一个子
-     * 会话接着跑，而不是再建一个。`main` 行两列都是 null。
+     * 两者一起只定位「哪一次调用建了它」：同一个调用重跑时找回同一行，而不是再
+     * 建一个。它不再决定这一行能不能接着跑——那由子代理名和运行器决定。`main`
+     * 行两列都是 null。
      */
     parentSessionId: text("parent_session_id"),
     parentToolCallId: text("parent_tool_call_id"),
+    /**
+     * The name that reaches this subagent from its parent session.
+     *
+     * A model addresses a subagent by this name and never by the session id: it copies a
+     * short name well and mistypes an id. The name is fixed when the row is written, unique
+     * among the parent session's children, and never reused. A `main` row leaves it null.
+     */
+    subagentName: text("subagent_name"),
+    /**
+     * The payload the last run started with, in the shape of
+     * `inbox_item.payload`.
+     *
+     * A deferred item wakes a session, and the process that holds the wake may
+     * never have run it: a timer carries its own payload for that reason, and a
+     * crash-recovery notice has nothing but this row to go on. Null for a
+     * session that has not run since this column existed.
+     */
+    lastPayload: text("last_payload", {
+      mode: "json",
+    }).$type<SessionPayloadColumn | null>(),
     /**
      * 删除时刻。有值即「已删」：列表和所有读接口都当它不存在。
      *
@@ -272,6 +312,13 @@ export const session_table = sqliteTable(
     uniqueIndex("idx_session_parent_tool_call").on(
       table.parentSessionId,
       table.parentToolCallId
+    ),
+    // Two rows under one parent never share a name, so a name that once meant one
+    // subagent never comes to mean another. SQLite lets every null through, which is
+    // what a `main` row and a row written before this column existed both carry.
+    uniqueIndex("idx_session_parent_subagent_name").on(
+      table.parentSessionId,
+      table.subagentName
     ),
   ]
 );
@@ -405,9 +452,11 @@ export const inbox_item_table = sqliteTable(
       .unique()
       .$defaultFn(() => randomUUID()),
     sessionId: text("session_id").notNull(),
-    // `job-notice` / `timer` 与 @workspace/agent-client 的同名常量对应；
-    // 数据库层不依赖协议包，这里保留字面量。
-    kind: text("kind", { enum: ["user-message", "job-notice", "timer"] })
+    // `job-notice` / `timer` / `subagent-settled` 与 @workspace/agent-client 的
+    // 同名常量对应；数据库层不依赖协议包，这里保留字面量。
+    kind: text("kind", {
+      enum: ["user-message", "job-notice", "timer", "subagent-settled"],
+    })
       .notNull()
       .default("user-message"),
     dedupeKey: text("dedupe_key").notNull(),

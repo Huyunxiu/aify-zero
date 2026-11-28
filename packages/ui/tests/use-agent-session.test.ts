@@ -366,4 +366,25 @@ describe("stop", () => {
 
     expect(stops).toStrictEqual([{ sessionId: "session-1" }]);
   });
+
+  test("passes on whether the subagents end with the run", async () => {
+    const stops: { sessionId: string; keepSubagents?: boolean }[] = [];
+
+    const store = createAgentSessionStore({
+      apiStop: (options) => {
+        stops.push(options);
+        return Promise.resolve();
+      },
+      id: "session-1",
+      throttleMs: 0,
+      turns: [],
+      emit: () => {},
+    });
+
+    await store.stop({ keepSubagents: true });
+
+    expect(stops).toStrictEqual([
+      { sessionId: "session-1", keepSubagents: true },
+    ]);
+  });
 });

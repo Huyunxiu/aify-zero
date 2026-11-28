@@ -18,6 +18,10 @@ const names = [
   "bash",
   "powershell",
   "task",
+  "create-subagent",
+  "list-agents",
+  "send-message",
+  "stop-agent",
   "search-tools",
   "call-tool",
 ] as const satisfies readonly (keyof AgentToolSet)[];
@@ -29,7 +33,7 @@ const complete: Missing extends never ? true : false = true;
 
 describe("tool contracts", () => {
   test("covers every tool name exactly once", () => {
-    expect(names).toHaveLength(17);
+    expect(names).toHaveLength(21);
     expect(new Set(names).size).toBe(names.length);
     expect(complete).toBeTruthy();
   });

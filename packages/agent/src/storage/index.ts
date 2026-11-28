@@ -5,6 +5,7 @@ import type {
   DeliverAt,
   EnqueueInboxInput,
   InboxItem,
+  InboxPayload,
 } from "@workspace/agent-client";
 
 import type {
@@ -71,6 +72,20 @@ export interface AgentStore {
   }: {
     parentSessionId: string;
     toolCallId: string;
+  }): Promise<SessionRecord | null>;
+
+  /**
+   * Find a child session by the name its parent session reaches it by.
+   *
+   * The name is scoped to the parent session: two parents can each hold `AGENT-1`, and
+   * neither can reach the other's. A name the parent never handed out finds nothing.
+   */
+  findSessionBySubagentName({
+    parentSessionId,
+    name,
+  }: {
+    parentSessionId: string;
+    name: string;
   }): Promise<SessionRecord | null>;
 
   /**
@@ -150,6 +165,15 @@ export interface AgentStore {
     streamId: string,
     options: StreamActivityOption
   ): Promise<number>;
+
+  /**
+   * Remember the payload a run started with.
+   *
+   * It is the snapshot a deferred wake needs when this process has never run the
+   * session: a timer carries its own, and a crash-recovery notice has only this
+   * row to go on.
+   */
+  setLastPayload(sessionId: string, payload: InboxPayload): Promise<number>;
 
   /**
    * Clears the marker only while it still names this `streamId`, and settles

@@ -10,7 +10,7 @@ import type { AgentSession } from "./agent-session";
 import { Capabilities } from "./extensions/capabilities";
 import type {
   EventWriter,
-  SubagentFactory,
+  Subagents,
   ToolEnvironment,
   TranscriptReader,
 } from "./extensions/capabilities";
@@ -19,6 +19,7 @@ import type { Extension } from "./extensions/types";
 import type { HookContext } from "./hooks-manager";
 import { HooksManager } from "./hooks-manager";
 import { AgentInbox } from "./inbox/agent-inbox";
+import type { NoticeWriter } from "./inbox/notice-writer";
 import { CompactionController } from "./kernel/compaction-controller";
 import type { ModelGateway, ModelTargetResolver } from "./kernel/model-gateway";
 import { RunController } from "./kernel/run-controller";
@@ -86,7 +87,14 @@ export type AgentOptions = {
    * 子 agent 不允许再派生，所以它不传这个选项；没有工厂时 `subagents`
    * capability 也不存在，`task` 扩展会在 `use` 时直接报错。
    */
-  subagentFactory?: (agent: Agent) => SubagentFactory;
+  subagentFactory?: (agent: Agent) => Subagents;
+  /**
+   * The notice writer this run may use.
+   *
+   * A subagent is not given one: it reports through its transcript, and only the
+   * settlement path speaks to a parent.
+   */
+  notices?: NoticeWriter;
   /**
    * 把模型引用解析成调用目标。网关按它取地址、协议和密钥，所以补丁换到别家
    * 供应商时，请求会跟着换。
@@ -252,6 +260,10 @@ export class Agent {
         Capabilities.subagents.id,
         options.subagentFactory(this)
       );
+    }
+
+    if (options.notices) {
+      capabilities.set(Capabilities.notices.id, options.notices);
     }
 
     this.extensions = new ExtensionManager({

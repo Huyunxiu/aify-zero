@@ -1,0 +1,1 @@
+ALTER TABLE `session` ADD `last_payload` text;

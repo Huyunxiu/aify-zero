@@ -5,6 +5,8 @@ export type FakeRequest = {
   /** 供应商这一侧的请求是不是流式的。 */
   readonly stream: boolean;
   readonly model?: string;
+  /** The parsed JSON body, for rules that must tell two callers apart. */
+  readonly body?: unknown;
 };
 
 /**
@@ -57,6 +59,13 @@ export function matches(rule: Rule, request: FakeRequest): boolean {
   }
 
   if (when.model !== undefined && when.model !== request.model) {
+    return false;
+  }
+
+  if (
+    when.bodyContains !== undefined &&
+    !JSON.stringify(request.body ?? {}).includes(when.bodyContains)
+  ) {
     return false;
   }
 

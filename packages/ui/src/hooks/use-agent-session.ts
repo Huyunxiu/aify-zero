@@ -53,6 +53,16 @@ export type SubmitOptions = {
   payload?: Record<string, unknown>;
 };
 
+/**
+ * What a stop does to the subagents a session started.
+ *
+ * Absent means the default: the stop takes them with it. `keepSubagents` ends
+ * only this run, and the children report when they finish.
+ */
+export type StopOptions = {
+  readonly keepSubagents?: boolean;
+};
+
 export type UseAgentSessionOptions = {
   id: string;
   api?: string;
@@ -93,7 +103,7 @@ export type UseAgentSessionOptions = {
    *
    * 和其他回调一样，只在 store 建立时读一次。
    */
-  apiStop?: (options: { sessionId: string }) => Promise<unknown>;
+  apiStop?: (options: { sessionId: string } & StopOptions) => Promise<unknown>;
   /**
    * Durable pending-message queue. Read when the store is created, like the
    * other API callbacks.
@@ -169,7 +179,7 @@ export type UseAgentSessionResponse = {
    * 屏幕先落定，服务端的那次运行随后停下——它活得比发起它的请求久。会话的
    * 连接留着，下一次运行的 `run.start` 还要送到这里。
    */
-  stop: () => Promise<void>;
+  stop: (options?: StopOptions) => Promise<void>;
   error: Error | undefined;
   status: AgentSessionStatus;
 };
@@ -186,6 +196,8 @@ type SendTurnsOptions = {
   payload?: Record<string, unknown>;
   /** 这条 user turn 来自 Inbox 的哪一行；服务端在同一事务里认领。 */
   inboxId?: string;
+  /** Keep `"submitted"` status after acceptance until `run.start` arrives. */
+  expectRun?: boolean;
   /** 服务端收下了这条（消息已落库）时调用。 */
   onAccepted?: () => void;
   /** 流拿到之前失败时调用，参数是原始错误。 */
@@ -249,7 +261,7 @@ type AgentSessionStore = {
   addToolApprovalResponse: (
     options: AddToolApprovalResponseOptions
   ) => Promise<void>;
-  stop: () => Promise<void>;
+  stop: (options?: StopOptions) => Promise<void>;
   /** 页面卸载：停掉连接与重连。 */
   destroy: () => void;
   /** 页面挂载：开始读这个会话；`destroy` 之后也能再开一次。 */
@@ -385,8 +397,12 @@ export function createAgentSessionStore({
   let assembler: AgentTurnAssembler<AgentToolSet> | null = null;
   /** 已经发出、还没有起跑的 user 回合，按回合 id 存。 */
   const pendingTurns = new Map<string, AgentUserTurn>();
+  /** User turns appended optimistically before `run.start` confirms them. */
+  const optimisticTurnIds = new Set<string>();
   let inbox: InboxItem[] = [];
   let inboxRevision = 0;
+  /** Serializes inbox enqueue requests so rapid back-to-back submits land in send order. */
+  let enqueueChain: Promise<void> = Promise.resolve();
 
   const notify = (): void => {
     for (const listener of listeners) {
@@ -462,7 +478,29 @@ export function createAgentSessionStore({
       if (revision !== inboxRevision) {
         return;
       }
-      inbox = messages;
+      if (status === "submitted" && optimisticTurnIds.size > 0) {
+        // Keep the optimistic turn in the transcript only until `run.start` or failure settles it.
+        inbox = messages.filter(
+          (item) => !optimisticTurnIds.has(item.content.id)
+        );
+      } else {
+        if (runStreamId === undefined && optimisticTurnIds.size > 0) {
+          // If an early stop left the message in the inbox, remove the optimistic turn so it does not render twice.
+          const reconciledIds = new Set<string>();
+          for (const item of messages) {
+            if (optimisticTurnIds.has(item.content.id)) {
+              optimisticTurnIds.delete(item.content.id);
+              reconciledIds.add(item.content.id);
+            }
+          }
+          if (reconciledIds.size > 0) {
+            currentTurns = currentTurns.filter(
+              (turn) => !reconciledIds.has(turn.id)
+            );
+          }
+        }
+        inbox = messages;
+      }
       notify();
     } catch {
       // 下一次 settle 或用户操作会再试。
@@ -508,16 +546,29 @@ export function createAgentSessionStore({
    * 落定之后立刻对齐队列：待办项可能已经被服务端领走，队列该少一条了。
    */
   const settleRun = (failure: Error | undefined): void => {
-    if (runStreamId === undefined) {
+    const hadStream = runStreamId !== undefined;
+    if (!hadStream && status !== "submitted") {
       return;
     }
 
     runStreamId = undefined;
-    // 这条流没走完就结束了：还挂着的 part 按定义是没跑完的，收尾成 aborted。
-    assembler?.settle(failure ? "error" : "aborted");
+    if (hadStream) {
+      // Settle any in-progress parts on the active assembler before reading the final snapshot.
+      assembler?.settle(failure ? "error" : "aborted");
+      if (assembler) {
+        currentTurns = [...assembler.turns];
+      }
+    }
+    if (failure !== undefined && optimisticTurnIds.size > 0) {
+      currentTurns = currentTurns.filter(
+        (turn) => !optimisticTurnIds.has(turn.id)
+      );
+      optimisticTurnIds.clear();
+    }
+    assembler = null;
     currentError = failure;
     status = failure ? "error" : "ready";
-    commit();
+    notify();
 
     void refreshInbox();
   };
@@ -563,11 +614,15 @@ export function createAgentSessionStore({
     // 通知）靠事件带来的内容接进记录。
     const adopted: AgentUserTurn[] = [];
     for (const turnId of event.turnIds ?? []) {
+      optimisticTurnIds.delete(turnId);
       const turn = adoptTurn(
         turnId,
         event.turns?.find((entry) => entry.id === turnId)
       );
-      if (turn !== undefined) {
+      if (
+        turn !== undefined &&
+        !currentTurns.some((existing) => existing.id === turn.id)
+      ) {
         adopted.push(turn);
       }
     }
@@ -781,6 +836,7 @@ export function createAgentSessionStore({
     abortSignal,
     payload,
     inboxId,
+    expectRun = false,
     onAccepted,
     onRejected,
   }: SendTurnsOptions): Promise<void> => {
@@ -830,33 +886,52 @@ export function createAgentSessionStore({
 
     onAccepted?.();
 
-    // 服务端已经收下。运行要么已经在跑（`run.start` 到过），要么还没轮到它；
-    // 两种情况都不该让状态停在「发送中」。
-    if (idle && runStreamId === undefined) {
+    // When expecting a run on the event stream, stay in `"submitted"` until `run.start` arrives.
+    if (idle && runStreamId === undefined && !expectRun) {
       status = "ready";
       notify();
     }
   };
 
   /**
-   * 直接开始一个回合。
+   * Starts the first turn directly before a session row exists for the inbox.
    *
-   * 首条消息还没有 session 行可以挂 Inbox，只能走这条路；`onAccepted` 在服务端
-   * 收下后才 resolve，编辑器因此只在真正收下后才清空。
+   * Appends the turn optimistically so the transcript updates immediately, and
+   * clears it if the request or run startup fails.
    */
-  const sendDirect = (
+  const sendDirect = async (
     turn: AgentUserTurn,
     payload: Record<string, unknown> | undefined
-  ): Promise<void> =>
-    new Promise((resolve, reject) => {
-      void sendTurns({
-        turns: [...currentTurns, turn],
+  ): Promise<void> => {
+    const optimistic = !currentTurns.some((entry) => entry.id === turn.id);
+    if (optimistic) {
+      optimisticTurnIds.add(turn.id);
+      currentTurns = [...currentTurns, turn];
+      if (runStreamId !== undefined) {
+        notify();
+      }
+    }
+
+    try {
+      await sendTurns({
+        turns: currentTurns,
         abortSignal: new AbortController().signal,
         payload,
-        onAccepted: resolve,
-        onRejected: reject,
+        expectRun: apiEvents !== undefined,
+        onRejected: () => {
+          if (optimistic) {
+            optimisticTurnIds.delete(turn.id);
+            currentTurns = currentTurns.filter((entry) => entry.id !== turn.id);
+            if (runStreamId !== undefined) {
+              notify();
+            }
+          }
+        },
       });
-    });
+    } catch (error) {
+      throw toError(error);
+    }
+  };
 
   const submit = async ({
     turn,
@@ -887,38 +962,48 @@ export function createAgentSessionStore({
       return;
     }
 
-    const busy = isBusy();
-    const effectiveMode: SubmitMode = busy ? (mode ?? "followup") : "followup";
+    const enqueueTask = enqueueChain.then(async () => {
+      const busy = isBusy();
+      const effectiveMode: SubmitMode = busy
+        ? (mode ?? "followup")
+        : "followup";
 
-    let item: InboxItem;
-    try {
-      const result = await apiInbox.enqueue({
-        sessionId: id,
-        dedupeKey: nanoid(),
-        mode: effectiveMode,
-        turn,
-        model,
-        modelEffort:
-          typeof payload?.modelEffort === "string"
-            ? payload.modelEffort
-            : undefined,
-        projectId:
-          typeof payload?.projectId === "string"
-            ? payload.projectId
-            : undefined,
-      });
-      ({ item } = result);
-    } catch (error) {
-      pendingTurns.delete(turn.id);
-      // 本地有 transcript 但服务端行已经不在：退回直接发送，让服务端重建。
-      if (isSessionNotFound(error)) {
-        await sendDirect(turn, payload);
-        return;
+      let item: InboxItem;
+      try {
+        const result = await apiInbox.enqueue({
+          sessionId: id,
+          dedupeKey: nanoid(),
+          mode: effectiveMode,
+          turn,
+          model,
+          modelEffort:
+            typeof payload?.modelEffort === "string"
+              ? payload.modelEffort
+              : undefined,
+          projectId:
+            typeof payload?.projectId === "string"
+              ? payload.projectId
+              : undefined,
+        });
+        ({ item } = result);
+      } catch (error) {
+        pendingTurns.delete(turn.id);
+        // Transcript exists locally, but the server row is gone: fall back to direct send so the server rebuilds it.
+        if (isSessionNotFound(error)) {
+          await sendDirect(turn, payload);
+          return;
+        }
+        throw error;
       }
-      throw error;
-    }
 
-    addInboxItem(item);
+      addInboxItem(item);
+    });
+
+    enqueueChain = enqueueTask.catch(() => {
+      // Keep later enqueues running in order even if an earlier one fails.
+    });
+
+    await enqueueTask;
   };
 
   const sendPending = async (): Promise<void> => {
@@ -1046,7 +1131,7 @@ export function createAgentSessionStore({
    * 连接留着：停下一次运行不等于这个会话不再有人看，下一次运行的
    * `run.start` 还要送到这里。
    */
-  const stop = async (): Promise<void> => {
+  const stop = async (options: StopOptions = {}): Promise<void> => {
     if (!apiStop) {
       return;
     }
@@ -1054,7 +1139,10 @@ export function createAgentSessionStore({
     settleRun(undefined);
 
     try {
-      await apiStop({ sessionId: id });
+      await apiStop({
+        sessionId: id,
+        ...(options.keepSubagents === true ? { keepSubagents: true } : {}),
+      });
     } catch {
       // 停一条没在跑的运行是空操作，不是失败；传输失败也已经由本地落定覆盖。
     }

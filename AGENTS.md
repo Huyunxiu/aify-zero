@@ -23,6 +23,13 @@ Docs are local at `node_modules/vite-plus/docs` or online at https://viteplus.de
 
 <!--VITE PLUS END-->
 
+## Environment
+
+`CI=true vp install --frozen-lockfile` installs without a terminal; a plain `vp install`
+stops when it must rebuild `node_modules`. When a check fails in files the change did not
+touch, run `vp run doctor`: it names the missing native package or browser and the command
+that fixes it. See `docs/development/environment.md`.
+
 ## Agent skills
 
 ### Issue tracker
@@ -43,7 +50,7 @@ Use Conventional Commits. The `commit-msg` hook rejects a message that breaks th
 
 ### Language
 
-Every repository text is English, and every document has a Chinese copy. See `docs/agents/language.md`.
+Every document is English and has a Chinese copy. A new or changed code comment is English; a comment a change does not touch keeps the language of its file. See `docs/agents/language.md`.
 
 ### Review
 

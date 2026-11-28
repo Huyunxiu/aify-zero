@@ -164,7 +164,6 @@ export function Transcript({
   // The outline and the scrolling box sit side by side. A wheel event over the
   // outline must go back to the record when the outline cannot scroll further.
   const contentRef = React.useRef<HTMLDivElement>(null);
-  const hasOutline = outline !== undefined;
 
   return (
     <div className="relative h-full" ref={contentRef}>
@@ -174,12 +173,7 @@ export function Transcript({
         scrollPreviousItemPeek={64}
       >
         <div className="absolute inset-0 touch-pan-y overflow-y-auto bg-transparent">
-          <div
-            className={cn(
-              "relative size-full mx-auto flex min-h-full min-w-0 w-full flex-col",
-              hasOutline && "@min-[1100px]:ps-[104px]"
-            )}
-          >
+          <div className="relative mx-auto flex size-full min-h-full w-full min-w-0 flex-col">
             <MessageScroller>
               <MessageScrollerViewport>
                 <MessageScrollerContent className={cn(SESSION_COLUMN, "py-4")}>
@@ -230,8 +224,11 @@ export function Transcript({
           </div>
         </div>
         {outline && (
+          /* Keep the Session Outline inside the natural left margin of the centered
+             column, and clip the button hit area horizontally so it never overlaps
+             the transcript at the 1100px breakpoint. The HoverCard uses a portal. */
           <div
-            className="absolute inset-y-0 start-0 hidden w-26 @min-[1100px]:block"
+            className="absolute inset-y-0 start-0 hidden w-20 overflow-x-clip @min-[1100px]:block"
             onWheel={(event) => {
               // Let a long outline scroll itself first, and hand the rest back
               // to the record.

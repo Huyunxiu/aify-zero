@@ -40,6 +40,7 @@ import {
   TooltipTrigger,
 } from "@workspace/ui/components/tooltip";
 import { cn } from "@workspace/ui/lib/utils";
+import { submitPromptDraft } from "@workspace/ui/lib/prompt-submit";
 import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai";
 import {
   CornerDownLeftIcon,
@@ -204,6 +205,20 @@ export interface PromptInputControllerProps {
     ref: RefObject<HTMLInputElement | null>,
     open: () => void
   ) => void;
+  /** INTERNAL: Reads latest text directly from the editor or ref without stale closure state */
+  __getText: () => string;
+  /** INTERNAL: Checks whether the editor/input is currently empty */
+  __isTextEmpty: () => boolean;
+  /** INTERNAL: Restores text and optional editor JSON document after a failed submit */
+  __restoreText: (text: string, editorDoc: unknown | null) => void;
+  /** INTERNAL: Moves attachments out of the composer without revoking blob URLs yet */
+  __detachAttachments: () => (FileUIPart & { id: string })[];
+  /** INTERNAL: Restores detached attachments back into the composer */
+  __restoreAttachments: (files: (FileUIPart & { id: string })[]) => void;
+  /** INTERNAL: Revokes blob URLs for detached attachments once settled */
+  __disposeAttachments: (files: (FileUIPart & { id: string })[]) => void;
+  /** INTERNAL: Checks whether attachmentsRef currently holds any files */
+  __hasAttachments: () => boolean;
 }
 
 const PromptInputController = createContext<PromptInputControllerProps | null>(
@@ -254,10 +269,37 @@ export const PromptInputProvider = ({
 }: PromptInputProviderProps) => {
   // ----- textInput state
   const [textInput, setTextInput] = useState(initialTextInput);
-  const clearInput = useCallback(() => {
-    setTextInput("");
-    editorRef.current?.commands.clearContent();
+  const textInputRef = useRef(initialTextInput);
+  const setTextInputSynced = useCallback((v: string) => {
+    textInputRef.current = v;
+    setTextInput(v);
   }, []);
+  const clearInput = useCallback(() => {
+    textInputRef.current = "";
+    setTextInput("");
+    editorRef.current?.commands.clearContent(true);
+  }, []);
+  const __getText = useCallback(
+    () => (editorRef.current ? editorRef.current.getText() : textInputRef.current),
+    []
+  );
+  const __isTextEmpty = useCallback(
+    () => (editorRef.current ? editorRef.current.isEmpty : textInputRef.current === ""),
+    []
+  );
+  const __restoreText = useCallback(
+    (text: string, editorDoc: unknown | null) => {
+      textInputRef.current = text;
+      setTextInput(text);
+      if (editorRef.current) {
+        editorRef.current.commands.setContent(
+          (editorDoc ?? text) as Parameters<Editor["commands"]["setContent"]>[0],
+          { emitUpdate: true }
+        );
+      }
+    },
+    []
+  );
 
   // ----- attachments state (global when wrapped)
   const [attachmentFiles, setAttachmentFiles] = useState<
@@ -268,6 +310,8 @@ export const PromptInputProvider = ({
   const editorRef = useRef<Editor | null>(null);
   // oxlint-disable-next-line eslint(no-empty-function)
   const openRef = useRef<() => void>(() => {});
+  // Tracks blob URLs detached for an in-flight submit so unmount still revokes them.
+  const inFlightUrlsRef = useRef<Set<string>>(new Set());
 
   const add = useCallback((files: File[] | FileList) => {
     const incoming = [...files];
@@ -323,7 +367,56 @@ export const PromptInputProvider = ({
           URL.revokeObjectURL(f.url);
         }
       }
+      for (const url of inFlightUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      inFlightUrlsRef.current.clear();
     },
+    []
+  );
+
+  const __detachAttachments = useCallback(() => {
+    const current = attachmentsRef.current;
+    if (current.length === 0) {
+      return [];
+    }
+    for (const f of current) {
+      if (f.url) {
+        inFlightUrlsRef.current.add(f.url);
+      }
+    }
+    attachmentsRef.current = [];
+    setAttachmentFiles([]);
+    return current;
+  }, []);
+
+  const __restoreAttachments = useCallback(
+    (files: (FileUIPart & { id: string })[]) => {
+      for (const f of files) {
+        if (f.url) {
+          inFlightUrlsRef.current.delete(f.url);
+        }
+      }
+      attachmentsRef.current = files;
+      setAttachmentFiles(files);
+    },
+    []
+  );
+
+  const __disposeAttachments = useCallback(
+    (files: (FileUIPart & { id: string })[]) => {
+      for (const f of files) {
+        if (f.url) {
+          inFlightUrlsRef.current.delete(f.url);
+          URL.revokeObjectURL(f.url);
+        }
+      }
+    },
+    []
+  );
+
+  const __hasAttachments = useCallback(
+    () => attachmentsRef.current.length > 0,
     []
   );
 
@@ -353,17 +446,39 @@ export const PromptInputProvider = ({
 
   const controller = useMemo<PromptInputControllerProps>(
     () => ({
+      __detachAttachments,
+      __disposeAttachments,
+      __getText,
+      __hasAttachments,
+      __isTextEmpty,
       __registerFileInput,
+      __restoreAttachments,
+      __restoreText,
       attachments,
       formRef,
       editorRef,
       textInput: {
         clear: clearInput,
-        setInput: setTextInput,
+        setInput: setTextInputSynced,
         value: textInput,
       },
     }),
-    [textInput, clearInput, attachments, formRef, editorRef, __registerFileInput]
+    [
+      __detachAttachments,
+      __disposeAttachments,
+      __getText,
+      __hasAttachments,
+      __isTextEmpty,
+      __registerFileInput,
+      __restoreAttachments,
+      __restoreText,
+      textInput,
+      setTextInputSynced,
+      clearInput,
+      attachments,
+      formRef,
+      editorRef,
+    ]
   );
 
   return (
@@ -554,10 +669,17 @@ export const PromptInput = ({
 
   // Keep a ref to files for cleanup on unmount (avoids stale closure)
   const filesRef = useRef(files);
+  const referencedSourcesRef = useRef(referencedSources);
+  // Tracks local blob URLs detached for an in-flight submit so unmount still revokes them.
+  const inFlightLocalUrlsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
+
+  useEffect(() => {
+    referencedSourcesRef.current = referencedSources;
+  }, [referencedSources]);
 
   const openFileDialogLocal = useCallback(() => {
     inputRef.current?.click();
@@ -806,6 +928,10 @@ export const PromptInput = ({
             URL.revokeObjectURL(f.url);
           }
         }
+        for (const url of inFlightLocalUrlsRef.current) {
+          URL.revokeObjectURL(url);
+        }
+        inFlightLocalUrlsRef.current.clear();
       }
     },
     [usingProvider]
@@ -857,60 +983,119 @@ export const PromptInput = ({
       event.preventDefault();
 
       const form = event.currentTarget;
-      const text = usingProvider
-        ? controller.textInput.value
-        : (() => {
-            const formData = new FormData(form);
-            return (formData.get("message") as string) || "";
-          })();
 
-      // Reset form immediately after capturing text to avoid race condition
-      // where user input during async blob conversion would be lost
-      if (!usingProvider) {
-        form.reset();
-      }
+      await submitPromptDraft({
+        takeDraft: () => {
+          const sources = referencedSourcesRef.current;
+          referencedSourcesRef.current = [];
+          setReferencedSources([]);
 
-      try {
-        // Convert blob URLs to data URLs asynchronously
-        const convertedFiles: FileUIPart[] = await Promise.all(
-          files.map(async ({ id: _id, ...item }) => {
-            if (item.url?.startsWith("blob:")) {
-              const dataUrl = await convertBlobUrlToDataUrl(item.url);
-              // If conversion failed, keep the original blob URL
-              return {
-                ...item,
-                url: dataUrl ?? item.url,
-              };
-            }
-            return item;
-          })
-        );
-
-        const result = onSubmit({ files: convertedFiles, text }, event);
-
-        // Handle both sync and async onSubmit
-        if (result instanceof Promise) {
-          try {
-            await result;
-            clear();
-            if (usingProvider) {
-              controller.textInput.clear();
-            }
-          } catch {
-            // Don't clear on error - user may want to retry
-          }
-        } else {
-          // Sync function completed without throwing, clear inputs
-          clear();
           if (usingProvider) {
+            const text = controller.__getText();
+            const editorDoc = controller.editorRef.current?.getJSON() ?? null;
+            const detachedFiles = controller.__detachAttachments();
             controller.textInput.clear();
+            return {
+              text,
+              editorDoc,
+              files: detachedFiles,
+              sources,
+            };
           }
-        }
-      } catch {
-        // Don't clear on error - user may want to retry
-      }
+
+          const formData = new FormData(form);
+          const text = (formData.get("message") as string) || "";
+          const detachedFiles = filesRef.current;
+          for (const f of detachedFiles) {
+            if (f.url) {
+              inFlightLocalUrlsRef.current.add(f.url);
+            }
+          }
+          filesRef.current = [];
+          setItems([]);
+          form.reset();
+
+          return {
+            text,
+            editorDoc: null,
+            files: detachedFiles,
+            sources,
+          };
+        },
+        isDraftEmpty: () => {
+          if (referencedSourcesRef.current.length > 0) {
+            return false;
+          }
+          if (usingProvider) {
+            return (
+              controller.__isTextEmpty() && !controller.__hasAttachments()
+            );
+          }
+          const formData = new FormData(form);
+          const currentText = (formData.get("message") as string) || "";
+          return currentText === "" && filesRef.current.length === 0;
+        },
+        restoreDraft: (snapshot) => {
+          if (snapshot.sources.length > 0) {
+            referencedSourcesRef.current = snapshot.sources;
+            setReferencedSources(snapshot.sources);
+          }
+          if (usingProvider) {
+            controller.__restoreText(snapshot.text, snapshot.editorDoc);
+            if (snapshot.files.length > 0) {
+              controller.__restoreAttachments(snapshot.files);
+            }
+            return;
+          }
+
+          const messageField = form.elements.namedItem("message");
+          if (
+            messageField instanceof HTMLTextAreaElement ||
+            messageField instanceof HTMLInputElement
+          ) {
+            messageField.value = snapshot.text;
+          }
+          if (snapshot.files.length > 0) {
+            for (const f of snapshot.files) {
+              if (f.url) {
+                inFlightLocalUrlsRef.current.delete(f.url);
+              }
+            }
+            filesRef.current = snapshot.files;
+            setItems(snapshot.files);
+          }
+        },
+        disposeFiles: (detachedFiles) => {
+          if (usingProvider) {
+            controller.__disposeAttachments(detachedFiles);
+            return;
+          }
+          for (const f of detachedFiles) {
+            if (f.url) {
+              inFlightLocalUrlsRef.current.delete(f.url);
+              URL.revokeObjectURL(f.url);
+            }
+          }
+        },
+        convertFiles: async (detachedFiles) =>
+          Promise.all(
+            detachedFiles.map(async ({ id: _id, ...item }) => {
+              if (item.url?.startsWith("blob:")) {
+                const dataUrl = await convertBlobUrlToDataUrl(item.url);
+                // If conversion failed, keep the original blob URL
+                return {
+                  ...item,
+                  url: dataUrl ?? item.url,
+                };
+              }
+              return item;
+            })
+          ),
+        submit: ({ files: convertedFiles, text }) =>
+          onSubmit({ files: convertedFiles, text }, event),
+      });
     },
-    [usingProvider, controller, files, onSubmit, clear]
+    [usingProvider, controller, onSubmit]
   );
 
   // Render with or without local provider

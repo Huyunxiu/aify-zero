@@ -23,7 +23,11 @@ import { logger } from "@workspace/shared/logger";
 import type { ModelRef } from "@workspace/shared/model";
 import { BotAvatar } from "@workspace/ui/blocks/bot-avatar";
 import type { LanguageModelUsage } from "ai";
-import { AlertTriangleIcon, PanelRightIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  ChevronDownIcon,
+  PanelRightIcon,
+} from "lucide-react";
 import * as React from "react";
 import { memo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -50,6 +54,12 @@ import {
 } from "../blocks/token-context";
 import { Button } from "../components/button";
 import { ButtonGroup } from "../components/button-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/dropdown-menu";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -638,8 +648,11 @@ export function Session({
     },
     // Stopping is located by session id, so nothing here has to carry the
     // stream id the POST handed back.
-    apiStop: async ({ sessionId: id }) => {
-      await client.session.stopSession({ sessionId: id });
+    apiStop: async ({ sessionId: id, keepSubagents }) => {
+      await client.session.stopSession({
+        sessionId: id,
+        ...(keepSubagents === true ? { keepSubagents: true } : {}),
+      });
     },
     apiInbox: {
       list: async ({ sessionId: id }) => {
@@ -994,12 +1007,7 @@ export function Session({
       ],
     };
 
-    // The server writes the session row when the first turn arrives, with an
-    // empty title; refresh now so the row shows up with its localized
-    // placeholder, and again when the title event lands.
-    if (turns.length === 0) {
-      void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
-    }
+    const isFirstTurn = turns.length === 0;
 
     try {
       // 新会话直接发送；已有会话先入队，再按顺序 drain。空闲时 mode 不参与。
@@ -1017,6 +1025,10 @@ export function Session({
           approvalPolicy,
         },
       });
+      // Refresh the sidebar once `submit` confirms the session row exists on the server.
+      if (isFirstTurn) {
+        void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
+      }
     } catch (error) {
       // 入队或发送被拒绝时，PromptInput 不会清空编辑器；这里负责让用户看到原因。
       toastManager.add({
@@ -1139,12 +1151,7 @@ export function Session({
                 </div>
 
                 {/* session input */}
-                <div
-                  className={cn(
-                    "sticky bottom-0 z-1 w-full",
-                    hasOutline && "@min-[1100px]:ps-[104px]"
-                  )}
-                >
+                <div className="sticky bottom-0 z-1 w-full">
                   {/* The bar's width comes out of the record's box, so the
                       input box reserves the same on both sides; the two
                       blocks then center on one axis. */}
@@ -1308,7 +1315,42 @@ export function Session({
                                   </ContextContent>
                                 </Context>
                                 {isGenerating && (
-                                  <PromptInputStop onStop={() => void stop()} />
+                                  <div className="flex items-center">
+                                    <PromptInputStop
+                                      onStop={() => void stop()}
+                                    />
+                                    <DropdownMenu>
+                                      <DropdownMenuTrigger
+                                        render={
+                                          <Button
+                                            aria-label={t(
+                                              "composer.stop.options"
+                                            )}
+                                            className="-ml-px rounded-l-none"
+                                            size="icon-sm"
+                                            type="button"
+                                            variant="outline"
+                                          />
+                                        }
+                                      >
+                                        <ChevronDownIcon className="size-4" />
+                                      </DropdownMenuTrigger>
+                                      <DropdownMenuContent align="end">
+                                        <DropdownMenuItem
+                                          onClick={() => void stop()}
+                                        >
+                                          {t("composer.stop.everything")}
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() =>
+                                            void stop({ keepSubagents: true })
+                                          }
+                                        >
+                                          {t("composer.stop.replyOnly")}
+                                        </DropdownMenuItem>
+                                      </DropdownMenuContent>
+                                    </DropdownMenu>
+                                  </div>
                                 )}
                                 <PromptInputSubmit
                                   disabled={isEditorEmpty || !selectedModel}

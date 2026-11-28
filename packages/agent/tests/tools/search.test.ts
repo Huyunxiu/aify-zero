@@ -1,5 +1,12 @@
+import { existsSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+
+import { createHostSandbox } from "@workspace/sandbox";
 import type { Sandbox } from "@workspace/sandbox";
-import { describe, expect, test } from "vitest";
+import { RIPGREP_PATH_ENV } from "@workspace/shared/constants";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import type { AgentContext } from "../../src/agent-context.js";
 import type { ToolEnvironment } from "../../src/extensions/capabilities.js";
@@ -76,5 +83,91 @@ describe("search without ripgrep", () => {
     expect(ran()).toBeFalsy();
     expect(result.code).toBe("error");
     expect(result.output).toContain("Grep needs ripgrep");
+  });
+});
+
+const pathWithoutRipgrep = (): string => {
+  const binaryName = process.platform === "win32" ? "rg.exe" : "rg";
+  return (process.env.PATH ?? "")
+    .split(delimiter)
+    .filter(
+      (directory) =>
+        directory.length > 0 && !existsSync(join(directory, binaryName))
+    )
+    .join(delimiter);
+};
+
+describe("search with workspace ripgrep", () => {
+  const originalArgv = [...process.argv];
+  const temporaryDirectories: string[] = [];
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    process.argv = [...originalArgv];
+    await Promise.all(
+      temporaryDirectories
+        .splice(0)
+        .map((directory) => rm(directory, { force: true, recursive: true }))
+    );
+  });
+
+  test("grep and glob work via workspace @vscode/ripgrep without rg on PATH", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "aify-search-"));
+    temporaryDirectories.push(directory);
+    await writeFile(join(directory, "sample.txt"), "hello workspace ripgrep\n");
+
+    vi.stubEnv(RIPGREP_PATH_ENV, "");
+    vi.stubEnv("PATH", pathWithoutRipgrep());
+    process.argv = [
+      originalArgv[0] ?? "node",
+      join(tmpdir(), "aify-no-ripgrep-here", "index.js"),
+    ];
+
+    vi.resetModules();
+    const { createGlobTool: loadGlobTool } =
+      await import("../../src/tools/glob.js");
+    const { createGrepTool: loadGrepTool } =
+      await import("../../src/tools/grep.js");
+
+    const sandbox = createHostSandbox({
+      id: "search-test",
+      projectDirs: [directory],
+      sessionDir: directory,
+    });
+    const context = {
+      sessionId: "session-1",
+      projectDirs: [directory],
+      primaryProjectDir: directory,
+      sessionDir: directory,
+      sandbox,
+    } as ToolEnvironment;
+
+    const grepTool = loadGrepTool({ agentContext: context });
+    const grepResult = (await grepTool.execute(
+      {
+        context: 0,
+        ignoreCase: false,
+        limit: 10,
+        literal: true,
+        path: "sample.txt",
+        pattern: "workspace ripgrep",
+      },
+      run
+    )) as unknown as SearchResult;
+
+    expect(grepResult.code).toBe("ok");
+    expect(grepResult.output).toContain("hello workspace ripgrep");
+
+    const globTool = loadGlobTool({ agentContext: context });
+    const globResult = (await globTool.execute(
+      {
+        limit: 10,
+        pattern: "*.txt",
+      },
+      run
+    )) as unknown as SearchResult;
+
+    expect(globResult.code).toBe("ok");
+    expect(globResult.output).toContain("sample.txt");
   });
 });

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { fetchModelList } from "../src/routers/settings/model-list";
 
+const ENV = "AIFY_PROVIDER_KEY_LIST";
+
 function respond(payload: unknown): Promise<Response> {
   return Promise.resolve(Response.json(payload));
 }
@@ -9,6 +11,7 @@ function respond(payload: unknown): Promise<Response> {
 describe("供应商模型列表", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   test("读 OpenRouter 的 data 形状", async () => {
@@ -103,5 +106,35 @@ describe("供应商模型列表", () => {
       { id: "a-model", name: "a-model" },
       { id: "b-model", name: "B Model" },
     ]);
+  });
+
+  test("指名环境变量时，密钥来自环境", async () => {
+    let sent: Record<string, string> | undefined;
+    const fetchMock = vi.fn<
+      (
+        url: string,
+        init?: { headers?: Record<string, string> }
+      ) => Promise<Response>
+    >((_url, init) => {
+      sent = init?.headers;
+      return respond({ data: [{ id: "m", name: "M" }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv(ENV, "env-key");
+
+    await fetchModelList({ baseURL: "https://x.test/v1", apiKeyEnv: ENV });
+
+    expect(sent?.Authorization).toBe("Bearer env-key");
+  });
+
+  test("变量为空时点名这个变量", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => respond({ data: [] }))
+    );
+
+    await expect(
+      fetchModelList({ baseURL: "https://x.test/v1", apiKeyEnv: ENV })
+    ).rejects.toThrow(ENV);
   });
 });

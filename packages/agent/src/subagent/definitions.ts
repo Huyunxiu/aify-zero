@@ -36,10 +36,13 @@ const READ_ONLY_TOOLS = ["read-file", "glob", "grep", "load-skill"] as const;
 const SUBAGENT_PREAMBLE = `You are a subagent launched by a parent agent to carry out one self-contained task.
 
 - Work autonomously. The user cannot see your questions and will not answer them.
-- You cannot delegate to other agents: there is no task tool here.
+- You cannot delegate to other agents: there is no create-subagent tool here, and no way to reach one.
 - Use the tools you have to find out what you need rather than asking.
 - Your last message must be the text report itself. A turn that ends on a tool call leaves the parent with no report.
 - Finish with a concise report of what you found or did, written for the parent agent. State what you did not do as clearly as what you did.`;
+
+/** The subagent a row falls back to when it names none, or names one that is gone. */
+export const DEFAULT_SUBAGENT_TYPE = "general";
 
 export const SUBAGENT_DEFINITIONS: readonly SubagentDefinition[] = [
   {
@@ -88,9 +91,11 @@ export function renderSubagentCatalogue(): string {
   return [
     "## Available Subagents",
     "",
-    "Use the `task` tool to delegate a self-contained piece of work — one that would otherwise fill this conversation with searching or reading. Give it the whole task, not a single step, and write the brief so it stands alone: a subagent cannot ask the user anything.",
+    "Use `create-subagent` to delegate a self-contained piece of work — one that would otherwise fill this conversation with searching or reading. Give it the whole task, not a single step, and write the brief so it stands alone: a subagent cannot ask the user anything.",
     "",
     "Start independent delegations in the same message; they then run at the same time. Do not delegate the same work twice.",
+    "",
+    "A subagent reports by itself when it settles. End the turn instead of waiting or polling for it. `list-agents` says what is still out, `send-message` says one more thing to one of them, and `stop-agent` stops one.",
     "",
     ...SUBAGENT_DEFINITIONS.map(
       (definition) => `- **${definition.name}**: ${definition.description}`

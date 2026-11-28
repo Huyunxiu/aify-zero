@@ -1,7 +1,9 @@
+import { JOB_NOTICE, SUBAGENT_NOTICE } from "@workspace/agent-client";
 import type {
   AgentTurn,
   AgentUserTurn,
   InboxItem,
+  InboxPayload,
 } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
 import { describe, expect, test, vi } from "vitest";
@@ -26,6 +28,8 @@ const session = (id: string): SessionRecord => ({
   forkedFromMessageId: null,
   parentSessionId: null,
   parentToolCallId: null,
+  subagentName: null,
+  lastPayload: null,
   approvalPolicy: "edit",
   deletedAt: null,
   createdAt: new Date(0),
@@ -60,6 +64,8 @@ class FakeStore {
   readonly cleared: { sessionId: string; streamId: string; status: string }[] =
     [];
   readonly interrupted: SessionRecord[] = [];
+  /** The payload each start wrote to its session row, in order. */
+  readonly lastPayloads: { sessionId: string; payload: InboxPayload }[] = [];
   /** 成功路径在读取时就把行交出去，模拟真实 store 在写 turn 时删除。 */
   claimOnRead = true;
 
@@ -182,6 +188,11 @@ class FakeStore {
     return Promise.resolve([]);
   }
 
+  setLastPayload(sessionId: string, payload: InboxPayload) {
+    this.lastPayloads.push({ sessionId, payload });
+    return Promise.resolve(1);
+  }
+
   updateTurn() {
     return Promise.resolve(0);
   }
@@ -261,7 +272,7 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
-  test("enqueueNotice 在空闲会话开一次运行，并把通知标成 job-notice", async () => {
+  test("一条通知在空闲会话上开一次运行，并标成 job-notice", async () => {
     const store = new FakeStore([session("s1")]);
     const builder = fakeBuildAgent(fakeAgent());
     const runner = createAgentRunner({
@@ -276,10 +287,11 @@ describe("AgentRunner", () => {
       expect(runner.state().running).toHaveLength(0);
     });
 
-    const item = await runner.enqueueNotice({
+    const item = await runner.notices.write({
       sessionId: "s1",
       text: "background job bash-1 finished",
       dedupeKey: "job-notice:bash-1",
+      form: JOB_NOTICE,
     });
 
     expect(item?.kind).toBe("job-notice");
@@ -290,7 +302,7 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
-  test("canDeliverNotice 只在会话有模型配置时为真", async () => {
+  test("另一种通知按生产者给的那一对值归档，而不是一律记成后台任务", async () => {
     const store = new FakeStore([session("s1")]);
     const builder = fakeBuildAgent(fakeAgent());
     const runner = createAgentRunner({
@@ -299,10 +311,74 @@ describe("AgentRunner", () => {
     });
 
     await runner.createSession({ sessionId: "s1" });
-    expect(runner.canDeliverNotice("s1")).toBeFalsy();
+    await runner.enqueue({
+      sessionId: "s1",
+      turn: userTurn("turn-1"),
+      model,
+      effort: "high",
+    });
+    await vi.waitFor(() => {
+      expect(builder.calls).toHaveLength(1);
+      expect(runner.state().running).toHaveLength(0);
+    });
+
+    const item = await runner.notices.write({
+      sessionId: "s1",
+      text: "subagent AGENT-1 (explore) settled: done",
+      dedupeKey: "subagent-settled:child-1",
+      form: SUBAGENT_NOTICE,
+    });
+
+    expect(item?.kind).toBe("subagent-settled");
+    expect(item?.content.content[0]?.source).toBe("subagent-settled");
+    // 通知唤醒的那次运行要靠这一行拿到模型配置；effort 的键名和读它的人一致，
+    // 否则被通知唤醒的一次运行会退回模型默认档。
+    expect(item?.payload.modelEffort).toBe("high");
+
+    await vi.waitFor(() => expect(builder.calls).toHaveLength(2));
+    await runner.shutdown();
+  });
+
+  test("writes the payload a run starts with, so the next process can wake it", async () => {
+    const store = new FakeStore([session("s1")]);
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    await runner.enqueue({
+      sessionId: "s1",
+      turn: userTurn("turn-1"),
+      model,
+      effort: "high",
+    });
+
+    // The next process has no such map: a deferred item wakes the session with
+    // what this row kept.
+    await vi.waitFor(() =>
+      expect(store.lastPayloads).toStrictEqual([
+        { sessionId: "s1", payload: { model, modelEffort: "high" } },
+      ])
+    );
+
+    await runner.shutdown();
+  });
+
+  test("只有会话有模型配置时才能收通知", async () => {
+    const store = new FakeStore([session("s1")]);
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    expect(runner.notices.canDeliver("s1")).toBeFalsy();
 
     await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
-    expect(runner.canDeliverNotice("s1")).toBeTruthy();
+    expect(runner.notices.canDeliver("s1")).toBeTruthy();
 
     await vi.waitFor(() => {
       expect(builder.calls).toHaveLength(1);
@@ -311,7 +387,51 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
-  test("enqueueNotice 在没有模型配置时只记日志", async () => {
+  test("takes a notice that carries its own payload, and wakes on it", async () => {
+    const store = new FakeStore([session("s1")]);
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+
+    // Crash recovery is this caller: the parent never ran here, so the writer
+    // has no payload of its own, and the notice carries one or never arrives.
+    const item = await runner.notices.write({
+      sessionId: "s1",
+      text: "subagent AGENT-1 (explore) settled: error",
+      dedupeKey: "subagent-settled:child-1:recovered",
+      form: SUBAGENT_NOTICE,
+      payload: { model },
+    });
+
+    expect(item?.payload).toStrictEqual({ model });
+    // The notice is not just written: the wake-up run really starts from it.
+    await vi.waitFor(() => expect(builder.calls).toHaveLength(1));
+    await runner.shutdown();
+  });
+
+  test("a failed payload write does not stop the run", async () => {
+    const store = new FakeStore([session("s1")]);
+    store.setLastPayload = () => Promise.reject(new Error("db busy"));
+    const builder = fakeBuildAgent(fakeAgent());
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: builder.build,
+      logger: { warn: () => {} },
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    await runner.enqueue({ sessionId: "s1", turn: userTurn("turn-1"), model });
+
+    // Losing the snapshot costs the next process its wake-up, not this run.
+    await vi.waitFor(() => expect(builder.calls).toHaveLength(1));
+    await runner.shutdown();
+  });
+
+  test("没有模型配置时通知只被拒绝，不抛错", async () => {
     const store = new FakeStore([session("s1")]);
     const runner = createAgentRunner({
       store: asRunnerStore(store),
@@ -320,10 +440,11 @@ describe("AgentRunner", () => {
     });
 
     await runner.createSession({ sessionId: "s1" });
-    const item = await runner.enqueueNotice({
+    const item = await runner.notices.write({
       sessionId: "s1",
       text: "background job bash-1 finished",
       dedupeKey: "job-notice:bash-1",
+      form: JOB_NOTICE,
     });
 
     expect(item).toBeUndefined();
@@ -385,6 +506,43 @@ describe("AgentRunner", () => {
     await runner.shutdown();
   });
 
+  test("start 不唤醒跑不了的子会话，它的行留给下次递话", async () => {
+    const store = new FakeStore([
+      session("s1"),
+      {
+        ...session("c1"),
+        kind: "subagent",
+        parentSessionId: "s1",
+        subagentName: "AGENT-1",
+      },
+    ]);
+    store.claimOnRead = false;
+    store.items.push({
+      seq: 0,
+      id: "message-1",
+      sessionId: "c1",
+      kind: "user-message",
+      dedupeKey: "call-2",
+      deliverAt: "run-boundary",
+      content: userTurn("turn-1"),
+      payload: { model },
+      createdAt: 1,
+    });
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: () => Promise.reject(new Error("must not build")),
+      logger: { warn: () => {} },
+    });
+
+    const report = await runner.start();
+
+    // 子代理的运行由持有它名字的那次调用开启，不是这台运行器的活。
+    expect(report.woken).toStrictEqual([]);
+    expect(store.items.map((item) => item.id)).toStrictEqual(["message-1"]);
+
+    await runner.shutdown();
+  });
+
   test("一次运行领走队列里的全部待办项", async () => {
     const store = new FakeStore([session("s1")]);
     const seen: AgentTurn<never>[][] = [];
@@ -430,6 +588,21 @@ describe("AgentRunner", () => {
       logger: { warn: () => {} },
     });
 
+    const reader = runner.subscribe("s1").getReader();
+    const events: { type: string; failure?: string }[] = [];
+    const readAll = (async () => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        events.push(value as { type: string; failure?: string });
+        if (value.type === "run.end") {
+          break;
+        }
+      }
+    })();
+
     await runner.createSession({ sessionId: "s1" });
     await runner.enqueue({
       sessionId: "s1",
@@ -442,6 +615,11 @@ describe("AgentRunner", () => {
         { sessionId: "s1", reason: "error" },
       ]);
     });
+    await readAll;
+    await reader.cancel();
+    expect(events.find((event) => event.type === "run.end")?.failure).toContain(
+      "model is not configured"
+    );
     expect(store.items).toHaveLength(1);
 
     await runner.shutdown();

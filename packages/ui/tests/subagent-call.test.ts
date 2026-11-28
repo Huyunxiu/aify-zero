@@ -21,7 +21,7 @@ const turnWithTask = (
         type: "assistant",
         content: [
           {
-            type: "tool-task",
+            type: "tool-create-subagent",
             state: "output-available",
             input: { subagent_type: "explore", description },
             output: {

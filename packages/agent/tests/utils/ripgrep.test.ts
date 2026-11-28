@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -57,16 +58,37 @@ describe("ripgrep resolution", () => {
       expect(getRipgrepPath()).toBe(binary);
     });
 
-    test("should fall back to rg on PATH when nothing is staged", async () => {
+    test("should resolve the installed @vscode/ripgrep binary when nothing is staged", async () => {
+      vi.stubEnv(RIPGREP_PATH_ENV, "");
+      vi.stubEnv("PATH", "");
+      process.argv = [
+        originalArgv[0] ?? "node",
+        path.join(tmpdir(), "aify-no-ripgrep-here", "index.js"),
+      ];
+
+      const { getRipgrepAvailable, getRipgrepPath } = await importRipgrep();
+      const resolved = getRipgrepPath();
+
+      expect(path.isAbsolute(resolved)).toBeTruthy();
+      expect(existsSync(resolved)).toBeTruthy();
+      expect(path.basename(resolved)).toBe(RIPGREP_BINARY);
+      await expect(getRipgrepAvailable()).resolves.toBeTruthy();
+    });
+
+    test("should fall back to rg on PATH when nothing is staged and no package binary is available", async () => {
       vi.stubEnv(RIPGREP_PATH_ENV, "");
       process.argv = [
         originalArgv[0] ?? "node",
         path.join(tmpdir(), "aify-no-ripgrep-here", "index.js"),
       ];
 
-      const { getRipgrepPath } = await importRipgrep();
+      const { resolveRipgrepPath } = await importRipgrep();
 
-      expect(getRipgrepPath()).toBe(RIPGREP_BINARY);
+      expect(
+        resolveRipgrepPath({
+          resolvePackageBinary: vi.fn<() => string | undefined>(),
+        })
+      ).toBe(RIPGREP_BINARY);
     });
   });
 

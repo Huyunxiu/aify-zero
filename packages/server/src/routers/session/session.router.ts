@@ -103,6 +103,7 @@ const createSession = publicProcedure
   .errors({
     BOT_NOT_FOUND: ErrorMap.BOT_NOT_FOUND,
     MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+    PROVIDER_KEY_MISSING: ErrorMap.PROVIDER_KEY_MISSING,
     MODEL_UNSUPPORTED_INPUT: ErrorMap.MODEL_UNSUPPORTED_INPUT,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
@@ -268,15 +269,29 @@ export const resumeSession = publicProcedure
  * 两条路径都把会话落定为 `canceled`：调用方要求停止的回合没有跑完，无论这次
  * 调用是结束了它，还是发现它早已结束。
  *
- * 子会话的行也在这里收尾。父一停，子 agent 的 signal 跟着停（见
- * `createSubagent`），它自己会把行清掉——但那要等它跑完，而进程被杀时根本不会
- * 发生。所以停完再按库扫一遍父派生出的会话，把还挂着 `activeStreamId` 的行清掉，
- * 免得刷新后有一个永远"运行中"的子会话。
+ * 子会话的行也在这里收尾。子 agent 不再继承父的 abort 作用域（见
+ * `buildSubagent`），所以停父会话时要不要连子代理一起停，只能由这里回答。
+ * `keepSubagents` 是第二个答案：只停这一轮，子代理继续跑，落定后再报告。
+ * 默认把它们一起停，并按库扫一遍父派生出的会话，把还挂着 `activeStreamId` 的行
+ * 清掉——免得刷新后有一个永远"运行中"的子会话。
  */
 export const stopSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/stop" })
-  .input(z.object({ sessionId: z.string() }))
-  .handler(({ input }) => agentRunner.stop(input.sessionId));
+  .input(
+    z.object({
+      sessionId: z.string(),
+      /**
+       * Keep the subagents of this session running. Absent means the default:
+       * the stop takes them with it.
+       */
+      keepSubagents: z.boolean().optional(),
+    })
+  )
+  .handler(({ input }) =>
+    agentRunner.stop(input.sessionId, {
+      subagents: input.keepSubagents === true ? "keep" : "stop",
+    })
+  );
 
 export const forkSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/fork" })
@@ -309,6 +324,7 @@ export const compactSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/compact" })
   .errors({
     MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+    PROVIDER_KEY_MISSING: ErrorMap.PROVIDER_KEY_MISSING,
     SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
     NOTHING_TO_COMPACT: ErrorMap.NOTHING_TO_COMPACT,

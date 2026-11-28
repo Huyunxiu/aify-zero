@@ -7,6 +7,7 @@ import {
   isAgentFilePart,
   isAgentTextPart,
   JOB_NOTICE_STEP_SOURCE,
+  SUBAGENT_NOTICE_STEP_SOURCE,
   TIMER_STEP_SOURCE,
 } from "@workspace/agent-client";
 import { nanoid } from "nanoid";
@@ -95,7 +96,10 @@ export const UserMessageText = ({ parts }: { parts: AgentUserPart[] }) => {
 };
 
 /** 系统消息的标题键；每加一种来源，这里多一项。 */
-export type SystemNoticeLabelKey = "jobNotice.marker" | "timerNotice.marker";
+export type SystemNoticeLabelKey =
+  | "jobNotice.marker"
+  | "subagentNotice.marker"
+  | "timerNotice.marker";
 
 /**
  * 一条不是用户说的消息，按来源取标题。
@@ -110,6 +114,9 @@ export const systemNoticeLabelKey = (
 ): SystemNoticeLabelKey | undefined => {
   if (source === JOB_NOTICE_STEP_SOURCE) {
     return "jobNotice.marker";
+  }
+  if (source === SUBAGENT_NOTICE_STEP_SOURCE) {
+    return "subagentNotice.marker";
   }
   if (source === TIMER_STEP_SOURCE) {
     return "timerNotice.marker";

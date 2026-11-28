@@ -44,9 +44,18 @@ as absent, and a trash view will handle it later. A running session cannot be de
 _Avoid_: 归档, 移除, 清空, 回收站
 
 **Provider (供应商)**:
-One party that provides model invocation service; it holds the API URL, protocol, and key. One
-provider can hold multiple models.
+One party that provides model invocation service; it holds the API URL, protocol, and either the key
+itself or the name of the environment variable that provides it. One provider can hold multiple
+models.
 _Avoid_: 提供商, 服务商, 渠道
+
+**Provider Key (供应商密钥)**:
+The credential a model call carries to its provider. It is either stored with the provider
+(`apiKey`) or named by an environment variable (`apiKeyEnv`), and the name must sit inside the
+`AIFY_PROVIDER_KEY_` namespace. The two are mutually exclusive. What is stored is the name, so a
+settings read never returns the secret. The settings screen labels this field "API key"; this
+document calls it a provider key because "API key" also names the Access Token.
+_Avoid_: token, access token, secret key
 
 **Model (模型)**:
 One callable model offered by a provider. A model belongs to a provider and holds no access config.

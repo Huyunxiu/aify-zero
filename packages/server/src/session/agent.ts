@@ -17,6 +17,7 @@ import type {
   JobRegistry,
   McpManager,
   SteeringSignal,
+  NoticeWriter,
 } from "@workspace/agent";
 import type { ApprovalPolicy } from "@workspace/agent-client";
 import type { ModelEffort } from "@workspace/shared/constants";
@@ -53,6 +54,12 @@ export interface BuildSessionAgentInput {
   steering?: SteeringSignal;
   /** The Approval Policy of the session, which this Run uses as it is. */
   approvalPolicy: ApprovalPolicy;
+  /** The notice writer this run was given; absent in tests that do not settle. */
+  notices?: NoticeWriter;
+  /** How many subagents one session may run at once. */
+  subagentLimit?: number;
+  /** The wall clock one subagent run may take, in milliseconds. */
+  subagentTimeoutMs?: number;
 }
 
 /**
@@ -72,6 +79,9 @@ export async function buildSessionAgent({
   jobs,
   steering,
   approvalPolicy,
+  notices,
+  subagentLimit,
+  subagentTimeoutMs,
 }: BuildSessionAgentInput): Promise<Agent> {
   const sessionDir = getSessionDir(sessionId);
   mkdirSync(sessionDir, { recursive: true });
@@ -79,17 +89,18 @@ export async function buildSessionAgent({
   const dirs = await resolveSessionDirectories({ botId, projectId });
   const { bot } = dirs;
 
-  const sandbox = await acquireSessionSandbox({
-    sessionId,
-    projectDirs: dirs.projectDirs,
-    sessionDir,
-    sandbox: bot.sandbox,
-    readOnlyDirs: [dirs.botSkillsDir],
-    env: bot.env,
-    homeDir: dirs.botIsolatedHomeDir,
-  });
-
-  const settings = await getUserSettings();
+  const [sandbox, settings] = await Promise.all([
+    acquireSessionSandbox({
+      sessionId,
+      projectDirs: dirs.projectDirs,
+      sessionDir,
+      sandbox: bot.sandbox,
+      readOnlyDirs: [dirs.botSkillsDir],
+      env: bot.env,
+      homeDir: dirs.botIsolatedHomeDir,
+    }),
+    getUserSettings(),
+  ]);
   const timeZone = timeZoneOrHost(settings.timeZone);
   const mcpManager = getMcpManager();
   const effectiveMcpServers = resolveEffectiveMcpServers(
@@ -122,6 +133,9 @@ export async function buildSessionAgent({
     timers: store,
     timeZone,
     steering,
+    ...(notices === undefined ? {} : { notices }),
+    ...(subagentLimit === undefined ? {} : { subagentLimit }),
+    ...(subagentTimeoutMs === undefined ? {} : { subagentTimeoutMs }),
     sandbox,
     toolApprovalPattern: createMcpToolApprovalPattern(
       mcpManager,

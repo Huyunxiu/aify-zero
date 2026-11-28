@@ -12,6 +12,18 @@ Assistant. The word also names the role of one turn — an assistant turn holds 
 that turn is not the Assistant.
 _Avoid_: 助手、智能体、机器人、bot
 
+**Subagent (子代理)**:
+An Assistant that one session starts to carry one brief. It has its own session and transcript,
+its own tools, and the approval policy the delegating session held when it started. It cannot
+start another subagent, and it cannot ask the user anything. It reports to the Assistant that
+started it, and that Assistant can message it again after it reports.
+_Avoid_: 子 agent、子代理进程、worker、后台代理
+
+**Subagent Name (子代理名)**:
+The handle one session uses to reach one of its subagents. It is unique among that session's
+subagents, and it does not change. Two sessions can each hold a subagent of the same name.
+_Avoid_: id、句柄、别名
+
 **Turn (回合)**:
 One exchange between the user and the model, in the order of a session. A user turn holds
 one input. An assistant turn holds the answer to it. One run can make many user turns and
@@ -28,8 +40,9 @@ _Avoid_: 转录、对话记录、历史
 **Run (运行)**:
 One model execution from start to end, identified by a run id. At its start, the run claims
 every inbox item, makes each item a user turn, and then drives the assistant turn that
-follows the last one. The event stream, the claim, and a pause all have the run as their
-boundary.
+follows the last one. It also writes its payload onto the session: the next process has no
+memory of it, and a deferred item still has to wake that session. The event stream, the
+claim, and a pause all have the run as their boundary.
 _Avoid_: 任务、会话、流
 
 **Inbox (收件箱)**:
@@ -43,6 +56,13 @@ where the item can enter: in the middle of the current run, or at the next run. 
 claim many items. Each item is still a separate user turn. Only one reply exists, and it
 follows the last turn.
 _Avoid_: 消息、事件、任务、合并
+
+**Payload (载荷)**:
+The configuration a run needs to start: the model, the effort, and the project it works in.
+An inbox item carries one, because the item is what starts the run. A session keeps the
+last one it used, because a deferred item may have to wake a session that the current
+process has never run.
+_Avoid_: 模型配置、参数、配置
 
 **Outbox (发件箱)**:
 The reply records of a session that settled and did not reach a person. It is the opposite
@@ -78,8 +98,8 @@ resource. In prose, "task" is a short form of it, but "task" must not name a run
 _Avoid_: 作业、job（中文行文）、后台进程
 
 **Completion Notice (完成通知)**:
-One message that a job sends to its owner after it settles. It is not user input. It does
-not end a run.
+One message that a background unit of work sends to its owner after it settles. The producer
+is a job or a subagent. It is not user input. It does not end a run.
 _Avoid_: 完成消息、回调、完成事件
 
 **Timer (定时器)**:
@@ -105,8 +125,8 @@ two count local wall-clock time. The third counts absolute milliseconds.
 _Avoid_: cron 表达式、RRULE、重复规则
 
 **Steering (插话)**:
-One sentence that the user adds during a run. It enters the current turn as a steering
-message at the next step boundary. It does not become a separate user turn.
+One sentence that a person or another agent adds during a run. It enters the current turn as
+a steering message at the next step boundary. It does not become a separate user turn.
 _Avoid_: steer、中途消息
 
 **Session Event Stream (会话事件流)**:
@@ -200,6 +220,13 @@ _Avoid_: 调度器、worker、后台服务、运行时
 The state where the runner does not start the next run automatically. A pause is a brake on
 automatic progress. It does not close the session.
 _Avoid_: 停止、中断、挂起
+
+**Stop (停止)**:
+The request to end the run a session is making, now. It answers a second question too:
+whether the subagents that run started end with it. The default takes them along; the other
+answer ends the run alone, and the children report later, into an inbox that starts no turn.
+A stop is not a pause: it ends this run, and the next turn starts when the user speaks.
+_Avoid_: 中断、取消、kill
 
 **Approval Policy (审批策略)**:
 The asking stance of one session on tool calls: which calls the session passes, which calls

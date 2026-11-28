@@ -14,6 +14,7 @@ import {
   findDictByCode,
   updateDict,
 } from "../dict/dict.repository";
+import { providerKey } from "./provider-key";
 import { normalizeUserSettings } from "./settings.normalize";
 import {
   updateUserSettingsSchema,
@@ -133,5 +134,9 @@ export async function findConfiguredModel(
   if (!provider?.active || !model?.active) {
     return undefined;
   }
+  // Resolve the key now: a run that cannot read it should fail here, where the error
+  // can name the variable, instead of inside a background extension of a run already
+  // under way. The value is not needed yet, so it is discarded on purpose.
+  void providerKey(provider);
   return { ref, provider, model };
 }

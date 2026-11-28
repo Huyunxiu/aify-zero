@@ -69,6 +69,7 @@
       "getKey": "获取密钥",
       "console": "控制台",
       "apiKeyPlaceholder": "例如 sk-...",
+      "keyFromEnv": "密钥来自环境变量：{{name}}",
       "showApiKey": "显示密钥",
       "hideApiKey": "隐藏密钥",
       "headers": "额外请求头",
@@ -261,6 +262,7 @@
       "waitReview": "待审核",
       "done": "已完成",
       "canceled": "已取消",
+      "timedOut": "超时",
       "error": "出错"
     }
   },
@@ -318,6 +320,11 @@
       "default": "发送",
       "steering": "发送引导消息",
       "followup": "发送排队消息"
+    },
+    "stop": {
+      "options": "停止选项",
+      "everything": "停止本轮，并停掉子代理",
+      "replyOnly": "只停本轮，子代理继续运行"
     }
   },
   "inbox": {
@@ -333,6 +340,9 @@
   },
   "jobNotice": {
     "marker": "后台任务完成"
+  },
+  "subagentNotice": {
+    "marker": "子代理落定"
   },
   "timerNotice": {
     "marker": "定时器到点"

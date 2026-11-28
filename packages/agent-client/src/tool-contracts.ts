@@ -273,6 +273,53 @@ export type TaskToolMetadata = {
 };
 export type TaskToolOutput = ToolOutput<string, TaskToolMetadata>;
 
+export type CreateSubagentToolInput = {
+  subagent_type: string;
+  description: string;
+  prompt: string;
+};
+export type CreateSubagentToolMetadata = {
+  status: string;
+  /** The name the parent session reaches this subagent by. */
+  name?: string;
+  sessionId?: string;
+};
+export type CreateSubagentToolOutput = ToolOutput<
+  string,
+  CreateSubagentToolMetadata
+>;
+
+export type ListedAgent = {
+  name: string;
+  sessionId: string;
+  kind: string;
+  subagentType: string;
+  status: string;
+  runningMs?: number;
+};
+export type ListAgentsToolMetadata = {
+  running: number;
+  limit: number;
+  agents: readonly ListedAgent[];
+};
+export type ListAgentsToolOutput = ToolOutput<string, ListAgentsToolMetadata>;
+
+export type SendMessageToolInput = { name: string; text: string };
+export type SendMessageToolMetadata = {
+  name: string;
+  handoff?: "started" | "queued";
+};
+export type SendMessageToolOutput = ToolOutput<string, SendMessageToolMetadata>;
+
+export type StopAgentToolInput = { name: string };
+export type StopAgentToolMetadata = {
+  name: string;
+  stopped?: boolean;
+  /** Messages the stopped run never read; they are gone. */
+  dropped?: number;
+};
+export type StopAgentToolOutput = ToolOutput<string, StopAgentToolMetadata>;
+
 export type SearchToolsInput = { query: string; limit?: number };
 export type SearchToolsResult = {
   tool: string;
@@ -313,7 +360,18 @@ export type AgentToolSet = {
   questionnaire: Tool<QuestionnaireToolInput, QuestionnaireToolOutput>;
   bash: Tool<ShellToolInput, ShellToolOutput>;
   powershell: Tool<ShellToolInput, ShellToolOutput>;
+  /**
+   * The tool that started a subagent before it was split into four.
+   *
+   * No run offers it any more. It stays in the protocol because a transcript
+   * written before the split still holds calls under this name, and a stored
+   * part has to keep a shape.
+   */
   task: Tool<TaskToolInput, TaskToolOutput>;
+  "create-subagent": Tool<CreateSubagentToolInput, CreateSubagentToolOutput>;
+  "list-agents": Tool<Record<string, never>, ListAgentsToolOutput>;
+  "send-message": Tool<SendMessageToolInput, SendMessageToolOutput>;
+  "stop-agent": Tool<StopAgentToolInput, StopAgentToolOutput>;
   "search-tools": Tool<SearchToolsInput, ToolOutput<SearchToolsOutput>>;
   "call-tool": Tool<CallToolInput, ToolOutput>;
 };

@@ -2,18 +2,27 @@ import type {
   AgentStep,
   AgentTurn,
   ApprovalPolicy,
+  InboxPayload,
 } from "@workspace/agent-client";
 
 import type { AgentToolSet } from "../types";
 
 export type SessionKind = "main" | "subagent";
 
+/**
+ * How a session ended, or that it has not run yet.
+ *
+ * `canceled` means someone stopped the run. `timed-out` means the wall clock
+ * stopped it: nobody decided, the limit ran out. The parent reads that word in
+ * the notice and acts on it, so the two cannot share one status.
+ */
 export type SessionStatus =
   | "idle"
   | "running"
   | "wait_review"
   | "done"
   | "canceled"
+  | "timed-out"
   | "error";
 
 export type SessionEndStatus = Exclude<SessionStatus, "running">;
@@ -43,6 +52,15 @@ export type SessionRecord = {
   forkedFromMessageId: string | null;
   parentSessionId: string | null;
   parentToolCallId: string | null;
+  /** The name the parent session reaches this subagent by; null for a `main` row. */
+  subagentName: string | null;
+  /**
+   * The payload the last run started with; null until this session runs.
+   *
+   * A run needs one, and a deferred item can wake a session that this process
+   * has never run — after a restart, nothing else remembers it.
+   */
+  lastPayload: InboxPayload | null;
   /** The Approval Policy of this session. A run applies it as it is; nothing tightens it. */
   approvalPolicy: ApprovalPolicy;
   /** 删除时刻；有值即「已删」，读路径当它不存在。 */
@@ -64,6 +82,7 @@ export type SessionWrite = {
   forkedFromMessageId?: string | null;
   parentSessionId?: string | null;
   parentToolCallId?: string | null;
+  subagentName?: string | null;
   approvalPolicy?: ApprovalPolicy;
 };
 

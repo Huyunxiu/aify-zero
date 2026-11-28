@@ -1,12 +1,12 @@
 import { composeJobNotice } from "@workspace/agent";
 import type {
-  AgentRunner,
   JobId,
   JobNotice,
   JobNoticeAdapter,
   JobRegistry,
+  NoticeWriter,
 } from "@workspace/agent";
-import { JOB_NOTICE_INBOX_KIND } from "@workspace/agent-client";
+import { JOB_NOTICE, JOB_NOTICE_INBOX_KIND } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
 /** 适配器只依赖删除待办项这一项存储能力。 */
@@ -17,7 +17,7 @@ type NoticeStore = {
 /** 投递与撤回完成通知。 */
 export type JobNoticeAdapterDeps = {
   registry: JobRegistry;
-  runner: AgentRunner;
+  notices: NoticeWriter;
   store: NoticeStore;
 };
 
@@ -30,7 +30,7 @@ export type JobNoticeAdapterDeps = {
  */
 export const createJobNoticeAdapter = ({
   registry,
-  runner,
+  notices,
   store,
 }: JobNoticeAdapterDeps): JobNoticeAdapter => {
   /** 已经入队、还没被领取的通知，按任务 id 索引。 */
@@ -66,7 +66,7 @@ export const createJobNoticeAdapter = ({
       // 先确认这条通知投得出去，再落实消耗未读输出：中间任何一步失败（会话
       // 没有模型、入队失败、模型自己先读走），游标都留在原处，模型之后照常
       // 读得到这些字节。
-      if (!runner.canDeliverNotice(sessionId)) {
+      if (!notices.canDeliver(sessionId)) {
         return;
       }
 
@@ -82,11 +82,12 @@ export const createJobNoticeAdapter = ({
       }
 
       inFlight.add(job.id);
-      void runner
-        .enqueueNotice({
+      void notices
+        .write({
           sessionId,
           text: notice.text,
           dedupeKey: `${JOB_NOTICE_INBOX_KIND}:${job.id}`,
+          form: JOB_NOTICE,
         })
         .then((item) => {
           inFlight.delete(job.id);
@@ -94,21 +95,20 @@ export const createJobNoticeAdapter = ({
             return;
           }
           if (withdrawn.delete(job.id)) {
-            // 入队期间模型已经自己读走了：通知不必再出现。
             remove(sessionId, item.id);
             return;
           }
-          // 通知真的落库了，现在才把游标推过去。摘要类通知没有消费正文，
-          // 不用落实。
           if (notice.inline) {
             commitNoticeOutput(sessionId, job.id);
           }
           pending.set(job.id, { sessionId, itemId: item.id });
         })
         .catch((error: unknown) => {
+          // Without this the job stays "in flight" for the life of the process,
+          // and a failure nobody sees is a notification nobody gets.
           inFlight.delete(job.id);
           logger.warn(
-            `job-notices: failed to deliver a notice for ${job.id}: ${String(error)}`
+            `job-notices: failed to queue a notice for ${job.id}: ${String(error)}`
           );
         });
     },

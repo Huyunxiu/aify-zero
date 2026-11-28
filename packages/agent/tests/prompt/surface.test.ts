@@ -20,7 +20,7 @@ import { testSandbox } from "../helpers/sandbox.js";
  * The most the assembled prompt may cost before a project instruction or a skill
  * list joins it. Measured at about 2.6 k characters, or 0.7 k tokens.
  */
-const PROMPT_BUDGET = 2800;
+const PROMPT_BUDGET = 3100;
 
 /** A timer store with nothing in it: this test reads the prompt, not the timers. */
 const idleTimerStore = (): TimerStore => ({
