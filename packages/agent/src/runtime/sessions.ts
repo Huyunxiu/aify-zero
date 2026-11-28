@@ -25,7 +25,7 @@ import { hasVisibleText } from "../outbox/text";
 import type { OutboxRecorder } from "../outbox/types";
 import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
 import type { StreamEventRegistry } from "../stream-registry";
-import { clearSilence, silenceSettlement } from "../subagent/silence";
+import type { SubagentSupervisor } from "../subagent/supervisor";
 import type { AgentToolSet } from "../types";
 import { generateSessionId } from "../utils/id-util";
 import { AgentRunnerError } from "./errors";
@@ -84,6 +84,8 @@ export interface SessionLifecycleDeps {
   steering?: (sessionId: string) => SteeringSignal;
   /** 一次运行落定、且它确实说了话时留一条发件箱记录；没有就什么都不记。 */
   outbox?: OutboxRecorder;
+  /** Instance-scoped subagent supervisor shared with the runner. */
+  subagents: SubagentSupervisor;
 }
 
 /**
@@ -94,9 +96,11 @@ export interface SessionLifecycleDeps {
  */
 export class SessionLifecycle {
   readonly #deps: SessionLifecycleDeps;
+  readonly #subagents: SubagentSupervisor;
 
   constructor(deps: SessionLifecycleDeps) {
     this.#deps = deps;
+    this.#subagents = deps.subagents;
   }
 
   /**
@@ -267,7 +271,7 @@ export class SessionLifecycle {
       ...(effort === undefined ? {} : { effort }),
       ...(botId === undefined ? {} : { botId }),
       ...(projectId === undefined ? {} : { projectId }),
-      streams: registry,
+      subagentFactory: (owner) => this.#subagents.forParent(owner),
       ...(this.#deps.notices === undefined
         ? {}
         : { notices: this.#deps.notices }),
@@ -376,9 +380,8 @@ export class SessionLifecycle {
 
     this.#assertIdle(sessionId);
 
-    // 子会话先停：它们的行马上要跟父一起消失，一个还在跑的子代理会把收尾写进一条
-    // 已经不在的行里。删除没有第二个答案——记录要走，报告就没有收件人。
-    await this.#clearChildSessions(sessionId, {});
+    // Stop child subagents first so none write into rows about to be removed.
+    await this.#subagents.stopChildren(sessionId);
 
     // 任务先停：它们还在写的时候删行，删完又会冒出新的。子会话随父一起消失，
     // 它们名下的活也不能留着，所以按整棵子树停。
@@ -403,6 +406,8 @@ export class SessionLifecycle {
   ): Promise<{ aborted: boolean }> {
     const { store, registry } = this.#deps;
     const streamEntry = registry.getStreamEntryBySession(sessionId);
+    let aborted = false;
+
     if (!streamEntry || streamEntry.isDone()) {
       const session = await store.getSessionById(sessionId);
       if (session?.activeStreamId) {
@@ -414,18 +419,25 @@ export class SessionLifecycle {
           { recordActivity: false }
         );
       }
-      await this.#clearChildSessions(sessionId, options);
-      return { aborted: false };
+    } else {
+      streamEntry.agent.abort();
+      await streamEntry.whenFinished();
+      await store.clearActiveStream(
+        sessionId,
+        streamEntry.streamId,
+        "canceled",
+        {
+          recordActivity: true,
+        }
+      );
+      aborted = true;
     }
 
-    streamEntry.agent.abort();
-    await streamEntry.whenFinished();
-    await store.clearActiveStream(sessionId, streamEntry.streamId, "canceled", {
-      recordActivity: true,
-    });
-    await this.#clearChildSessions(sessionId, options);
+    if (options.subagents !== "keep") {
+      await this.#subagents.stopChildren(sessionId);
+    }
 
-    return { aborted: true };
+    return { aborted };
   }
 
   /**
@@ -473,7 +485,7 @@ export class SessionLifecycle {
       ...(session.projectId === null || session.projectId === undefined
         ? {}
         : { projectId: session.projectId }),
-      streams: registry,
+      subagentFactory: (owner) => this.#subagents.forParent(owner),
       ...(this.#deps.notices === undefined
         ? {}
         : { notices: this.#deps.notices }),
@@ -613,66 +625,6 @@ export class SessionLifecycle {
       });
     } catch (error) {
       logger.warn("[outbox] failed to record the settled turn", error);
-    }
-  }
-
-  /**
-   * 把一个会话派生出的子会话停掉，再把它的行清掉。
-   *
-   * 子代理的运行可以活过派生它的那一轮：它自己的 `abort()` 是唯一的作用域，
-   * 父运行不再把自己的 signal 接给它。所以父运行结束后再停会话，只有这里能把
-   * 仍在跑的子代理停下来；不 abort 的话行说取消了、流还在跑。
-   *
-   * 先 abort、等它自己落定，再清行：子代理的收尾要按它自己的终态走一遍，否则
-   * 这里写下的 `canceled` 会和它自己的 `done` 撞车。
-   *
-   * 只动 `activeStreamId` 非空的行：已经跑完的子会话是 `done`，清它会把它从
-   * "没读过"抹成 `canceled`，而它并没有被取消。
-   *
-   * `keep` 是用户按下停止时的第二个答案：父的这一轮结束，子代理继续跑。它们落定
-   * 后照样写通知，而父会话停下来的状态不唤醒任何东西——报告躺在收件箱里等下一次
-   * 说话。
-   *
-   * 一起停的那批，落定时不写通知：用户亲手停了，父会话下一轮不该先读一条停掉的
-   * 新闻。标记在这里下、在这里清，因为只有这段代码知道哪些子代理是被带走的。
-   */
-  async #clearChildSessions(
-    parentSessionId: string,
-    options: StopOptions
-  ): Promise<void> {
-    if (options.subagents === "keep") {
-      return;
-    }
-
-    const { registry, store } = this.#deps;
-    const children = await store.listChildSessions(parentSessionId);
-    for (const child of children) {
-      silenceSettlement(child.id);
-    }
-
-    try {
-      for (const child of children) {
-        const entry = registry.getStreamEntryBySession(child.id);
-        if (entry !== undefined && !entry.isDone()) {
-          entry.agent.abort();
-          await entry.whenFinished();
-        }
-
-        if (child.activeStreamId) {
-          await store.clearActiveStream(
-            child.id,
-            child.activeStreamId,
-            "canceled",
-            { recordActivity: false }
-          );
-        }
-      }
-    } finally {
-      // A child that was not running never settles, so its mark would outlive the
-      // stop and silence a run that happens next week.
-      for (const child of children) {
-        clearSilence(child.id);
-      }
     }
   }
 }

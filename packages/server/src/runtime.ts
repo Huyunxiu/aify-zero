@@ -7,7 +7,6 @@ import { findConfiguredModel } from "./routers/settings/settings.service";
 import { buildSessionAgent } from "./session/agent";
 import { acceptedEffort } from "./session/model-rules";
 import { SQLiteStore } from "./storage/sqlite-store";
-import { reportRecoveredSubagents } from "./subagent-notices";
 
 /** 进程里唯一的那一个运行器；所有路由和启动/关停都用它。 */
 const store = new SQLiteStore();
@@ -48,6 +47,8 @@ export const agentRunner = createAgentRunner({
   jobs: JOB_REGISTRY,
   // 存储层自己实现发件项的记录端口：运行器只认「记一条」，不认数据库。
   outbox: store,
+  ...(subagentLimit === undefined ? {} : { subagentLimit }),
+  ...(subagentTimeoutMs === undefined ? {} : { subagentTimeoutMs }),
   buildAgent: async ({
     sessionId,
     session,
@@ -55,7 +56,7 @@ export const agentRunner = createAgentRunner({
     effort,
     botId,
     projectId,
-    streams,
+    subagentFactory,
     jobs,
     steering,
     approvalPolicy,
@@ -76,31 +77,14 @@ export const agentRunner = createAgentRunner({
       botId,
       projectId,
       store,
-      streams,
+      ...(subagentFactory === undefined ? {} : { subagentFactory }),
       jobs,
       steering,
       approvalPolicy,
       ...(notices === undefined ? {} : { notices }),
-      ...(subagentLimit === undefined ? {} : { subagentLimit }),
-      ...(subagentTimeoutMs === undefined ? {} : { subagentTimeoutMs }),
     });
   },
 });
-
-/**
- * 上一个进程留下的子代理运行：收尾已经做完，通知它们的父会话。
- *
- * 写入走运行器那一个 writer。父会话在这个进程里可能一次都没跑过，所以通知
- * 自带一份模型配置——会话行记着它上次起跑用的那个。
- */
-export const reportRecovered = (
-  recovered: readonly { sessionId: string }[]
-): Promise<void> =>
-  reportRecoveredSubagents({
-    recovered,
-    store,
-    notices: agentRunner.notices,
-  });
 
 // 任务结算后，完成通知投进拥有者的收件箱；空闲会话会被唤醒。
 JOB_REGISTRY.setNoticeAdapter(
