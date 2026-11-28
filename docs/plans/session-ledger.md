@@ -85,8 +85,11 @@ crash, and a value that can be derived cannot serve as evidence.
 
 ### `note.process`
 
-`pid` and `appVersion`. The `epoch` field already shows that the process changed, so this
-record holds the identity of that process and nothing else.
+`pid` and `appVersion`, written once for each session in each process.
+
+The envelope's `epoch` is not a substitute. A channel lives until its session goes idle and
+a new channel opens for the next run, so a change of epoch is not a change of process. This
+record is the only evidence that a different process wrote the lines.
 
 ### `note.inbox.arrived`
 
