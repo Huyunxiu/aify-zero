@@ -102,5 +102,8 @@ export default defineConfig({
   },
   staged: {
     "*": "vp check --fix",
+    // A new or changed comment is English (docs/agents/language.md). Comments a change
+    // does not touch keep the language of the file, which is why this reads the diff.
+    "*.{ts,tsx}": "tsx scripts/check-comment-language.ts",
   },
 });

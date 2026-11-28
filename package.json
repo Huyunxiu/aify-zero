@@ -12,6 +12,7 @@
     "dev:desktop": "vp run desktop#dev",
     "fake:provider": "tsx packages/agent/src/testing/fake-provider/cli.ts",
     "e2e": "playwright test --config e2e/playwright.config.ts",
+    "doctor": "tsx scripts/check-native-deps.ts",
     "db:baseline": "vp run db#db:baseline",
     "db:check": "vp run db#db:check",
     "db:studio": "vp run db#db:studio",
@@ -21,6 +22,7 @@
     "package:desktop": "vp run desktop#package",
     "package:server": "vp run @workspace/server-app#package",
     "check:docs": "tsx scripts/check-doc-pairs.ts",
+    "check:comments": "tsx scripts/check-comment-language.ts",
     "icons": "tsx scripts/generate-icons.ts",
     "skills:install": "npx --yes skills@1.9.0 install --frozen-lockfile --agent universal",
     "prepare": "vp config"
