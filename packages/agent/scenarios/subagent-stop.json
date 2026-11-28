@@ -16,13 +16,13 @@
       }
     },
     {
-      "when": { "stream": true },
-      "answer": "Started AGENT-1. It will report when it is done."
-    },
-    {
       "when": { "stream": true, "bodyContains": "launched by a parent agent" },
       "slow": { "firstChunkMs": 25000 },
       "answer": "The router is in apps/server/src/router.ts."
+    },
+    {
+      "when": { "stream": true },
+      "answer": "Started AGENT-1. It will report when it is done."
     },
     {
       "when": { "stream": true },
