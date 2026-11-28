@@ -21,6 +21,7 @@
   "MODEL_UNSUPPORTED_INPUT": "所选模型不接受这类输入。",
   "MODEL_LIST_FAILED": "读不到该供应商的模型列表。",
   "MODEL_NOT_FOUND": "所选模型未配置，请重新选择模型。",
+  "PROVIDER_KEY_MISSING": "供应商密钥不可读：它的环境变量是空的。",
   "SESSION_NOT_FOUND": "未找到该会话，请检查后重试。",
   "BOT_NOT_FOUND": "未找到该 Bot，可能已被删除。",
   "BOT_BUSY": "该 Bot 下仍有正在运行或等待审批的会话，请先结束或停止后再删除。",

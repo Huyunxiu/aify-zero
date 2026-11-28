@@ -34,6 +34,12 @@ export const ErrorMap = {
     message: "The requested AI model was not found.",
     data: z.object({ providerId: z.string(), modelId: z.string() }),
   },
+  PROVIDER_KEY_MISSING: {
+    status: 400,
+    message:
+      "The provider key is not readable: its environment variable is empty.",
+    data: z.object({ providerId: z.string(), env: z.string() }),
+  },
   MODEL_UNSUPPORTED_INPUT: {
     status: 400,
     message: "The selected model does not accept this input.",

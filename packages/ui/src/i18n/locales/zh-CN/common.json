@@ -69,6 +69,7 @@
       "getKey": "获取密钥",
       "console": "控制台",
       "apiKeyPlaceholder": "例如 sk-...",
+      "keyFromEnv": "密钥来自环境变量：{{name}}",
       "showApiKey": "显示密钥",
       "hideApiKey": "隐藏密钥",
       "headers": "额外请求头",

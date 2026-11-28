@@ -103,6 +103,7 @@ const createSession = publicProcedure
   .errors({
     BOT_NOT_FOUND: ErrorMap.BOT_NOT_FOUND,
     MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+    PROVIDER_KEY_MISSING: ErrorMap.PROVIDER_KEY_MISSING,
     MODEL_UNSUPPORTED_INPUT: ErrorMap.MODEL_UNSUPPORTED_INPUT,
     PROJECT_NOT_FOUND: ErrorMap.PROJECT_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
@@ -323,6 +324,7 @@ export const compactSession = publicProcedure
   .route({ method: "POST", path: "/sessions/{sessionId}/compact" })
   .errors({
     MODEL_NOT_FOUND: ErrorMap.MODEL_NOT_FOUND,
+    PROVIDER_KEY_MISSING: ErrorMap.PROVIDER_KEY_MISSING,
     SESSION_NOT_FOUND: ErrorMap.SESSION_NOT_FOUND,
     SESSION_BUSY: ErrorMap.SESSION_BUSY,
     NOTHING_TO_COMPACT: ErrorMap.NOTHING_TO_COMPACT,

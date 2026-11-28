@@ -169,6 +169,56 @@ describe("旧设置归一化", () => {
     expect(once.providers[0]?.baseURL).toBe("https://api.openai.com/v1");
   });
 
+  test("同时写着密钥和引用的行留下密钥，不整条丢掉", () => {
+    const settings = normalizeUserSettings(
+      {
+        providers: [
+          {
+            id: "openai",
+            name: "OpenAI",
+            protocol: "openai-chat",
+            baseURL: "https://api.openai.com/v1",
+            apiKey: "sk-stored",
+            apiKeyEnv: "AIFY_PROVIDER_KEY_OPENAI",
+            active: true,
+            models: [{ id: "gpt-5.5", name: "GPT-5.5", active: true }],
+          },
+        ],
+      },
+      USER_SETTINGS_DEFAULTS
+    );
+
+    expect(settings.providers).toHaveLength(1);
+    expect(settings.providers[0]?.apiKey).toBe("sk-stored");
+    expect(settings.providers[0]?.apiKeyEnv).toBeUndefined();
+    expect(settings.providers[0]?.models).toHaveLength(1);
+  });
+
+  test("环境变量引用原样留下，并且幂等", () => {
+    const once = normalizeUserSettings(
+      {
+        providers: [
+          {
+            id: "openai",
+            name: "OpenAI",
+            protocol: "openai-chat",
+            baseURL: "https://api.openai.com/v1",
+            apiKey: "",
+            apiKeyEnv: "AIFY_PROVIDER_KEY_OPENAI",
+            active: true,
+            models: [{ id: "gpt-5.5", name: "GPT-5.5", active: true }],
+          },
+        ],
+      },
+      USER_SETTINGS_DEFAULTS
+    );
+    const twice = normalizeUserSettings(once, USER_SETTINGS_DEFAULTS);
+
+    expect(once.providers[0]?.apiKeyEnv).toBe("AIFY_PROVIDER_KEY_OPENAI");
+    expect(once.providers[0]?.apiKey).toBe("");
+    expect(twice).toStrictEqual(once);
+  });
+
   test("同名的两条供应商不会撞 id", () => {
     const settings = normalizeUserSettings(
       {

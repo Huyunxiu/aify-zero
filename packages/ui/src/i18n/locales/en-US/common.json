@@ -69,6 +69,7 @@
       "getKey": "Get a key",
       "console": "Console",
       "apiKeyPlaceholder": "e.g. sk-...",
+      "keyFromEnv": "Key from environment: {{name}}",
       "showApiKey": "Show key",
       "hideApiKey": "Hide key",
       "headers": "Extra headers",

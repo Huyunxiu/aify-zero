@@ -30,6 +30,7 @@
     "./errors": "./src/errors.ts",
     "./logger": "./src/logger/index.ts",
     "./model": "./src/model.ts",
+    "./provider-key": "./src/provider-key.ts",
     "./server-ready": "./src/server-ready.ts",
     "./terminal-protocol": "./src/terminal-protocol.ts",
     "./ws-frame": "./src/ws-frame.ts",

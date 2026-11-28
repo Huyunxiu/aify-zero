@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PROVIDER_PRESETS, slugifyProviderId } from "@workspace/shared/model";
 import type { ModelProtocol, ModelRef } from "@workspace/shared/model";
+import { providerKeyReference } from "@workspace/shared/provider-key";
 import { ModelLogo } from "@workspace/ui/blocks/model-logo";
 import { ProviderLogo } from "@workspace/ui/blocks/provider-logo";
 import { Badge } from "@workspace/ui/components/badge";
@@ -107,6 +108,8 @@ interface Draft {
   protocol: ModelProtocol;
   baseURL: string;
   apiKey: string;
+  /** The variable that provides the key; at most one of this and `apiKey` is set. */
+  apiKeyEnv?: string;
   headersText: string;
   active: boolean;
   models: ModelRow[];
@@ -459,6 +462,7 @@ function ProviderWorkbench(props: {
           baseURL: provider.baseURL,
           // 密钥跟着草稿走：界面上看到的就是会存下去的那一把。
           apiKey: provider.apiKey,
+          apiKeyEnv: provider.apiKeyEnv,
           headersText: stringifyHeaders(provider.headers),
           active: provider.active,
           models: provider.models.map((model) => ({ ...model })),
@@ -506,6 +510,11 @@ function ProviderWorkbench(props: {
   const keyPreviewed = !(keyRevealed || keyFocused);
   const canSubmit =
     draft.name.trim().length > 0 && draft.baseURL.trim().length > 0;
+  // One source per row: a typed key wins, an empty field keeps the reference.
+  const keyEnv = providerKeyReference({
+    apiKey: draft.apiKey,
+    apiKeyEnv: draft.apiKeyEnv,
+  });
 
   useEffect(() => {
     if (editingModelId) {
@@ -588,6 +597,7 @@ function ProviderWorkbench(props: {
         protocol: draft.protocol,
         baseURL: draft.baseURL.trim(),
         apiKey: draft.apiKey,
+        apiKeyEnv: keyEnv,
         headers: parseHeaders(draft.headersText),
         active: draft.active,
         models: draft.models,
@@ -783,6 +793,15 @@ function ProviderWorkbench(props: {
                     </InputGroupButton>
                   </InputGroupAddon>
                 </InputGroup>
+                {/* A reference is not a key the screen can show, so this says what it
+                    is called: the place to look is the variable, not the input. Typing
+                    a key makes the line go away, because that save drops the
+                    reference. */}
+                {keyEnv === undefined ? null : (
+                  <p className="mt-1.5 text-muted-foreground text-xs">
+                    {t("settings.provider.keyFromEnv", { name: keyEnv })}
+                  </p>
+                )}
                 {preset ? (
                   <div className="mt-1.5 flex gap-3 text-xs">
                     <a
@@ -954,6 +973,7 @@ function ProviderWorkbench(props: {
               <div ref={addPanelRef}>
                 <AddModelsPanel
                   apiKey={draft.apiKey}
+                  apiKeyEnv={keyEnv}
                   baseURL={draft.baseURL}
                   className="mt-3"
                   existingIds={draft.models.map((model) => model.id)}
@@ -1168,6 +1188,8 @@ function ModelEditor(props: {
 function AddModelsPanel(props: {
   baseURL: string;
   apiKey: string;
+  /** The draft's reference: used for discovery while no key is typed. */
+  apiKeyEnv?: string;
   headers?: Record<string, string>;
   existingIds: readonly string[];
   onAdd: (models: ModelRow[]) => void;
@@ -1212,6 +1234,9 @@ function AddModelsPanel(props: {
       const { models } = await client.setting.listModels({
         baseURL: props.baseURL,
         apiKey: props.apiKey,
+        ...(props.apiKeyEnv === undefined
+          ? {}
+          : { apiKeyEnv: props.apiKeyEnv }),
         ...(props.headers ? { headers: props.headers } : {}),
       });
       setCatalog(models);

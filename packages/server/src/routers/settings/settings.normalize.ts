@@ -133,6 +133,27 @@ function providersFromLegacyModels(models: unknown): Provider[] {
   }));
 }
 
+/**
+ * One row carries one key source.
+ *
+ * A row that names a variable and also stores a key cannot be parsed, and dropping the
+ * row would take its models with it. The stored key is kept and the reference is dropped:
+ * a key cannot be reconstructed from anything else, a variable name can.
+ */
+function withoutConflictingReference(raw: unknown): unknown {
+  if (raw === null || typeof raw !== "object") {
+    return raw;
+  }
+  const record = raw as Record<string, unknown>;
+  const key = typeof record.apiKey === "string" ? record.apiKey.trim() : "";
+  if (record.apiKeyEnv === undefined || key.length === 0) {
+    return raw;
+  }
+  const rest = { ...record };
+  delete rest.apiKeyEnv;
+  return rest;
+}
+
 /** 设置里的供应商；解析不了的条目丢掉，不让一条坏数据锁住整份设置。 */
 function normalizeProviders(input: unknown): Provider[] {
   if (!Array.isArray(input)) {
@@ -141,7 +162,7 @@ function normalizeProviders(input: unknown): Provider[] {
   const taken = new Set<string>();
   const providers: Provider[] = [];
   for (const raw of input) {
-    const parsed = providerSchema.safeParse(raw);
+    const parsed = providerSchema.safeParse(withoutConflictingReference(raw));
     if (!parsed.success) {
       continue;
     }

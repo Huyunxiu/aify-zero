@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { withOpencodeHeaders } from "@workspace/agent/providers";
 
+import { readProviderKey } from "./provider-key";
 import type { ModalityName } from "./settings.schema";
 
 /** 供应商列表接口返回的一条模型。能力字段拿不到就留空，由用户填。 */
@@ -15,7 +16,10 @@ export interface ListedModel {
 
 export interface FetchModelListInput {
   baseURL: string;
-  apiKey: string;
+  /** The key itself; empty when a variable is named instead. */
+  apiKey?: string;
+  /** Read the key from an environment variable; `apiKey` is then ignored. */
+  apiKeyEnv?: string;
   headers?: Record<string, string>;
 }
 
@@ -177,8 +181,18 @@ export async function fetchModelList(
   const hasAuthorization = Object.keys(headers).some(
     (name) => name.toLowerCase() === "authorization"
   );
-  if (input.apiKey && !hasAuthorization) {
-    headers.Authorization = `Bearer ${input.apiKey}`;
+  // The form can name an environment variable; the value is put there by whoever runs
+  // this process. Stop before the request when it is unreadable: an empty key only earns
+  // a 401, and that answer tells nobody which variable to set.
+  const read = readProviderKey({
+    apiKey: input.apiKey ?? "",
+    apiKeyEnv: input.apiKeyEnv,
+  });
+  if (!read.ok) {
+    throw new ModelListError(`the environment variable ${read.env} is empty`);
+  }
+  if (read.key && !hasAuthorization) {
+    headers.Authorization = `Bearer ${read.key}`;
   }
 
   let response: Response;

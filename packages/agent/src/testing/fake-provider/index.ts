@@ -17,6 +17,13 @@ export type FakeProviderRequest = {
   readonly stream: boolean;
   readonly model?: string;
   /**
+   * The `Authorization` header the request carried.
+   *
+   * A test reads it when it needs to see which credential reached the wire, for example
+   * a key that the server read from its own environment.
+   */
+  readonly authorization?: string;
+  /**
    * The JSON body the request carried, parsed.
    *
    * An assertion reads it to see what the protocol made of the messages: the body is the
@@ -147,6 +154,9 @@ export async function startFakeProvider(
       path: url.pathname,
       stream: parsed.stream === true,
       ...(typeof parsed.model === "string" ? { model: parsed.model } : {}),
+      ...(request.headers.authorization === undefined
+        ? {}
+        : { authorization: request.headers.authorization }),
       body: parsed,
     };
     requests.push(seen);

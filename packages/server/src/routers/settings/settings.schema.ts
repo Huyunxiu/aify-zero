@@ -1,6 +1,9 @@
 import { mcpServerSchema } from "@workspace/agent/mcp";
 import { MODEL_PROTOCOLS } from "@workspace/shared/model";
+import { hasOneKeySource } from "@workspace/shared/provider-key";
 import z from "zod";
+
+import { providerKeyEnvSchema } from "./provider-key";
 
 export const Modality = z.enum(["text", "audio", "image", "video", "pdf"]);
 
@@ -53,19 +56,31 @@ export type ProviderModel = z.infer<typeof providerModelSchema>;
  * 一个供应商：接入信息加它提供的模型。
  *
  * 一个供应商只有一种协议；同一家要用两种就配两条。
+ *
+ * The key has two shapes and one must be chosen: `apiKey` is the key itself, `apiKeyEnv`
+ * names an environment variable (see `provider-key.ts`). Giving both is an error, not a
+ * "last one wins": two sources on one row leave the reader unable to tell which one the
+ * next call uses.
  */
-export const providerSchema = z.object({
-  /** slug，不含 `/`。 */
-  id: z.string(),
-  name: z.string(),
-  protocol: modelProtocolSchema,
-  baseURL: z.string(),
-  apiKey: z.string(),
-  /** 额外请求头；OpenCode 一类网关要求的头由网关自己补。 */
-  headers: z.record(z.string(), z.string()).optional(),
-  active: z.boolean().default(true),
-  models: z.array(providerModelSchema),
-});
+export const providerSchema = z
+  .object({
+    /** slug，不含 `/`。 */
+    id: z.string(),
+    name: z.string(),
+    protocol: modelProtocolSchema,
+    baseURL: z.string(),
+    apiKey: z.string(),
+    /** Read the key from an environment variable; `apiKey` must stay empty. */
+    apiKeyEnv: providerKeyEnvSchema.optional(),
+    /** 额外请求头；OpenCode 一类网关要求的头由网关自己补。 */
+    headers: z.record(z.string(), z.string()).optional(),
+    active: z.boolean().default(true),
+    models: z.array(providerModelSchema),
+  })
+  .refine(hasOneKeySource, {
+    message: "give either apiKey or apiKeyEnv, not both",
+    path: ["apiKeyEnv"],
+  });
 
 export type Provider = z.infer<typeof providerSchema>;
 
