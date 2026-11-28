@@ -97,6 +97,8 @@
 
 `instructions` 是 `{sha256, bytes}`，正文在 `blobs/`。`sections` 是 `{id, priority, sha256}[]`，所以读者能说出这份提示词由哪几段拼成。
 
+`effort` 在宿主没指定时缺省：填个默认值等于描述一次从没用过它的调用。`turn_start` 钩子整份替换提示时 `sections` 为空，因为没有哪一段拼出了发出去的那份。
+
 这四个事实随每个回合走，不记成变更事件。变更点从相邻两条生效值推得出来。反过来不成立：漏记一次变更，之后每个回合都错。
 
 ### `note.turn.superseded`

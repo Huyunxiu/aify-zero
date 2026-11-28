@@ -133,7 +133,8 @@ export type NoteRecord =
       turnId: string;
       streamId: string;
       model: ModelRef;
-      effort: ModelEffort;
+      /** Absent when the host named no effort for this turn. */
+      effort?: ModelEffort;
       approvalPolicy: ApprovalPolicy;
       instructions: LedgerBlobRef;
       /** Which instructions sections built the prompt, in render order. */

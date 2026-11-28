@@ -68,6 +68,7 @@ export const agentRunner = createAgentRunner({
     jobs,
     steering,
     approvalPolicy,
+    ledger,
   }) => {
     const configured = await findConfiguredModel(model);
     if (!configured) {
@@ -88,6 +89,7 @@ export const agentRunner = createAgentRunner({
       jobs,
       steering,
       approvalPolicy,
+      ...(ledger === undefined ? {} : { ledger }),
     });
   },
 });

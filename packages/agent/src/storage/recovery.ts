@@ -1,6 +1,7 @@
 import type { AgentTurn } from "@workspace/agent-client";
 import { logger } from "@workspace/shared/logger";
 
+import type { SessionLedgerRecorder } from "../ledger/recorder";
 import type { TurnRecord } from "./turn-record";
 import type {
   SessionEndStatus,
@@ -50,7 +51,8 @@ export type RecoveryOutcome = {
  * 行，按设计丢弃。
  */
 export async function recoverInterruptedRuns(
-  store: RecoveryStore
+  store: RecoveryStore,
+  ledger?: SessionLedgerRecorder
 ): Promise<RecoveryOutcome[]> {
   const sessions = await store.listInterruptedSessions();
   const outcomes: RecoveryOutcome[] = [];
@@ -83,6 +85,12 @@ export async function recoverInterruptedRuns(
         } as AgentTurn;
 
         await store.updateTurn(session.id, turn.id, settled);
+        // 两种「error」要分得开：模型自己报错，还是进程死了由这里代填。
+        ledger?.note(session.id, null, {
+          type: "note.recovery",
+          turnId: turn.id,
+          reason: INTERRUPTED_TURN_ERROR,
+        });
         settledTurnId = turn.id;
       }
 

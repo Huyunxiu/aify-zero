@@ -163,7 +163,31 @@ export class ExtensionManager {
 
   /** Applies every instructions section to `base`, in order. */
   renderInstructions(base = ""): string {
-    return renderSections(this.listSections(), base);
+    return this.renderInstructionsReport(base).text;
+  }
+
+  /**
+   * Applies every instructions section and says what it applied.
+   *
+   * The assembly reports its own blocks rather than letting a caller render the sections a
+   * second time to find out: a section that builds its text from the environment would
+   * answer differently twice, and the record would keep a digest of a prompt nobody sent.
+   */
+  renderInstructionsReport(base = ""): {
+    text: string;
+    sections: { id: string; priority: number; text: string }[];
+  } {
+    const sections = this.listSections();
+    const blocks = sections.map((section) => section.render());
+
+    return {
+      text: joinBlocks([base, ...blocks]),
+      sections: sections.map((section, index) => ({
+        id: section.id,
+        priority: section.priority ?? 0,
+        text: blocks[index] ?? "",
+      })),
+    };
   }
 
   #createApi(record: RegisteredExtension): ExtensionAPI {

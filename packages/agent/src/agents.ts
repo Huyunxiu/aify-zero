@@ -26,6 +26,7 @@ import type { AgentStreamOptions, AgentStreamSignal } from "./kernel/run-types";
 import { StepRunner } from "./kernel/step-runner";
 import { TranscriptJournal } from "./kernel/transcript-journal";
 import { TurnRunner } from "./kernel/turn-runner";
+import type { SessionLedgerRecorder } from "./ledger/recorder";
 import { createModelGateway } from "./model/gateway";
 import { routeOf } from "./model/route";
 import type { ModelRoute } from "./model/route";
@@ -96,6 +97,10 @@ export type AgentOptions = {
    * 覆盖模型网关。默认按 `resolveModel` 构造适配器；测试在这里注入替身。
    */
   gateway?: ModelGateway;
+  /**
+   * Records what each turn ran under. Absent in a test, and in a host with no files.
+   */
+  ledger?: SessionLedgerRecorder;
 };
 
 export class Agent {
@@ -124,6 +129,8 @@ export class Agent {
   readonly gateway: ModelGateway;
   /** 模型引用 → 调用目标。子 agent 继承它，才能跑在别家的模型上。 */
   readonly resolveModel: ModelTargetResolver;
+  /** 会话流水的记录器；没有它时这个 agent 不写流水。 */
+  readonly ledger: SessionLedgerRecorder | undefined;
 
   context: AgentContext;
   session: AgentSession;
@@ -171,6 +178,7 @@ export class Agent {
     this.hooks = options.hooks ?? new HooksManager();
     this.extensionApi = options.extensionApi ?? {};
     this.resolveModel = options.resolveModel;
+    this.ledger = options.ledger;
 
     this.context = options.context;
     this.context.model = options.model;
@@ -228,6 +236,7 @@ export class Agent {
       session: this.session,
       sessionId: this.sessionId,
       streamId: () => this.#runController.streamId,
+      ...(options.ledger === undefined ? {} : { ledger: options.ledger }),
     });
 
     // transcript 是内核自己的状态；子会话工厂由组合根注入，子 agent 不传。
@@ -330,6 +339,8 @@ export class Agent {
       compaction: this.#compaction,
       journal: this.#journal,
       baseInstructions: () => this.instructions,
+      approvalPolicy: this.approvalPolicy,
+      ...(this.ledger === undefined ? {} : { ledger: this.ledger }),
     });
   }
 

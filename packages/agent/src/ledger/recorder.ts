@@ -1,17 +1,25 @@
+import { createHash } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { isDeltaEvent } from "@workspace/agent-client";
 import type {
   AgentStreamEvent,
   AgentUserTurn,
+  ApprovalPolicy,
   LedgerPayload,
 } from "@workspace/agent-client";
+import { isDeltaEvent } from "@workspace/agent-client";
+import type { ModelEffort } from "@workspace/shared/constants";
+import type { ModelRef } from "@workspace/shared/model";
 import type { ToolSet } from "ai";
 
 import { LedgerWriter } from "./writer";
 
 /** The file a session's ledger lives in, under its own directory. */
 export const LEDGER_FILE = "ledger.jsonl";
+
+/** The directory that holds a system prompt, by content address. */
+export const LEDGER_BLOB_DIR = join("ledger", "blobs");
 
 /** How much typing one step may hold before the record says it was cut. */
 const DEFAULT_DELTA_BUDGET = 256 * 1024;
@@ -140,8 +148,51 @@ export class SessionLedgerRecorder {
     }
   }
 
+  /**
+   * Records what one turn ran under: the model, the effort, the policy, and the prompt.
+   *
+   * The prompt goes into a blob by digest, so a session with the same prompt on every turn
+   * keeps one copy of it. The record keeps the digest and the blocks that built the prompt,
+   * which is the difference between "the prompt changed" and "this section changed".
+   */
+  turnSettings(
+    sessionId: string,
+    epoch: string | null,
+    settings: {
+      turnId: string;
+      streamId: string;
+      model: ModelRef;
+      effort?: ModelEffort;
+      approvalPolicy: ApprovalPolicy;
+      instructions: {
+        text: string;
+        sections: readonly { id: string; priority: number; text: string }[];
+      };
+    }
+  ): void {
+    const instructions = this.#blob(sessionId, settings.instructions.text);
+    if (instructions === undefined) {
+      return;
+    }
+
+    this.#write(sessionId, epoch, {
+      type: "note.turn.settings",
+      turnId: settings.turnId,
+      streamId: settings.streamId,
+      model: settings.model,
+      ...(settings.effort === undefined ? {} : { effort: settings.effort }),
+      approvalPolicy: settings.approvalPolicy,
+      instructions,
+      sections: settings.instructions.sections.map((section) => ({
+        id: section.id,
+        priority: section.priority,
+        sha256: digestOf(section.text),
+      })),
+    });
+  }
+
   /** Writes one note. The caller holds the fact; this object only places it. */
-  note(sessionId: string, epoch: string, payload: LedgerPayload): void {
+  note(sessionId: string, epoch: string | null, payload: LedgerPayload): void {
     this.#write(sessionId, epoch, payload);
   }
 
@@ -160,7 +211,11 @@ export class SessionLedgerRecorder {
     this.#buffers.clear();
   }
 
-  #write(sessionId: string, epoch: string, payload: LedgerPayload): void {
+  #write(
+    sessionId: string,
+    epoch: string | null,
+    payload: LedgerPayload
+  ): void {
     const writer = this.#writerFor(sessionId);
     if (writer === undefined) {
       return;
@@ -205,6 +260,28 @@ export class SessionLedgerRecorder {
     this.#buffers.set(key, held);
   }
 
+  /** Stores one system prompt and answers where it landed. */
+  #blob(
+    sessionId: string,
+    text: string
+  ): { sha256: string; bytes: number } | undefined {
+    const sha256 = digestOf(text);
+    const directory = join(this.#options.dirOf(sessionId), LEDGER_BLOB_DIR);
+
+    try {
+      mkdirSync(directory, { recursive: true });
+      // The digest names the bytes, so a second write of the same prompt is the same file.
+      writeFileSync(join(directory, sha256), text, { flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        this.#unopened += 1;
+        return undefined;
+      }
+    }
+
+    return { sha256, bytes: Buffer.byteLength(text) };
+  }
+
   #writerFor(sessionId: string): LedgerWriter | undefined {
     const existing = this.#writers.get(sessionId);
     if (existing !== undefined || this.#writers.has(sessionId)) {
@@ -225,6 +302,10 @@ export class SessionLedgerRecorder {
     this.#writers.set(sessionId, writer);
     return writer;
   }
+}
+
+function digestOf(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function bufferKey(sessionId: string, stepId: string): string {

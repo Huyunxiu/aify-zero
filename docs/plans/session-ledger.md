@@ -115,6 +115,10 @@ It is written for a turn that calls the model, and for no other turn.
 `instructions` is `{sha256, bytes}`. The text is in `blobs/`. `sections` is
 `{id, priority, sha256}[]`, so a reader can say which blocks built the prompt.
 
+`effort` is absent when the host named none: a default would describe a call that never
+used one. `sections` is empty when a `turn_start` hook replaced the whole prompt, because
+no block built what was sent.
+
 The four facts travel with each turn instead of appearing as change events. A change point
 follows from two adjacent settings. The reverse does not hold: one missed change event
 makes every later turn wrong.

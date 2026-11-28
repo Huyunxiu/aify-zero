@@ -35,6 +35,7 @@ import type { Extension } from "./extensions/types";
 import type { SteeringSignal } from "./inbox/steering";
 import type { JobRegistry } from "./jobs/registry";
 import type { ModelTargetResolver } from "./kernel/model-gateway";
+import type { SessionLedgerRecorder } from "./ledger/recorder";
 import type { AgentStore } from "./storage";
 import type { StreamEventRegistry } from "./stream-registry";
 import { STREAM_REGISTRY } from "./stream-registry";
@@ -151,6 +152,8 @@ export interface SessionAgentOptions {
   instructions?: string;
   /** 宿主扩展，在默认扩展之后注册。 */
   extensions?: readonly Extension[];
+  /** The session ledger, when the host keeps one. */
+  ledger?: SessionLedgerRecorder;
 }
 
 /**
@@ -218,6 +221,7 @@ export async function createSessionAgent(
     model: options.model.ref,
     modelEffort: options.model.effort,
     resolveModel: options.resolveModel,
+    ...(options.ledger === undefined ? {} : { ledger: options.ledger }),
     ...(toolGroups.subagent
       ? {
           subagentFactory: (owner) =>

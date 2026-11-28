@@ -53,6 +53,8 @@ export interface BuildSessionAgentInput {
   steering?: SteeringSignal;
   /** The Approval Policy of the session, which this Run uses as it is. */
   approvalPolicy: ApprovalPolicy;
+  /** The session ledger, when the process keeps one. */
+  ledger?: BuildAgentInput["ledger"];
 }
 
 /**
@@ -72,6 +74,7 @@ export async function buildSessionAgent({
   jobs,
   steering,
   approvalPolicy,
+  ledger,
 }: BuildSessionAgentInput): Promise<Agent> {
   const sessionDir = getSessionDir(sessionId);
   mkdirSync(sessionDir, { recursive: true });
@@ -123,6 +126,7 @@ export async function buildSessionAgent({
     timeZone,
     steering,
     sandbox,
+    ...(ledger === undefined ? {} : { ledger }),
     toolApprovalPattern: createMcpToolApprovalPattern(
       mcpManager,
       effectiveMcpServerIds

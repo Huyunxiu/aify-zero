@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -159,5 +160,50 @@ describe("the session ledger recorder", () => {
       recorder.endRun("s1", "e1", "k1");
     }).not.toThrow();
     expect(recorder.failures).toBe(1);
+  });
+});
+
+describe("the settings a turn ran under", () => {
+  test("keeps one copy of the prompt and names its blocks", () => {
+    const dir = tempDir();
+    const recorder = new SessionLedgerRecorder({
+      dirOf: () => dir,
+      pid: 413,
+      appVersion: "0.4.1",
+    });
+
+    const settings = {
+      streamId: "k1",
+      model: { providerId: "anthropic", modelId: "claude-sonnet-4-5" },
+      effort: "medium" as const,
+      approvalPolicy: "edit" as const,
+      instructions: {
+        text: "You are a careful agent.",
+        sections: [
+          { id: "identity", priority: 0, text: "You are a careful agent." },
+        ],
+      },
+    };
+
+    recorder.turnSettings("s1", "e1", { ...settings, turnId: "t1" });
+    recorder.turnSettings("s1", "e1", { ...settings, turnId: "t2" });
+
+    const notes = recordsOf(join(dir, "ledger.jsonl")).filter(
+      (record) => record.type === "note.turn.settings"
+    );
+    const digest = createHash("sha256")
+      .update("You are a careful agent.")
+      .digest("hex");
+
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toMatchObject({
+      turnId: "t1",
+      model: { providerId: "anthropic", modelId: "claude-sonnet-4-5" },
+      effort: "medium",
+      approvalPolicy: "edit",
+      instructions: { sha256: digest, bytes: 24 },
+      sections: [{ id: "identity", priority: 0, sha256: digest }],
+    });
+    expect(readdirSync(join(dir, "ledger", "blobs"))).toStrictEqual([digest]);
   });
 });

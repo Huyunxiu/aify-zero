@@ -6,6 +6,7 @@ import type {
 import { logger } from "@workspace/shared/logger";
 
 import type { AgentSession } from "../agent-session";
+import type { SessionLedgerRecorder } from "../ledger/recorder";
 import type { AgentStore } from "../storage";
 import { journaledStepTarget } from "../storage/step-journal";
 import type { AgentToolSet } from "../types";
@@ -29,6 +30,8 @@ export interface TranscriptJournalDeps {
   sessionId: string;
   /** 当前运行的 id；step 行用它区分本次运行与历史。 */
   streamId(): string | undefined;
+  /** 会话流水；没有它时落库照旧，只是不留记录。 */
+  ledger?: SessionLedgerRecorder;
 }
 
 /** 一行 step 的写入形状，从 store 端口推导，不直接依赖数据库 schema。 */
@@ -124,6 +127,14 @@ export class TranscriptJournal {
       createdAt: new Date(step.createdAt),
       updatedAt: new Date(),
     };
+
+    // 先写流水再写库：落库失败时这一步仍有据可查，而重新生成会覆盖库里那一行。
+    this.#deps.ledger?.note(this.#deps.sessionId, null, {
+      type: "note.step.settled",
+      turnId: target.turnId,
+      stepId: step.id,
+      content: step,
+    });
 
     try {
       await this.#deps.store.saveStep(row);

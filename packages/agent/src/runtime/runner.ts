@@ -81,6 +81,7 @@ export class AgentRunner {
   readonly #sessionEvents: SessionEventRegistry<AgentToolSet>;
   readonly #streams: StreamEventRegistry<AgentToolSet>;
   readonly #sessions: SessionLifecycle;
+  readonly #ledger: SessionLedgerRecorder | undefined;
 
   /** 等一次微任务批量处理的会话；不是队列本身，收件箱才是。 */
   readonly #wakeups = new Set<string>();
@@ -103,13 +104,20 @@ export class AgentRunner {
 
   constructor(options: AgentRunnerOptions) {
     this.#store = options.store;
-    this.#buildAgent = options.buildAgent;
+    // The recorder travels with every build, so a host that keeps a ledger never has to
+    // remember to pass it: one place decides that a session is recorded.
+    this.#buildAgent =
+      options.ledger === undefined
+        ? options.buildAgent
+        : async (input) =>
+            await options.buildAgent({ ...input, ledger: options.ledger });
     this.#logger = options.logger ?? {
       warn: (message, error) => {
         console.warn(message, error);
       },
     };
 
+    this.#ledger = options.ledger;
     this.#sessionEvents = new SessionEventRegistry<AgentToolSet>(
       options.ledger
     );
@@ -135,7 +143,7 @@ export class AgentRunner {
 
     let recovered: RecoveryOutcome[] = [];
     try {
-      recovered = await recoverInterruptedRuns(this.#store);
+      recovered = await recoverInterruptedRuns(this.#store, this.#ledger);
     } catch (error) {
       failures.push(failureOf(error));
     }

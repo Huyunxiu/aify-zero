@@ -10,6 +10,7 @@ import type { AgentSession } from "../agent-session";
 import type { InboxMode } from "../inbox/delivery";
 import type { SteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
+import type { SessionLedgerRecorder } from "../ledger/recorder";
 import type { AgentStore, SessionEndStatus } from "../storage";
 import type { RecoveryOutcome, RecoveryStore } from "../storage/recovery";
 import type { StreamEventRegistry } from "../stream-registry";
@@ -105,6 +106,8 @@ export type BuildAgentInput = {
   jobs?: JobRegistry;
   /** 这次运行的插话信号；等待任务的工具订阅它。 */
   steering?: SteeringSignal;
+  /** The session ledger, when the host keeps one. */
+  ledger?: SessionLedgerRecorder;
   /**
    * The Approval Policy that applies to this Run: the value the session stores.
    *

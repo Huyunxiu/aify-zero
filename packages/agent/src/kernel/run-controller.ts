@@ -4,6 +4,7 @@ import type {
   AgentTurn,
   AgentTurnStatus,
   AgentUserTurn,
+  ApprovalPolicy,
   CompactionRecord,
 } from "@workspace/agent-client";
 import { getErrorMessage } from "@workspace/shared/errors";
@@ -21,6 +22,7 @@ import type {
   StepStartEvent,
 } from "../hooks-manager";
 import { applyRuntimeSettingsPatches } from "../hooks-manager";
+import type { SessionLedgerRecorder } from "../ledger/recorder";
 import type { AgentStore, SessionEndStatus, TurnWrite } from "../storage";
 import type { AgentToolSet } from "../types";
 import {
@@ -86,6 +88,10 @@ export interface RunControllerDeps {
   journal: TranscriptJournal;
   /** Agent 上的基础系统提示；扩展片段会追加在它后面。 */
   baseInstructions(): string | undefined;
+  /** The policy this run applies. No part of the run changes it. */
+  approvalPolicy: ApprovalPolicy;
+  /** The session ledger; absent when the host keeps no files. */
+  ledger?: SessionLedgerRecorder;
 }
 
 /**
@@ -102,6 +108,12 @@ export class RunController {
   #streamKind?: AgentStreamSignal["type"];
   /** 本 turn 拼接好的系统提示；turn 开始前算一次，turn 内保持稳定。 */
   #instructions?: string;
+  /**
+   * 拼出这份提示的指令段。
+   *
+   * 钩子整份替换提示时这里清空：那时没有哪一段拼出了它，写一段假的归属比不写更糟。
+   */
+  #instructionsSections: { id: string; priority: number; text: string }[] = [];
 
   constructor(deps: RunControllerDeps) {
     this.#deps = deps;
@@ -272,9 +284,11 @@ export class RunController {
     session.turns = turns;
     // 提示片段在 turn 开始时拼一次：同一 turn 的每一步看到同一份提示词，
     // 扩展在 turn 中途改数据也不会让后续步骤的缓存失效。
-    this.#instructions = extensions.renderInstructions(
+    const report = extensions.renderInstructionsReport(
       this.#deps.baseInstructions() ?? ""
     );
+    this.#instructions = report.text;
+    this.#instructionsSections = report.sections;
 
     const mostRecentTurn = turns.at(-1);
     if (!mostRecentTurn) {
@@ -301,6 +315,9 @@ export class RunController {
       )
     );
     context.model = runtime.model;
+    if (runtime.instructions !== this.#instructions) {
+      this.#instructionsSections = [];
+    }
     this.#instructions = runtime.instructions;
 
     const sessionRow = await store.getSessionById(this.#deps.sessionId);
@@ -359,6 +376,8 @@ export class RunController {
           assemblers: extensions.listAssemblers(),
         });
 
+        this.#recordTurnSettings(turnId);
+
         const turn = await turnRunner.run({
           turnType: "assistant",
           turnId,
@@ -398,6 +417,35 @@ export class RunController {
     })();
 
     return stream;
+  }
+
+  /**
+   * Records what this turn runs under, once the effective values are settled.
+   *
+   * The settings travel with the turn rather than appearing as change events: a reader
+   * derives the change point by comparing two turns, and a missed change event would make
+   * every later turn wrong.
+   */
+  #recordTurnSettings(turnId: string): void {
+    const { ledger, sessionId, context, approvalPolicy } = this.#deps;
+    const streamId = this.#streamId;
+    if (ledger === undefined || streamId === undefined) {
+      return;
+    }
+
+    ledger.turnSettings(sessionId, null, {
+      turnId,
+      streamId,
+      model: context.model,
+      ...(context.modelEffort === undefined
+        ? {}
+        : { effort: context.modelEffort }),
+      approvalPolicy,
+      instructions: {
+        text: this.#instructions ?? "",
+        sections: this.#instructionsSections,
+      },
+    });
   }
 
   /**
