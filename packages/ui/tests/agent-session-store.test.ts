@@ -640,4 +640,109 @@ describe("createAgentSessionStore queue", () => {
 
     events.close();
   });
+
+  test("serializes rapid inbox enqueues so items stay in send order", async () => {
+    const events = sessionEvents();
+    const order: string[] = [];
+    const resolvers: ((item: InboxItem) => void)[] = [];
+    const apiInbox: InboxApi = {
+      list: vi.fn<InboxApi["list"]>(() => Promise.resolve([])),
+      enqueue: vi.fn<InboxApi["enqueue"]>((input) => {
+        order.push(input.turn.id);
+        return new Promise<{ item: InboxItem }>((resolve) => {
+          resolvers.push((item) => resolve({ item }));
+        });
+      }),
+      cancel: vi.fn<InboxApi["cancel"]>(() => Promise.resolve({ removed: 1 })),
+      clear: vi.fn<InboxApi["clear"]>(() => Promise.resolve({ removed: 0 })),
+    };
+
+    const store = createAgentSessionStore({
+      id: "session-1",
+      apiInbox,
+      apiSend: () => Promise.resolve(),
+      apiEvents: () => Promise.resolve(events.stream),
+      turns: [userTurn("u0", "Initial turn")],
+      emit: () => {},
+    });
+
+    await flush();
+
+    const firstTurn = userTurn("u1", "First queued");
+    const secondTurn = userTurn("u2", "Second queued");
+
+    const firstSubmit = store.submit({
+      turn: firstTurn,
+      payload: { model: TEST_MODEL },
+    });
+    const secondSubmit = store.submit({
+      turn: secondTurn,
+      payload: { model: TEST_MODEL },
+    });
+
+    await vi.waitFor(() => expect(apiInbox.enqueue).toHaveBeenCalledOnce());
+    expect(order).toStrictEqual(["u1"]);
+
+    resolvers[0]!(inboxMessage("item-1", 0, firstTurn));
+    await firstSubmit;
+
+    await vi.waitFor(() => expect(apiInbox.enqueue).toHaveBeenCalledTimes(2));
+    expect(order).toStrictEqual(["u1", "u2"]);
+
+    resolvers[1]!(inboxMessage("item-2", 1, secondTurn));
+    await secondSubmit;
+
+    expect(store.getInbox().map((item) => item.id)).toStrictEqual([
+      "item-1",
+      "item-2",
+    ]);
+
+    events.close();
+  });
+
+  test("continues serialized enqueue chain after an earlier enqueue rejects", async () => {
+    const events = sessionEvents();
+    const secondTurn = userTurn("u2", "Second queued");
+    let callCount = 0;
+    const apiInbox: InboxApi = {
+      list: vi.fn<InboxApi["list"]>(() => Promise.resolve([])),
+      enqueue: vi.fn<InboxApi["enqueue"]>(() => {
+        callCount += 1;
+        if (callCount === 1) {
+          return Promise.reject(new Error("first failed"));
+        }
+        return Promise.resolve({
+          item: inboxMessage("item-2", 0, secondTurn),
+        });
+      }),
+      cancel: vi.fn<InboxApi["cancel"]>(() => Promise.resolve({ removed: 1 })),
+      clear: vi.fn<InboxApi["clear"]>(() => Promise.resolve({ removed: 0 })),
+    };
+
+    const store = createAgentSessionStore({
+      id: "session-1",
+      apiInbox,
+      apiSend: () => Promise.resolve(),
+      apiEvents: () => Promise.resolve(events.stream),
+      turns: [userTurn("u0", "Initial turn")],
+      emit: () => {},
+    });
+
+    await flush();
+
+    const firstSubmit = store.submit({
+      turn: userTurn("u1", "First queued"),
+      payload: { model: TEST_MODEL },
+    });
+    const secondSubmit = store.submit({
+      turn: secondTurn,
+      payload: { model: TEST_MODEL },
+    });
+
+    await expect(firstSubmit).rejects.toThrow("first failed");
+    await expect(secondSubmit).resolves.toBeUndefined();
+    expect(store.getInbox().map((item) => item.id)).toStrictEqual(["item-2"]);
+
+    events.close();
+  });
 });

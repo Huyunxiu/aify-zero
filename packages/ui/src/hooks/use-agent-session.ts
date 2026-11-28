@@ -401,6 +401,8 @@ export function createAgentSessionStore({
   const optimisticTurnIds = new Set<string>();
   let inbox: InboxItem[] = [];
   let inboxRevision = 0;
+  /** Serializes inbox enqueue requests so rapid back-to-back submits land in send order. */
+  let enqueueChain: Promise<void> = Promise.resolve();
 
   const notify = (): void => {
     for (const listener of listeners) {
@@ -960,38 +962,48 @@ export function createAgentSessionStore({
       return;
     }
 
-    const busy = isBusy();
-    const effectiveMode: SubmitMode = busy ? (mode ?? "followup") : "followup";
+    const enqueueTask = enqueueChain.then(async () => {
+      const busy = isBusy();
+      const effectiveMode: SubmitMode = busy
+        ? (mode ?? "followup")
+        : "followup";
 
-    let item: InboxItem;
-    try {
-      const result = await apiInbox.enqueue({
-        sessionId: id,
-        dedupeKey: nanoid(),
-        mode: effectiveMode,
-        turn,
-        model,
-        modelEffort:
-          typeof payload?.modelEffort === "string"
-            ? payload.modelEffort
-            : undefined,
-        projectId:
-          typeof payload?.projectId === "string"
-            ? payload.projectId
-            : undefined,
-      });
-      ({ item } = result);
-    } catch (error) {
-      pendingTurns.delete(turn.id);
-      // 本地有 transcript 但服务端行已经不在：退回直接发送，让服务端重建。
-      if (isSessionNotFound(error)) {
-        await sendDirect(turn, payload);
-        return;
+      let item: InboxItem;
+      try {
+        const result = await apiInbox.enqueue({
+          sessionId: id,
+          dedupeKey: nanoid(),
+          mode: effectiveMode,
+          turn,
+          model,
+          modelEffort:
+            typeof payload?.modelEffort === "string"
+              ? payload.modelEffort
+              : undefined,
+          projectId:
+            typeof payload?.projectId === "string"
+              ? payload.projectId
+              : undefined,
+        });
+        ({ item } = result);
+      } catch (error) {
+        pendingTurns.delete(turn.id);
+        // Transcript exists locally, but the server row is gone: fall back to direct send so the server rebuilds it.
+        if (isSessionNotFound(error)) {
+          await sendDirect(turn, payload);
+          return;
+        }
+        throw error;
       }
-      throw error;
-    }
 
-    addInboxItem(item);
+      addInboxItem(item);
+    });
+
+    enqueueChain = enqueueTask.catch(() => {
+      // Keep later enqueues running in order even if an earlier one fails.
+    });
+
+    await enqueueTask;
   };
 
   const sendPending = async (): Promise<void> => {
