@@ -39,6 +39,15 @@ order. It reads the ledger alone, so a broken ledger cannot corrupt the transcri
 wrong row cannot corrupt a replay.
 _Avoid_: 重放、重算、回滚、time travel
 
+**Line (行)**:
+The bytes of one record together with the newline that ends it. A line is whole when its
+newline is on the disk. A crash can cut the last line in half: the writer closes it with a
+newline before it writes the next record, so a cut line stays one line that no reader can
+read, and the record after it is whole. A line number is spent when it is chosen, and a cut
+line keeps its number too, so two records never share one and a missing number shows a record
+that was lost.
+_Avoid_: 行记录、条目、entry
+
 **Run (运行)**:
 One model execution from start to end, identified by a run id. At its start, the run claims
 every inbox item, makes each item a user turn, and then drives the assistant turn that

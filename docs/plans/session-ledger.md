@@ -174,15 +174,28 @@ onStreamEvent(streamId, event)
     drop(buffer[event.stepId])
 
 append(payload)
-  line = next line number
+  line = next line number                      // spent here, written or not
+  if the file does not end at a line start
+    write("\n")                               // close a line a crash cut in half
   write({line, v: 1, at: now(), epoch: currentEpoch, ...payload})
   on failure: count it, warn, and continue     // a run never fails because of the ledger
 ```
 
+`open()` reads the tail and not the whole file: one 64 KiB window at a time, walking back
+until a line parses. An offset cannot give a line number, so the number must come from a
+record. The walk steps back past a record that is larger than the window, so the usual cost
+is one window and the cost never passes the file.
+
 `write()` returns when the bytes reach the file, so a process crash loses nothing. `fsync`
 runs at each step boundary, so a power loss loses at most the current step.
 
-A last line can be truncated. A reader drops it.
+A number is spent when it is chosen, not when its bytes land. A record that fails to write
+keeps its number, and so does a line that a crash cut in half: the writer counts that line as
+the number after the last whole one. The numbers therefore only move forward, two records
+never share one, and a missing number shows a record that was lost.
+
+A last line can be cut in half by a crash. A reader drops it, and the writer closes it with a
+newline before it appends, so the record after it is a whole line.
 
 ## Reading
 
@@ -246,7 +259,9 @@ period, and any move of the ledger into the database.
 Two seams.
 
 - **The file boundary.** Append records, read them back, get the same records. A truncated
-  last line is dropped, and a broken line in the middle is skipped and counted.
+  last line is dropped, and a broken line in the middle is skipped and counted. Reopening a
+  file that ends in half a line seals it, so the next record parses and keeps its own
+  number, and a record larger than the tail window is still resumed past.
 - **The replay of a run.** Record one run through `fake-provider`, project it, and get the
   same timeline that the live path showed. This is the only measure that decides whether
   the feature works.
