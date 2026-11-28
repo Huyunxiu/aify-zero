@@ -7,6 +7,8 @@ import type {
 import { logger } from "@workspace/shared/logger";
 import type { ToolSet } from "ai";
 
+import type { SessionLedgerRecorder } from "./ledger/recorder";
+
 /**
  * 一次运行在通道里的记录。
  *
@@ -56,6 +58,9 @@ type Subscriber<TOOLS extends ToolSet> = {
 class SessionEventChannel<TOOLS extends ToolSet> {
   readonly epoch = crypto.randomUUID();
 
+  readonly #sessionId: string;
+  readonly #ledger: SessionLedgerRecorder | undefined;
+
   #seq = 0;
 
   #run: RunRecord<TOOLS> | undefined;
@@ -71,6 +76,11 @@ class SessionEventChannel<TOOLS extends ToolSet> {
     const idle = this.#run === undefined || this.#run.done;
 
     return idle && this.#subscribers.size === 0;
+  }
+
+  constructor(sessionId: string, ledger: SessionLedgerRecorder | undefined) {
+    this.#sessionId = sessionId;
+    this.#ledger = ledger;
   }
 
   startRun(streamId: string, started: StartedTurns = {}): void {
@@ -93,6 +103,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
       ...(started.turnIds === undefined ? {} : { turnIds: started.turnIds }),
       ...(started.turns === undefined ? {} : { turns: started.turns }),
     };
+    this.#ledger?.startRun(this.#sessionId, this.epoch, streamId, started);
     this.#broadcast(this.#runStart({ ...this.#run }));
   }
 
@@ -111,6 +122,7 @@ class SessionEventChannel<TOOLS extends ToolSet> {
 
     const seq = this.#next();
     run.events.push({ event, seq });
+    this.#ledger?.event(this.#sessionId, this.epoch, streamId, event);
     this.#broadcast({ event, seq, streamId, type: "run.event" });
   }
 
@@ -122,6 +134,8 @@ class SessionEventChannel<TOOLS extends ToolSet> {
 
     run.done = true;
     run.failure = failure;
+
+    this.#ledger?.endRun(this.#sessionId, this.epoch, streamId, failure);
 
     const seq = this.#next();
     this.#broadcast({
@@ -237,6 +251,15 @@ class SessionEventChannel<TOOLS extends ToolSet> {
  */
 export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
   readonly #channels = new Map<string, SessionEventChannel<TOOLS>>();
+  readonly #ledger: SessionLedgerRecorder | undefined;
+
+  /**
+   * `ledger` records every session this registry runs. It is optional because a test does
+   * not need a file, and a process that cannot open one still runs.
+   */
+  constructor(ledger?: SessionLedgerRecorder) {
+    this.#ledger = ledger;
+  }
 
   startRun(
     sessionId: string,
@@ -266,6 +289,7 @@ export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
     // 它就是给每个见过的会话留一份记录。
     if (channel.isFinished) {
       this.#channels.delete(sessionId);
+      this.#ledger?.closeSession(sessionId);
     }
   }
 
@@ -277,6 +301,7 @@ export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
    */
   forget(sessionId: string): void {
     this.#channels.delete(sessionId);
+    this.#ledger?.closeSession(sessionId);
   }
 
   subscribe(
@@ -292,7 +317,7 @@ export class SessionEventRegistry<TOOLS extends ToolSet = ToolSet> {
       return existing;
     }
 
-    const channel = new SessionEventChannel<TOOLS>();
+    const channel = new SessionEventChannel<TOOLS>(sessionId, this.#ledger);
     this.#channels.set(sessionId, channel);
 
     return channel;

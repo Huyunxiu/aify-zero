@@ -24,6 +24,17 @@ export function assertSafeBotId(botId: string): string {
   return botId;
 }
 
+/**
+ * The version that writes a ledger record.
+ *
+ * A release sets `AIFY_VERSION`; a checkout reports `dev`, which is the honest answer and
+ * not a number that looks like a release.
+ */
+export function getAppVersion(): string {
+  const override = process.env.AIFY_VERSION?.trim();
+  return override !== undefined && override.length > 0 ? override : "dev";
+}
+
 /** Private session directory for temporary files and artifacts (`<dataDir>/sessions/<sessionId>`). */
 export function getSessionDir(sessionId: string): string {
   return join(getDataDir(), "sessions", sessionId);

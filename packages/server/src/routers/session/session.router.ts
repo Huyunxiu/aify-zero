@@ -32,6 +32,7 @@ import {
   enqueueInboxItem,
   listInboxItems,
 } from "./session.inbox";
+import { streamSessionLedger } from "./session.ledger";
 import {
   getSession,
   listSessionResources,
@@ -368,6 +369,7 @@ export const session = {
   compactSession,
   forkSession,
   streamSessionEvents,
+  streamSessionLedger,
   resumeSession,
   stopSession,
   listInboxItems,

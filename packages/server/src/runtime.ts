@@ -1,5 +1,10 @@
-import { createAgentRunner, createTimerScheduler } from "@workspace/agent";
+import {
+  createAgentRunner,
+  createTimerScheduler,
+  SessionLedgerRecorder,
+} from "@workspace/agent";
 
+import { getAppVersion, getSessionDir } from "./config";
 import { createJobNoticeAdapter } from "./job-notices";
 import { JOB_REGISTRY } from "./jobs";
 import { createOutboxDispatcher } from "./outbox/dispatcher";
@@ -34,8 +39,21 @@ const timerScanMs = (): number | undefined => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 };
 
+/**
+ * 进程里唯一的那一个流水记录器。
+ *
+ * 它和运行器一起创建：运行器知道自己什么时候起跑、结束，而流水只关心那两处
+ * 之间发生了什么。打不开一个会话的流水目录时它自己计数，不打断运行。
+ */
+export const sessionLedger = new SessionLedgerRecorder({
+  dirOf: getSessionDir,
+  pid: process.pid,
+  appVersion: getAppVersion(),
+});
+
 export const agentRunner = createAgentRunner({
   store,
+  ledger: sessionLedger,
   jobs: JOB_REGISTRY,
   // 存储层自己实现发件项的记录端口：运行器只认「记一条」，不认数据库。
   outbox: store,

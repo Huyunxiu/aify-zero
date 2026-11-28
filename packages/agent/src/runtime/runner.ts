@@ -18,6 +18,7 @@ import { InboxItemNotFoundError } from "../inbox/errors";
 import type { SteeringSignal } from "../inbox/steering";
 import { createSteeringSignal } from "../inbox/steering";
 import type { JobRegistry } from "../jobs/registry";
+import type { SessionLedgerRecorder } from "../ledger/recorder";
 import type { OutboxRecorder } from "../outbox/types";
 import { SessionEventRegistry } from "../session-events";
 import type { SessionEndStatus } from "../storage";
@@ -50,6 +51,10 @@ export type AgentRunnerOptions = {
   jobs?: JobRegistry;
   /** 运行落定后留一条发件箱记录；宿主不关心通知时可以不给。 */
   outbox?: OutboxRecorder;
+  /**
+   * Records each session's ledger. Absent in a test, and in a host that keeps no files.
+   */
+  ledger?: SessionLedgerRecorder;
   logger?: AgentRunnerLogger;
 };
 
@@ -105,7 +110,9 @@ export class AgentRunner {
       },
     };
 
-    this.#sessionEvents = new SessionEventRegistry<AgentToolSet>();
+    this.#sessionEvents = new SessionEventRegistry<AgentToolSet>(
+      options.ledger
+    );
     this.#streams = new StreamEventRegistry(this.#sessionEvents);
     this.#sessions = new SessionLifecycle({
       store: this.#store,
