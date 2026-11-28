@@ -83,6 +83,9 @@
 
 `inboxItemId`、`inboxKind`、`dedupeKey`、`deliverAt`。种类从 `InboxKind` 导入，不抄进流水。在运行领取它之前，没有别的记录提到它。
 
+写它的是运行器，因为进队列只有运行器这一条路：每次插入都走 `enqueue` 或通知，两条取消
+路由也走 `cancelInbox`，理由相同。一个地方移除，一个地方记录。
+
 ### `note.inbox.claimed`
 
 `inboxItemId` 和 `turnId`。只有用户消息的 `dedupeKey` 等于它的 turn id。通知和定时器不是，所以这个连线推不出来。

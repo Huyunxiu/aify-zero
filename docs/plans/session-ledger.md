@@ -97,6 +97,10 @@ record is the only evidence that a different process wrote the lines.
 `InboxKind`; it is not copied into the ledger. Nothing else records an item before a
 run claims it.
 
+The runner writes it, because the runner is the only way into the queue: every insert goes
+through `enqueue` or a notice, and the two cancel routes go through `cancelInbox` for the
+same reason. One place removes an item and one place records it.
+
 ### `note.inbox.claimed`
 
 `inboxItemId` and `turnId`. Only a user message has a `dedupeKey` that equals its turn id.
