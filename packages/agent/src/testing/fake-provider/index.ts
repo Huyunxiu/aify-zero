@@ -163,7 +163,11 @@ export async function startFakeProvider(
       return;
     }
 
-    const rule = book?.take({ stream: seen.stream, model: seen.model });
+    const rule = book?.take({
+      stream: seen.stream,
+      model: seen.model,
+      body: parsed,
+    });
     options.log?.(describeRule(rule));
     await writeChatCompletions({
       response,

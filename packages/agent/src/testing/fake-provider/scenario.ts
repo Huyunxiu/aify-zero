@@ -27,6 +27,16 @@ const whenSchema = z.object({
    */
   stream: z.boolean().optional(),
   model: z.string().optional(),
+  /**
+   * The request body contains this text.
+   *
+   * A parent session and the subagent it started ask the same fake provider with
+   * the same model, and both stream, so neither the flag nor the name can tell
+   * them apart. What does differ is the system prompt: a subagent's carries a
+   * sentence the parent's never does. Do not match on the brief — the parent's
+   * own tool call holds that text too.
+   */
+  bodyContains: z.string().optional(),
 });
 
 const slowSchema = z.object({

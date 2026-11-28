@@ -63,6 +63,40 @@ describe(RuleBook, () => {
     expect(book.remaining).toBe(1);
   });
 
+  test("tells two callers apart by what their bodies say", () => {
+    // A parent session and its subagent share the model and both stream; the
+    // system prompt is the one thing that differs.
+    const book = new RuleBook(
+      rules(
+        {
+          when: { bodyContains: "launched by a parent agent" },
+          answer: "from the child",
+        },
+        { answer: "from the parent" }
+      )
+    );
+
+    expect(
+      book.take({
+        stream: true,
+        body: {
+          messages: [
+            {
+              content:
+                "You are a subagent launched by a parent agent to carry out one self-contained task.",
+            },
+          ],
+        },
+      })?.answer
+    ).toBe("from the child");
+    expect(
+      book.take({
+        stream: true,
+        body: { messages: [{ content: "Update the file." }] },
+      })?.answer
+    ).toBe("from the parent");
+  });
+
   test("matches on the model too", () => {
     expect(
       matches({ when: { model: "slow" } }, { stream: true, model: "fast" })
