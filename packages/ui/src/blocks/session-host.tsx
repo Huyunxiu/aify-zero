@@ -1,6 +1,6 @@
 import { useMatchRoute, useParams, useSearch } from "@tanstack/react-router";
 import { Island, IslandGroup } from "@workspace/ui/blocks/island";
-import { SessionContainer } from "@workspace/ui/blocks/session-container";
+import { Session } from "@workspace/ui/blocks/session";
 import { readBotId, readProjectId } from "@workspace/ui/lib/session-search";
 import * as React from "react";
 
@@ -91,7 +91,8 @@ export function SessionHost({ covered }: SessionHostProps) {
   return (
     <IslandGroup orientation="horizontal">
       <Island defaultSize="100%">
-        <SessionContainer
+        <Session
+          key={activeSessionId ?? `new:${shownSession.botId ?? "default"}`}
           covered={covered}
           initialBotId={shownSession.botId}
           initialProjectId={shownSession.projectId}

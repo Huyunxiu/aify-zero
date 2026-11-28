@@ -11,7 +11,6 @@ import {
 import type {
   AgentToolSet,
   AgentStreamEvent,
-  AgentTurn,
   AgentUserPart,
   AgentUserTurn,
   ApprovalPolicy,
@@ -73,7 +72,10 @@ import { DEFAULT_LANG, isLang } from "../i18n";
 import { approvalPolicyTarget } from "../lib/approval-policy-target";
 import { flattenModels, parseModelRef, sameModel } from "../lib/models";
 import { client, queryClient } from "../lib/orpc";
-import { openSessionEvents } from "../lib/session-events";
+import {
+  orpcSessionTransport,
+  sessionTurnsQueryKey,
+} from "../lib/session-orpc-transport";
 import { buildSessionOutline } from "../lib/session-outline";
 import type { SessionOutlineSection } from "../lib/session-outline";
 import { findSubagentTitle } from "../lib/subagent-call";
@@ -193,7 +195,6 @@ export type AgentCommand = {
 
 export type SessionProps = React.ComponentProps<"div"> & {
   sessionId: string | undefined;
-  initialTurns?: AgentTurn<AgentToolSet>[];
   /** Pre-selected Bot for an unsaved session; existing session row always wins. */
   initialBotId?: string;
   /**
@@ -224,7 +225,6 @@ export type SessionProps = React.ComponentProps<"div"> & {
 
 export function Session({
   sessionId,
-  initialTurns = [],
   initialBotId,
   initialProjectId,
   questionnairePlacement = "composer",
@@ -343,20 +343,6 @@ export function Session({
     },
     [sessionId]
   );
-
-  // 收起用面板的折叠能力，不卸载内容：树的展开状态、终端进程都要留着。
-  // 放在 layout effect 里，首帧就不会先画出面板再收起。
-  React.useLayoutEffect(() => {
-    const panel = panelRef.current;
-    if (panel === null) {
-      return;
-    }
-    if (panelOpen) {
-      panel.expand();
-    } else {
-      panel.collapse();
-    }
-  }, [panelOpen, panelRef]);
 
   const handleModelChange = (next: ModelRef) => {
     setUserPickedModel(true);
@@ -581,6 +567,7 @@ export function Session({
   const {
     turns,
     pendingMessages,
+    hydrated,
     submit,
     sendPending,
     cancelPending,
@@ -591,85 +578,23 @@ export function Session({
     addToolApprovalResponse,
   } = useAgentSession({
     id: sessionKey,
-    // 发送和读取是两件事：发送只把消息交给服务端，读取是挂在这个会话上的
-    // 一条事件流，它跨过运行之间的空档一直读到页面离开。
-    apiSend: async (options) => {
-      if (!options.model || !options.modelEffort || !options.turns.length) {
-        return;
-      }
-
-      const botId =
-        typeof options.botId === "string" ? options.botId : effectiveBotId;
-      // 项目随消息发出，不能从 store 的闭包里读：store 在挂载时就建好了，
-      // 那时还没选项目。hook 只把 payload 当不透明数据，所以这里收窄再传。
-      const projectId =
-        options.projectId === null
-          ? null
-          : typeof options.projectId === "string"
-            ? options.projectId
-            : undefined;
-      // The policy also travels in the payload: the hook builds its store at mount, so the
-      // closure cannot read a later choice. Narrow the values here; treat anything else as absent.
-      const requestedPolicy = APPROVAL_POLICIES.find(
-        (policy) => policy === options.approvalPolicy
-      );
-      // 排队消息领取时带上 Inbox 行 id：服务端在保存 user turn 的同一事务里
-      // 删除它，重复领取会失败而不是写出重复 turn。
-      const inboxId =
-        typeof options.inboxId === "string" ? options.inboxId : undefined;
-
-      await client.session.createSession(
-        {
-          sessionId: options.sessionId,
-          turns: options.approvals?.length ? [] : [options.turns.at(-1)!],
-          model: options.model as ModelRef,
-          modelEffort: options.modelEffort as string,
-          botId,
-          // Written on first save only: null explicitly detaches any project; undefined falls back to the Bot default.
-          projectId,
-          // The policy also applies only on a new row: when the row exists, setApprovalPolicy decides.
-          approvalPolicy: requestedPolicy,
-          // An answer to a held call travels with the turn it answers. Its
-          // presence is what makes the new stream a resumption: the server runs
-          // the calls it names before asking the model anything again.
-          approvals: options.approvals,
-          inboxId,
-        },
-        { signal: options.abortSignal }
-      );
-      setRowSaved(true);
-      // 收到的只是「已落库」：这一次运行什么时候开始，由服务端的运行器决定，
-      // 页面从下面那条事件流上看到 `run.start` 就知道。
-    },
-    apiEvents: async ({ sessionId: id, abortSignal }) =>
-      await openSessionEvents(id, abortSignal),
-    apiResume: async ({ sessionId: id }) => {
-      await client.session.resumeSession({ sessionId: id });
-    },
-    // Stopping is located by session id, so nothing here has to carry the
-    // stream id the POST handed back.
-    apiStop: async ({ sessionId: id, keepSubagents }) => {
-      await client.session.stopSession({
-        sessionId: id,
-        ...(keepSubagents === true ? { keepSubagents: true } : {}),
-      });
-    },
-    apiInbox: {
-      list: async ({ sessionId: id }) => {
-        const result = await client.session.listInboxItems({
-          sessionId: id,
-        });
-        return result.items;
-      },
-      enqueue: async (input) => await client.session.enqueueInboxItem(input),
-      cancel: async ({ sessionId: id, itemId }) =>
-        await client.session.cancelInboxItem({ sessionId: id, itemId }),
-      clear: async ({ sessionId: id }) =>
-        await client.session.clearInboxItems({ sessionId: id }),
-    },
-    turns: initialTurns,
+    transport: orpcSessionTransport,
+    hydrate: sessionId !== undefined,
     onEvent,
   });
+
+  // Sync panel collapse state once hydrated mounts the ResizablePanel.
+  React.useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (panel === null) {
+      return;
+    }
+    if (panelOpen) {
+      panel.expand();
+    } else {
+      panel.collapse();
+    }
+  }, [panelOpen, panelRef, hydrated]);
 
   // The held questionnaire whose form belongs in the composer's slot. Reading
   // it from the transcript rather than from the last event keeps the placement
@@ -729,7 +654,7 @@ export function Session({
   // 看得见屏幕。这时标记已读，发件箱就会以为有人看着，本该在关窗后落定的
   // 系统通知永远不弹。所以隐藏时不标记，回到前台再补。
   React.useEffect(() => {
-    if (!sessionId) {
+    if (!sessionId || !hydrated) {
       return;
     }
 
@@ -764,18 +689,11 @@ export function Session({
     return () => {
       document.removeEventListener("visibilitychange", settle);
     };
-  }, [sessionId, status, covered]);
+  }, [sessionId, status, covered, hydrated]);
 
-  // 一次运行落定（成功、取消、出错都算）之后，记录里多了回合，侧栏的最后活动与
-  // 未读标记也变了。除上面那个 effect 刷的侧栏，这里补两件事：
-  //
-  // - 会话记录的种子要重取。`SessionContainer` 只在挂载时把这份缓存交给 store，之后
-  //   屏幕上的副本由 store 自己维护；种子不跟着记录走，切回这个会话时新建的
-  //   store 就从一个空列表开始。服务端先把回合写进记录、再结束这次运行，所以
-  //   这一刻取到的已经是新的。运行开始那一刻不失效：那时取到的是带着未落定回
-  //   合的快照，把它当种子比没有种子更糟。
-  // - 回合出错时也收尾了，但上面那个 effect 只认 `ready`：这里补上 `error`。
-  //   成功和取消都走 `ready`，侧栏已经有失效，不再重复刷。
+  // Invalidate `listSessionTurns` and `list_sessions` when a run settles so a
+  // later session remount hydrates from fresh persisted turns instead of stale
+  // cache, and failed runs update sidebar unread/last-activity state.
   const previousStatus = React.useRef(status);
 
   React.useEffect(() => {
@@ -791,7 +709,7 @@ export function Session({
 
     if (sessionId) {
       void queryClient.invalidateQueries({
-        queryKey: ["listSessionTurns", sessionId],
+        queryKey: sessionTurnsQueryKey(sessionId),
       });
     }
 
@@ -939,7 +857,7 @@ export function Session({
     // 标记已经进了 branch：刷新会话行和缓存的 branch，重新挂载时看到的就是
     // 记录里那一条。
     void queryClient.invalidateQueries({
-      queryKey: ["listSessionTurns", sessionId],
+      queryKey: sessionTurnsQueryKey(sessionId),
     });
     void queryClient.invalidateQueries({
       queryKey: ["getSession", sessionId],
@@ -1025,6 +943,7 @@ export function Session({
           approvalPolicy,
         },
       });
+      setRowSaved(true);
       // Refresh the sidebar once `submit` confirms the session row exists on the server.
       if (isFirstTurn) {
         void queryClient.invalidateQueries({ queryKey: ["list_sessions"] });
@@ -1088,6 +1007,10 @@ export function Session({
       selectedProjectId,
     ]
   );
+
+  if (!hydrated) {
+    return null;
+  }
 
   return (
     <FileLinkProvider openFile={openFileInPanel}>
