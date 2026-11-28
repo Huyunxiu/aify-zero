@@ -169,6 +169,30 @@ and the answer of the woken turn. The non-streaming requests assert presence onl
 notice is itself a user turn, and the title generation asks once more for it. This case
 does not prove if that request occurs.
 
+### Subagent (`subagent.e2e.ts`)
+
+The scene `subagent` makes the model start one delegation, and the child answers 1.5
+seconds later. The parent and the child ask the same fake provider with the same model and
+both stream, so the scene tells them apart by the request body: a subagent's system prompt
+carries a sentence the parent's never does (`when.bodyContains`).
+
+1. A `Subagent` row appears.
+2. The first turn completes — `Finished` is 1 — and the report is nowhere on the page:
+   the call returned while the child still worked.
+3. The child settles. A notice block appears with `role="note"` and the label
+   `Subagent finished`. It carries the name and the report text.
+4. The notice block has no buttons, like a job's notice.
+5. The idle session wakes and answers. `Finished` becomes 2, and the answer quotes the
+   report, which came from the notice rather than from a second tool call.
+
+The case makes 4 streaming requests: the delegation, the parent's answer, the child's
+answer, and the woken turn's answer. It also asserts that exactly one request carries the
+subagent prompt: the child ran on its own, not as a second call in the same turn.
+
+The two answers that `Stop` offers are not here. They are covered by
+`packages/agent/tests/runtime` and `packages/agent/tests/subagent-factory`, and by the
+manual pass in [subagent-acceptance.md](subagent-acceptance.md).
+
 ### Timer (`timer.e2e.ts`)
 
 The scene `timer` makes the model set a 60-second follow-up and then stop. The case really
