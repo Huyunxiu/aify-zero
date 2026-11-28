@@ -273,6 +273,19 @@ export class RunController {
     }
 
     const surviving = new Set(written);
+
+    // 领走的那一刻就是「排队中的消息变成回合」的那一瞬。被取消的项不在
+    // `surviving` 里，所以它不会被记成一次领取。
+    for (const claim of claims) {
+      if (surviving.has(claim.turn.id)) {
+        this.#deps.ledger?.note(this.#deps.sessionId, null, {
+          type: "note.inbox.claimed",
+          inboxItemId: claim.inboxId,
+          turnId: claim.turn.id,
+        });
+      }
+    }
+
     const turns = [
       ...baseTurns,
       ...claims
@@ -353,6 +366,8 @@ export class RunController {
       persistSteps: true,
     });
 
+    this.#recordSupersededClaims(baseTurns, claims, surviving);
+
     // Started, not awaited: the turn runs as a producer into `stream` while the
     // caller begins reading it. Awaiting here would run the whole turn to
     // completion first — the stream's queue never blocks, so every chunk would
@@ -426,6 +441,35 @@ export class RunController {
    * derives the change point by comparing two turns, and a missed change event would make
    * every later turn wrong.
    */
+  /**
+   * 记下「这个回合被重新生成过一次」。
+   *
+   * 重新生成沿用原来的回合 id：库里那一行是被改写，不是新增。所以只有流水能
+   * 说出「这里曾有过另一个答案」，而读的人靠这条记录把两次尝试连起来。
+   */
+  #recordSupersededClaims(
+    base: readonly AgentTurn<AgentToolSet>[],
+    claims: readonly InboxClaim[],
+    surviving: ReadonlySet<string>
+  ): void {
+    const streamId = this.#streamId;
+    if (streamId === undefined) {
+      return;
+    }
+
+    const existed = new Set(base.map((turn) => turn.id));
+    for (const claim of claims) {
+      if (!surviving.has(claim.turn.id) || !existed.has(claim.turn.id)) {
+        continue;
+      }
+      this.#deps.ledger?.note(this.#deps.sessionId, null, {
+        type: "note.turn.superseded",
+        turnId: claim.turn.id,
+        streamId,
+      });
+    }
+  }
+
   #recordTurnSettings(turnId: string): void {
     const { ledger, sessionId, context, approvalPolicy } = this.#deps;
     const streamId = this.#streamId;

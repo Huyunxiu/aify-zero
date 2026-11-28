@@ -1,13 +1,19 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import type {
   AgentTurn,
   AgentUserTurn,
   InboxItem,
+  LedgerRecord,
 } from "@workspace/agent-client";
 import type { ModelRef } from "@workspace/shared/model";
 import { describe, expect, test, vi } from "vitest";
 
 import type { AgentSession } from "../../src/agent-session";
 import type { Agent } from "../../src/agents";
+import { SessionLedgerRecorder } from "../../src/ledger/recorder";
 import type { AgentRunnerStore } from "../../src/runtime";
 import { createAgentRunner } from "../../src/runtime";
 import type { SessionRecord, SessionEndStatus } from "../../src/storage";
@@ -605,3 +611,79 @@ describe("AgentRunner wait_review", () => {
     await runner.shutdown();
   });
 });
+
+describe("the ledger of the inbox", () => {
+  test("records what arrived", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ledger-"));
+    const store = new FakeStore([session("s1")]);
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: fakeBuildAgent(fakeAgent()).build,
+      ledger: new SessionLedgerRecorder({
+        dirOf: () => dir,
+        pid: 413,
+        appVersion: "0.4.1",
+      }),
+    });
+
+    await runner.createSession({ sessionId: "s1" });
+    await runner.enqueue({
+      sessionId: "s1",
+      turn: userTurn("turn-1"),
+      model,
+      mode: "followup",
+    });
+
+    const arrived = records(dir).filter(
+      (record) => record.type === "note.inbox.arrived"
+    );
+
+    expect(arrived).toHaveLength(1);
+    expect(arrived[0]).toMatchObject({
+      inboxKind: "user-message",
+      dedupeKey: "turn-1",
+      deliverAt: "run-boundary",
+    });
+  });
+
+  test("records what a person removed before it ran", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ledger-"));
+    // 直接塞进队列，不经入队：这一段只验证取消，不验证唤醒。
+    const store = new FakeStore([session("s1")]);
+    // 读取不当作领取：这里没有运行，队列里的东西应当留着让人撤回。
+    store.claimOnRead = false;
+    const item = await store.insertInboxItem({
+      sessionId: "s1",
+      kind: "user-message",
+      dedupeKey: "turn-9",
+      deliverAt: "run-boundary",
+      content: userTurn("turn-9"),
+      payload: { model },
+    });
+    const runner = createAgentRunner({
+      store: asRunnerStore(store),
+      buildAgent: fakeBuildAgent(fakeAgent()).build,
+      ledger: new SessionLedgerRecorder({
+        dirOf: () => dir,
+        pid: 413,
+        appVersion: "0.4.1",
+      }),
+    });
+
+    await expect(runner.cancelInbox("s1", [item.id])).resolves.toBe(1);
+
+    const discarded = records(dir).filter(
+      (record) => record.type === "note.inbox.discarded"
+    );
+
+    expect(discarded).toHaveLength(1);
+    expect(discarded[0]).toMatchObject({ inboxItemId: item.id });
+  });
+});
+
+function records(dir: string): LedgerRecord[] {
+  return readFileSync(join(dir, "ledger.jsonl"), "utf-8")
+    .split("\n")
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as LedgerRecord);
+}

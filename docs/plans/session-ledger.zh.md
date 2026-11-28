@@ -103,9 +103,9 @@
 
 ### `note.turn.superseded`
 
-`turnId` 和 `supersededByTurnId`。重新生成的回合保留它的旧记录。
+`turnId` 和 `streamId`。重新生成的回合保留它的 id，也保留它的全部记录：那一行是被再写一次，变的是这次尝试，不是这个回合。
 
-同一个 turn id 出现在两个 stream 下有两种原因：用户重新生成了答案，或者运行在审批之后继续。两者意思相反，只有记录能分开。
+同一个 turn id 出现在两个 stream 下有两种原因：用户重新生成了答案，或者运行在审批之后继续。继续不领取待办项，而重新生成领取的是分支里已经存在的那个 turn id。这条记录标的就是后者。
 
 ### `note.step.settled`
 

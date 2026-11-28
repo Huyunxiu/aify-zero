@@ -92,6 +92,8 @@ export class AgentRunner {
     string,
     { model: ModelRef; effort?: ModelEffort; projectId?: string }
   >();
+  /** 每个会话已经记过的最新一条待办项序号；重发同一条消息不会再记一次。 */
+  readonly #arrivedThrough = new Map<string, number>();
   /** 每条会话自上次用户输入以来，被完成通知唤醒过几次。 */
   readonly #noticeWakes = new Map<string, number>();
   /** 正在推进的会话；有值表示这条会话的循环在跑，不是“有一条运行在跑”。 */
@@ -216,6 +218,55 @@ export class AgentRunner {
     return result;
   }
 
+  /**
+   * 移除待办项，并记下「有人撤回了它」。
+   *
+   * 一条被撤回的消息是它存在过的唯一证据：记录里没有它的回合，队列里也没有它。
+   * 先读再删，是为了只给真的被移除的那几条写记录。
+   */
+  async cancelInbox(
+    sessionId: string,
+    ids?: readonly string[]
+  ): Promise<number> {
+    const queued = await this.#store.listInboxItems(sessionId);
+    const present = queued.filter(
+      (item) => ids === undefined || ids.includes(item.id)
+    );
+    const removed = await this.#store.deleteInboxItems(sessionId, ids);
+
+    for (const item of present) {
+      this.#ledger?.note(sessionId, null, {
+        type: "note.inbox.discarded",
+        inboxItemId: item.id,
+        reason: "canceled",
+      });
+    }
+
+    return removed;
+  }
+
+  /**
+   * 记下一条进了队列的待办项。
+   *
+   * 入队是幂等的：同一条消息重发只留下一行。所以只给序号更大的那条写记录，
+   * 否则一次重试会在流水里变成「又来了两条」。
+   */
+  #recordArrival(item: InboxItem): void {
+    const seen = this.#arrivedThrough.get(item.sessionId) ?? -1;
+    if (item.seq <= seen) {
+      return;
+    }
+
+    this.#arrivedThrough.set(item.sessionId, item.seq);
+    this.#ledger?.note(item.sessionId, null, {
+      type: "note.inbox.arrived",
+      inboxItemId: item.id,
+      inboxKind: item.kind,
+      dedupeKey: item.dedupeKey,
+      deliverAt: item.deliverAt,
+    });
+  }
+
   /** 写一条待办项并唤醒；交付边界由当前流决定。 */
   async enqueue(input: EnqueueInput): Promise<InboxItem> {
     const session = await this.#store.getSessionById(input.sessionId);
@@ -246,6 +297,8 @@ export class AgentRunner {
           : { projectId: input.projectId }),
       },
     });
+
+    this.#recordArrival(item);
 
     // 用户自己说话了：唤醒预算重新开始，通知不再按上一条链计数。
     this.#noticeWakes.delete(input.sessionId);
@@ -345,6 +398,8 @@ export class AgentRunner {
       content: turn,
       payload,
     });
+
+    this.#recordArrival(item);
 
     if (!busy) {
       const spent = this.#noticeWakes.get(input.sessionId) ?? 0;
@@ -507,6 +562,13 @@ export class AgentRunner {
           .map((item) => item.id);
         if (stale.length > 0) {
           await this.#store.deleteInboxItems(sessionId, stale);
+          for (const inboxItemId of stale) {
+            this.#ledger?.note(sessionId, null, {
+              type: "note.inbox.discarded",
+              inboxItemId,
+              reason: "stale notice",
+            });
+          }
         }
         if (items.length > stale.length) {
           remaining.push(sessionId);

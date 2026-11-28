@@ -90,18 +90,14 @@ export const cancelInboxItem = publicProcedure
     path: "/sessions/{sessionId}/inbox/{itemId}",
   })
   .input(inboxItemIdSchema)
-  .handler(async ({ input }) => {
-    const store = new SQLiteStore();
-    return {
-      removed: await store.deleteInboxItems(input.sessionId, [input.itemId]),
-    };
-  });
+  .handler(async ({ input }) => ({
+    removed: await agentRunner.cancelInbox(input.sessionId, [input.itemId]),
+  }));
 
 /** 清空会话的待办项。 */
 export const clearInboxItems = publicProcedure
   .route({ method: "DELETE", path: "/sessions/{sessionId}/inbox" })
   .input(z.object({ sessionId: z.string() }))
-  .handler(async ({ input }) => {
-    const store = new SQLiteStore();
-    return { removed: await store.deleteInboxItems(input.sessionId) };
-  });
+  .handler(async ({ input }) => ({
+    removed: await agentRunner.cancelInbox(input.sessionId),
+  }));

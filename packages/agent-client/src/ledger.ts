@@ -143,7 +143,13 @@ export type NoteRecord =
   | (Line & {
       type: "note.turn.superseded";
       turnId: string;
-      supersededByTurnId: string;
+      /**
+       * The attempt that replaced this turn's content.
+       *
+       * A regenerated turn keeps its id: the same turn row is written again, so the
+       * attempt is what changed, not the turn. This record is the only place that says so.
+       */
+      streamId: string;
     })
   | (Line & {
       type: "note.step.settled";

@@ -125,11 +125,12 @@ makes every later turn wrong.
 
 ### `note.turn.superseded`
 
-`turnId` and `supersededByTurnId`. A regenerated turn keeps its old records.
+`turnId` and `streamId`. A regenerated turn keeps its id and keeps all its records: the row
+is written again, so the attempt changed and the turn did not.
 
-A turn id can appear under two streams for two reasons: the user regenerated the answer,
-or the run continued after an approval. The two mean opposite things, and only a record
-separates them.
+A turn id can appear under two streams for two reasons: the user regenerated the answer, or
+the run continued after an approval. A resume claims no inbox item, and a regeneration
+claims the same turn id that is already in the branch. That is what this record marks.
 
 ### `note.step.settled`
 
