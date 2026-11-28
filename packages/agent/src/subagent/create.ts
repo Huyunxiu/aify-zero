@@ -15,6 +15,7 @@ import { joinBlocks } from "../extensions/block";
 import type { InstructionsSection } from "../extensions/types";
 import type { CompactionStrategy } from "../kernel/compaction-strategy";
 import type { ModelTargetResolver } from "../kernel/model-gateway";
+import type { SessionLedgerRecorder } from "../ledger/recorder";
 import type { AgentStore } from "../storage";
 import type { ToolApprovalPattern } from "../tool-approval";
 import type { CallTargetResolver } from "../tools/execution";
@@ -131,6 +132,8 @@ export type ProviderResolver = ModelTargetResolver;
 export type SubagentParent = {
   /** The parent's environment: its project/session directories, skills, and model. */
   context: AgentContext;
+  /** The parent's ledger. A subagent is a session, so it writes its own file with it. */
+  ledger?: SessionLedgerRecorder;
   /** The pool the subagent's own tool set is drawn from. */
   tools: ToolSet;
   /**
@@ -365,6 +368,8 @@ export async function createSubagent(
     model: resolvedModel,
     resolveModel: parent.resolveModel,
     modelEffort: parent.context.modelEffort,
+    // 子会话是会话：它有自己的流水文件，而内容要靠同一个记录器写进去。
+    ...(parent.ledger === undefined ? {} : { ledger: parent.ledger }),
     // 父的 abort scope 接进来：父会话被停时子 agent 跟着停。不接的话父的 stop
     // 要等这个子 agent 跑完才返回——父的 `#runStep` 卡在 `executeToolCalls` 上，
     // 而 task 的 generator 正 `await entry.whenFinished()`。

@@ -54,6 +54,7 @@ async function startSubagent(
     toolApprovalPattern: agent.toolApprovalPattern,
     compaction: agent.extensions.capability(Capabilities.compaction),
     approvalPolicy: agent.approvalPolicy,
+    ledger: agent.ledger,
   };
 
   const { agent: subagent, turns } = await createSubagent(parent, {

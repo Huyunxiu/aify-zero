@@ -18,8 +18,8 @@ import { LedgerWriter } from "./writer";
 /** The file a session's ledger lives in, under its own directory. */
 export const LEDGER_FILE = "ledger.jsonl";
 
-/** The directory that holds a system prompt, by content address. */
-export const LEDGER_BLOB_DIR = join("ledger", "blobs");
+/** The directory that holds a system prompt, one file per digest. */
+export const LEDGER_PROMPT_DIR = join("ledger", "prompts");
 
 /** How much typing one step may hold before the record says it was cut. */
 const DEFAULT_DELTA_BUDGET = 256 * 1024;
@@ -35,6 +35,7 @@ export type SessionLedgerRecorderOptions = {
 };
 
 type Buffer = {
+  turnId: string;
   chunks: { at: number; event: AgentStreamEvent<ToolSet> }[];
   bytes: number;
   truncated: boolean;
@@ -108,6 +109,9 @@ export class SessionLedgerRecorder {
     if (event.type !== "step.finish") {
       return;
     }
+
+    // 每一步的边界推一次盘：断电最多丢当前这一步，而不是整段运行。
+    this.#writers.get(sessionId)?.settle();
     if (event.status !== "error" && event.status !== "aborted") {
       this.#buffers.delete(bufferKey(sessionId, event.stepId));
       return;
@@ -139,20 +143,29 @@ export class SessionLedgerRecorder {
       ...(failure === undefined ? {} : { failure }),
     });
 
-    // A step that never settled left its typing here. It is not worth keeping past the run
-    // that held it, and a session that keeps running must not grow without end.
-    for (const key of this.#buffers.keys()) {
-      if (key.startsWith(`${sessionId}\u0000`)) {
-        this.#buffers.delete(key);
+    // 一个从没落定的步骤把打字过程留在这里：中途被停、进程要退出，都是它。这
+    // 正是要复现的那种现场，所以倒出来而不是丢掉。
+    for (const [key, held] of this.#buffers) {
+      if (!key.startsWith(`${sessionId}\u0000`)) {
+        continue;
       }
+      this.#buffers.delete(key);
+      const stepId = key.slice(sessionId.length + 1);
+      this.#write(sessionId, epoch, {
+        type: "note.step.delta-backlog",
+        turnId: held.turnId,
+        stepId,
+        truncated: held.truncated,
+        chunks: held.chunks,
+      });
     }
   }
 
   /**
    * Records what one turn ran under: the model, the effort, the policy, and the prompt.
    *
-   * The prompt goes into a blob by digest, so a session with the same prompt on every turn
-   * keeps one copy of it. The record keeps the digest and the blocks that built the prompt,
+   * The prompt is stored by digest, so a session with the same prompt on every turn keeps
+   * one copy of it. The record keeps the digest and the blocks that built the prompt,
    * which is the difference between "the prompt changed" and "this section changed".
    */
   turnSettings(
@@ -170,10 +183,12 @@ export class SessionLedgerRecorder {
       };
     }
   ): void {
-    const instructions = this.#blob(sessionId, settings.instructions.text);
-    if (instructions === undefined) {
-      return;
-    }
+    // 正文存不下来时仍然写这条记录：摘要是对的，缺的只是那份文件。少了模型和
+    // 审批策略，这条记录就白记了，而这正是它存在的理由。
+    const instructions = this.#storePrompt(
+      sessionId,
+      settings.instructions.text
+    );
 
     this.#write(sessionId, epoch, {
       type: "note.turn.settings",
@@ -238,10 +253,11 @@ export class SessionLedgerRecorder {
 
   #hold(
     sessionId: string,
-    event: AgentStreamEvent<ToolSet> & { stepId: string }
+    event: AgentStreamEvent<ToolSet> & { stepId: string; turnId: string }
   ): void {
     const key = bufferKey(sessionId, event.stepId);
     const held = this.#buffers.get(key) ?? {
+      turnId: event.turnId,
       chunks: [],
       bytes: 0,
       truncated: false,
@@ -260,22 +276,21 @@ export class SessionLedgerRecorder {
     this.#buffers.set(key, held);
   }
 
-  /** Stores one system prompt and answers where it landed. */
-  #blob(
+  /** Stores one system prompt and answers its address. A digest names the bytes. */
+  #storePrompt(
     sessionId: string,
     text: string
-  ): { sha256: string; bytes: number } | undefined {
+  ): { sha256: string; bytes: number } {
     const sha256 = digestOf(text);
-    const directory = join(this.#options.dirOf(sessionId), LEDGER_BLOB_DIR);
+    const directory = join(this.#options.dirOf(sessionId), LEDGER_PROMPT_DIR);
 
     try {
       mkdirSync(directory, { recursive: true });
-      // The digest names the bytes, so a second write of the same prompt is the same file.
+      // The digest names the bytes, so the same prompt twice is the same file.
       writeFileSync(join(directory, sha256), text, { flag: "wx" });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
         this.#unopened += 1;
-        return undefined;
       }
     }
 

@@ -92,7 +92,7 @@ export class AgentRunner {
     string,
     { model: ModelRef; effort?: ModelEffort; projectId?: string }
   >();
-  /** 每个会话已经记过的最新一条待办项序号；重发同一条消息不会再记一次。 */
+  /** The newest item seq recorded per session. A resent message is not recorded twice. */
   readonly #arrivedThrough = new Map<string, number>();
   /** 每条会话自上次用户输入以来，被完成通知唤醒过几次。 */
   readonly #noticeWakes = new Map<string, number>();
@@ -219,10 +219,11 @@ export class AgentRunner {
   }
 
   /**
-   * 移除待办项，并记下「有人撤回了它」。
+   * Removes inbox items and records that a person withdrew them.
    *
-   * 一条被撤回的消息是它存在过的唯一证据：记录里没有它的回合，队列里也没有它。
-   * 先读再删，是为了只给真的被移除的那几条写记录。
+   * A withdrawn message leaves no turn in the transcript and no row in the queue; this
+   * note is the only evidence it existed. The list comes before the delete so that only
+   * the items that really went away are recorded.
    */
   async cancelInbox(
     sessionId: string,
@@ -246,10 +247,10 @@ export class AgentRunner {
   }
 
   /**
-   * 记下一条进了队列的待办项。
+   * Records an item that entered the queue.
    *
-   * 入队是幂等的：同一条消息重发只留下一行。所以只给序号更大的那条写记录，
-   * 否则一次重试会在流水里变成「又来了两条」。
+   * Enqueueing is idempotent: a resent message leaves one row. Only a larger seq is
+   * recorded, or one retry would read as a second message in the ledger.
    */
   #recordArrival(item: InboxItem): void {
     const seen = this.#arrivedThrough.get(item.sessionId) ?? -1;

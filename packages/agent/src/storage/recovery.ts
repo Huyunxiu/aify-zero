@@ -85,7 +85,8 @@ export async function recoverInterruptedRuns(
         } as AgentTurn;
 
         await store.updateTurn(session.id, turn.id, settled);
-        // 两种「error」要分得开：模型自己报错，还是进程死了由这里代填。
+        // Two kinds of "error" must stay apart: the model failed, or the process died
+        // and this filled the reason in.
         ledger?.note(session.id, null, {
           type: "note.recovery",
           turnId: turn.id,

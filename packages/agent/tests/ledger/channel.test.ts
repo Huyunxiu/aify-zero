@@ -53,7 +53,7 @@ describe("the channel and the ledger", () => {
     ]);
     expect(read.records[1]).toMatchObject({ turnIds: ["u1"] });
 
-    // 读者拿到的顺序与直播一致：这是回放能重建时间线的前提。
+    // The reader gets the order the live stream had: what a replay rebuilds from.
     const events = read.records.flatMap((record) =>
       record.type === "stream.run.event" ? [record.event.type] : []
     );

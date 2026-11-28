@@ -129,7 +129,7 @@ export class Agent {
   readonly gateway: ModelGateway;
   /** 模型引用 → 调用目标。子 agent 继承它，才能跑在别家的模型上。 */
   readonly resolveModel: ModelTargetResolver;
-  /** 会话流水的记录器；没有它时这个 agent 不写流水。 */
+  /** The session ledger. Without it this agent records nothing. */
   readonly ledger: SessionLedgerRecorder | undefined;
 
   context: AgentContext;

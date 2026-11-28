@@ -40,10 +40,11 @@ const timerScanMs = (): number | undefined => {
 };
 
 /**
- * 进程里唯一的那一个流水记录器。
+ * The one ledger recorder in this process.
  *
- * 它和运行器一起创建：运行器知道自己什么时候起跑、结束，而流水只关心那两处
- * 之间发生了什么。打不开一个会话的流水目录时它自己计数，不打断运行。
+ * It is built beside the runner: the runner knows when a run starts and ends, and the
+ * ledger only cares what happened between those two. A session directory that cannot be
+ * opened is counted, not thrown, so a run is never interrupted.
  */
 export const sessionLedger = new SessionLedgerRecorder({
   dirOf: getSessionDir,

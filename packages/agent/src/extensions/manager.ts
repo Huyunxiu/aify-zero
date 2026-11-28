@@ -178,16 +178,8 @@ export class ExtensionManager {
     sections: { id: string; priority: number; text: string }[];
   } {
     const sections = this.listSections();
-    const blocks = sections.map((section) => section.render());
 
-    return {
-      text: joinBlocks([base, ...blocks]),
-      sections: sections.map((section, index) => ({
-        id: section.id,
-        priority: section.priority ?? 0,
-        text: blocks[index] ?? "",
-      })),
-    };
+    return reportSections(sections, base);
   }
 
   #createApi(record: RegisteredExtension): ExtensionAPI {
@@ -395,10 +387,35 @@ function isolateAssembler(
   };
 }
 
+/**
+ * Applies every section and says what each one contributed.
+ *
+ * The join lives here and nowhere else: a second implementation would be a second rule
+ * for how blocks meet, and the record would describe a prompt nobody sent.
+ */
+export function reportSections(
+  sections: readonly InstructionsSection[],
+  base = ""
+): {
+  text: string;
+  sections: { id: string; priority: number; text: string }[];
+} {
+  const blocks = sections.map((section) => section.render());
+
+  return {
+    text: joinBlocks([base, ...blocks]),
+    sections: sections.map((section, index) => ({
+      id: section.id,
+      priority: section.priority ?? 0,
+      text: blocks[index] ?? "",
+    })),
+  };
+}
+
 /** Joins the blocks of every section after `base`, in priority order. */
 export function renderSections(
   sections: readonly InstructionsSection[],
   base = ""
 ): string {
-  return joinBlocks([base, ...sections.map((section) => section.render())]);
+  return reportSections(sections, base).text;
 }

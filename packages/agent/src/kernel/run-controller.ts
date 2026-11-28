@@ -109,9 +109,10 @@ export class RunController {
   /** 本 turn 拼接好的系统提示；turn 开始前算一次，turn 内保持稳定。 */
   #instructions?: string;
   /**
-   * 拼出这份提示的指令段。
+   * The blocks that built this prompt.
    *
-   * 钩子整份替换提示时这里清空：那时没有哪一段拼出了它，写一段假的归属比不写更糟。
+   * A hook that replaces the whole prompt empties this: no block built what was sent,
+   * and a false attribution is worse than none.
    */
   #instructionsSections: { id: string; priority: number; text: string }[] = [];
 
@@ -274,8 +275,8 @@ export class RunController {
 
     const surviving = new Set(written);
 
-    // 领走的那一刻就是「排队中的消息变成回合」的那一瞬。被取消的项不在
-    // `surviving` 里，所以它不会被记成一次领取。
+    // The claim is the moment a queued message becomes a turn. A cancelled item is
+    // not in `surviving`, so it is never recorded as claimed.
     for (const claim of claims) {
       if (surviving.has(claim.turn.id)) {
         this.#deps.ledger?.note(this.#deps.sessionId, null, {
@@ -435,17 +436,11 @@ export class RunController {
   }
 
   /**
-   * Records what this turn runs under, once the effective values are settled.
+   * Records that this turn was regenerated.
    *
-   * The settings travel with the turn rather than appearing as change events: a reader
-   * derives the change point by comparing two turns, and a missed change event would make
-   * every later turn wrong.
-   */
-  /**
-   * 记下「这个回合被重新生成过一次」。
-   *
-   * 重新生成沿用原来的回合 id：库里那一行是被改写，不是新增。所以只有流水能
-   * 说出「这里曾有过另一个答案」，而读的人靠这条记录把两次尝试连起来。
+   * A regeneration keeps the turn id: the row is rewritten, not added. So only the
+   * ledger can say that another answer was here before, and a reader joins the two
+   * attempts through this record.
    */
   #recordSupersededClaims(
     base: readonly AgentTurn<AgentToolSet>[],
@@ -470,6 +465,13 @@ export class RunController {
     }
   }
 
+  /**
+   * Records what this turn runs under, once the effective values are settled.
+   *
+   * The settings travel with the turn rather than appearing as change events: a reader
+   * derives the change point by comparing two turns, and a missed change event would make
+   * every later turn wrong.
+   */
   #recordTurnSettings(turnId: string): void {
     const { ledger, sessionId, context, approvalPolicy } = this.#deps;
     const streamId = this.#streamId;

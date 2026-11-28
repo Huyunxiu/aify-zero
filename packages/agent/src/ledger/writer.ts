@@ -10,6 +10,7 @@ import { dirname } from "node:path";
 
 import { LEDGER_VERSION } from "@workspace/agent-client";
 import type { LedgerPayload, LedgerRecord } from "@workspace/agent-client";
+import { logger } from "@workspace/shared/logger";
 
 export type LedgerWriterOptions = {
   /** The ledger file. Its directory is created when it is absent. */
@@ -51,7 +52,7 @@ export class LedgerWriter {
     return new LedgerWriter(options, lastLine(options.path));
   }
 
-  /** How many appends failed. A reader shows this; it is never silent. */
+  /** How many appends failed. A failure is counted and logged, and never thrown. */
   get failures(): number {
     return this.#failures;
   }
@@ -79,8 +80,11 @@ export class LedgerWriter {
     try {
       writeSync(this.#descriptor, `${JSON.stringify(record)}\n`);
       this.#line += 1;
-    } catch {
+    } catch (error) {
       this.#failures += 1;
+      // 计数不告诉任何人。流水坏了会变成「没有回放」，而不是一条错误，所以这里
+      // 至少留一行日志。
+      logger.warn("[ledger] failed to append a record", error);
     }
   }
 

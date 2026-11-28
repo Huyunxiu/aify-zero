@@ -30,7 +30,7 @@ export interface TranscriptJournalDeps {
   sessionId: string;
   /** 当前运行的 id；step 行用它区分本次运行与历史。 */
   streamId(): string | undefined;
-  /** 会话流水；没有它时落库照旧，只是不留记录。 */
+  /** The session ledger. Without it the row is still written, just not recorded. */
   ledger?: SessionLedgerRecorder;
 }
 
@@ -128,7 +128,8 @@ export class TranscriptJournal {
       updatedAt: new Date(),
     };
 
-    // 先写流水再写库：落库失败时这一步仍有据可查，而重新生成会覆盖库里那一行。
+    // The ledger first, the row after: a failed write still leaves evidence, and a
+    // regeneration overwrites that row.
     this.#deps.ledger?.note(this.#deps.sessionId, null, {
       type: "note.step.settled",
       turnId: target.turnId,

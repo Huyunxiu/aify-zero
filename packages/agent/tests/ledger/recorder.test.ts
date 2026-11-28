@@ -204,6 +204,6 @@ describe("the settings a turn ran under", () => {
       instructions: { sha256: digest, bytes: 24 },
       sections: [{ id: "identity", priority: 0, sha256: digest }],
     });
-    expect(readdirSync(join(dir, "ledger", "blobs"))).toStrictEqual([digest]);
+    expect(readdirSync(join(dir, "ledger", "prompts"))).toStrictEqual([digest]);
   });
 });

@@ -648,9 +648,9 @@ describe("the ledger of the inbox", () => {
 
   test("records what a person removed before it ran", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ledger-"));
-    // 直接塞进队列，不经入队：这一段只验证取消，不验证唤醒。
+    // Straight into the queue, not through enqueue: this case is about the cancel only.
     const store = new FakeStore([session("s1")]);
-    // 读取不当作领取：这里没有运行，队列里的东西应当留着让人撤回。
+    // A read is not a claim here: no run is coming, so the item stays for a person to withdraw.
     store.claimOnRead = false;
     const item = await store.insertInboxItem({
       sessionId: "s1",

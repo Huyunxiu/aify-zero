@@ -28,7 +28,7 @@ import {
   streamTextMock,
 } from "../helpers/stream-harness.js";
 
-// 和别的回合用例一样：唯一的模型入口换成脚本，循环的决策不依赖网络。
+// As in the other turn tests: the one model entry is a script, so the loop needs no network.
 vi.mock(import("ai"), async (importOriginal) => {
   const actual = await importOriginal<typeof AiModule>();
   return {
@@ -172,7 +172,7 @@ describe("a run and its ledger", () => {
       (record) => record.type === "note.step.settled"
     );
 
-    // 流水里那份提示词，必须就是模型真的收到的那份。
+    // The prompt in the ledger must be the prompt the model really read.
     const sent = (
       streamTextMock.mock.calls[0]?.[0] as { instructions?: string } | undefined
     )?.instructions;
@@ -188,7 +188,7 @@ describe("a run and its ledger", () => {
     });
     expect(settled).toMatchObject({ type: "note.step.settled" });
 
-    // 内容来自落定的步骤：整份 step 在流水里，回放才不必回读数据库。
+    // Content comes from the settled step: the whole step, so a replay need not read the database.
     const content = records.find(
       (record) => record.type === "note.step.settled"
     );
@@ -201,7 +201,7 @@ describe("a run and its ledger", () => {
         : null
     ).toStrictEqual({ status: "done", finishReason: "stop" });
 
-    // 这个用例直接构造 Agent，不经过运行器的通道，所以只有旁注、没有流记录。
+    // This case builds the Agent itself, with no runner channel, so there are notes only.
     expect(
       records.every((record) => record.type.startsWith("note."))
     ).toBeTruthy();

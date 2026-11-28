@@ -23,6 +23,7 @@ export type * from "./types";
 export * from "./stream-registry";
 export * from "./ledger/recorder";
 export * from "./ledger/reader";
+export * from "./ledger/projection";
 export * from "./session-events";
 export * from "./subagent";
 export * from "./timers";

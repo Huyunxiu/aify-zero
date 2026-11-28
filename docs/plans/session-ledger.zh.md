@@ -20,7 +20,7 @@
 
 ```
 <dataDir>/sessions/<sessionId>/ledger.jsonl            记录
-<dataDir>/sessions/<sessionId>/ledger/blobs/<sha256>   一份系统提示词，按摘要存
+<dataDir>/sessions/<sessionId>/ledger/prompts/<sha256>  一份系统提示词，一个摘要一个文件
 ```
 
 会话目录里已经有 `attachments/`。流水放在它旁边。
@@ -81,7 +81,7 @@
 
 ### `note.inbox.arrived`
 
-`inboxItemId`、`inboxKind`、`dedupeKey`、`deliverAt`。种类从 `InboxItemKind` 导入，不抄进流水。在运行领取它之前，没有别的记录提到它。
+`inboxItemId`、`inboxKind`、`dedupeKey`、`deliverAt`。种类从 `InboxKind` 导入，不抄进流水。在运行领取它之前，没有别的记录提到它。
 
 ### `note.inbox.claimed`
 
@@ -95,7 +95,7 @@
 
 `turnId`、`streamId`、`model`、`effort`、`approvalPolicy`、`instructions`、`sections`。只给调模型的回合写，别的回合不写。
 
-`instructions` 是 `{sha256, bytes}`，正文在 `blobs/`。`sections` 是 `{id, priority, sha256}[]`，所以读者能说出这份提示词由哪几段拼成。
+`instructions` 是 `{sha256, bytes}`，正文在 `ledger/prompts/`。`sections` 是 `{id, priority, sha256}[]`，所以读者能说出这份提示词由哪几段拼成。
 
 `effort` 在宿主没指定时缺省：填个默认值等于描述一次从没用过它的调用。`turn_start` 钩子整份替换提示时 `sections` 为空，因为没有哪一段拼出了发出去的那份。
 
@@ -112,6 +112,8 @@
 `turnId`、`stepId` 和 `content`，整份 `AgentStep`。步骤落定时写一次，它的 metadata 到达时再写一次，所以同一个 `stepId` 可以出现多次。读者取最后一条。
 
 它和数据库里的内容重复。这是故意的：重新生成会覆盖那一行，而旧的尝试必须留在流水里。
+
+失败的一步从不落定：数据库不为它留行，这条记录也不替它编一行。读者拿到的是 `note.step.delta-backlog` 里那段打字过程。
 
 ### `note.step.delta-backlog`
 
@@ -147,7 +149,7 @@ append(payload)
 
 ## 读
 
-一条只读路由：`GET /sessions/{id}/ledger?from=<line>&limit=<n>`。回放视图在浏览器里读它并投影。服务端不加第二个概念。
+一条只读路由：`GET /sessions/{id}/ledger?from=<line>&limit=<n>`。投影是 `replayLedger`，一个压在记录上的纯函数，所以服务端不加第二个概念，测试也能把时间线和产生它的事件对起来。
 
 投影跑两遍，顺序不能反，因为内容可能比描述它的事件晚到。
 

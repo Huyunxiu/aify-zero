@@ -92,8 +92,8 @@ export type StreamRecord =
       failure?: string;
     });
 
-/** A system prompt, by content address. The text is in `ledger/blobs/<sha256>`. */
-export type LedgerBlobRef = {
+/** A system prompt, by content address. The text sits in one file per digest. */
+export type LedgerPromptRef = {
   sha256: string;
   bytes: number;
 };
@@ -136,7 +136,7 @@ export type NoteRecord =
       /** Absent when the host named no effort for this turn. */
       effort?: ModelEffort;
       approvalPolicy: ApprovalPolicy;
-      instructions: LedgerBlobRef;
+      instructions: LedgerPromptRef;
       /** Which instructions sections built the prompt, in render order. */
       sections: readonly { id: string; priority: number; sha256: string }[];
     })

@@ -24,7 +24,7 @@ separate goal. Audit and evaluation fixtures are out of scope.
 
 ```
 <dataDir>/sessions/<sessionId>/ledger.jsonl            the records
-<dataDir>/sessions/<sessionId>/ledger/blobs/<sha256>   a system prompt, by digest
+<dataDir>/sessions/<sessionId>/ledger/prompts/<sha256>  a system prompt, one file per digest
 ```
 
 The session directory already holds `attachments/`. A ledger sits beside it.
@@ -94,7 +94,7 @@ record is the only evidence that a different process wrote the lines.
 ### `note.inbox.arrived`
 
 `inboxItemId`, `inboxKind`, `dedupeKey`, `deliverAt`. The kind is imported from
-`InboxItemKind`; it is not copied into the ledger. Nothing else records an item before a
+`InboxKind`; it is not copied into the ledger. Nothing else records an item before a
 run claims it.
 
 ### `note.inbox.claimed`
@@ -112,7 +112,7 @@ discarded item look the same from every other record.
 `turnId`, `streamId`, `model`, `effort`, `approvalPolicy`, `instructions`, and `sections`.
 It is written for a turn that calls the model, and for no other turn.
 
-`instructions` is `{sha256, bytes}`. The text is in `blobs/`. `sections` is
+`instructions` is `{sha256, bytes}`. The text is in `ledger/prompts/`. `sections` is
 `{id, priority, sha256}[]`, so a reader can say which blocks built the prompt.
 
 `effort` is absent when the host named none: a default would describe a call that never
@@ -137,6 +137,9 @@ claims the same turn id that is already in the branch. That is what this record 
 `turnId`, `stepId`, and `content`, the whole `AgentStep`. It is written when the step
 settles and again when its metadata arrives, so one `stepId` can appear more than once. A
 reader takes the last one.
+
+A step that failed never settles: the database keeps no row for it, and this record does not
+invent one. Its typing in `note.step.delta-backlog` is what a reader gets.
 
 It repeats what the database holds. That is deliberate: a regeneration overwrites the row,
 and the old attempt must stay in the ledger.
@@ -179,8 +182,9 @@ A last line can be truncated. A reader drops it.
 
 ## Reading
 
-One read-only route: `GET /sessions/{id}/ledger?from=<line>&limit=<n>`. The replay view
-reads it in the browser and projects it. The server adds no second concept.
+One read-only route: `GET /sessions/{id}/ledger?from=<line>&limit=<n>`. The projection is
+`replayLedger`, a pure function over the records, so the server adds no second concept and a
+test can compare the timeline with the events that produced it.
 
 The projection runs in two passes, and the order matters, because content can arrive
 after the events that describe it.
