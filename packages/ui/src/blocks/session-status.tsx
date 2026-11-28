@@ -17,6 +17,7 @@ export type SessionStatus =
   | "wait_review"
   | "done"
   | "canceled"
+  | "timed-out"
   | "error";
 
 const DISC_RADIUS = 10;
@@ -55,6 +56,21 @@ const CANCELED = (
   </>
 );
 
+/** A clock face: no one stopped this run, the limit did. */
+const TIMED_OUT = (
+  <>
+    <circle cx="12" cy="12" r={DISC_RADIUS} strokeWidth="0" />
+    <circle
+      cx="12"
+      cy="12"
+      r={RING_RADIUS}
+      fill="none"
+      strokeWidth={RING_STROKE}
+    />
+    <path d="M12 7.6v4.9l3.2 1.9" fill="none" strokeWidth="1.8" />
+  </>
+);
+
 const ERROR = (
   <>
     <circle cx="12" cy="12" r={DISC_RADIUS} strokeWidth="0" />
@@ -79,6 +95,7 @@ const STATUS_STYLES: Record<SessionStatus, string> = {
   wait_review: "stroke-warning fill-warning",
   done: "fill-primary stroke-white",
   canceled: "fill-muted-foreground stroke-white",
+  "timed-out": "fill-muted-foreground stroke-white",
   error: "fill-destructive stroke-white",
 };
 
@@ -88,6 +105,7 @@ const STATUS_MARKS: Record<SessionStatus, ReactNode> = {
   wait_review: WAIT_REVIEW,
   done: DONE,
   canceled: CANCELED,
+  "timed-out": TIMED_OUT,
   error: ERROR,
 };
 
@@ -97,6 +115,7 @@ const STATUS_LABEL_KEYS = {
   wait_review: "sessions.status.waitReview",
   done: "sessions.status.done",
   canceled: "sessions.status.canceled",
+  "timed-out": "sessions.status.timedOut",
   error: "sessions.status.error",
 } as const satisfies Record<SessionStatus, string>;
 

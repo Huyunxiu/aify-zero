@@ -307,14 +307,14 @@ export function createSubagentFactory({
       // decisions follow how the run actually ended: a run that finished can
       // still read what it left waiting.
       //
-      // A run that did not finish drops what it never read, and the notice
-      // carries the count: nothing will start this child again, so an item left
-      // behind would wait for a turn nobody asked for. `wait_review` is the
+      // A run that did not reach its end drops what it never read, and the
+      // notice carries the count: nothing will start this child again, so an item
+      // left behind would wait for a turn nobody asked for. `wait_review` is the
       // exception — that run is parked, not over.
       const dropped =
-        status === "canceled" || status === "error"
-          ? await discard(child.sessionId)
-          : 0;
+        status === "done" || status === "wait_review"
+          ? 0
+          : await discard(child.sessionId);
 
       // A child taken down with its parent has no one to report to: the parent
       // asked for the stop, and its next turn should not open with the news
@@ -402,10 +402,15 @@ export function createSubagentFactory({
       recordActivity: true,
     });
 
+    // The clock stops the run through the same abort a person would call. Only
+    // the settlement can still tell the two apart, so the cause is recorded here
+    // and the run is reported by what ended it.
+    let timedOut = false;
     const timer =
       timeoutMs > 0
         ? setTimeout(() => {
             logger.warn(`[subagent] ${name ?? sessionId} hit its time limit`);
+            timedOut = true;
             childAgent.abort();
           }, timeoutMs)
         : undefined;
@@ -418,7 +423,12 @@ export function createSubagentFactory({
         streamId: sessionId,
         signal: { type: "turn" },
         onFinish: async (status) =>
-          await settleRun(input.child, childAgent, status, timer),
+          await settleRun(
+            input.child,
+            childAgent,
+            timedOut && status === "canceled" ? "timed-out" : status,
+            timer
+          ),
       });
 
       registry.registerStream(sessionId, childAgent, stream);

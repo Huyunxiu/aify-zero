@@ -531,10 +531,11 @@ export class AgentRunner {
   }
 
   /**
-   * 一条会话的循环：取一批、跑完、再看一眼。
+   * One session's loop: claim a batch, run it, look again.
    *
-   * 只有 `done` 会继续；`error` 和 `canceled` 停下来并记住原因，`wait_review`
-   * 直接停——历史里有一条工具调用没有结果，结构上不该推进。
+   * Only `done` continues. `error`, `canceled`, and `timed-out` stop and keep the
+   * reason. `wait_review` stops outright: the transcript holds a tool call with
+   * no result, so the structure must not advance.
    */
   async #runSession(sessionId: string): Promise<void> {
     for (;;) {
@@ -582,7 +583,11 @@ export class AgentRunner {
       return true;
     }
 
-    this.#paused.set(sessionId, status === "canceled" ? "canceled" : "error");
+    // A run stopped by its clock is still a stop, not a failure.
+    this.#paused.set(
+      sessionId,
+      status === "canceled" || status === "timed-out" ? "canceled" : "error"
+    );
     return false;
   }
 

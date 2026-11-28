@@ -47,6 +47,8 @@ type FakeChild = {
   context: { model: ReturnType<typeof testModel> };
   session: { turns: AgentTurn<AgentToolSet>[] };
   readonly runs: FakeRun[];
+  /** Whether an abort settles the run, the way the kernel ends an aborted one. */
+  finishOnAbort: boolean;
   abort(): void;
   dispose(): Promise<void>;
   stream(options: unknown): Promise<ReadableStream<never>>;
@@ -87,13 +89,25 @@ function fakeChild(sessionId: string): FakeChild {
   let settle: ((status: SessionEndStatus) => Promise<void>) | undefined;
   let close: (() => void) | undefined;
 
+  const state = { finishOnAbort: false };
+
   return {
     sessionId,
     streamKind: "turn",
     context: { model: testModel() },
     session: { turns: [] },
     runs,
-    abort: () => {},
+    get finishOnAbort() {
+      return state.finishOnAbort;
+    },
+    set finishOnAbort(next: boolean) {
+      state.finishOnAbort = next;
+    },
+    abort: () => {
+      if (state.finishOnAbort) {
+        void settle?.("canceled");
+      }
+    },
     dispose: () => Promise.resolve(),
     stream: (options: unknown) => {
       const input = options as {
@@ -353,13 +367,13 @@ const newRegistry = () =>
     new SessionEventRegistry<AgentToolSet>()
   );
 
-const factoryOver = (store: FakeStore, limit = 4) =>
+const factoryOver = (store: FakeStore, limit = 4, timeoutMs = 0) =>
   createSubagentFactory({
     agent: parentAgent(),
     store: asStore(store),
     registry,
     limit,
-    timeoutMs: 0,
+    timeoutMs,
     now: () => 1000,
   });
 
@@ -370,13 +384,13 @@ const restarted = (store: FakeStore, limit = 4) => {
   return factoryOver(store, limit);
 };
 
-const fixture = (limit = 4) => {
+const fixture = (limit = 4, timeoutMs = 0) => {
   active = new FakeStore();
   registry = newRegistry();
   children.made.length = 0;
   notices.written.length = 0;
 
-  return { store: active, subagents: factoryOver(active, limit) };
+  return { store: active, subagents: factoryOver(active, limit, timeoutMs) };
 };
 
 const definition = SUBAGENT_DEFINITIONS[0]!;
@@ -662,6 +676,26 @@ describe("the limit on running subagents", () => {
     const listed = await subagents.list();
     expect(children.made).toHaveLength(2);
     expect(listed.running).toBe(1);
+  });
+});
+
+describe("the time limit on a run", () => {
+  test("settles a run the clock stopped as timed-out, not canceled", async () => {
+    const { store, subagents } = fixture(4, 50);
+    await start(subagents);
+
+    // The kernel ends an aborted run as canceled. Only the factory knows that
+    // the clock is what aborted it, so it names the cause in the settlement.
+    children.made[0]!.finishOnAbort = true;
+
+    await vi.waitFor(() => {
+      expect(notices.written).toHaveLength(1);
+    });
+
+    expect(notices.written[0]).toContain("settled: timed-out");
+    expect(store.sessions.get(children.made[0]!.sessionId)?.status).toBe(
+      "timed-out"
+    );
   });
 });
 

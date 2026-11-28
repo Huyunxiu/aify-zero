@@ -262,6 +262,7 @@
       "waitReview": "待审核",
       "done": "已完成",
       "canceled": "已取消",
+      "timedOut": "超时",
       "error": "出错"
     }
   },

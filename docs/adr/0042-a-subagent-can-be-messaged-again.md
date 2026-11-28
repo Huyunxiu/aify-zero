@@ -94,8 +94,10 @@ A synchronous call that hangs is visible: the Assistant is stuck inside it. A ba
 subagent that hangs is invisible — nothing is blocked, the session simply goes quiet.
 
 So every subagent run has a wall clock limit, one hour by default, and the limit settles the
-run and sends the notice. `AIFY_SUBAGENT_TIMEOUT_MS` sets it at start, next to the capacity
-knob, because neither has a settings surface yet. The service also settles the runs of a
+run and sends the notice. It settles as `timed-out`, not `canceled`: nobody stopped that run,
+and a parent reading "canceled" would not know that a retry with a smaller brief is still
+worth it. `AIFY_SUBAGENT_TIMEOUT_MS` sets the limit at start, next to the capacity knob,
+because neither has a settings surface yet. The service also settles the runs of a
 previous process at start and sends their notices, which the recovery path already did for
 sessions in general but not for the people waiting on them.
 

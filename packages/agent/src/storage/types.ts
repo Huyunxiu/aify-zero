@@ -9,12 +9,20 @@ import type { AgentToolSet } from "../types";
 
 export type SessionKind = "main" | "subagent";
 
+/**
+ * How a session ended, or that it has not run yet.
+ *
+ * `canceled` means someone stopped the run. `timed-out` means the wall clock
+ * stopped it: nobody decided, the limit ran out. The parent reads that word in
+ * the notice and acts on it, so the two cannot share one status.
+ */
 export type SessionStatus =
   | "idle"
   | "running"
   | "wait_review"
   | "done"
   | "canceled"
+  | "timed-out"
   | "error";
 
 export type SessionEndStatus = Exclude<SessionStatus, "running">;

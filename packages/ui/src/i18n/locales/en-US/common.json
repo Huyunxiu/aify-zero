@@ -262,6 +262,7 @@
       "waitReview": "Awaiting review",
       "done": "Done",
       "canceled": "Canceled",
+      "timedOut": "Timed out",
       "error": "Error"
     }
   },
